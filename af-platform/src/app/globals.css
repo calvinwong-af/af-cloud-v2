@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Brand palette */
+  --slate: #0f1c2e;
+  --slate-mid: #1a2f47;
+  --slate-light: #243b55;
+  --sky: #3b9eff;
+  --sky-light: #6cb8ff;
+  --sky-pale: #e8f4ff;
+  --sky-mist: #f0f7ff;
+
+  /* Surface & border */
+  --surface: #f0f4f8;
+  --border: #dde5ef;
+
+  /* Text */
+  --text: #0f1c2e;
+  --text-mid: #3d5473;
+  --text-muted: #7a93b0;
+}
+
+/* ── Base resets ── */
+
+body {
+  margin: 0;
+  color: var(--text);
+  background: var(--surface);
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Grid texture overlay (reusable) ── */
+
+.grid-texture {
+  background-image:
+    linear-gradient(rgba(255 255 255 / 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255 255 255 / 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* ── Utility classes ── */
+
+.font-display {
+  font-family: var(--font-syne), system-ui, sans-serif;
+}
+
+.font-body {
+  font-family: var(--font-outfit), system-ui, sans-serif;
+}
+
+.font-mono {
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
