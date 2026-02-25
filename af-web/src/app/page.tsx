@@ -1,59 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import ServicesGrid from "@/components/home/ServicesGrid";
 
 export const metadata: Metadata = {
   title: "AcceleFreight — Your Complete Logistics Solution",
   description:
     "AcceleFreight provides end-to-end freight forwarding and 3PL services for businesses operating in and out of Malaysia. Sea freight, air freight, customs clearance, and more.",
 };
-
-const SERVICES = [
-  {
-    icon: `<path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>`,
-    title: "Sea Freight",
-    desc: "FCL & LCL across major global routes",
-  },
-  {
-    icon: `<path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/>`,
-    title: "Air Freight",
-    desc: "Time-critical cargo, handled with care",
-  },
-  {
-    icon: `<line x1="3" y1="12" x2="21" y2="12"/><polyline points="8 7 3 12 8 17"/><polyline points="16 7 21 12 16 17"/>`,
-    title: "Cross-Border Trucking",
-    desc: "Land freight across Malaysia & regional borders",
-  },
-  {
-    icon: `<rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>`,
-    title: "Distribution",
-    desc: "Last-mile & regional delivery in Malaysia",
-  },
-  {
-    icon: `<path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>`,
-    title: "Warehousing",
-    desc: "General cargo storage & inventory management",
-  },
-  {
-    icon: `<path d="M2 12h20M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12a10 10 0 1020 0 10 10 0 00-20 0z"/>`,
-    title: "Cold Storage",
-    desc: "Temperature-controlled for pharma & perishables",
-  },
-  {
-    icon: `<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>`,
-    title: "Customs Clearance",
-    desc: "Import & export clearance management",
-  },
-  {
-    icon: `<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>`,
-    title: "EOR / IOR",
-    desc: "Exporter & Importer of Record services",
-  },
-  {
-    icon: `<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>`,
-    title: "Outsourced Logistics",
-    desc: "Management & consultation services",
-  },
-];
 
 const TICKER_ITEMS = [
   "Sea Freight",
@@ -68,388 +21,152 @@ const TICKER_ITEMS = [
 ];
 
 export default function HomePage() {
-  const tickerContent = [...TICKER_ITEMS, ...TICKER_ITEMS]; // doubled for seamless loop
+  const tickerContent = [...TICKER_ITEMS, ...TICKER_ITEMS];
 
   return (
     <>
-      {/* ── Hero ───────────────────────────────────────────────────── */}
+      {/* Hero */}
       <div
         style={{
           background: "var(--slate)",
           marginTop: "68px",
           minHeight: "calc(100vh - 68px)",
+          position: "relative",
           display: "flex",
           alignItems: "center",
           padding: "80px 5%",
-          position: "relative",
-          overflow: "hidden",
         }}
         className="grid-texture"
       >
-        {/* Sky glow */}
-        <div
-          style={{
-            position: "absolute",
-            right: "5%",
-            top: "50%",
-            transform: "translateY(-50%)",
-            width: "500px",
-            height: "500px",
-            background:
-              "radial-gradient(circle, rgba(59,158,255,0.14) 0%, transparent 70%)",
-            pointerEvents: "none",
-          }}
-        />
+        <div style={{ position: "absolute", left: "-100px", top: "30%", width: "600px", height: "600px", background: "radial-gradient(circle, rgba(59,158,255,0.08) 0%, transparent 65%)", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", right: "-100px", bottom: "10%", width: "500px", height: "500px", background: "radial-gradient(circle, rgba(59,158,255,0.06) 0%, transparent 65%)", pointerEvents: "none" }} />
 
-        <div
-          style={{
-            maxWidth: "1200px",
-            margin: "0 auto",
-            width: "100%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "48px",
-            flexWrap: "wrap",
-          }}
-        >
-          {/* Left: copy */}
-          <div style={{ flex: "1", minWidth: "300px", maxWidth: "560px" }}>
-            {/* Badge */}
+        <div style={{ width: "100%", maxWidth: "860px", margin: "0 auto" }}>
+
+          {/* Copy */}
+          <div style={{ marginBottom: "48px" }}>
             <div
               className="fade-up fade-1"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "6px 14px",
-                background: "rgba(59,158,255,0.1)",
-                border: "1px solid rgba(59,158,255,0.25)",
-                borderRadius: "100px",
-                marginBottom: "28px",
-              }}
+              style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "6px 14px", background: "rgba(59,158,255,0.1)", border: "1px solid rgba(59,158,255,0.25)", borderRadius: "100px", marginBottom: "28px" }}
             >
               <span className="status-dot" />
-              <span
-                style={{
-                  fontFamily: "var(--font-outfit)",
-                  fontSize: "0.8rem",
-                  fontWeight: 500,
-                  color: "rgba(255,255,255,0.75)",
-                }}
-              >
+              <span style={{ fontFamily: "var(--font-outfit)", fontSize: "0.8rem", fontWeight: 500, color: "rgba(255,255,255,0.75)" }}>
                 Malaysian Freight Forwarder &amp; 3PL
               </span>
             </div>
 
             <h1
               className="fade-up fade-2"
-              style={{
-                fontFamily: "var(--font-syne)",
-                fontSize: "clamp(2.4rem, 5vw, 3.5rem)",
-                fontWeight: 800,
-                color: "white",
-                lineHeight: 1.1,
-                letterSpacing: "-0.02em",
-                marginBottom: "24px",
-              }}
+              style={{ fontFamily: "var(--font-syne)", fontSize: "clamp(2.8rem, 6vw, 4.5rem)", fontWeight: 800, color: "white", lineHeight: 1.05, letterSpacing: "-0.03em", marginBottom: "24px", maxWidth: "700px" }}
             >
-              Your complete
-              <br />
+              Your complete{" "}
               <span style={{ color: "var(--sky)" }}>logistics solution.</span>
             </h1>
 
             <p
               className="fade-up fade-3"
-              style={{
-                fontFamily: "var(--font-outfit)",
-                fontSize: "1rem",
-                fontWeight: 300,
-                color: "rgba(255,255,255,0.6)",
-                lineHeight: 1.8,
-                marginBottom: "36px",
-                maxWidth: "460px",
-              }}
+              style={{ fontFamily: "var(--font-outfit)", fontSize: "1.05rem", fontWeight: 300, color: "rgba(255,255,255,0.6)", lineHeight: 1.8, marginBottom: "36px", maxWidth: "520px" }}
             >
-              AcceleFreight provides end-to-end freight forwarding and
-              third-party logistics services for businesses operating in and out
-              of Malaysia. Sea, air, distribution — we handle it all.
+              AcceleFreight provides end-to-end freight forwarding and third-party logistics services for businesses operating in and out of Malaysia. Sea, air, distribution — we handle it all.
             </p>
 
-            <div
-              className="fade-up fade-4"
-              style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "48px" }}
-            >
-              <Link href="/contact" className="btn-primary">
+            <div className="fade-up fade-4" style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "48px" }}>
+              <a href="/contact" className="btn-primary">
                 Get In Touch
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M5 12h14M12 5l7 7-7 7" />
-                </svg>
-              </Link>
-              <Link
-                href="/services"
-                className="btn-outline"
-                style={{
-                  borderColor: "rgba(255,255,255,0.15)",
-                  color: "rgba(255,255,255,0.7)",
-                }}
-              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+              </a>
+              <a href="/services" className="btn-outline" style={{ borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.7)" }}>
                 Our Services
-              </Link>
+              </a>
             </div>
 
-            {/* Stats */}
-            <div
-              className="fade-up fade-5"
-              style={{ display: "flex", gap: "40px", flexWrap: "wrap" }}
-            >
+            <div className="fade-up fade-5" style={{ display: "flex", gap: "40px", flexWrap: "wrap" }}>
               {[
                 { num: "2018", label: "Established" },
                 { num: "9+", label: "Service Lines" },
                 { num: "2,000+", label: "Quotations Processed" },
               ].map(({ num, label }) => (
                 <div key={label}>
-                  <div
-                    style={{
-                      fontFamily: "var(--font-syne)",
-                      fontSize: "1.6rem",
-                      fontWeight: 700,
-                      color: "white",
-                      lineHeight: 1,
-                    }}
-                  >
-                    {num}
-                  </div>
-                  <div
-                    style={{
-                      fontFamily: "var(--font-outfit)",
-                      fontSize: "0.78rem",
-                      color: "rgba(255,255,255,0.4)",
-                      marginTop: "4px",
-                      fontWeight: 400,
-                    }}
-                  >
-                    {label}
-                  </div>
+                  <div style={{ fontFamily: "var(--font-syne)", fontSize: "1.6rem", fontWeight: 700, color: "white", lineHeight: 1 }}>{num}</div>
+                  <div style={{ fontFamily: "var(--font-outfit)", fontSize: "0.78rem", color: "rgba(255,255,255,0.4)", marginTop: "4px", fontWeight: 400 }}>{label}</div>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Right: Shipment tracker card */}
+          {/* Shipment Tracker Card — horizontal strip */}
           <div
-            className="fade-up fade-4 float-card"
-            style={{ flex: "0 0 auto", width: "340px", maxWidth: "100%" }}
+            className="fade-up fade-5"
+            style={{
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(59,158,255,0.25)",
+              borderRadius: "10px",
+              padding: "20px 24px",
+              display: "flex",
+              alignItems: "center",
+              gap: "32px",
+              flexWrap: "wrap",
+            }}
           >
-            <div
-              style={{
-                background: "rgba(26,47,71,0.8)",
-                border: "1px solid rgba(59,158,255,0.2)",
-                borderRadius: "10px",
-                padding: "20px",
-                backdropFilter: "blur(12px)",
-              }}
-            >
-              {/* Card header */}
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: "16px",
-                  paddingBottom: "16px",
-                  borderBottom: "1px solid rgba(255,255,255,0.08)",
-                }}
-              >
-                <span
-                  style={{
-                    fontFamily: "var(--font-outfit)",
-                    fontSize: "0.8rem",
-                    fontWeight: 600,
-                    color: "rgba(255,255,255,0.6)",
-                    letterSpacing: "0.08em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Shipment Tracker
-                </span>
-                <span
-                  style={{
-                    fontFamily: "var(--font-jetbrains)",
-                    fontSize: "0.72rem",
-                    color: "var(--sky)",
-                  }}
-                >
-                  AF-2026-08841
-                </span>
-              </div>
+            {/* Label + ID */}
+            <div style={{ flexShrink: 0 }}>
+              <div style={{ fontFamily: "var(--font-outfit)", fontSize: "0.7rem", fontWeight: 600, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "4px" }}>Live Tracking</div>
+              <div style={{ fontFamily: "var(--font-jetbrains)", fontSize: "0.85rem", color: "var(--sky)" }}>AF-2026-08841</div>
+            </div>
 
-              {/* Details */}
-              {[
-                { key: "Mode", val: "Sea Freight · FCL" },
-                { key: "Route", val: "Port Klang → Shanghai" },
-                { key: "Container", val: "MSKU 7724901-3 · 20FT", mono: true },
-              ].map(({ key, val, mono }) => (
-                <div
-                  key={key}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    marginBottom: "10px",
-                    alignItems: "flex-start",
-                    gap: "12px",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontFamily: "var(--font-outfit)",
-                      fontSize: "0.78rem",
-                      color: "rgba(255,255,255,0.35)",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {key}
-                  </span>
-                  <span
-                    style={{
-                      fontFamily: mono ? "var(--font-jetbrains)" : "var(--font-outfit)",
-                      fontSize: "0.8rem",
-                      color: "rgba(255,255,255,0.8)",
-                      textAlign: "right",
-                    }}
-                  >
-                    {val}
-                  </span>
-                </div>
-              ))}
+            <div style={{ width: "1px", height: "36px", background: "rgba(255,255,255,0.1)", flexShrink: 0 }} />
 
-              <div
-                style={{
-                  borderTop: "1px solid rgba(255,255,255,0.08)",
-                  margin: "14px 0",
-                }}
-              />
+            {/* Route */}
+            <div style={{ flexShrink: 0 }}>
+              <div style={{ fontFamily: "var(--font-outfit)", fontSize: "0.7rem", color: "rgba(255,255,255,0.4)", marginBottom: "4px" }}>Route</div>
+              <div style={{ fontFamily: "var(--font-outfit)", fontSize: "0.85rem", color: "rgba(255,255,255,0.85)", fontWeight: 500 }}>Port Klang → Shanghai</div>
+            </div>
 
-              {/* Timeline */}
-              {[
-                { label: "Booking Confirmed", sub: "12 Feb 2026 · 09:14", state: "done" },
-                { label: "Customs Cleared", sub: "18 Feb 2026 · 14:32", state: "done" },
-                { label: "In Transit · On Vessel", sub: "ETA Shanghai: 04 Mar 2026", state: "active" },
-                { label: "Destination Clearance", sub: "Pending", state: "pending" },
-              ].map(({ label, sub, state }, i) => (
-                <div
-                  key={i}
-                  style={{ display: "flex", gap: "12px", marginBottom: i < 3 ? "12px" : 0 }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: "10px",
-                        height: "10px",
-                        borderRadius: "50%",
-                        background:
-                          state === "done"
-                            ? "var(--sky)"
-                            : state === "active"
-                            ? "var(--sky)"
-                            : "rgba(255,255,255,0.15)",
-                        border:
-                          state === "active"
-                            ? "2px solid rgba(59,158,255,0.4)"
-                            : "none",
-                        animation: state === "active" ? "statusPulse 2s infinite" : "none",
-                        marginTop: "2px",
-                        flexShrink: 0,
-                      }}
-                    />
-                    {i < 3 && (
-                      <div
-                        style={{
-                          width: "1px",
-                          height: "20px",
-                          background: "rgba(255,255,255,0.1)",
-                          marginTop: "3px",
-                        }}
-                      />
+            <div style={{ width: "1px", height: "36px", background: "rgba(255,255,255,0.1)", flexShrink: 0 }} />
+
+            {/* Mode */}
+            <div style={{ flexShrink: 0 }}>
+              <div style={{ fontFamily: "var(--font-outfit)", fontSize: "0.7rem", color: "rgba(255,255,255,0.4)", marginBottom: "4px" }}>Mode</div>
+              <div style={{ fontFamily: "var(--font-outfit)", fontSize: "0.85rem", color: "rgba(255,255,255,0.85)", fontWeight: 500 }}>Sea Freight · FCL</div>
+            </div>
+
+            <div style={{ width: "1px", height: "36px", background: "rgba(255,255,255,0.1)", flexShrink: 0 }} />
+
+            {/* Timeline dots */}
+            <div style={{ flex: 1, minWidth: "200px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0" }}>
+                {[
+                  { label: "Booked", done: true },
+                  { label: "Cleared", done: true },
+                  { label: "In Transit", done: false, active: true },
+                  { label: "Delivered", done: false },
+                ].map((step, i, arr) => (
+                  <div key={step.label} style={{ display: "flex", alignItems: "center", flex: i < arr.length - 1 ? 1 : 0 }}>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
+                      <div style={{
+                        width: "10px", height: "10px", borderRadius: "50%", flexShrink: 0,
+                        background: step.done || step.active ? "var(--sky)" : "rgba(255,255,255,0.15)",
+                        boxShadow: step.active ? "0 0 0 3px rgba(59,158,255,0.25)" : "none",
+                      }} />
+                      <span style={{ fontFamily: "var(--font-outfit)", fontSize: "0.65rem", color: step.done || step.active ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.25)", whiteSpace: "nowrap" }}>{step.label}</span>
+                    </div>
+                    {i < arr.length - 1 && (
+                      <div style={{ flex: 1, height: "1px", background: step.done ? "var(--sky)" : "rgba(255,255,255,0.1)", margin: "0 4px", marginBottom: "16px" }} />
                     )}
                   </div>
-                  <div>
-                    <div
-                      style={{
-                        fontFamily: "var(--font-outfit)",
-                        fontSize: "0.8rem",
-                        fontWeight: state === "active" ? 600 : 400,
-                        color:
-                          state === "done"
-                            ? "rgba(255,255,255,0.7)"
-                            : state === "active"
-                            ? "var(--sky-light)"
-                            : "rgba(255,255,255,0.3)",
-                      }}
-                    >
-                      {label}
-                    </div>
-                    <div
-                      style={{
-                        fontFamily: "var(--font-outfit)",
-                        fontSize: "0.72rem",
-                        color: "rgba(255,255,255,0.3)",
-                        marginTop: "1px",
-                      }}
-                    >
-                      {sub}
-                    </div>
-                  </div>
-                </div>
-              ))}
-
-              {/* Card footer */}
-              <div
-                style={{
-                  borderTop: "1px solid rgba(255,255,255,0.08)",
-                  marginTop: "14px",
-                  paddingTop: "12px",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    padding: "4px 10px",
-                    background: "rgba(59,158,255,0.15)",
-                    borderRadius: "100px",
-                    fontFamily: "var(--font-outfit)",
-                    fontSize: "0.72rem",
-                    fontWeight: 600,
-                    color: "var(--sky)",
-                  }}
-                >
-                  <span className="status-dot" style={{ width: "5px", height: "5px" }} />
-                  In Transit
-                </span>
-                <span
-                  style={{
-                    fontFamily: "var(--font-jetbrains)",
-                    fontSize: "0.72rem",
-                    color: "rgba(255,255,255,0.35)",
-                  }}
-                >
-                  ETA 04 Mar 2026
-                </span>
+                ))}
               </div>
             </div>
+
+            {/* Status badge */}
+            <div style={{ flexShrink: 0, marginLeft: "auto" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "5px 12px", background: "rgba(59,158,255,0.15)", borderRadius: "100px", fontFamily: "var(--font-outfit)", fontSize: "0.75rem", fontWeight: 600, color: "var(--sky)" }}>
+                <span className="status-dot" style={{ width: "5px", height: "5px" }} />
+                In Transit · ETA 04 Mar
+              </span>
+            </div>
           </div>
+
         </div>
       </div>
 
@@ -480,7 +197,9 @@ export default function HomePage() {
               }}
             >
               {item}
-              <span style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.6rem" }}>◆</span>
+              <span style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.6rem" }}>
+                ◆
+              </span>
             </span>
           ))}
         </div>
@@ -710,79 +429,7 @@ export default function HomePage() {
             precision and transparency.
           </p>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-              gap: "1px",
-              background: "var(--border)",
-              border: "1px solid var(--border)",
-              borderRadius: "8px",
-              overflow: "hidden",
-            }}
-          >
-            {SERVICES.map(({ icon, title, desc }) => (
-              <Link
-                key={title}
-                href="/services"
-                style={{ textDecoration: "none" }}
-              >
-                <div
-                  style={{
-                    background: "var(--white)",
-                    padding: "28px 24px",
-                    height: "100%",
-                    transition: "background 0.2s ease",
-                    cursor: "pointer",
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = "var(--sky-mist)";
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = "var(--white)";
-                  }}
-                >
-                  <div
-                    style={{
-                      width: "36px",
-                      height: "36px",
-                      background: "var(--sky-pale)",
-                      borderRadius: "8px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      marginBottom: "14px",
-                      color: "var(--sky)",
-                    }}
-                  >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" dangerouslySetInnerHTML={{ __html: icon }} />
-                  </div>
-                  <h4
-                    style={{
-                      fontFamily: "var(--font-syne)",
-                      fontSize: "0.9rem",
-                      fontWeight: 700,
-                      marginBottom: "6px",
-                      color: "var(--text)",
-                    }}
-                  >
-                    {title}
-                  </h4>
-                  <p
-                    style={{
-                      fontFamily: "var(--font-outfit)",
-                      fontSize: "0.82rem",
-                      fontWeight: 300,
-                      color: "var(--text-muted)",
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    {desc}
-                  </p>
-                </div>
-              </Link>
-            ))}
-          </div>
+          <ServicesGrid />
         </div>
       </div>
 
@@ -834,7 +481,14 @@ export default function HomePage() {
           </p>
           <Link href="/contact" className="btn-white">
             Contact Us Today
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
               <path d="M5 12h14M12 5l7 7-7 7" />
             </svg>
           </Link>
