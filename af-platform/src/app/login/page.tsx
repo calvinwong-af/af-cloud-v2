@@ -138,7 +138,7 @@ export default function LoginPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-transparent text-sm text-white placeholder:text-[var(--text-muted)] outline-none"
+                  className="w-full bg-transparent text-sm text-white placeholder:text-[var(--text-muted)] outline-none autofill:bg-[#1a2f47] autofill:text-white autofill:shadow-[inset_0_0_0px_1000px_#1a2f47]"
                 />
               </div>
             </div>
@@ -157,7 +157,7 @@ export default function LoginPage() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-transparent text-sm text-white placeholder:text-[var(--text-muted)] outline-none"
+                  className="w-full bg-transparent text-sm text-white placeholder:text-[var(--text-muted)] outline-none autofill:bg-[#1a2f47] autofill:text-white autofill:shadow-[inset_0_0_0px_1000px_#1a2f47]"
                 />
                 <button
                   type="button"

@@ -1,12 +1,148 @@
+/**
+ * /dashboard — Platform overview
+ *
+ * KPI cards (shipment + company stats) and a recent shipments table.
+ */
+
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { Truck, Building2, PackageCheck, FileEdit, RefreshCw } from 'lucide-react';
+import { fetchShipmentOrderStatsAction, fetchShipmentOrdersAction } from '@/app/actions/shipments';
+import { fetchCompanyStatsAction } from '@/app/actions/companies';
+import { KpiCard } from '@/components/shared/KpiCard';
+import { ShipmentOrderTable } from '@/components/shipments/ShipmentOrderTable';
+import type { ShipmentOrder } from '@/lib/types';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface ShipmentStats {
+  total: number;
+  active: number;
+  completed: number;
+  draft: number;
+  cancelled: number;
+}
+
+interface CompanyStats {
+  total: number;
+  approved: number;
+  with_access: number;
+  xero_synced: number;
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
+
 export default function DashboardPage() {
+  const [shipmentStats, setShipmentStats] = useState<ShipmentStats | null>(null);
+  const [companyStats, setCompanyStats] = useState<CompanyStats | null>(null);
+  const [recentOrders, setRecentOrders] = useState<ShipmentOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [shipmentStatsResult, companyStatsResult, ordersResult] = await Promise.all([
+        fetchShipmentOrderStatsAction(),
+        fetchCompanyStatsAction(),
+        fetchShipmentOrdersAction({ limit: 10 }),
+      ]);
+
+      if (!shipmentStatsResult.success) throw new Error(shipmentStatsResult.error);
+      if (!companyStatsResult.success) throw new Error(companyStatsResult.error);
+      if (!ordersResult.success) throw new Error(ordersResult.error);
+
+      setShipmentStats(shipmentStatsResult.data);
+      setCompanyStats(companyStatsResult.data);
+      setRecentOrders(ordersResult.data.orders);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load dashboard');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const statsLoading = shipmentStats == null || companyStats == null;
+
   return (
-    <div>
-      <h1 className="font-display text-2xl font-bold" style={{ color: "var(--text)" }}>
-        Dashboard
-      </h1>
-      <p className="mt-2 text-sm" style={{ color: "var(--text-muted)" }}>
-        Welcome back.
-      </p>
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-[var(--text)]">Dashboard</h1>
+          <p className="text-sm text-[var(--text-muted)] mt-0.5">
+            Platform overview
+          </p>
+        </div>
+        <button
+          onClick={() => load()}
+          className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-[var(--border)] text-[var(--text-mid)] hover:bg-[var(--surface)] transition-colors"
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard
+          icon={<Truck className="w-5 h-5" />}
+          label="Total Shipments"
+          value={shipmentStats?.total ?? '—'}
+          loading={statsLoading}
+        />
+        <KpiCard
+          icon={<PackageCheck className="w-5 h-5" />}
+          label="Active Shipments"
+          value={shipmentStats?.active ?? '—'}
+          loading={statsLoading}
+          color="sky"
+        />
+        <KpiCard
+          icon={<Building2 className="w-5 h-5" />}
+          label="Total Companies"
+          value={companyStats?.total ?? '—'}
+          loading={statsLoading}
+          color="purple"
+        />
+        <KpiCard
+          icon={<FileEdit className="w-5 h-5" />}
+          label="Draft Orders"
+          value={shipmentStats?.draft ?? '—'}
+          loading={statsLoading}
+          color="amber"
+        />
+      </div>
+
+      {/* Error state */}
+      {error && (
+        <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm flex items-center gap-3">
+          <span className="font-medium">Error:</span> {error}
+          <button
+            onClick={() => load()}
+            className="ml-auto text-red-600 hover:text-red-800 underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Recent Shipments */}
+      <div>
+        <h2 className="text-sm font-medium text-[var(--text-mid)] mb-3">Recent Shipments</h2>
+        <ShipmentOrderTable orders={recentOrders} loading={loading} />
+      </div>
     </div>
   );
 }

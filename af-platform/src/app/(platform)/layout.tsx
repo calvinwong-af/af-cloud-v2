@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "firebase/auth";
-import { onAuthChange } from "@/lib/auth";
+import { onAuthChange, startTokenRefresh } from "@/lib/auth";
 import { LogoMark } from "@/components/shared/Logo";
 import { PlatformShell } from "@/components/shell/PlatformShell";
 
@@ -17,7 +17,7 @@ export default function PlatformLayout({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthChange((firebaseUser) => {
+    const unsubAuth = onAuthChange((firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
         setLoading(false);
@@ -25,7 +25,11 @@ export default function PlatformLayout({
         router.push("/login");
       }
     });
-    return unsubscribe;
+    const unsubToken = startTokenRefresh();
+    return () => {
+      unsubAuth();
+      unsubToken();
+    };
   }, [router]);
 
   if (loading) {

@@ -1,0 +1,18 @@
+indexes:
+  - kind: Quotation
+    properties:
+      - name: trash
+      - name: updated
+        direction: desc
+
+  - kind: Quotation
+    properties:
+      - name: trash
+      - name: company_id
+      - name: updated
+        direction: desc
+
+  - kind: Company
+    properties:
+      - name: trash
+      - name: name

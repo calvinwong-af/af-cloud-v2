@@ -16,7 +16,8 @@ export async function getKind<T>(kindName: string): Promise<T[]> {
   const [entities] = await ds().runQuery(query);
   return entities.map((entity) => {
     const key = entity[Datastore.KEY];
-    const { [Datastore.KEY]: _, ...data } = entity;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { [Datastore.KEY]: _key, ...data } = entity;
     return { uid: key.name ?? key.id, ...data } as T;
   });
 }
@@ -25,6 +26,7 @@ export async function getEntity<T>(kindName: string, id: string): Promise<T | nu
   const key = ds().key([kindName, id]);
   const [entity] = await ds().get(key);
   if (!entity) return null;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { [Datastore.KEY]: _, ...data } = entity;
   return { uid: id, ...data } as T;
 }
