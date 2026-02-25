@@ -1,0 +1,329 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─────────────────────────────────────────
+   AF DESIGN SYSTEM — CSS VARIABLES
+   Source: AF-Project-Brief.md § 8.1
+───────────────────────────────────────── */
+:root {
+  /* Palette */
+  --slate:        #0f1c2e;
+  --slate-mid:    #1a2f47;
+  --slate-light:  #243b55;
+  --sky:          #3b9eff;
+  --sky-light:    #6cb8ff;
+  --sky-pale:     #e8f4ff;
+  --sky-mist:     #f0f7ff;
+  --white:        #ffffff;
+  --surface:      #f7f9fc;
+  --border:       #dde5ef;
+  --border-light: #edf2f8;
+  --text:         #0f1c2e;
+  --text-mid:     #3d5473;
+  --text-muted:   #7a93b0;
+}
+
+/* ─────────────────────────────────────────
+   BASE RESETS
+───────────────────────────────────────── */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-outfit), sans-serif;
+  color: var(--text);
+  background: var(--white);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─────────────────────────────────────────
+   TYPOGRAPHY
+───────────────────────────────────────── */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-syne), sans-serif;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.15;
+}
+
+.font-mono,
+code,
+.stat-value,
+.tracking-id {
+  font-family: var(--font-jetbrains), monospace;
+}
+
+/* ─────────────────────────────────────────
+   FADE-UP ANIMATION CLASSES
+   Staggered page load animations
+───────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fade-up {
+  opacity: 0;
+  animation: fadeUp 0.5s ease forwards;
+}
+.fade-1 { animation-delay: 0.05s; }
+.fade-2 { animation-delay: 0.15s; }
+.fade-3 { animation-delay: 0.25s; }
+.fade-4 { animation-delay: 0.35s; }
+.fade-5 { animation-delay: 0.45s; }
+
+/* ─────────────────────────────────────────
+   FLOAT CARD ANIMATION (Hero)
+───────────────────────────────────────── */
+@keyframes floatCard {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-8px); }
+}
+.float-card {
+  animation: floatCard 5s ease-in-out infinite;
+}
+
+/* ─────────────────────────────────────────
+   TICKER ANIMATION (Services band)
+───────────────────────────────────────── */
+@keyframes ticker {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.ticker-track {
+  display: flex;
+  animation: ticker 30s linear infinite;
+  width: max-content;
+}
+.ticker-track:hover {
+  animation-play-state: paused;
+}
+
+/* ─────────────────────────────────────────
+   STATUS DOT PULSE
+───────────────────────────────────────── */
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  animation: statusPulse 2s ease-in-out infinite;
+}
+
+/* ─────────────────────────────────────────
+   SECTION EYEBROW
+───────────────────────────────────────── */
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-outfit), sans-serif;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sky);
+}
+.eyebrow::before {
+  content: '';
+  display: block;
+  width: 18px;
+  height: 3px;
+  background: var(--sky);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* ─────────────────────────────────────────
+   PAGE BANNER (slate bg + sky glow)
+───────────────────────────────────────── */
+.page-banner {
+  background: var(--slate);
+  position: relative;
+  overflow: hidden;
+  padding: 80px 5% 64px;
+}
+.page-banner::after {
+  content: '';
+  position: absolute;
+  right: 10%;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(59,158,255,0.18) 0%, transparent 70%);
+  pointer-events: none;
+}
+.page-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 14px;
+  border: 1.5px solid rgba(59,158,255,0.4);
+  border-radius: 100px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--sky);
+  margin-bottom: 20px;
+}
+
+/* ─────────────────────────────────────────
+   CARD COMPONENT
+───────────────────────────────────────── */
+.af-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.af-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--sky);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.25s ease;
+}
+.af-card:hover::before {
+  transform: scaleX(1);
+}
+.af-card:hover {
+  box-shadow: 0 4px 24px rgba(59,158,255,0.1);
+  border-color: rgba(59,158,255,0.25);
+}
+
+/* ─────────────────────────────────────────
+   BUTTONS
+───────────────────────────────────────── */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 24px;
+  background: var(--sky);
+  color: white;
+  font-family: var(--font-outfit), sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(59,158,255,0.3);
+  transition: all 0.2s ease;
+  text-decoration: none;
+}
+.btn-primary:hover {
+  background: var(--sky-light);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(59,158,255,0.4);
+}
+
+.btn-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-outfit), sans-serif;
+  font-size: 0.9rem;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1.5px solid var(--border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+}
+.btn-outline:hover {
+  border-color: var(--sky);
+  color: var(--sky);
+}
+
+.btn-white {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 24px;
+  background: white;
+  color: var(--slate);
+  font-family: var(--font-outfit), sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+}
+.btn-white:hover {
+  background: var(--sky-pale);
+  transform: translateY(-1px);
+}
+
+/* ─────────────────────────────────────────
+   GRID TEXTURE OVERLAY (Hero / CTA bands)
+───────────────────────────────────────── */
+.grid-texture {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* ─────────────────────────────────────────
+   FORM INPUTS
+───────────────────────────────────────── */
+.af-input {
+  width: 100%;
+  padding: 10px 14px;
+  background: white;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--font-outfit), sans-serif;
+  font-size: 0.9rem;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.af-input::placeholder {
+  color: var(--text-muted);
+}
+.af-input:focus {
+  border-color: var(--sky);
+  box-shadow: 0 0 0 3px rgba(59,158,255,0.12);
+}
+
+/* ─────────────────────────────────────────
+   TAGS / BADGES
+───────────────────────────────────────── */
+.af-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  background: var(--sky-pale);
+  border: 1px solid rgba(59,158,255,0.3);
+  border-radius: 100px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sky);
+}
