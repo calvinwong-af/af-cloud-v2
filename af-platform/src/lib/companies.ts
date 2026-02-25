@@ -8,6 +8,7 @@
  */
 
 import { getDatastore } from './datastore-query';
+import { getShipmentOrders } from './shipments';
 import type { Company } from './types';
 
 // ---------------------------------------------------------------------------
@@ -15,7 +16,7 @@ import type { Company } from './types';
 // ---------------------------------------------------------------------------
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toCompany(raw: Record<string, any>): Company {
+export function toCompany(raw: Record<string, any>): Company {
   return {
     company_id:          raw.company_id as string ?? '',
     countid:             raw.countid as number ?? 0,
@@ -56,31 +57,55 @@ export interface GetCompaniesOptions {
 export async function getCompanies(
   options: GetCompaniesOptions = {}
 ): Promise<Company[]> {
-  const { excludeTrash = true, limit = 200 } = options;
-  const datastore = getDatastore();
+  const { search } = options;
+  const ds = getDatastore();
 
-  let query = datastore.createQuery('Company');
-  if (excludeTrash) {
-    query = query.filter('trash', '=', false);
-  }
-  query = query.order('name').limit(limit);
+  const query = ds.createQuery('Company')
+    .filter('trash', '=', false);
 
-  const [entities] = await datastore.runQuery(query);
+  const [entities] = await ds.runQuery(query);
 
-  let companies = entities.map((e) => toCompany(e as Record<string, unknown>));
+  // Sort, filter and paginate in JavaScript — avoids composite index requirement
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let results = entities.map((e: any) => ({
+    company_id:          e.company_id          ?? null,
+    name:                e.name                ?? '',
+    short_name:          e.short_name          ?? '',
+    registration_number: e.registration_number ?? null,
+    preferred_currency:  e.preferred_currency  ?? 'MYR',
+    address:             e.address             ?? null,
+    contact_info:        e.contact_info        ?? null,
+    contact_persons:     e.contact_persons     ?? [],
+    approved:            e.approved            ?? false,
+    allow_access:        e.allow_access        ?? false,
+    xero_id:             e.xero_id             ?? null,
+    xero_sync:           e.xero_sync           ?? false,
+    xero_sync_required:  e.xero_sync_required  ?? false,
+    tags:                e.tags                ?? [],
+    files:               e.files               ?? [],
+    countid:             e.countid             ?? 0,
+    trash:               false,
+    user:                e.user                ?? null,
+    created:             e.created             ?? null,
+    updated:             e.updated             ?? null,
+  }));
 
-  // Client-side search (Datastore text search is limited)
-  if (options.search) {
-    const term = options.search.toLowerCase();
-    companies = companies.filter(
-      (c) =>
-        c.name.toLowerCase().includes(term) ||
-        c.company_id.toLowerCase().includes(term) ||
-        c.short_name.toLowerCase().includes(term)
+  // Apply search filter if provided
+  if (search) {
+    const q = search.toLowerCase();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    results = results.filter((c: any) =>
+      c.name.toLowerCase().includes(q) ||
+      c.company_id?.toLowerCase().includes(q) ||
+      c.short_name?.toLowerCase().includes(q)
     );
   }
 
-  return companies;
+  // Sort by name alphabetically
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  results.sort((a: any, b: any) => a.name.localeCompare(b.name));
+
+  return results;
 }
 
 export async function getCompanyById(companyId: string): Promise<Company | null> {
@@ -135,4 +160,100 @@ export async function getCompanyStats(): Promise<CompanyStats> {
     with_access: companies.filter((c) => c.allow_access).length,
     xero_synced: companies.filter((c) => c.xero_sync).length,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Company Users — linked user accounts
+// ---------------------------------------------------------------------------
+
+export interface CompanyUser {
+  uid: string;
+  name: string;
+  email: string;
+  role: string | null;
+  account_type: string;
+  valid_access: boolean;
+  email_validated: boolean;
+  created: string | null;
+}
+
+export async function getCompanyUsers(companyId: string): Promise<CompanyUser[]> {
+  try {
+    if (!companyId) return [];
+    const datastore = getDatastore();
+
+    // Query by company_id field
+    const query1 = datastore.createQuery('CompanyUserAccount').filter('company_id', '=', companyId);
+    const [entities1] = await datastore.runQuery(query1);
+
+    // Query by company_key (Key ref) — handles the 54% broken case
+    const companyKey = datastore.key(['Company', companyId]);
+    const query2 = datastore.createQuery('CompanyUserAccount').filter('company_key', '=', companyKey);
+    const [entities2] = await datastore.runQuery(query2);
+
+    // Merge and deduplicate by uid
+    const uidMap = new Map<string, string>();
+    for (const e of [...entities1, ...entities2]) {
+      const uid = (e as Record<string, unknown>).uid as string;
+      if (uid && !uidMap.has(uid)) uidMap.set(uid, uid);
+    }
+
+    const uids = Array.from(uidMap.keys());
+    if (!uids.length) return [];
+
+    // Batch fetch UserAccount + UserIAM
+    const accountKeys = uids.map((uid) => datastore.key(['UserAccount', uid]));
+    const iamKeys = uids.map((uid) => datastore.key(['UserIAM', uid]));
+
+    const [[accounts], [iams]] = await Promise.all([
+      datastore.get(accountKeys),
+      datastore.get(iamKeys),
+    ]);
+
+    const iamByUid = new Map<string, Record<string, unknown>>();
+    for (const iam of iams) {
+      if (!iam) continue;
+      const raw = iam as Record<string, unknown>;
+      const uid = raw.uid as string;
+      if (uid) iamByUid.set(uid, raw);
+    }
+
+    const users: CompanyUser[] = [];
+    for (const acct of accounts) {
+      if (!acct) continue;
+      const raw = acct as Record<string, unknown>;
+      const uid = raw.uid as string ?? '';
+      const iam = iamByUid.get(uid);
+
+      users.push({
+        uid,
+        name: `${raw.first_name ?? ''} ${raw.last_name ?? ''}`.trim() || ((raw.email as string) ?? ''),
+        email: raw.email as string ?? '',
+        role: (iam?.role as string) ?? null,
+        account_type: raw.account_type as string ?? 'AFC',
+        valid_access: (iam?.valid_access as boolean) ?? false,
+        email_validated: (raw.email_validated as boolean) ?? false,
+        created: raw.created as string ?? raw.created_at as string ?? null,
+      });
+    }
+
+    return users;
+  } catch (err) {
+    console.error('[getCompanyUsers]', err);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Company Shipments — paginated orders for a specific company
+// ---------------------------------------------------------------------------
+
+export async function getCompanyShipments(companyId: string, cursor?: string) {
+  return getShipmentOrders({
+    companyId,
+    cursor,
+    limit: 20,
+    excludeTrash: true,
+    excludeChildren: true,
+  });
 }

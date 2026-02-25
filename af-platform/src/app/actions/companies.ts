@@ -11,7 +11,10 @@
  * 3. Security        → token verify, role check
  */
 
-import { getCompanies, getCompanyById, getCompanyStats } from '@/lib/companies';
+import { getCompanies, getCompanyById, getCompanyStats, getCompanyUsers, getCompanyShipments } from '@/lib/companies';
+import { createCompany, updateCompany, deleteCompany } from '@/lib/companies-write';
+import type { CreateCompanyInput, UpdateCompanyInput } from '@/lib/companies-write';
+import type { CompanyUser } from '@/lib/companies';
 import { verifySessionAndRole, logAction } from '@/lib/auth-server';
 import type { Company } from '@/lib/types';
 
@@ -110,6 +113,149 @@ export async function fetchCompanyStatsAction(): Promise<
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[fetchCompanyStatsAction] FULL ERROR:', err);
+    return { success: false, error: message };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Company users
+// ---------------------------------------------------------------------------
+
+export async function fetchCompanyUsersAction(
+  companyId: string
+): Promise<ActionResult<CompanyUser[]>> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFC-ADMIN', 'AFC-M']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const users = await getCompanyUsers(companyId);
+    return { success: true, data: users };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[fetchCompanyUsersAction]', message);
+    return { success: false, error: 'Failed to load company users.' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Company shipments
+// ---------------------------------------------------------------------------
+
+export async function fetchCompanyShipmentsAction(
+  companyId: string,
+  cursor?: string
+): Promise<ActionResult<{ orders: import('@/lib/types').ShipmentOrder[]; nextCursor: string | null }>> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFC-ADMIN', 'AFC-M']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const result = await getCompanyShipments(companyId, cursor);
+    return { success: true, data: result };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[fetchCompanyShipmentsAction]', message);
+    return { success: false, error: 'Failed to load company shipments.' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Create company
+// ---------------------------------------------------------------------------
+
+export async function createCompanyAction(
+  input: CreateCompanyInput
+): Promise<ActionResult<Company>> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const company = await createCompany(input, session.email);
+
+    await logAction({
+      uid: session.uid,
+      email: session.email,
+      account_type: session.account_type,
+      action: 'COMPANY_CREATE',
+      entity_kind: 'Company',
+      entity_id: company.company_id,
+      success: true,
+    });
+
+    return { success: true, data: company };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[createCompanyAction]', message);
+    return { success: false, error: message };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Update company
+// ---------------------------------------------------------------------------
+
+export async function updateCompanyAction(
+  companyId: string,
+  input: UpdateCompanyInput
+): Promise<ActionResult<Company>> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    if (!companyId?.match(/^AFC-\d+$/)) {
+      return { success: false, error: 'Invalid company ID format' };
+    }
+
+    const company = await updateCompany(companyId, input);
+
+    await logAction({
+      uid: session.uid,
+      email: session.email,
+      account_type: session.account_type,
+      action: 'COMPANY_UPDATE',
+      entity_kind: 'Company',
+      entity_id: companyId,
+      success: true,
+    });
+
+    return { success: true, data: company };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[updateCompanyAction]', message);
+    return { success: false, error: message };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Delete company (soft-delete → trash: true)
+// ---------------------------------------------------------------------------
+
+export async function deleteCompanyAction(
+  companyId: string
+): Promise<ActionResult<{ deleted: true }>> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    if (!companyId?.match(/^AFC-\d+$/)) {
+      return { success: false, error: 'Invalid company ID format' };
+    }
+
+    await deleteCompany(companyId);
+
+    await logAction({
+      uid: session.uid,
+      email: session.email,
+      account_type: session.account_type,
+      action: 'COMPANY_DELETE',
+      entity_kind: 'Company',
+      entity_id: companyId,
+      success: true,
+    });
+
+    return { success: true, data: { deleted: true } };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[deleteCompanyAction]', message);
     return { success: false, error: message };
   }
 }

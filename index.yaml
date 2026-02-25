@@ -16,3 +16,9 @@ indexes:
     properties:
       - name: trash
       - name: name
+
+  - kind: Company
+    properties:
+      - name: trash
+      - name: countid
+        direction: desc

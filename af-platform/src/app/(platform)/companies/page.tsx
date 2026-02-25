@@ -8,10 +8,12 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Building2, CheckCircle2, Globe, Link2, RefreshCw, Search } from 'lucide-react';
+import { Building2, CheckCircle2, Globe, Link2, Plus, RefreshCw, Search } from 'lucide-react';
 import { fetchCompaniesAction, fetchCompanyStatsAction } from '@/app/actions/companies';
 import type { Company } from '@/lib/types';
 import { CompanyTable } from '@/components/companies/CompanyTable';
+import { CreateCompanyModal } from '@/components/companies/CreateCompanyModal';
+import { EditCompanyModal } from '@/components/companies/EditCompanyModal';
 import { KpiCard } from '@/components/shared/KpiCard';
 
 // ---------------------------------------------------------------------------
@@ -29,6 +31,8 @@ export default function CompaniesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingCompany, setEditingCompany] = useState<Company | null>(null);
 
   const load = useCallback(async (searchTerm?: string) => {
     setLoading(true);
@@ -76,13 +80,23 @@ export default function CompaniesPage() {
             Customer and partner company directory
           </p>
         </div>
-        <button
-          onClick={() => load(search || undefined)}
-          className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-[var(--border)] text-[var(--text-mid)] hover:bg-[var(--surface)] transition-colors"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => load(search || undefined)}
+            className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-[var(--border)] text-[var(--text-mid)] hover:bg-[var(--surface)] transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg text-white font-medium hover:opacity-90 transition-opacity"
+            style={{ background: 'var(--sky)' }}
+          >
+            <Plus className="w-4 h-4" />
+            Add Company
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -144,7 +158,31 @@ export default function CompaniesPage() {
       )}
 
       {/* Table */}
-      <CompanyTable companies={companies} loading={loading} />
+      <CompanyTable
+        companies={companies}
+        loading={loading}
+        onRefresh={() => load(search || undefined)}
+        onEdit={(company) => setEditingCompany(company)}
+      />
+
+      <CreateCompanyModal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreated={() => {
+          setShowCreateModal(false);
+          setStats(null);
+          load(search || undefined);
+        }}
+      />
+
+      <EditCompanyModal
+        company={editingCompany}
+        onClose={() => setEditingCompany(null)}
+        onUpdated={() => {
+          setEditingCompany(null);
+          load(search || undefined);
+        }}
+      />
     </div>
   );
 }

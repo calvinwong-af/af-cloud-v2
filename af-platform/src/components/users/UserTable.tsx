@@ -3,10 +3,12 @@
 import { AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserRecord } from "@/lib/users";
+import { UserActionsMenu } from './UserActionsMenu';
 
 interface UserTableProps {
   users: UserRecord[];
   loading: boolean;
+  onRefresh: () => void;
 }
 
 function formatDate(dateStr: string | null): string {
@@ -33,7 +35,7 @@ function SkeletonRow() {
   );
 }
 
-export function UserTable({ users, loading }: UserTableProps) {
+export function UserTable({ users, loading, onRefresh }: UserTableProps) {
   if (!loading && users.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-[var(--border)] py-16 text-center">
@@ -144,13 +146,7 @@ export function UserTable({ users, loading }: UserTableProps) {
 
                   {/* Actions */}
                   <td className="px-4 py-3 text-center">
-                    <button
-                      className="text-lg leading-none hover:opacity-70 transition-opacity"
-                      style={{ color: "var(--text-muted)" }}
-                      title="Actions"
-                    >
-                      ⋮
-                    </button>
+                    <UserActionsMenu user={user} onRefresh={onRefresh} />
                   </td>
                 </tr>
               ))}

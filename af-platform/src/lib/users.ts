@@ -79,7 +79,7 @@ export async function getUsers(): Promise<UserRecord[]> {
       email: acct.email ?? "",
       phone_number: acct.phone_number ?? null,
       account_type: acct.account_type ?? "AFC",
-      created_at: acct.created_at ?? null,
+      created_at: acct.created_at ?? (acct as unknown as Record<string, string>).created ?? null,
       validated: acct.email_validated ?? false,
       valid_access: (iam?.valid_access ?? false) && (acct.email_validated ?? false),
       last_login: iam?.last_login ?? null,

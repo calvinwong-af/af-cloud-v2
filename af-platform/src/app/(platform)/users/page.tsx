@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { fetchUsersAction } from "@/app/actions/users";
 import type { UserRecord } from "@/lib/users";
 import { UserTable } from "@/components/users/UserTable";
+import { CreateUserModal } from '@/components/users/CreateUserModal';
 
 type FilterTab = "all" | "afc" | "afu";
 
@@ -56,6 +57,7 @@ export default function UsersPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<FilterTab>("all");
   const [search, setSearch] = useState("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   async function fetchUsers() {
     setLoading(true);
@@ -122,10 +124,9 @@ export default function UsersPage() {
           )}
         </div>
         <button
-          disabled
-          className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white opacity-50 cursor-not-allowed"
-          style={{ background: "var(--sky)" }}
-          title="Coming soon"
+          onClick={() => setShowCreateModal(true)}
+          className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+          style={{ background: 'var(--sky)' }}
         >
           <Plus size={16} />
           New User
@@ -195,7 +196,16 @@ export default function UsersPage() {
       </div>
 
       {/* Table */}
-      <UserTable users={filtered} loading={loading} />
+      <UserTable users={filtered} loading={loading} onRefresh={fetchUsers} />
+
+      <CreateUserModal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreated={() => {
+          setShowCreateModal(false);
+          fetchUsers();
+        }}
+      />
     </div>
   );
 }
