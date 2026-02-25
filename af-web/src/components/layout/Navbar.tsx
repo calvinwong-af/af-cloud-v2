@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { LogoLockup } from "@/components/shared/Logo";
 
 const NAV_LINKS = [
@@ -16,6 +16,17 @@ const NAV_LINKS = [
 export default function Navbar() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
+  const isActive = (href: string) =>
+    pathname === href || pathname === href + "/";
 
   return (
     <nav
@@ -35,18 +46,14 @@ export default function Navbar() {
       }}
     >
       {/* Logo */}
-      <Link href="/" style={{ textDecoration: "none" }}>
+      <Link href="/" style={{ textDecoration: "none", flexShrink: 0 }}>
         <LogoLockup variant="dark" size="md" />
       </Link>
 
       {/* Desktop nav links */}
-      <div
-        className="hidden md:flex"
-        style={{ alignItems: "center", gap: "32px" }}
-      >
-        {NAV_LINKS.map(({ href, label }) => {
-          const active = pathname === href;
-          return (
+      {!isMobile && (
+        <div style={{ display: "flex", alignItems: "center", gap: "32px" }}>
+          {NAV_LINKS.map(({ href, label }) => (
             <Link
               key={href}
               href={href}
@@ -54,82 +61,84 @@ export default function Navbar() {
                 fontFamily: "var(--font-outfit), sans-serif",
                 fontSize: "0.88rem",
                 fontWeight: 500,
-                color: active ? "#6cb8ff" : "rgba(255,255,255,0.75)",
+                color: isActive(href) ? "#6cb8ff" : "rgba(255,255,255,0.75)",
                 textDecoration: "none",
                 transition: "color 0.15s ease",
-                borderBottom: active
+                borderBottom: isActive(href)
                   ? "1.5px solid rgba(107,184,255,0.6)"
                   : "1.5px solid transparent",
                 paddingBottom: "2px",
+                whiteSpace: "nowrap",
               }}
             >
               {label}
             </Link>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
 
-      {/* Dashboard CTA */}
-      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-        <a
-          href="https://alfred.accelefreight.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn-primary hidden md:inline-flex"
-          style={{ padding: "8px 20px", fontSize: "0.85rem" }}
-        >
-          Dashboard
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
+      {/* Right side */}
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
+        {/* Dashboard button — desktop only */}
+        {!isMobile && (
+          <a
+            href="https://alfred.accelefreight.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-primary"
+            style={{ padding: "8px 20px", fontSize: "0.85rem" }}
           >
-            <path d="M7 17L17 7M17 7H7M17 7v10" />
-          </svg>
-        </a>
+            Dashboard
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M7 17L17 7M17 7H7M17 7v10" />
+            </svg>
+          </a>
+        )}
 
-        {/* Mobile hamburger */}
-        <button
-          className="md:hidden"
-          onClick={() => setMenuOpen(!menuOpen)}
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: "4px",
-            color: "white",
-          }}
-          aria-label="Toggle menu"
-        >
-          {menuOpen ? (
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M18 6L6 18M6 6l12 12" />
-            </svg>
-          ) : (
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M3 12h18M3 6h18M3 18h18" />
-            </svg>
-          )}
-        </button>
+        {/* Hamburger — mobile only */}
+        {isMobile && (
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: "4px",
+              color: "white",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            aria-label="Toggle menu"
+          >
+            {menuOpen ? (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            ) : (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 12h18M3 6h18M3 18h18" />
+              </svg>
+            )}
+          </button>
+        )}
       </div>
 
-      {/* Mobile dropdown */}
-      {menuOpen && (
+      {/* Mobile dropdown menu */}
+      {isMobile && menuOpen && (
         <div
           style={{
             position: "absolute",
             top: "68px",
             left: 0,
             right: 0,
-            background: "var(--slate-mid)",
+            background: "var(--slate)",
             borderBottom: "1px solid rgba(255,255,255,0.08)",
-            padding: "16px 5% 20px",
+            padding: "12px 5% 20px",
             display: "flex",
             flexDirection: "column",
-            gap: "4px",
+            gap: "2px",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
           }}
         >
           {NAV_LINKS.map(({ href, label }) => (
@@ -141,10 +150,9 @@ export default function Navbar() {
                 fontFamily: "var(--font-outfit), sans-serif",
                 fontSize: "0.95rem",
                 fontWeight: 500,
-                color:
-                  pathname === href ? "#6cb8ff" : "rgba(255,255,255,0.8)",
+                color: isActive(href) ? "#6cb8ff" : "rgba(255,255,255,0.8)",
                 textDecoration: "none",
-                padding: "10px 0",
+                padding: "12px 0",
                 borderBottom: "1px solid rgba(255,255,255,0.05)",
               }}
             >
@@ -156,9 +164,12 @@ export default function Navbar() {
             target="_blank"
             rel="noopener noreferrer"
             className="btn-primary"
-            style={{ marginTop: "12px", justifyContent: "center" }}
+            style={{ marginTop: "16px", justifyContent: "center" }}
           >
             Dashboard
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M7 17L17 7M17 7H7M17 7v10" />
+            </svg>
           </a>
         </div>
       )}
