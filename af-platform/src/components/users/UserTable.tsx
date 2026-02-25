@@ -85,7 +85,7 @@ export function UserTable({ users, loading }: UserTableProps) {
                     <span
                       className={cn(
                         "rounded-full text-xs font-medium px-2 py-0.5",
-                        user.account_type === "AFC"
+                        user.account_type === "AFU"
                           ? "bg-sky-100 text-sky-700"
                           : "bg-green-100 text-green-700"
                       )}
@@ -103,7 +103,7 @@ export function UserTable({ users, loading }: UserTableProps) {
                   <td className="px-4 py-3 whitespace-nowrap">
                     {user.company_id ? (
                       <span style={{ color: "var(--text-mid)" }}>{user.company_id}</span>
-                    ) : user.account_type === "AFU" ? (
+                    ) : user.account_type === "AFC" ? (
                       <span className="inline-flex items-center gap-1 text-amber-600">
                         <AlertTriangle size={14} />
                         <span className="text-xs font-medium">Missing link</span>

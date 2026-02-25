@@ -3,7 +3,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { Users, ShieldCheck, Building2, AlertTriangle, Plus, Search, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getUsers, type UserRecord } from "@/lib/users";
+import { fetchUsersAction } from "@/app/actions/users";
+import type { UserRecord } from "@/lib/users";
 import { UserTable } from "@/components/users/UserTable";
 
 type FilterTab = "all" | "afc" | "afu";
@@ -60,7 +61,7 @@ export default function UsersPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await getUsers();
+      const data = await fetchUsersAction();
       setUsers(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load users");
@@ -76,16 +77,16 @@ export default function UsersPage() {
   const stats = useMemo(() => {
     const total = users.length;
     const active = users.filter((u) => u.valid_access).length;
-    const staff = users.filter((u) => u.account_type === "AFC").length;
-    const broken = users.filter((u) => u.account_type === "AFU" && !u.company_id).length;
+    const staff = users.filter((u) => u.account_type === "AFU").length;
+    const broken = users.filter((u) => u.account_type === "AFC" && !u.company_id).length;
     return { total, active, staff, customers: total - staff, broken };
   }, [users]);
 
   const filtered = useMemo(() => {
     let list = users;
 
-    if (activeTab === "afc") list = list.filter((u) => u.account_type === "AFC");
-    if (activeTab === "afu") list = list.filter((u) => u.account_type !== "AFC");
+    if (activeTab === "afc") list = list.filter((u) => u.account_type === "AFU");
+    if (activeTab === "afu") list = list.filter((u) => u.account_type === "AFC");
 
     if (search.trim()) {
       const q = search.toLowerCase();

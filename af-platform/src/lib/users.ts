@@ -1,4 +1,12 @@
-import { getCollection } from "./datastore";
+// TODO: AFC/AFU naming convention is counterintuitive (AFC=Customer, AFU=Staff)
+// Review and revise when building the new webserver. Propose cleaner naming
+// (e.g. INTERNAL/CUSTOMER) with a coordinated Datastore migration.
+
+// TODO: Add pagination support when user count grows significantly.
+// Current approach fetches all 327 records at once — acceptable for now.
+// Consider cursor-based pagination with Datastore query cursors when count exceeds ~1000.
+
+import { getKind } from "./datastore";
 
 export interface UserAccountRaw {
   uid: string;
@@ -8,11 +16,12 @@ export interface UserAccountRaw {
   phone_number?: string;
   account_type?: string;
   created_at?: string;
-  validated?: boolean;
+  email_validated?: boolean;
 }
 
 export interface UserIAMRaw {
   uid: string;
+  role?: string;
   valid_access?: boolean;
   last_login?: string;
 }
@@ -40,15 +49,26 @@ export interface UserRecord {
 
 export async function getUsers(): Promise<UserRecord[]> {
   const [accounts, iamList, companyUsers] = await Promise.all([
-    getCollection<UserAccountRaw>("UserAccount"),
-    getCollection<UserIAMRaw>("UserIAM"),
-    getCollection<CompanyUserAccountRaw>("CompanyUserAccount"),
+    getKind<UserAccountRaw>("UserAccount"),
+    getKind<UserIAMRaw>("UserIAM"),
+    getKind<CompanyUserAccountRaw>("CompanyUserAccount"),
   ]);
+
+  // Deduplicate UserAccount by email — AFU (staff) takes priority over AFC (customer)
+  const acctByEmail = new Map<string, UserAccountRaw>();
+  for (const acct of accounts) {
+    const email = acct.email ?? "";
+    const existing = acctByEmail.get(email);
+    if (!existing || (acct.account_type === "AFU" && existing.account_type !== "AFU")) {
+      acctByEmail.set(email, acct);
+    }
+  }
+  const uniqueAccounts = Array.from(acctByEmail.values());
 
   const iamMap = new Map(iamList.map((r) => [r.uid, r]));
   const companyMap = new Map(companyUsers.map((r) => [r.uid, r]));
 
-  const merged: UserRecord[] = accounts.map((acct) => {
+  const merged: UserRecord[] = uniqueAccounts.map((acct) => {
     const iam = iamMap.get(acct.uid);
     const company = companyMap.get(acct.uid);
 
@@ -58,19 +78,20 @@ export async function getUsers(): Promise<UserRecord[]> {
       last_name: acct.last_name ?? "",
       email: acct.email ?? "",
       phone_number: acct.phone_number ?? null,
-      account_type: acct.account_type ?? "AFU",
+      account_type: acct.account_type ?? "AFC",
       created_at: acct.created_at ?? null,
-      validated: acct.validated ?? false,
-      valid_access: iam?.valid_access ?? false,
+      validated: acct.email_validated ?? false,
+      valid_access: (iam?.valid_access ?? false) && (acct.email_validated ?? false),
       last_login: iam?.last_login ?? null,
       company_id: company?.company_id ?? null,
-      role: company?.role ?? "unknown",
+      role: iam?.role ?? "unknown",
     };
   });
 
+  // Sort: AFU (staff) first, then AFC (customers), then alphabetical by last name
   merged.sort((a, b) => {
-    if (a.account_type === "AFC" && b.account_type !== "AFC") return -1;
-    if (a.account_type !== "AFC" && b.account_type === "AFC") return 1;
+    if (a.account_type === "AFU" && b.account_type !== "AFU") return -1;
+    if (a.account_type !== "AFU" && b.account_type === "AFU") return 1;
     return a.last_name.localeCompare(b.last_name);
   });
 

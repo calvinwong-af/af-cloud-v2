@@ -1,32 +1,30 @@
-import { getFirestore, collection, getDocs, doc, getDoc, type Firestore } from "firebase/firestore";
-import { getApp } from "./firebase";
+import { Datastore } from "@google-cloud/datastore";
 
-let _db: Firestore | undefined;
+let _ds: Datastore | undefined;
 
-export function db() {
-  if (!_db) {
-    _db = getFirestore(getApp());
+function ds(): Datastore {
+  if (!_ds) {
+    _ds = new Datastore({
+      projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
+    });
   }
-  return _db;
+  return _ds;
 }
 
-export async function getCollection<T>(name: string): Promise<T[]> {
-  try {
-    const snapshot = await getDocs(collection(db(), name));
-    return snapshot.docs.map((d) => ({ uid: d.id, ...d.data() } as T));
-  } catch (error) {
-    console.error(`Failed to fetch collection "${name}":`, error);
-    throw error;
-  }
+export async function getKind<T>(kindName: string): Promise<T[]> {
+  const query = ds().createQuery(kindName);
+  const [entities] = await ds().runQuery(query);
+  return entities.map((entity) => {
+    const key = entity[Datastore.KEY];
+    const { [Datastore.KEY]: _, ...data } = entity;
+    return { uid: key.name ?? key.id, ...data } as T;
+  });
 }
 
-export async function getDocument<T>(collectionName: string, id: string): Promise<T | null> {
-  try {
-    const snap = await getDoc(doc(db(), collectionName, id));
-    if (!snap.exists()) return null;
-    return { uid: snap.id, ...snap.data() } as T;
-  } catch (error) {
-    console.error(`Failed to fetch document "${collectionName}/${id}":`, error);
-    throw error;
-  }
+export async function getEntity<T>(kindName: string, id: string): Promise<T | null> {
+  const key = ds().key([kindName, id]);
+  const [entity] = await ds().get(key);
+  if (!entity) return null;
+  const { [Datastore.KEY]: _, ...data } = entity;
+  return { uid: id, ...data } as T;
 }
