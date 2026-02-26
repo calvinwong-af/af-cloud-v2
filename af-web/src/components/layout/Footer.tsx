@@ -168,19 +168,34 @@ export default function Footer() {
         >
           © 2025 Accele Freight Sdn Bhd (1292343-T). All rights reserved.
         </p>
-        <a
-          href="https://alfred.accelefreight.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            fontFamily: "var(--font-outfit), sans-serif",
-            fontSize: "0.8rem",
-            color: "rgba(59,158,255,0.6)",
-            textDecoration: "none",
-          }}
-        >
-          Dashboard Login →
-        </a>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <a
+            href="https://appv2.accelefreight.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              fontFamily: "var(--font-outfit), sans-serif",
+              fontSize: "0.8rem",
+              color: "rgba(59,158,255,0.6)",
+              textDecoration: "none",
+            }}
+          >
+            Dashboard →
+          </a>
+          <a
+            href="https://alfred.accelefreight.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              fontFamily: "var(--font-jetbrains), monospace",
+              fontSize: "0.75rem",
+              color: "rgba(255,255,255,0.4)",
+              textDecoration: "none",
+            }}
+          >
+            Legacy →
+          </a>
+        </div>
       </div>
     </footer>
   );

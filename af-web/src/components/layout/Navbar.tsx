@@ -79,20 +79,47 @@ export default function Navbar() {
 
       {/* Right side */}
       <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
-        {/* Dashboard button — desktop only */}
+        {/* Portal buttons — desktop only */}
         {!isMobile && (
-          <a
-            href="https://alfred.accelefreight.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-primary"
-            style={{ padding: "8px 20px", fontSize: "0.85rem" }}
-          >
-            Dashboard
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M7 17L17 7M17 7H7M17 7v10" />
-            </svg>
-          </a>
+          <>
+            <a
+              href="https://appv2.accelefreight.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-primary"
+              style={{ padding: "8px 20px", fontSize: "0.85rem" }}
+            >
+              Dashboard
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M7 17L17 7M17 7H7M17 7v10" />
+              </svg>
+            </a>
+            <a
+              href="https://alfred.accelefreight.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontFamily: "var(--font-jetbrains), monospace",
+                fontSize: "0.8rem",
+                color: "rgba(255,255,255,0.4)",
+                border: "1px solid rgba(255,255,255,0.12)",
+                padding: "7px 12px",
+                borderRadius: "6px",
+                textDecoration: "none",
+                transition: "color 0.15s ease, border-color 0.15s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = "rgba(255,255,255,0.65)";
+                e.currentTarget.style.borderColor = "rgba(255,255,255,0.28)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = "rgba(255,255,255,0.4)";
+                e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+              }}
+            >
+              legacy
+            </a>
+          </>
         )}
 
         {/* Hamburger — mobile only */}
@@ -159,18 +186,39 @@ export default function Navbar() {
               {label}
             </Link>
           ))}
-          <a
-            href="https://alfred.accelefreight.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-primary"
-            style={{ marginTop: "16px", justifyContent: "center" }}
-          >
-            Dashboard
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M7 17L17 7M17 7H7M17 7v10" />
-            </svg>
-          </a>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "16px" }}>
+            <a
+              href="https://appv2.accelefreight.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-primary"
+              style={{ flex: 1, justifyContent: "center" }}
+            >
+              Dashboard
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M7 17L17 7M17 7H7M17 7v10" />
+              </svg>
+            </a>
+            <a
+              href="https://alfred.accelefreight.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontFamily: "var(--font-jetbrains), monospace",
+                fontSize: "0.8rem",
+                color: "rgba(255,255,255,0.4)",
+                border: "1px solid rgba(255,255,255,0.12)",
+                padding: "7px 12px",
+                borderRadius: "6px",
+                textDecoration: "none",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              legacy
+            </a>
+          </div>
         </div>
       )}
     </nav>
