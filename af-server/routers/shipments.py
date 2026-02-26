@@ -10,6 +10,7 @@ Priority S1:  GET /api/v2/shipments/stats
 All other endpoints are stubs — add implementations as each is needed.
 """
 
+import base64
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -23,6 +24,8 @@ from core.constants import (
     V1_TO_V2_STATUS,
     STATUS_COMPLETED,
     STATUS_CANCELLED,
+    STATUS_DRAFT,
+    STATUS_DRAFT_REVIEW,
     V2_ACTIVE_STATUSES,
     PREFIX_V2_SHIPMENT,
     PREFIX_V1_SHIPMENT,
@@ -127,9 +130,113 @@ async def get_shipment_stats(
 # List shipments — paginated, with tab filter
 # ---------------------------------------------------------------------------
 
+_DRAFT_STATUSES = frozenset({STATUS_DRAFT, STATUS_DRAFT_REVIEW})
+_VALID_TABS = {"all", "active", "completed", "to_invoice", "draft", "cancelled"}
+
+# Over-fetch multiplier for V1 — compensates for in-memory tab filtering.
+# E.g. tab=cancelled has very few V1 matches so we fetch more to fill a page.
+_V1_OVERFETCH = 3
+
+
+def _v2_tab_match(tab: str, entity) -> bool:
+    """Return True if a V2 Quotation entity belongs in the requested tab."""
+    s = entity.get("status", 0)
+    if tab == "all":
+        return True
+    if tab == "active":
+        return s in V2_ACTIVE_STATUSES
+    if tab == "completed":
+        return s == STATUS_COMPLETED
+    if tab == "to_invoice":
+        return s == STATUS_COMPLETED and not bool(entity.get("issued_invoice", False))
+    if tab == "draft":
+        return s in _DRAFT_STATUSES
+    if tab == "cancelled":
+        return s == STATUS_CANCELLED
+    return True
+
+
+def _v1_tab_match(tab: str, v1_status: int, issued_invoice: bool) -> bool:
+    """Return True if a V1 ShipmentOrder status belongs in the requested tab."""
+    if tab == "all":
+        return True
+    if tab == "active":
+        return V1_ACTIVE_MIN <= v1_status < V1_STATUS_COMPLETED
+    if tab == "completed":
+        return v1_status == V1_STATUS_COMPLETED
+    if tab == "to_invoice":
+        return v1_status == V1_STATUS_COMPLETED and not issued_invoice
+    if tab == "draft":
+        return False  # V1 has no draft shipments
+    if tab == "cancelled":
+        return v1_status == -1
+    return True
+
+
+def _fmt_date(val) -> str:
+    """Coerce a Datastore value to YYYY-MM-DD string."""
+    if val is None:
+        return ""
+    if hasattr(val, "isoformat"):
+        return val.isoformat()[:10]
+    s = str(val).strip()
+    return s[:10] if s else ""
+
+
+def _make_summary(
+    entity,
+    data_version: int,
+    status: int,
+    display_src=None,
+) -> dict:
+    """
+    Build the normalised shipment summary dict.
+
+    entity:       the primary entity (V2 Quotation or V1 ShipmentOrder)
+    data_version: 1 or 2
+    status:       V2-mapped status code
+    display_src:  for V1, the Quotation entity holding display fields;
+                  if None, reads from entity itself (V2 case)
+    """
+    src = display_src or entity
+    updated = (
+        entity.get("updated")
+        or entity.get("modified")
+        or entity.get("created")
+        or ""
+    )
+    return {
+        "shipment_id": entity.key.name or str(entity.key.id),
+        "data_version": data_version,
+        "status": status,
+        "order_type": src.get("order_type", "") or src.get("quotation_type", ""),
+        "transaction_type": src.get("transaction_type", ""),
+        "incoterm": src.get("incoterm", ""),
+        "origin_port": src.get("origin_port", "") or src.get("port_of_loading", ""),
+        "destination_port": src.get("destination_port", "") or src.get("port_of_discharge", ""),
+        "company_id": src.get("company_id", ""),
+        "company_name": "",  # batch-filled after merge
+        "cargo_ready_date": _fmt_date(src.get("cargo_ready_date")),
+        "updated": _fmt_date(updated),
+    }
+
+
+def _batch_company_names(client, company_ids: list[str]) -> dict[str, str]:
+    """Batch-fetch company names from Company Kind."""
+    if not company_ids:
+        return {}
+    keys = [client.key("Company", cid) for cid in company_ids]
+    entities = client.get_multi(keys)
+    return {
+        (e.key.name or str(e.key.id)): e.get("name", "")
+        for e in entities
+        if e is not None
+    }
+
+
 @router.get("")
 async def list_shipments(
-    tab: str = Query("active", description="active | completed | to_invoice | all"),
+    tab: str = Query("active", description="active | completed | to_invoice | draft | cancelled | all"),
     company_id: Optional[str] = Query(None),
     cursor: Optional[str] = Query(None),
     limit: int = Query(25, ge=1, le=100),
@@ -138,22 +245,111 @@ async def list_shipments(
     """
     List shipments with tab-based filtering.
 
-    Returns a mixed list of V1 and V2 shipments, normalised to a common
-    summary shape. V2 records read from Quotation Kind. V1 records read
-    from ShipmentOrder Kind (joined with Quotation for display fields).
+    Returns a merged list of V1 and V2 shipments normalised to a common
+    summary shape, sorted by updated descending.
 
-    TODO: Implement full V1+V2 join and normalised response.
-          For now returns a stub so the endpoint exists and is routable.
+    Strategy:
+      - V2 records (few): fetched in full on page 1, filtered by tab in-memory.
+      - V1 records: query Quotation Kind (has_shipment=True), batch-fetch
+        ShipmentOrder for real operational status, filter by tab in-memory.
+        Paginated via Datastore cursor. Over-fetched to compensate for
+        in-memory filtering.
     """
-    # TODO: implement full paginated list with V1+V2 merge
+    if tab not in _VALID_TABS:
+        tab = "active"
+
+    client = get_client()
+
+    # AFC users always scoped to own company; AFU can optionally filter
+    effective_company_id = None
+    if claims.is_afc():
+        effective_company_id = claims.company_id
+    elif company_id:
+        effective_company_id = company_id
+
+    items: list[dict] = []
+    v1_next_cursor: str | None = None
+
+    # -------------------------------------------------------------------
+    # V2 records — Quotation Kind, data_version=2 (few, fetch all)
+    # Only included on page 1 (no cursor). On subsequent pages the cursor
+    # drives V1 pagination only; V2 records are already displayed.
+    # -------------------------------------------------------------------
+    if not cursor:
+        v2_query = client.query(kind="Quotation")
+        v2_query.add_filter("data_version", "=", 2)
+        v2_query.add_filter("trash", "=", False)
+        if effective_company_id:
+            v2_query.add_filter("company_id", "=", effective_company_id)
+
+        for entity in v2_query.fetch():
+            if _v2_tab_match(tab, entity):
+                v2_status = entity.get("status", 0)
+                items.append(_make_summary(entity, 2, v2_status))
+
+    # -------------------------------------------------------------------
+    # V1 records — Quotation Kind (has_shipment=True) + ShipmentOrder join
+    # -------------------------------------------------------------------
+    v1_query = client.query(kind="Quotation")
+    v1_query.add_filter("trash", "=", False)
+    v1_query.add_filter("has_shipment", "=", True)
+    if effective_company_id:
+        v1_query.add_filter("company_id", "=", effective_company_id)
+
+    # Over-fetch to compensate for tab filtering (tab=all needs no extra)
+    fetch_limit = limit * _V1_OVERFETCH if tab != "all" else limit
+    start_cursor = base64.urlsafe_b64decode(cursor) if cursor else None
+
+    v1_iter = v1_query.fetch(limit=fetch_limit, start_cursor=start_cursor)
+    page = next(v1_iter.pages)
+    v1_quotations = list(page)
+    token = v1_iter.next_page_token
+    v1_next_cursor = base64.urlsafe_b64encode(token).decode() if token else None
+
+    # Batch-fetch ShipmentOrder entities for real operational status
+    if v1_quotations:
+        so_keys = [
+            client.key("ShipmentOrder", e.key.name or str(e.key.id))
+            for e in v1_quotations
+        ]
+        so_entities = client.get_multi(so_keys)
+        so_map: dict[str, object] = {
+            (e.key.name or str(e.key.id)): e
+            for e in so_entities
+            if e is not None
+        }
+
+        for q_entity in v1_quotations:
+            qid = q_entity.key.name or str(q_entity.key.id)
+            so = so_map.get(qid)
+            if not so:
+                continue  # orphaned Quotation without ShipmentOrder — skip
+
+            v1_status = so.get("status", 0)
+            issued_invoice = bool(so.get("issued_invoice", False))
+
+            if not _v1_tab_match(tab, v1_status, issued_invoice):
+                continue
+
+            v2_status = V1_TO_V2_STATUS.get(v1_status, v1_status)
+            items.append(_make_summary(so, 1, v2_status, display_src=q_entity))
+
+    # -------------------------------------------------------------------
+    # Batch-fetch company names
+    # -------------------------------------------------------------------
+    company_ids = list({s["company_id"] for s in items if s.get("company_id")})
+    names = _batch_company_names(client, company_ids)
+    for s in items:
+        s["company_name"] = names.get(s.get("company_id", ""), "")
+
+    # Sort merged results by updated descending, trim to requested limit
+    items.sort(key=lambda x: x.get("updated", ""), reverse=True)
+    result = items[:limit]
+
     return {
-        "status": "OK",
-        "data": {
-            "items": [],
-            "next_cursor": None,
-            "count": 0,
-        },
-        "msg": "Shipment list — implementation in progress",
+        "shipments": result,
+        "next_cursor": v1_next_cursor,
+        "total_shown": len(result),
     }
 
 

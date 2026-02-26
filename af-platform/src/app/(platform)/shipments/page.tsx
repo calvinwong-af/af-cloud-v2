@@ -10,9 +10,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Package, Truck, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
-import { fetchShipmentOrdersAction, fetchShipmentOrderStatsAction, fetchCompaniesForShipmentAction, fetchPortsAction } from '@/app/actions/shipments';
+import { getShipmentListAction, fetchShipmentOrderStatsAction, fetchCompaniesForShipmentAction, fetchPortsAction } from '@/app/actions/shipments';
+import type { ShipmentListItem } from '@/app/actions/shipments';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
-import type { ShipmentOrder, ShipmentOrderStatus } from '@/lib/types';
+import type { ShipmentOrder, OrderType } from '@/lib/types';
 import { ShipmentOrderTable } from '@/components/shipments/ShipmentOrderTable';
 import { KpiCard } from '@/components/shared/KpiCard';
 import NewShipmentButton from '@/components/shipments/NewShipmentButton';
@@ -32,14 +33,56 @@ const FILTER_TABS: { key: FilterTab; label: string }[] = [
   { key: 'cancelled',  label: 'Cancelled' },
 ];
 
-const FILTER_STATUS_MAP: Record<FilterTab, ShipmentOrderStatus[] | undefined> = {
-  all:        undefined,
-  active:     [2001, 2002, 3001, 3002, 3003, 4001, 4002],
-  draft:      [1001, 1002],
-  completed:  [5001],
-  to_invoice: [5001],   // further filtered by issued_invoice=false below
-  cancelled:  [-1],
+// Map V1 short type codes from af-server to V2 OrderType for the table icons
+const ORDER_TYPE_MAP: Record<string, OrderType> = {
+  FCL: 'SEA_FCL',
+  LCL: 'SEA_LCL',
+  AIR: 'AIR',
+  SEA_FCL: 'SEA_FCL',
+  SEA_LCL: 'SEA_LCL',
+  CROSS_BORDER: 'CROSS_BORDER',
+  GROUND: 'GROUND',
 };
+
+/** Map a ShipmentListItem from af-server into the ShipmentOrder shape the table expects. */
+function toShipmentOrder(item: ShipmentListItem): ShipmentOrder {
+  return {
+    quotation_id: item.shipment_id,
+    countid: 0,
+    data_version: item.data_version,
+    company_id: item.company_id,
+    order_type: ORDER_TYPE_MAP[item.order_type] ?? 'SEA_FCL',
+    transaction_type: (item.transaction_type as ShipmentOrder['transaction_type']) || 'IMPORT',
+    incoterm_code: item.incoterm || null,
+    status: item.status as ShipmentOrder['status'],
+    issued_invoice: false,
+    last_status_updated: null,
+    status_history: [],
+    parent_id: null,
+    related_orders: [],
+    commercial_quotation_ids: [],
+    origin: item.origin_port
+      ? { type: 'PORT', port_un_code: item.origin_port, city_id: null, address: null, country_code: null, label: item.origin_port }
+      : null,
+    destination: item.destination_port
+      ? { type: 'PORT', port_un_code: item.destination_port, city_id: null, address: null, country_code: null, label: item.destination_port }
+      : null,
+    cargo: null,
+    type_details: null,
+    booking: null,
+    parties: null,
+    customs_clearance: [],
+    tracking_id: null,
+    files: [],
+    trash: false,
+    cargo_ready_date: item.cargo_ready_date,
+    creator: null,
+    user: '',
+    created: '',
+    updated: item.updated,
+    _company_name: item.company_name || undefined,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Page
@@ -82,31 +125,20 @@ export default function ShipmentsPage() {
     setError(null);
 
     try {
-      const statusFilter = FILTER_STATUS_MAP[tab];
-      const [ordersResult, statsResult] = await Promise.all([
-        fetchShipmentOrdersAction({
-          status: statusFilter,
-          limit: 50,
-          cursor,
-        }),
+      const [listResult, statsResult] = await Promise.all([
+        getShipmentListAction(tab, cursor, 25),
         // Stats already loaded on mount — only refresh when explicitly requested (stats==null)
         stats == null ? fetchShipmentOrderStatsAction() : Promise.resolve({ success: true as const, data: stats }),
       ]);
 
-      if (!ordersResult.success) throw new Error(ordersResult.error);
-
-      // For the to_invoice tab, further filter to issued_invoice=false
-      // issued_invoice may be stored as boolean false, 0, null, or undefined in V1 records
-      const fetchedOrders = tab === 'to_invoice'
-        ? ordersResult.data.orders.filter((o) => !o.issued_invoice)
-        : ordersResult.data.orders;
+      const fetchedOrders = listResult.shipments.map(toShipmentOrder);
 
       if (cursor) {
         setOrders((prev) => [...prev, ...fetchedOrders]);
       } else {
         setOrders(fetchedOrders);
       }
-      setNextCursor(ordersResult.data.nextCursor);
+      setNextCursor(listResult.next_cursor);
 
       if (statsResult.success) setStats(statsResult.data);
     } catch (err) {

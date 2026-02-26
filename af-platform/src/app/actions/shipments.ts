@@ -6,7 +6,7 @@
  * Read-only for now — write (create/update) actions come in the next phase.
  */
 
-import { getShipmentOrders, getShipmentOrderDetail, getShipmentOrderStats } from '@/lib/shipments';
+import { getShipmentOrders, getShipmentOrderDetail } from '@/lib/shipments';
 import { verifySessionAndRole, logAction } from '@/lib/auth-server';
 import { getDatastore } from '@/lib/datastore-query';
 import { getCompanies } from '@/lib/companies';
@@ -110,6 +110,76 @@ export async function fetchShipmentOrderDetailAction(
 }
 
 // ---------------------------------------------------------------------------
+// List (via af-server) — replaces in-memory Datastore query for shipments page
+// ---------------------------------------------------------------------------
+
+export interface ShipmentListItem {
+  shipment_id: string;
+  data_version: number;
+  status: number;
+  order_type: string;
+  transaction_type: string;
+  incoterm: string;
+  origin_port: string;
+  destination_port: string;
+  company_id: string;
+  company_name: string;
+  cargo_ready_date: string | null;
+  updated: string;
+}
+
+export async function getShipmentListAction(
+  tab: string = 'active',
+  cursor?: string | null,
+  limit: number = 25,
+): Promise<{
+  shipments: ShipmentListItem[];
+  next_cursor: string | null;
+  total_shown: number;
+}> {
+  const empty = { shipments: [], next_cursor: null, total_shown: 0 };
+
+  try {
+    const session = await verifySessionAndRole(['AFC-ADMIN', 'AFC-M', 'AFU-ADMIN']);
+    if (!session.valid) return empty;
+
+    // Get Firebase ID token from session cookie to forward to af-server
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) return empty;
+
+    const url = new URL('/api/v2/shipments', process.env.AF_SERVER_URL);
+    url.searchParams.set('tab', tab);
+    url.searchParams.set('limit', String(limit));
+    if (cursor) {
+      url.searchParams.set('cursor', cursor);
+    }
+
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${idToken}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      console.error('[getShipmentListAction] af-server responded', res.status);
+      return empty;
+    }
+
+    const json = await res.json();
+    return {
+      shipments: json.shipments ?? [],
+      next_cursor: json.next_cursor ?? null,
+      total_shown: json.total_shown ?? 0,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[getShipmentListAction]', message);
+    return empty;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Stats (dashboard)
 // ---------------------------------------------------------------------------
 
@@ -123,22 +193,59 @@ export async function fetchShipmentOrderStatsAction(
   draft: number;
   cancelled: number;
 }>> {
+  const zeroed = { total: 0, active: 0, completed: 0, to_invoice: 0, draft: 0, cancelled: 0 };
+
   try {
     const session = await verifySessionAndRole(['AFC-ADMIN', 'AFC-M', 'AFU-ADMIN']);
     if (!session.valid) {
       return { success: false, error: 'Unauthorised' };
     }
 
+    // Get Firebase ID token from session cookie to forward to af-server
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) {
+      return { success: true, data: zeroed };
+    }
+
     // AFC customers: scope to own company
     const scopedCompanyId =
       session.account_type === 'AFC' ? session.company_id ?? undefined : companyId;
 
-    const stats = await getShipmentOrderStats(scopedCompanyId);
-    return { success: true, data: stats };
+    const url = new URL('/api/v2/shipments/stats', process.env.AF_SERVER_URL);
+    if (scopedCompanyId) {
+      url.searchParams.set('company_id', scopedCompanyId);
+    }
+
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${idToken}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      console.error('[fetchShipmentOrderStatsAction] af-server responded', res.status);
+      return { success: true, data: zeroed };
+    }
+
+    const json = await res.json();
+    const d = json.data ?? {};
+
+    return {
+      success: true,
+      data: {
+        total: d.total ?? 0,
+        active: d.active ?? 0,
+        completed: d.completed ?? 0,
+        to_invoice: d.to_invoice ?? 0,
+        draft: d.draft ?? 0,
+        cancelled: d.cancelled ?? 0,
+      },
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[fetchShipmentOrderStatsAction]', message);
-    return { success: false, error: 'Failed to load stats.' };
+    return { success: true, data: zeroed };
   }
 }
 
