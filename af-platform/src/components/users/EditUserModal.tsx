@@ -67,20 +67,22 @@ export function EditUserModal({ user, onClose, onUpdated }: EditUserModalProps) 
 
   if (!user) return null;
 
-  const roleOptions = user.account_type === 'AFU' ? AFU_ROLES : AFC_ROLES;
-  const isDeactivated = !user.valid_access;
+  // TypeScript doesn't narrow `user` across hook boundaries — re-bind after null guard
+  const u = user;
+  const roleOptions = u.account_type === 'AFU' ? AFU_ROLES : AFC_ROLES;
+  const isDeactivated = !u.valid_access;
 
   async function handleSaveDetails() {
     if (!firstName.trim()) { setError('First name is required'); return; }
     if (!lastName.trim()) { setError('Last name is required'); return; }
     if (!role) { setError('Role is required'); return; }
     setSaving(true); setError(null); setSuccess(null);
-    const result = await updateUserAction(user.uid, {
+    const result = await updateUserAction(u.uid, {
       first_name: firstName,
       last_name: lastName,
       phone_number: phone,
       role,
-      ...(user.account_type === 'AFC' && { company_id: companyId }),
+      ...(u.account_type === 'AFC' && { company_id: companyId }),
     });
     setSaving(false);
     if (!result.success) { setError(result.error); }
@@ -89,7 +91,7 @@ export function EditUserModal({ user, onClose, onUpdated }: EditUserModalProps) 
 
   async function handleReactivate() {
     setSaving(true); setError(null); setSuccess(null);
-    const result = await reactivateUserAction(user.uid);
+    const result = await reactivateUserAction(u.uid);
     setSaving(false);
     if (!result.success) { setError(result.error); }
     else { setSuccess('Account reactivated.'); setTimeout(onUpdated, 900); }
@@ -100,7 +102,7 @@ export function EditUserModal({ user, onClose, onUpdated }: EditUserModalProps) 
     if (newPassword.length < 8) { setError('Password must be at least 8 characters'); return; }
     if (newPassword !== confirmPassword) { setError('Passwords do not match'); return; }
     setSaving(true); setError(null); setSuccess(null);
-    const result = await resetPasswordAction(user.uid, newPassword);
+    const result = await resetPasswordAction(u.uid, newPassword);
     setSaving(false);
     if (!result.success) { setError(result.error); }
     else { setSuccess('Password reset successfully.'); setNewPassword(''); setConfirmPassword(''); }
@@ -115,7 +117,7 @@ export function EditUserModal({ user, onClose, onUpdated }: EditUserModalProps) 
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)]">
           <div>
             <h2 className="text-base font-semibold text-[var(--text)]">Edit User</h2>
-            <p className="text-xs text-[var(--text-muted)] mt-0.5">{user.first_name} {user.last_name} · {user.email}</p>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">{u.first_name} {u.last_name} · {u.email}</p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--surface)] text-[var(--text-muted)] transition-colors">
             <X className="w-4 h-4" />
@@ -174,7 +176,7 @@ export function EditUserModal({ user, onClose, onUpdated }: EditUserModalProps) 
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-[var(--text-muted)]">
-                  Role <span className="font-normal">({user.account_type === 'AFU' ? 'AF Staff' : 'Customer'})</span>
+                  Role <span className="font-normal">({u.account_type === 'AFU' ? 'AF Staff' : 'Customer'})</span>
                 </label>
                 <select value={role} onChange={(e) => setRole(e.target.value)}
                   className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent bg-white">
@@ -182,7 +184,7 @@ export function EditUserModal({ user, onClose, onUpdated }: EditUserModalProps) 
                   {roleOptions.map((r) => <option key={r} value={r}>{r}</option>)}
                 </select>
               </div>
-              {user.account_type === 'AFC' && (
+              {u.account_type === 'AFC' && (
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--text-muted)]">Company</label>
                   {loadingCompanies ? (
@@ -208,16 +210,16 @@ export function EditUserModal({ user, onClose, onUpdated }: EditUserModalProps) 
               <div className="rounded-lg bg-[var(--surface)] px-4 py-3 space-y-1.5">
                 <div className="flex justify-between text-xs">
                   <span className="text-[var(--text-muted)]">Email</span>
-                  <span className="text-[var(--text-mid)]">{user.email}</span>
+                  <span className="text-[var(--text-mid)]">{u.email}</span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-[var(--text-muted)]">Account Type</span>
-                  <span className="text-[var(--text-mid)]">{user.account_type === 'AFU' ? 'AF Staff' : 'Customer'}</span>
+                  <span className="text-[var(--text-mid)]">{u.account_type === 'AFU' ? 'AF Staff' : 'Customer'}</span>
                 </div>
-                {user.company_name && (
+                {u.company_name && (
                   <div className="flex justify-between text-xs">
                     <span className="text-[var(--text-muted)]">Company</span>
-                    <span className="text-[var(--text-mid)]">{user.company_name}</span>
+                    <span className="text-[var(--text-mid)]">{u.company_name}</span>
                   </div>
                 )}
               </div>

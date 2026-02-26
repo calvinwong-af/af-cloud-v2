@@ -14,6 +14,7 @@ import { fetchShipmentOrdersAction, fetchShipmentOrderStatsAction } from '@/app/
 import type { ShipmentOrder, ShipmentOrderStatus } from '@/lib/types';
 import { ShipmentOrderTable } from '@/components/shipments/ShipmentOrderTable';
 import { KpiCard } from '@/components/shared/KpiCard';
+import NewShipmentButton from '@/components/shipments/NewShipmentButton';
 
 // ---------------------------------------------------------------------------
 // Status filter tabs
@@ -115,7 +116,7 @@ export default function ShipmentsPage() {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
-          {/* Future: + New Order button */}
+          <NewShipmentButton />
         </div>
       </div>
 

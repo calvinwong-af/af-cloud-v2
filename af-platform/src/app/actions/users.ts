@@ -355,7 +355,7 @@ export async function updateUserAction(
       action: 'USER_UPDATE',
       entity_kind: 'UserAccount',
       entity_id: targetUid,
-      after: input,
+      after: input as unknown as Record<string, unknown>,
       success: true,
     });
 

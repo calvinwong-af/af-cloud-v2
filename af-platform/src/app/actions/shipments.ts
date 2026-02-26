@@ -8,6 +8,7 @@
 
 import { getShipmentOrders, getShipmentOrderDetail, getShipmentOrderStats } from '@/lib/shipments';
 import { verifySessionAndRole, logAction } from '@/lib/auth-server';
+import { getCompanies } from '@/lib/companies';
 import type { ShipmentOrder, OrderType, ShipmentOrderStatus } from '@/lib/types';
 
 type ActionResult<T> =
@@ -136,5 +137,25 @@ export async function fetchShipmentOrderStatsAction(
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[fetchShipmentOrderStatsAction]', message);
     return { success: false, error: 'Failed to load stats.' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Lightweight company list for shipment creation modal
+// Returns only company_id + name for the dropdown selector
+// ---------------------------------------------------------------------------
+
+export async function fetchCompaniesForShipmentAction(): Promise<{ company_id: string; name: string }[]> {
+  const session = await verifySessionAndRole(['AFU-ADMIN']);
+  if (!session.valid) return [];
+
+  try {
+    const companies = await getCompanies();
+    return companies
+      .filter((c) => !c.trash)
+      .map((c) => ({ company_id: c.company_id, name: c.name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch {
+    return [];
   }
 }
