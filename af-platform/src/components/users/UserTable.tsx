@@ -9,6 +9,7 @@ interface UserTableProps {
   users: UserRecord[];
   loading: boolean;
   onRefresh: () => void;
+  onEdit: (user: UserRecord) => void;
 }
 
 function formatDate(dateStr: string | null): string {
@@ -35,7 +36,7 @@ function SkeletonRow() {
   );
 }
 
-export function UserTable({ users, loading, onRefresh }: UserTableProps) {
+export function UserTable({ users, loading, onRefresh, onEdit }: UserTableProps) {
   if (!loading && users.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-[var(--border)] py-16 text-center">
@@ -45,7 +46,7 @@ export function UserTable({ users, loading, onRefresh }: UserTableProps) {
   }
 
   return (
-    <div className="bg-white rounded-xl border border-[var(--border)] overflow-x-auto">
+    <div className="bg-white rounded-xl border border-[var(--border)] overflow-x-auto overflow-y-visible">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-[var(--border)]">
@@ -104,7 +105,14 @@ export function UserTable({ users, loading, onRefresh }: UserTableProps) {
                   {/* Company */}
                   <td className="px-4 py-3 whitespace-nowrap">
                     {user.company_id ? (
-                      <span style={{ color: "var(--text-mid)" }}>{user.company_id}</span>
+                      <div>
+                        <div style={{ color: "var(--text-mid)" }}>
+                          {user.company_name ?? user.company_id}
+                        </div>
+                        <div className="text-xs font-mono" style={{ color: "var(--text-muted)" }}>
+                          {user.company_id}
+                        </div>
+                      </div>
                     ) : user.account_type === "AFC" ? (
                       <span className="inline-flex items-center gap-1 text-amber-600">
                         <AlertTriangle size={14} />
@@ -146,7 +154,7 @@ export function UserTable({ users, loading, onRefresh }: UserTableProps) {
 
                   {/* Actions */}
                   <td className="px-4 py-3 text-center">
-                    <UserActionsMenu user={user} onRefresh={onRefresh} />
+                    <UserActionsMenu user={user} onRefresh={onRefresh} onEdit={onEdit} />
                   </td>
                 </tr>
               ))}

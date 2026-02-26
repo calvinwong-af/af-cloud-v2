@@ -7,6 +7,7 @@ import { fetchUsersAction } from "@/app/actions/users";
 import type { UserRecord } from "@/lib/users";
 import { UserTable } from "@/components/users/UserTable";
 import { CreateUserModal } from '@/components/users/CreateUserModal';
+import { EditUserModal } from '@/components/users/EditUserModal';
 
 type FilterTab = "all" | "afc" | "afu";
 
@@ -58,6 +59,7 @@ export default function UsersPage() {
   const [activeTab, setActiveTab] = useState<FilterTab>("all");
   const [search, setSearch] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingUser, setEditingUser] = useState<UserRecord | null>(null);
 
   async function fetchUsers() {
     setLoading(true);
@@ -189,6 +191,7 @@ export default function UsersPage() {
             placeholder="Search users…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            autoComplete="off"
             className="w-full sm:w-64 rounded-lg border border-[var(--border)] bg-white pl-9 pr-3 py-2 text-sm outline-none focus:border-[var(--sky)] transition-colors"
             style={{ color: "var(--text)" }}
           />
@@ -196,7 +199,7 @@ export default function UsersPage() {
       </div>
 
       {/* Table */}
-      <UserTable users={filtered} loading={loading} onRefresh={fetchUsers} />
+      <UserTable users={filtered} loading={loading} onRefresh={fetchUsers} onEdit={(user) => setEditingUser(user)} />
 
       <CreateUserModal
         open={showCreateModal}
@@ -205,6 +208,12 @@ export default function UsersPage() {
           setShowCreateModal(false);
           fetchUsers();
         }}
+      />
+
+      <EditUserModal
+        user={editingUser}
+        onClose={() => setEditingUser(null)}
+        onUpdated={() => { setEditingUser(null); fetchUsers(); }}
       />
     </div>
   );

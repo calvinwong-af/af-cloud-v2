@@ -7,6 +7,7 @@
 // Consider cursor-based pagination with Datastore query cursors when count exceeds ~1000.
 
 import { getKind } from "./datastore";
+import { getCompanyMap } from './companies';
 
 export interface UserAccountRaw {
   uid: string;
@@ -44,6 +45,7 @@ export interface UserRecord {
   valid_access: boolean;
   last_login: string | null;
   company_id: string | null;
+  company_name: string | null;
   role: string;
 }
 
@@ -68,9 +70,19 @@ export async function getUsers(): Promise<UserRecord[]> {
   const iamMap = new Map(iamList.map((r) => [r.uid, r]));
   const companyMap = new Map(companyUsers.map((r) => [r.uid, r]));
 
+  // Collect all company IDs for batch lookup
+  const allCompanyIds = Array.from(companyMap.values())
+    .map((c) => c.company_id)
+    .filter((id): id is string => !!id);
+  const companyNameMap = allCompanyIds.length
+    ? await getCompanyMap(allCompanyIds)
+    : new Map();
+
   const merged: UserRecord[] = uniqueAccounts.map((acct) => {
     const iam = iamMap.get(acct.uid);
     const company = companyMap.get(acct.uid);
+    const companyId = company?.company_id ?? null;
+    const companyRecord = companyId ? companyNameMap.get(companyId) : null;
 
     return {
       uid: acct.uid,
@@ -83,7 +95,8 @@ export async function getUsers(): Promise<UserRecord[]> {
       validated: acct.email_validated ?? false,
       valid_access: (iam?.valid_access ?? false) && (acct.email_validated ?? false),
       last_login: iam?.last_login ?? null,
-      company_id: company?.company_id ?? null,
+      company_id: companyId,
+      company_name: companyRecord?.short_name ?? companyRecord?.name ?? null,
       role: iam?.role ?? "unknown",
     };
   });

@@ -5,6 +5,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { AlertCircle, CheckCircle2, XCircle } from 'lucide-react';
 import type { Company } from '@/lib/types';
 import { CompanyActionsMenu } from './CompanyActionsMenu';
@@ -160,9 +161,13 @@ function CompanyRow({ company, onRefresh, onEdit }: { company: Company; onRefres
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-sm" style={{ color: 'var(--text)' }}>
+              <Link
+                href={`/companies/${company.company_id}`}
+                className="font-semibold text-sm hover:text-[var(--sky)] hover:underline transition-colors"
+                style={{ color: 'var(--text)' }}
+              >
                 {company.name}
-              </span>
+              </Link>
               <span className="font-mono text-[11px] px-1.5 py-0.5 rounded border"
                 style={{ background: 'var(--surface)', color: 'var(--text-mid)', borderColor: 'var(--border)' }}>
                 {company.company_id}

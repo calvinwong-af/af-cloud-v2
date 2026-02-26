@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { MoreVertical, Pencil, Trash2, Loader2, AlertTriangle } from 'lucide-react';
+import { MoreVertical, Pencil, Trash2, Loader2, AlertTriangle, ArrowRight } from 'lucide-react';
+import Link from 'next/link';
 import { deleteCompanyAction } from '@/app/actions/companies';
 import type { Company } from '@/lib/types';
 
@@ -16,7 +17,9 @@ export function CompanyActionsMenu({ company, onEdit, onRefresh }: CompanyAction
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -46,14 +49,32 @@ export function CompanyActionsMenu({ company, onEdit, onRefresh }: CompanyAction
     <>
       <div className="relative" ref={menuRef}>
         <button
-          onClick={() => setOpen((v) => !v)}
+          ref={buttonRef}
+          onClick={() => {
+            if (!open && buttonRef.current) {
+              const rect = buttonRef.current.getBoundingClientRect();
+              setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+            }
+            setOpen((v) => !v);
+          }}
           className="p-1.5 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
         >
           <MoreVertical className="w-4 h-4" />
         </button>
 
-        {open && (
-          <div className="absolute right-0 top-8 z-20 w-40 bg-white rounded-xl border border-[var(--border)] shadow-lg py-1 text-sm">
+        {open && menuPos && (
+          <div
+            className="fixed z-50 w-40 bg-white rounded-xl border border-[var(--border)] shadow-lg py-1 text-sm"
+            style={{ top: menuPos.top, right: menuPos.right }}
+          >
+            <Link
+              href={`/companies/${company.company_id}`}
+              onClick={() => setOpen(false)}
+              className="w-full flex items-center gap-2.5 px-4 py-2 text-left text-[var(--text)] hover:bg-[var(--surface)] transition-colors"
+            >
+              <ArrowRight className="w-4 h-4" />
+              View Details
+            </Link>
             <button
               onClick={() => { onEdit(company); setOpen(false); }}
               className="w-full flex items-center gap-2.5 px-4 py-2 text-left text-[var(--text)] hover:bg-[var(--surface)] transition-colors"

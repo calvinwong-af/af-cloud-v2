@@ -138,6 +138,7 @@ export default function CompaniesPage() {
           placeholder="Search by name or ID…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          autoComplete="off"
           className="w-full pl-9 pr-4 py-2 text-sm bg-white border border-[var(--border)] rounded-lg
                      focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent
                      placeholder:text-[var(--text-muted)]"

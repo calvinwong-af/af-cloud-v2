@@ -1,23 +1,26 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { MoreVertical, UserX, Trash2, Loader2, AlertTriangle } from 'lucide-react';
+import { MoreVertical, Pencil, UserX, Trash2, Loader2, AlertTriangle } from 'lucide-react';
 import { deactivateUserAction, deleteUserAction } from '@/app/actions/users';
 import type { UserRecord } from '@/lib/users';
 
 interface UserActionsMenuProps {
   user: UserRecord;
   onRefresh: () => void;
+  onEdit?: (user: UserRecord) => void;
 }
 
 type ConfirmMode = 'deactivate' | 'delete' | null;
 
-export function UserActionsMenu({ user, onRefresh }: UserActionsMenuProps) {
+export function UserActionsMenu({ user, onRefresh, onEdit }: UserActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const [confirmMode, setConfirmMode] = useState<ConfirmMode>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   // Close menu on outside click
   useEffect(() => {
@@ -61,14 +64,39 @@ export function UserActionsMenu({ user, onRefresh }: UserActionsMenuProps) {
       {/* Dropdown menu */}
       <div className="relative" ref={menuRef}>
         <button
-          onClick={() => setOpen((v) => !v)}
+          ref={buttonRef}
+          onClick={() => {
+            if (!open && buttonRef.current) {
+              const rect = buttonRef.current.getBoundingClientRect();
+              setMenuPos({
+                top: rect.bottom + 4,
+                right: window.innerWidth - rect.right,
+              });
+            }
+            setOpen((v) => !v);
+          }}
           className="p-1.5 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
         >
           <MoreVertical className="w-4 h-4" />
         </button>
 
-        {open && (
-          <div className="absolute right-0 top-8 z-20 w-44 bg-white rounded-xl border border-[var(--border)] shadow-lg py-1 text-sm">
+        {open && menuPos && (
+          <div
+            className="fixed z-50 w-44 bg-white rounded-xl border border-[var(--border)] shadow-lg py-1 text-sm"
+            style={{ top: menuPos.top, right: menuPos.right }}
+          >
+            {onEdit && (
+              <>
+                <button
+                  onClick={() => { setOpen(false); onEdit(user); }}
+                  className="w-full flex items-center gap-2.5 px-4 py-2 text-left text-[var(--text-mid)] hover:bg-[var(--surface)] transition-colors"
+                >
+                  <Pencil className="w-4 h-4" />
+                  Edit
+                </button>
+                <div className="my-1 border-t border-[var(--border)]" />
+              </>
+            )}
             <button
               onClick={() => handleAction('deactivate')}
               disabled={!user.valid_access}
