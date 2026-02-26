@@ -7,9 +7,7 @@ import type { User } from "firebase/auth";
 import type { LucideIcon } from "lucide-react";
 import {
   LayoutDashboard,
-  FileText,
   Truck,
-  DollarSign,
   Users,
   Building2,
   Grid3X3,
@@ -20,7 +18,19 @@ import {
 } from "lucide-react";
 import { LogoMark } from "@/components/shared/Logo";
 import { signOut } from "@/lib/auth";
+import { getCurrentUserProfileAction } from "@/app/actions/users";
 import { cn } from "@/lib/utils";
+
+function resolveRoleLabel(accountType: string | null, role: string | null): string {
+  if (accountType === 'AFU') {
+    return role === 'AFU-ADMIN' ? 'AF Admin' : 'AF Staff';
+  }
+  if (accountType === 'AFC') {
+    if (role === 'AFC-ADMIN') return 'Company Admin';
+    if (role === 'AFC-M') return 'Company Manager';
+  }
+  return role ?? 'Staff';
+}
 
 interface NavItem {
   label: string;
@@ -44,9 +54,7 @@ const navSections: NavSection[] = [
   {
     title: "OPERATIONS",
     items: [
-      { label: "Quotations", icon: FileText, href: "/quotations", badge: 8 },
-      { label: "Shipments", icon: Truck, href: "/shipments", badge: 16 },
-      { label: "Invoices", icon: DollarSign, href: "/invoices" },
+      { label: "Shipments", icon: Truck, href: "/shipments" },
     ],
   },
   {
@@ -83,11 +91,19 @@ interface SidebarProps {
 export function Sidebar({ currentUser }: SidebarProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [roleLabel, setRoleLabel] = useState("Staff");
 
   // Hydrate collapse state from localStorage
   useEffect(() => {
     const stored = localStorage.getItem("af-nav-collapsed");
     if (stored === "true") setCollapsed(true);
+  }, []);
+
+  // Fetch current user's role for sidebar display
+  useEffect(() => {
+    getCurrentUserProfileAction().then(({ role, account_type }) => {
+      setRoleLabel(resolveRoleLabel(account_type, role));
+    });
   }, []);
 
   function toggleCollapsed() {
@@ -279,7 +295,7 @@ export function Sidebar({ currentUser }: SidebarProps) {
               {currentUser.displayName || "User"}
             </p>
             <p className="text-[0.6rem] truncate" style={{ color: "var(--text-muted)" }}>
-              Operator
+              {roleLabel}
             </p>
           </div>
 

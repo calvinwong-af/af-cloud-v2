@@ -41,6 +41,9 @@ function readV2ShipmentOrder(raw: Record<string, any>): ShipmentOrder {
     transaction_type:         raw.transaction_type ?? 'IMPORT',
     incoterm_code:            raw.incoterm_code ?? null,
     status:                   raw.status as ShipmentOrderStatus ?? 1001,
+    issued_invoice:           raw.issued_invoice as boolean ?? false,
+    last_status_updated:      raw.last_status_updated as string | null ?? null,
+    status_history:           raw.status_history ?? [],
 
     parent_id:                raw.parent_id ?? null,
     related_orders:           raw.related_orders ?? [],
@@ -140,13 +143,30 @@ export async function getShipmentOrders(
     if (dataVersion >= 2) {
       orders.push(readV2ShipmentOrder(raw as Record<string, never>));
     } else {
+      // ── V1 SHIPMENT FILTER ──────────────────────────────────────────────
+      // Only show V1 records that have progressed to a confirmed shipment.
+      // A V1 Quotation becomes a shipment when has_shipment=true (a
+      // ShipmentOrder Kind record was created at booking confirmation).
+      // We also accept status>=4001 as a safety net for records where
+      // has_shipment was not set but the record clearly progressed.
+      //
+      // TODO (server session): This filter belongs in the Datastore query,
+      // not in application code. When rebuilding the server layer, add a
+      // composite index on (trash, has_shipment, status) and filter at
+      // query time. This will eliminate the need to fetch-then-filter and
+      // will significantly reduce Datastore read costs on large datasets.
+      // ────────────────────────────────────────────────────────────────────
+      const hasShipment = raw.has_shipment as boolean ?? false;
+      const rawV1Status = raw.status as number | null ?? 0;
+      const isConfirmedShipment = hasShipment || rawV1Status >= 4001;
+      if (!isConfirmedShipment) continue;
+
       // Light V1 read — no Kind assembly for list view
       // Derive order type from V1 fields (no Datastore fetches)
       const orderType = deriveOrderType(
         raw.quotation_type as string | null,
         raw.quotation_category as string | null
       );
-      const hasShipment = raw.has_shipment as boolean ?? false;
       const status = mapV1QuotationStatus(
         raw.status as number | null,
         hasShipment,
@@ -164,6 +184,9 @@ export async function getShipmentOrders(
         transaction_type:         (raw.transaction_type as ShipmentOrder['transaction_type']) ?? 'IMPORT',
         incoterm_code:            raw.incoterm_code as string | null ?? null,
         status,
+        issued_invoice:           Boolean(raw.issued_invoice ?? false),
+        last_status_updated:      raw.last_status_updated as string | null ?? null,
+        status_history:           raw.status_history as ShipmentOrder['status_history'] ?? [],
         parent_id:                null,
         related_orders:           [],
         commercial_quotation_ids: raw.commercial_quotation_ids as string[] ?? [],
@@ -309,26 +332,92 @@ export async function getShipmentOrderDetail(
 
 export interface ShipmentOrderStats {
   total: number;
-  active: number;    // Status 2001-4002
-  completed: number; // Status 5001
-  draft: number;     // Status 1001-1002
-  cancelled: number; // Status -1
+  active: number;      // Confirmed but not yet completed (2001–4002, excl. -1)
+  completed: number;   // Status 5001
+  to_invoice: number;  // Status 5001 AND issued_invoice=false
+  draft: number;       // Status 1001-1002
+  cancelled: number;   // Status -1
 }
 
 export async function getShipmentOrderStats(
   companyId?: string
 ): Promise<ShipmentOrderStats> {
-  const { orders } = await getShipmentOrders({
-    companyId,
-    excludeTrash: true,
-    limit: 5000,
-  });
+  // Stats query — fetches ALL Quotation records without limit.
+  // Works directly on raw Datastore fields to avoid assembly overhead.
+  // V1 status codes are mapped inline; V2 uses the stored status field.
+  //
+  // NOTE: Datastore does not support OR queries or count aggregations across
+  // multiple field values, so we fetch all records and count in memory.
+  // This is acceptable at current dataset size (~3-4k records).
+  // TODO (server session): Replace with Datastore aggregation queries once
+  // the server layer is rebuilt and composite indexes are in place.
+  // TODO (server session): Add the following composite index to index.yaml to
+  // re-enable .select() projection and reduce Datastore read costs:
+  //   kind: Quotation
+  //   properties:
+  //     - name: trash
+  //     - name: data_version
+  //     - name: has_shipment
+  //     - name: issued_invoice
+  //     - name: parent_id
+  //     - name: status
+  // Until then, full entity fetch is used (no projection).
+  const datastore = getDatastore();
+  let query = datastore.createQuery('Quotation')
+    .filter('trash', '=', false);
 
-  return {
-    total: orders.length,
-    active: orders.filter((o) => o.status >= 2001 && o.status <= 4002).length,
-    completed: orders.filter((o) => o.status === 5001).length,
-    draft: orders.filter((o) => o.status === 1001 || o.status === 1002).length,
-    cancelled: orders.filter((o) => o.status === -1).length,
-  };
+  if (companyId) {
+    query = query.filter('company_id', '=', companyId);
+  }
+
+  const [entities] = await datastore.runQuery(query);
+
+  let total = 0;
+  let active = 0;
+  let completed = 0;
+  let to_invoice = 0;
+  let draft = 0;
+  let cancelled = 0;
+
+  for (const entity of entities) {
+    const raw = entity as Record<string, unknown>;
+
+    // Skip child ground legs
+    if (raw.parent_id) continue;
+
+    const dataVersion = (raw.data_version as number | null) ?? 1;
+    const rawStatus = raw.status as number | null ?? 0;
+    const hasShipment = raw.has_shipment as boolean ?? false;
+    const issuedInvoice = Boolean(raw.issued_invoice ?? false);
+
+    // V1 filter — only count records that became confirmed shipments
+    if (dataVersion < 2) {
+      const isConfirmedShipment = hasShipment || rawStatus >= 4001;
+      if (!isConfirmedShipment) continue;
+    }
+
+    // Map to V2 status for counting
+    let mappedStatus: number;
+    if (dataVersion >= 2) {
+      mappedStatus = rawStatus;
+    } else {
+      // Simplified V1 mapping for stats (no ShipmentOrder lookup needed)
+      if (rawStatus === 5001) mappedStatus = 5001;
+      else if (rawStatus === -1) mappedStatus = -1;
+      else if (hasShipment) mappedStatus = 3001;  // has shipment = at least booking confirmed
+      else mappedStatus = 2001;                    // confirmed but no shipment yet
+    }
+
+    total++;
+
+    if (mappedStatus >= 2001 && mappedStatus <= 4002) active++;
+    else if (mappedStatus === 5001) {
+      completed++;
+      if (!issuedInvoice) to_invoice++;
+    }
+    else if (mappedStatus === 1001 || mappedStatus === 1002) draft++;
+    else if (mappedStatus === -1) cancelled++;
+  }
+
+  return { total, active, completed, to_invoice, draft, cancelled };
 }

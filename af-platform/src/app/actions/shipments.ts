@@ -119,6 +119,7 @@ export async function fetchShipmentOrderStatsAction(
   total: number;
   active: number;
   completed: number;
+  to_invoice: number;
   draft: number;
   cancelled: number;
 }>> {
@@ -188,5 +189,19 @@ export async function fetchPortsAction(): Promise<{ un_code: string; name: strin
       .sort((a, b) => a.name.localeCompare(b.name));
   } catch {
     return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Get current session account type (lightweight — for UI role guards)
+// ---------------------------------------------------------------------------
+
+export async function getSessionAccountTypeAction(): Promise<string | null> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF', 'AFC-ADMIN', 'AFC-M']);
+    if (!session.valid) return null;
+    return session.account_type;
+  } catch {
+    return null;
   }
 }

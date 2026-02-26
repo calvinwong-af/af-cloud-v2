@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Truck, Building2, PackageCheck, FileEdit, RefreshCw } from 'lucide-react';
 import { fetchShipmentOrderStatsAction, fetchShipmentOrdersAction } from '@/app/actions/shipments';
 import { fetchCompanyStatsAction } from '@/app/actions/companies';
+import { getCurrentUserProfileAction } from '@/app/actions/users';
 import { KpiCard } from '@/components/shared/KpiCard';
 import { ShipmentOrderTable } from '@/components/shipments/ShipmentOrderTable';
 import type { ShipmentOrder } from '@/lib/types';
@@ -22,6 +23,7 @@ interface ShipmentStats {
   total: number;
   active: number;
   completed: number;
+  to_invoice: number;
   draft: number;
   cancelled: number;
 }
@@ -43,15 +45,18 @@ export default function DashboardPage() {
   const [recentOrders, setRecentOrders] = useState<ShipmentOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [accountType, setAccountType] = useState<string | null>(null);
+  const [profileLoaded, setProfileLoaded] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [shipmentStatsResult, companyStatsResult, ordersResult] = await Promise.all([
+      const [shipmentStatsResult, companyStatsResult, ordersResult, profile] = await Promise.all([
         fetchShipmentOrderStatsAction(),
         fetchCompanyStatsAction(),
         fetchShipmentOrdersAction({ limit: 10 }),
+        getCurrentUserProfileAction(),
       ]);
 
       if (!shipmentStatsResult.success) throw new Error(shipmentStatsResult.error);
@@ -61,6 +66,8 @@ export default function DashboardPage() {
       setShipmentStats(shipmentStatsResult.data);
       setCompanyStats(companyStatsResult.data);
       setRecentOrders(ordersResult.data.orders);
+      setAccountType(profile.account_type);
+      setProfileLoaded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard');
     } finally {
@@ -118,8 +125,8 @@ export default function DashboardPage() {
         />
         <KpiCard
           icon={<FileEdit className="w-5 h-5" />}
-          label="Draft Orders"
-          value={shipmentStats?.draft ?? '—'}
+          label="To Invoice"
+          value={shipmentStats?.to_invoice ?? '—'}
           loading={statsLoading}
           color="amber"
         />
@@ -141,7 +148,7 @@ export default function DashboardPage() {
       {/* Recent Shipments */}
       <div>
         <h2 className="text-sm font-medium text-[var(--text-mid)] mb-3">Recent Shipments</h2>
-        <ShipmentOrderTable orders={recentOrders} loading={loading} />
+        <ShipmentOrderTable orders={recentOrders} loading={loading || !profileLoaded} accountType={accountType} onRefresh={() => load()} />
       </div>
     </div>
   );

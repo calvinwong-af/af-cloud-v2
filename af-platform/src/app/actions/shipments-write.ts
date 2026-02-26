@@ -3,9 +3,16 @@
 import { verifySessionAndRole, logAction } from '@/lib/auth-server';
 import {
   createShipmentOrder,
+  updateShipmentStatus,
+  updateInvoicedStatus,
+  deleteShipmentOrder,
   type CreateShipmentOrderInput,
   type CreateShipmentOrderResult,
+  type UpdateShipmentStatusResult,
+  type UpdateInvoicedStatusResult,
+  type DeleteShipmentOrderResult,
 } from '@/lib/shipments-write';
+import type { ShipmentOrderStatus } from '@/lib/types';
 
 export interface CreateShipmentOrderPayload {
   order_type: 'SEA_FCL' | 'SEA_LCL' | 'AIR';
@@ -154,4 +161,67 @@ export async function createShipmentOrderAction(
   }
 
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Update Shipment Status
+// ---------------------------------------------------------------------------
+
+export async function updateShipmentStatusAction(
+  shipment_id: string,
+  new_status: ShipmentOrderStatus,
+  allow_jump?: boolean,
+): Promise<UpdateShipmentStatusResult> {
+  const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF', 'AFC-ADMIN', 'AFC-M']);
+  if (!session.valid) {
+    return { success: false, error: 'Unauthorised' };
+  }
+
+  return updateShipmentStatus({
+    shipment_id,
+    new_status,
+    changed_by_uid: session.uid,
+    changed_by_email: session.email,
+    allow_jump,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Update Invoiced Status
+// ---------------------------------------------------------------------------
+
+export async function updateInvoicedStatusAction(
+  shipment_id: string,
+  issued_invoice: boolean,
+): Promise<UpdateInvoicedStatusResult> {
+  const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF', 'AFC-ADMIN', 'AFC-M']);
+  if (!session.valid) {
+    return { success: false, error: 'Unauthorised' };
+  }
+
+  return updateInvoicedStatus({
+    shipment_id,
+    issued_invoice,
+    changed_by_uid: session.uid,
+    changed_by_email: session.email,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Delete Shipment Order
+// ---------------------------------------------------------------------------
+
+export async function deleteShipmentOrderAction(
+  shipment_id: string
+): Promise<DeleteShipmentOrderResult> {
+  const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF', 'AFC-ADMIN', 'AFC-M']);
+  if (!session.valid) {
+    return { success: false, error: 'Unauthorised' };
+  }
+
+  return deleteShipmentOrder({
+    shipment_id,
+    changed_by_uid: session.uid,
+    changed_by_email: session.email,
+  });
 }

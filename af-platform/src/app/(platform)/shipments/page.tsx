@@ -11,6 +11,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Package, Truck, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { fetchShipmentOrdersAction, fetchShipmentOrderStatsAction, fetchCompaniesForShipmentAction, fetchPortsAction } from '@/app/actions/shipments';
+import { getCurrentUserProfileAction } from '@/app/actions/users';
 import type { ShipmentOrder, ShipmentOrderStatus } from '@/lib/types';
 import { ShipmentOrderTable } from '@/components/shipments/ShipmentOrderTable';
 import { KpiCard } from '@/components/shared/KpiCard';
@@ -20,22 +21,24 @@ import NewShipmentButton from '@/components/shipments/NewShipmentButton';
 // Status filter tabs
 // ---------------------------------------------------------------------------
 
-type FilterTab = 'all' | 'active' | 'draft' | 'completed' | 'cancelled';
+type FilterTab = 'all' | 'active' | 'draft' | 'completed' | 'to_invoice' | 'cancelled';
 
 const FILTER_TABS: { key: FilterTab; label: string }[] = [
-  { key: 'all',       label: 'All' },
-  { key: 'active',    label: 'Active' },
-  { key: 'draft',     label: 'Draft' },
-  { key: 'completed', label: 'Completed' },
-  { key: 'cancelled', label: 'Cancelled' },
+  { key: 'all',        label: 'All' },
+  { key: 'active',     label: 'Active' },
+  { key: 'draft',      label: 'Draft' },
+  { key: 'completed',  label: 'Completed' },
+  { key: 'to_invoice', label: 'To Invoice' },
+  { key: 'cancelled',  label: 'Cancelled' },
 ];
 
 const FILTER_STATUS_MAP: Record<FilterTab, ShipmentOrderStatus[] | undefined> = {
-  all:       undefined,
-  active:    [2001, 2002, 3001, 3002, 3003, 4001, 4002],
-  draft:     [1001, 1002],
-  completed: [5001],
-  cancelled: [-1],
+  all:        undefined,
+  active:     [2001, 2002, 3001, 3002, 3003, 4001, 4002],
+  draft:      [1001, 1002],
+  completed:  [5001],
+  to_invoice: [5001],   // further filtered by issued_invoice=false below
+  cancelled:  [-1],
 };
 
 // ---------------------------------------------------------------------------
@@ -45,20 +48,31 @@ const FILTER_STATUS_MAP: Record<FilterTab, ShipmentOrderStatus[] | undefined> = 
 export default function ShipmentsPage() {
   const [orders, setOrders] = useState<ShipmentOrder[]>([]);
   const [stats, setStats] = useState<{
-    total: number; active: number; draft: number; completed: number; cancelled: number;
+    total: number; active: number; draft: number; completed: number; to_invoice: number; cancelled: number;
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<FilterTab>('all');
+  const [activeTab, setActiveTab] = useState<FilterTab>('active');
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [companies, setCompanies] = useState<{ company_id: string; name: string }[]>([]);
   const [ports, setPorts] = useState<{ un_code: string; name: string; country: string; port_type: string }[]>([]);
+  const [accountType, setAccountType] = useState<string | null>(null);
+  const [profileLoaded, setProfileLoaded] = useState(false);
 
   useEffect(() => {
-    Promise.all([fetchCompaniesForShipmentAction(), fetchPortsAction()]).then(([c, p]) => {
+    // Load profile, companies, ports and stats in parallel on mount
+    Promise.all([
+      fetchCompaniesForShipmentAction(),
+      fetchPortsAction(),
+      getCurrentUserProfileAction(),
+      fetchShipmentOrderStatsAction(),
+    ]).then(([c, p, profile, statsResult]) => {
       setCompanies(c);
       setPorts(p);
+      setAccountType(profile.account_type);
+      setProfileLoaded(true);
+      if (statsResult.success) setStats(statsResult.data);
     });
   }, []);
 
@@ -75,15 +89,22 @@ export default function ShipmentsPage() {
           limit: 50,
           cursor,
         }),
-        stats == null ? fetchShipmentOrderStatsAction() : Promise.resolve({ success: true, data: stats }),
+        // Stats already loaded on mount — only refresh when explicitly requested (stats==null)
+        stats == null ? fetchShipmentOrderStatsAction() : Promise.resolve({ success: true as const, data: stats }),
       ]);
 
       if (!ordersResult.success) throw new Error(ordersResult.error);
 
+      // For the to_invoice tab, further filter to issued_invoice=false
+      // issued_invoice may be stored as boolean false, 0, null, or undefined in V1 records
+      const fetchedOrders = tab === 'to_invoice'
+        ? ordersResult.data.orders.filter((o) => !o.issued_invoice)
+        : ordersResult.data.orders;
+
       if (cursor) {
-        setOrders((prev) => [...prev, ...ordersResult.data.orders]);
+        setOrders((prev) => [...prev, ...fetchedOrders]);
       } else {
-        setOrders(ordersResult.data.orders);
+        setOrders(fetchedOrders);
       }
       setNextCursor(ordersResult.data.nextCursor);
 
@@ -177,7 +198,7 @@ export default function ShipmentsPage() {
               {stats && tab.key !== 'all' && (
                 <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full
                   ${activeTab === tab.key ? 'bg-sky-100 text-sky-700' : 'bg-gray-100 text-gray-500'}`}>
-                  {stats[tab.key as keyof typeof stats] ?? 0}
+                  {tab.key === 'to_invoice' ? stats.to_invoice : stats[tab.key as keyof typeof stats] ?? 0}
                 </span>
               )}
             </button>
@@ -194,7 +215,7 @@ export default function ShipmentsPage() {
       )}
 
       {/* Table */}
-      <ShipmentOrderTable orders={orders} loading={loading} />
+      <ShipmentOrderTable orders={orders} loading={loading || !profileLoaded} accountType={accountType} onRefresh={() => { setStats(null); load(activeTab); }} />
 
       {/* Load more */}
       {nextCursor && !loading && (

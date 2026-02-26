@@ -1,16 +1,17 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft, Ship, Plane, Package, MapPin, Calendar,
   Users, FileText, AlertTriangle, Loader2, Hash,
-  Container, Weight,
+  Container, Weight, Activity, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { fetchShipmentOrderDetailAction } from '@/app/actions/shipments';
+import { updateShipmentStatusAction, updateInvoicedStatusAction } from '@/app/actions/shipments-write';
 import { formatDate } from '@/lib/utils';
-import type { ShipmentOrder } from '@/lib/types';
-import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS } from '@/lib/types';
+import type { ShipmentOrder, ShipmentOrderStatus } from '@/lib/types';
+import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS, VALID_TRANSITIONS } from '@/lib/types';
 
 // ─── Status styles ───────────────────────────────────────────────────────────
 
@@ -268,6 +269,312 @@ function PartiesCard({ order }: { order: ShipmentOrder }) {
   );
 }
 
+// ─── Status card ──────────────────────────────────────────────────────────────
+
+/** Linear status flow (excludes Exception and Cancelled) */
+const LINEAR_FLOW: ShipmentOrderStatus[] = [1001, 1002, 2001, 2002, 3001, 3002, 3003, 4001, 5001];
+
+function StatusCard({ order, onReload }: { order: ShipmentOrder; onReload: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ status: ShipmentOrderStatus; label: string; allowJump?: boolean } | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+
+  const currentStatus = order.status;
+  const validNext = VALID_TRANSITIONS[currentStatus] ?? [];
+  const isTerminal = currentStatus === 5001 || currentStatus === -1;
+
+  // Find where current status sits in linear flow
+  const currentLinearIdx = LINEAR_FLOW.indexOf(currentStatus);
+  // For Exception/Cancelled, find the last known linear position from pre_exception or history
+  const displayIdx = currentLinearIdx >= 0
+    ? currentLinearIdx
+    : (() => {
+        // Search history in reverse for last linear status
+        for (let i = (order.status_history ?? []).length - 1; i >= 0; i--) {
+          const idx = LINEAR_FLOW.indexOf(order.status_history[i].status as ShipmentOrderStatus);
+          if (idx >= 0) return idx;
+        }
+        return 0;
+      })();
+
+  // Determine the natural next linear step
+  const nextLinearStatus = displayIdx < LINEAR_FLOW.length - 1
+    ? LINEAR_FLOW[displayIdx + 1]
+    : null;
+  const advanceStatus = nextLinearStatus && validNext.includes(nextLinearStatus)
+    ? nextLinearStatus
+    : null;
+
+  const canException = validNext.includes(4002);
+  const canCancel = validNext.includes(-1);
+
+  // Invoiced toggle: only enabled when completed
+  const invoiceEnabled = currentStatus === 5001;
+
+  async function executeStatusChange(newStatus: ShipmentOrderStatus, allowJump?: boolean) {
+    setError(null);
+    setLoading(true);
+    setConfirmAction(null);
+    const result = await updateShipmentStatusAction(order.quotation_id, newStatus, allowJump || undefined);
+    setLoading(false);
+    if (result.success) {
+      onReload();
+    } else {
+      setError(result.error);
+    }
+  }
+
+  function handleAdvanceClick(newStatus: ShipmentOrderStatus) {
+    // Advance button: no allow_jump, uses VALID_TRANSITIONS
+    if (newStatus === 5001 || newStatus === -1) {
+      setConfirmAction({ status: newStatus, label: SHIPMENT_STATUS_LABELS[newStatus] ?? `${newStatus}` });
+    } else {
+      executeStatusChange(newStatus);
+    }
+  }
+
+  function handleTimelineDotClick(targetStatus: ShipmentOrderStatus) {
+    if (loading || isTerminal) return;
+    // Dot clicks always use allow_jump: true
+    if (targetStatus === 5001) {
+      setConfirmAction({ status: targetStatus, label: SHIPMENT_STATUS_LABELS[targetStatus] ?? `${targetStatus}`, allowJump: true });
+    } else {
+      executeStatusChange(targetStatus, true);
+    }
+  }
+
+  function handleExceptionClick() {
+    executeStatusChange(4002 as ShipmentOrderStatus);
+  }
+
+  function handleCancelClick() {
+    setConfirmAction({ status: -1 as ShipmentOrderStatus, label: SHIPMENT_STATUS_LABELS[-1] ?? 'Cancelled' });
+  }
+
+  async function handleInvoiceToggle() {
+    setInvoiceLoading(true);
+    const result = await updateInvoicedStatusAction(order.quotation_id, !order.issued_invoice);
+    setInvoiceLoading(false);
+    if (result.success) {
+      onReload();
+    } else {
+      setError(typeof result === 'object' && 'error' in result ? result.error : 'Failed to update');
+    }
+  }
+
+  const statusColor = SHIPMENT_STATUS_COLOR[currentStatus] ?? 'gray';
+  const statusStyle = STATUS_STYLES[statusColor] ?? STATUS_STYLES.gray;
+  const statusLabel = SHIPMENT_STATUS_LABELS[currentStatus] ?? `${currentStatus}`;
+
+  return (
+    <SectionCard title="Shipment Status" icon={<Activity className="w-4 h-4" />}>
+      {/* Status Timeline */}
+      <div className="flex items-center gap-0 overflow-x-auto pb-3 mb-4">
+        {LINEAR_FLOW.map((step, i) => {
+          const isFilled = i <= displayIdx;
+          const isFuture = i > displayIdx && !isTerminal;
+          const label = SHIPMENT_STATUS_LABELS[step] ?? `${step}`;
+          const isLast = i === LINEAR_FLOW.length - 1;
+          return (
+            <div key={step} className="flex items-center flex-shrink-0">
+              <div className="flex flex-col items-center group relative">
+                <div
+                  className={`w-3 h-3 rounded-full border-2 transition-colors ${
+                    isFilled
+                      ? 'bg-[var(--sky)] border-[var(--sky)]'
+                      : 'bg-white border-gray-300'
+                  } ${isFuture ? 'cursor-pointer hover:border-[var(--sky)] hover:bg-sky-100' : ''}`}
+                  onClick={isFuture ? () => handleTimelineDotClick(step) : undefined}
+                />
+                <span className={`text-[10px] mt-1 whitespace-nowrap ${
+                  isFilled ? 'text-[var(--text)] font-medium' : 'text-gray-400'
+                } ${isFuture ? 'cursor-pointer' : ''}`}
+                  onClick={isFuture ? () => handleTimelineDotClick(step) : undefined}
+                >
+                  {label}
+                </span>
+                {/* Tooltip for future steps */}
+                {isFuture && (
+                  <div className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 hidden group-hover:block z-10 px-2 py-1 bg-gray-800 text-white text-[10px] rounded whitespace-nowrap">
+                    Jump to {label}
+                  </div>
+                )}
+              </div>
+              {!isLast && (
+                <div className={`h-0.5 w-6 mx-0.5 mt-[-10px] ${
+                  i < displayIdx ? 'bg-[var(--sky)]' : 'bg-gray-200'
+                }`} />
+              )}
+            </div>
+          );
+        })}
+        {/* Exception / Cancelled indicator */}
+        {(currentStatus === 4002 || currentStatus === -1) && (
+          <div className="flex items-center flex-shrink-0 ml-2">
+            <div className="flex flex-col items-center">
+              <div className="w-3 h-3 rounded-full bg-red-500 border-2 border-red-500" />
+              <span className="text-[10px] mt-1 whitespace-nowrap text-red-600 font-medium">
+                {statusLabel}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Current status + last updated */}
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <span className="text-xs text-[var(--text-muted)] mr-2">Current status</span>
+          <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${statusStyle}`}>
+            {statusLabel}
+          </span>
+        </div>
+        {order.last_status_updated && (
+          <span className="text-xs text-[var(--text-muted)]">
+            Last updated {formatDate(order.last_status_updated)}
+          </span>
+        )}
+      </div>
+
+      {/* Action Buttons */}
+      {isTerminal ? null : (
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Main advance button */}
+          {advanceStatus && (
+            <button
+              onClick={() => handleAdvanceClick(advanceStatus)}
+              disabled={loading}
+              className="px-4 py-2 bg-[var(--sky)] text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2"
+            >
+              {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Advance to {SHIPMENT_STATUS_LABELS[advanceStatus]}
+            </button>
+          )}
+
+          {/* Exception button */}
+          {canException && (
+            <button
+              onClick={handleExceptionClick}
+              disabled={loading}
+              className="px-4 py-2 border border-amber-400 text-amber-700 bg-amber-50 text-sm font-medium rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              &#x2691; Flag Exception
+            </button>
+          )}
+
+          {/* Cancel button */}
+          {canCancel && (
+            <button
+              onClick={handleCancelClick}
+              disabled={loading}
+              className="px-4 py-2 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              &#x2715; Cancel Shipment
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Inline error */}
+      {error && (
+        <div className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          {error}
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {confirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-lg p-6 max-w-sm w-full mx-4">
+            <h3 className="text-lg font-semibold text-[var(--text)] mb-2">
+              Confirm: {confirmAction.label}
+            </h3>
+            <p className="text-sm text-[var(--text-muted)] mb-5">
+              Are you sure you want to set this shipment to <strong>{confirmAction.label}</strong>?
+              This action cannot be easily undone.
+            </p>
+            <div className="flex items-center gap-3 justify-end">
+              <button
+                onClick={() => setConfirmAction(null)}
+                className="px-4 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => executeStatusChange(confirmAction.status, confirmAction.allowJump)}
+                className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-opacity hover:opacity-90 ${
+                  confirmAction.status === -1 ? 'bg-red-600' : 'bg-[var(--sky)]'
+                }`}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invoiced Toggle */}
+      <div className="mt-4 pt-4 border-t border-[var(--border)] flex items-center justify-between">
+        <div>
+          <span className="text-sm text-[var(--text)]">Invoiced</span>
+          <span className="text-xs text-[var(--text-muted)] ml-2">
+            {invoiceEnabled
+              ? (order.issued_invoice ? 'Invoice processed' : 'Awaiting invoice')
+              : 'Available after shipment is completed'}
+          </span>
+        </div>
+        <button
+          onClick={invoiceEnabled ? handleInvoiceToggle : undefined}
+          disabled={!invoiceEnabled || invoiceLoading}
+          className={`relative w-10 h-5 rounded-full transition-colors ${
+            order.issued_invoice && invoiceEnabled ? 'bg-[var(--sky)]' : 'bg-gray-300'
+          } ${!invoiceEnabled ? 'opacity-40 cursor-not-allowed' : ''} ${invoiceLoading ? 'opacity-50' : ''}`}
+        >
+          <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+            order.issued_invoice ? 'translate-x-5' : ''
+          }`} />
+        </button>
+      </div>
+
+      {/* Status History */}
+      {(order.status_history ?? []).length > 0 && (
+        <div className="mt-4 pt-4 border-t border-[var(--border)]">
+          <button
+            onClick={() => setHistoryOpen(!historyOpen)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide hover:text-[var(--text)] transition-colors"
+          >
+            {historyOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+            Status History
+          </button>
+          {historyOpen && (
+            <div className="mt-3 space-y-2">
+              {[...(order.status_history ?? [])].reverse().map((entry, i) => {
+                const entryColor = SHIPMENT_STATUS_COLOR[entry.status] ?? 'gray';
+                const entryStyle = STATUS_STYLES[entryColor] ?? STATUS_STYLES.gray;
+                return (
+                  <div key={i} className="flex items-center justify-between py-1.5 border-b border-[var(--border)] last:border-0">
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${entryStyle}`}>
+                        {entry.label}
+                      </span>
+                      <span className="text-xs text-[var(--text-muted)]">{entry.changed_by}</span>
+                    </div>
+                    <span className="text-xs text-[var(--text-muted)]">{formatDate(entry.timestamp)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function ShipmentOrderDetailPage() {
@@ -279,19 +586,23 @@ export default function ShipmentOrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const loadOrder = useCallback(async () => {
+    const result = await fetchShipmentOrderDetailAction(quotationId);
+    if (result.success) {
+      setOrder(result.data);
+    } else {
+      setError(result.error);
+    }
+  }, [quotationId]);
+
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const result = await fetchShipmentOrderDetailAction(quotationId);
-      if (result.success) {
-        setOrder(result.data);
-      } else {
-        setError(result.error);
-      }
+      await loadOrder();
       setLoading(false);
     }
     load();
-  }, [quotationId]);
+  }, [loadOrder]);
 
   if (loading) {
     return (
@@ -378,6 +689,9 @@ export default function ShipmentOrderDetailPage() {
 
       {/* Route */}
       <RouteCard order={order} />
+
+      {/* Status Management */}
+      <StatusCard order={order} onReload={loadOrder} />
 
       {/* Two-column grid for the detail cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">

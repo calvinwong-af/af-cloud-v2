@@ -10,6 +10,8 @@
 
 import { getDatastore } from './datastore-query';
 import { logAction } from './auth-server';
+import { SHIPMENT_STATUS_LABELS, VALID_TRANSITIONS } from './types';
+import type { ShipmentOrderStatus } from './types';
 
 // ---------------------------------------------------------------------------
 // Result type
@@ -395,5 +397,286 @@ export async function createShipmentOrder(
     });
 
     return { success: false, error: 'Failed to create shipment order. Please try again.' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Update Shipment Status
+// ---------------------------------------------------------------------------
+
+export interface UpdateShipmentStatusInput {
+  shipment_id: string;
+  new_status: ShipmentOrderStatus;
+  changed_by_uid: string;
+  changed_by_email: string;
+  allow_jump?: boolean;
+}
+
+export type UpdateShipmentStatusResult =
+  | { success: true }
+  | { success: false; error: string };
+
+export async function updateShipmentStatus(
+  input: UpdateShipmentStatusInput
+): Promise<UpdateShipmentStatusResult> {
+  try {
+    const ds = getDatastore();
+    const now = new Date().toISOString();
+
+    // a. Read current Quotation entity
+    const quotationKey = ds.key(['Quotation', input.shipment_id]);
+    const [quotationEntity] = await ds.get(quotationKey);
+
+    // b. Not found
+    if (!quotationEntity) {
+      return { success: false, error: 'Shipment not found' };
+    }
+
+    // c. Read current status
+    const currentStatus = quotationEntity.status as number;
+
+    // d. Terminal state protection (always enforced regardless of allow_jump)
+    if (currentStatus === 5001 || currentStatus === -1) {
+      return { success: false, error: 'Cannot change status of a completed or cancelled shipment' };
+    }
+
+    // d2. Validate transition (skipped when allow_jump is true)
+    if (!input.allow_jump) {
+      const allowed = VALID_TRANSITIONS[currentStatus] ?? [];
+      if (!allowed.includes(input.new_status)) {
+        return { success: false, error: 'Invalid status transition' };
+      }
+    }
+
+    // e. Determine data_version
+    const dataVersion = (quotationEntity.data_version as number | null) ?? 1;
+
+    // f. Build update fields for the Quotation entity
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const updateData: Record<string, any> = {
+      status: input.new_status,
+      last_status_updated: now,
+      updated: now,
+    };
+
+    // g. V2-only: pre_exception_status handling
+    if (dataVersion === 2) {
+      if (input.new_status === 4002 && currentStatus !== 4002) {
+        updateData.pre_exception_status = currentStatus;
+      } else if (input.new_status !== 4002 && quotationEntity.pre_exception_status != null) {
+        updateData.pre_exception_status = null;
+      }
+    }
+
+    // h. Append to status_history (all versions)
+    const existingHistory = (quotationEntity.status_history as unknown[]) ?? [];
+    const newEntry = {
+      status: input.new_status,
+      label: SHIPMENT_STATUS_LABELS[input.new_status] ?? `${input.new_status}`,
+      timestamp: now,
+      changed_by: input.changed_by_email,
+      note: null,
+    };
+    updateData.status_history = [...existingHistory, newEntry];
+
+    // i. Merge update into Quotation (partial update)
+    await ds.merge({
+      key: quotationKey,
+      data: updateData,
+      excludeFromIndexes: ['status_history'],
+    });
+
+    // j. Update ShipmentWorkFlow entity
+    const workflowKey = ds.key(['ShipmentWorkFlow', input.shipment_id]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const workflowUpdate: Record<string, any> = { updated: now };
+    if (input.new_status === 5001) {
+      workflowUpdate.completed = true;
+    } else if (input.new_status === -1) {
+      workflowUpdate.completed = false;
+    }
+    await ds.merge({
+      key: workflowKey,
+      data: workflowUpdate,
+    });
+
+    // k. Log the action
+    await logAction({
+      uid: input.changed_by_uid,
+      email: input.changed_by_email,
+      account_type: 'AFU',
+      action: 'UPDATE_SHIPMENT_STATUS',
+      entity_kind: 'Quotation',
+      entity_id: input.shipment_id,
+      success: true,
+      meta: {
+        from_status: currentStatus,
+        to_status: input.new_status,
+        data_version: dataVersion,
+      },
+    });
+
+    return { success: true };
+  } catch (err) {
+    console.error('[updateShipmentStatus] Failed:', err);
+
+    await logAction({
+      uid: input.changed_by_uid,
+      email: input.changed_by_email,
+      account_type: 'AFU',
+      action: 'UPDATE_SHIPMENT_STATUS',
+      entity_kind: 'Quotation',
+      entity_id: input.shipment_id,
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+      meta: { new_status: input.new_status },
+    });
+
+    return { success: false, error: 'Failed to update shipment status. Please try again.' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Update Invoiced Status
+// ---------------------------------------------------------------------------
+
+export interface UpdateInvoicedStatusInput {
+  shipment_id: string;
+  issued_invoice: boolean;
+  changed_by_uid: string;
+  changed_by_email: string;
+}
+
+export type UpdateInvoicedStatusResult =
+  | { success: true }
+  | { success: false; error: string };
+
+export async function updateInvoicedStatus(
+  input: UpdateInvoicedStatusInput
+): Promise<UpdateInvoicedStatusResult> {
+  try {
+    const ds = getDatastore();
+    const now = new Date().toISOString();
+
+    const quotationKey = ds.key(['Quotation', input.shipment_id]);
+
+    await ds.merge({
+      key: quotationKey,
+      data: {
+        issued_invoice: input.issued_invoice,
+        updated: now,
+      },
+    });
+
+    await logAction({
+      uid: input.changed_by_uid,
+      email: input.changed_by_email,
+      account_type: 'AFU',
+      action: 'UPDATE_INVOICED_STATUS',
+      entity_kind: 'Quotation',
+      entity_id: input.shipment_id,
+      success: true,
+      meta: { issued_invoice: input.issued_invoice },
+    });
+
+    return { success: true };
+  } catch (err) {
+    console.error('[updateInvoicedStatus] Failed:', err);
+
+    await logAction({
+      uid: input.changed_by_uid,
+      email: input.changed_by_email,
+      account_type: 'AFU',
+      action: 'UPDATE_INVOICED_STATUS',
+      entity_kind: 'Quotation',
+      entity_id: input.shipment_id,
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+      meta: { issued_invoice: input.issued_invoice },
+    });
+
+    return { success: false, error: 'Failed to update invoiced status. Please try again.' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Delete Shipment Order
+// ---------------------------------------------------------------------------
+
+export interface DeleteShipmentOrderInput {
+  shipment_id: string;
+  changed_by_uid: string;
+  changed_by_email: string;
+}
+
+export type DeleteShipmentOrderResult =
+  | { success: true }
+  | { success: false; error: string };
+
+export async function deleteShipmentOrder(
+  input: DeleteShipmentOrderInput
+): Promise<DeleteShipmentOrderResult> {
+  try {
+    const ds = getDatastore();
+
+    // a. Read the Quotation entity
+    const quotationKey = ds.key(['Quotation', input.shipment_id]);
+    const [quotationEntity] = await ds.get(quotationKey);
+
+    if (!quotationEntity) {
+      return { success: false, error: 'Shipment not found' };
+    }
+
+    // b. Determine version
+    const dataVersion = (quotationEntity.data_version as number | null) ?? 1;
+    const isV2 = input.shipment_id.startsWith('AF2-') || dataVersion === 2;
+    const trackingId = quotationEntity.tracking_id as string | null ?? null;
+
+    if (isV2) {
+      // c. V2 — delete all associated entities
+      const keysToDelete = [
+        ds.key(['Quotation', input.shipment_id]),
+        ds.key(['ShipmentWorkFlow', input.shipment_id]),
+        ds.key(['ShipmentOrderV2CountId', input.shipment_id]),
+      ];
+      if (trackingId) {
+        keysToDelete.push(ds.key(['ShipmentTrackingId', trackingId]));
+      }
+      await ds.delete(keysToDelete);
+    } else {
+      // d. V1 — delete Quotation entity only
+      await ds.delete(quotationKey);
+    }
+
+    // e. Log success
+    await logAction({
+      uid: input.changed_by_uid,
+      email: input.changed_by_email,
+      account_type: 'AFU',
+      action: 'DELETE_SHIPMENT_ORDER',
+      entity_kind: 'Quotation',
+      entity_id: input.shipment_id,
+      success: true,
+      meta: { data_version: dataVersion, is_v2: isV2 },
+    });
+
+    return { success: true };
+  } catch (err) {
+    console.error('[deleteShipmentOrder] Failed:', err);
+
+    // f. Log failure
+    await logAction({
+      uid: input.changed_by_uid,
+      email: input.changed_by_email,
+      account_type: 'AFU',
+      action: 'DELETE_SHIPMENT_ORDER',
+      entity_kind: 'Quotation',
+      entity_id: input.shipment_id,
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+      meta: {},
+    });
+
+    return { success: false, error: 'Failed to delete shipment. Please try again.' };
   }
 }

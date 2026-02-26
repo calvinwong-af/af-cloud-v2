@@ -62,7 +62,7 @@ export function mapV1QuotationStatus(
 function mapV1ShipmentOrderStatus(status: number): ShipmentOrderStatus {
   switch (status) {
     case 100:   return 2001;  // Created → Confirmed
-    case 110:   return 3001;  // Booking Confirmed → Booked
+    case 110:   return 3001;  // Booking Confirmed
     case 4110:  return 3002;  // In Transit
     case 10000: return 5001;  // Completed
     default:    return 2001;  // Intermediate states → Confirmed
@@ -418,6 +418,9 @@ export function assembleV1ShipmentOrder(params: {
     transaction_type: (q.transaction_type as string ?? 'IMPORT') as ShipmentOrder['transaction_type'],
     incoterm_code: q.incoterm_code as string | null ?? null,
     status,
+    issued_invoice: q.issued_invoice as boolean ?? false,
+    last_status_updated: q.last_status_updated as string | null ?? null,
+    status_history: q.status_history as ShipmentOrder['status_history'] ?? [],
 
     parent_id: null,
     related_orders: [],

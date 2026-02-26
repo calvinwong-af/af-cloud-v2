@@ -5,6 +5,39 @@ import { verifySessionAndRole, logAction } from '@/lib/auth-server';
 import { getDatastore } from '@/lib/datastore-query';
 import { getFirebaseAdmin } from '@/lib/firebase-admin';
 
+// ---------------------------------------------------------------------------
+// Lightweight current-user profile (for display — no role gate)
+// ---------------------------------------------------------------------------
+
+export async function getCurrentUserProfileAction(): Promise<{
+  role: string | null;
+  account_type: string | null;
+}> {
+  try {
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) return { role: null, account_type: null };
+
+    const admin = getFirebaseAdmin();
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const uid = decodedToken.uid;
+
+    const datastore = getDatastore();
+    const [[iamEntity], [userAccountEntity]] = await Promise.all([
+      datastore.get(datastore.key(['UserIAM', uid])),
+      datastore.get(datastore.key(['UserAccount', uid])),
+    ]);
+
+    return {
+      role: (iamEntity?.role as string) ?? null,
+      account_type: (userAccountEntity?.account_type as string) ?? (iamEntity?.account_type as string) ?? null,
+    };
+  } catch {
+    return { role: null, account_type: null };
+  }
+}
+
 type ActionResult<T> =
   | { success: true; data: T }
   | { success: false; error: string };

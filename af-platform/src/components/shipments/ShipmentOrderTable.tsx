@@ -7,42 +7,60 @@
 
 'use client';
 
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { MoreVertical, Ship, Plane, Truck, ArrowRight } from 'lucide-react';
+import {
+  MoreVertical, Ship, Plane, Truck, ArrowRight, Container, Package,
+  FileText, FilePen, CircleCheck, BookmarkCheck, Bookmark, Anchor,
+  AlertTriangle, PackageCheck, Ban, ReceiptText, Receipt, Stamp,
+  ExternalLink, Copy, Hash, CopyPlus, Trash2, Loader2,
+} from 'lucide-react';
 import { formatDate } from '@/lib/utils';
+import { deleteShipmentOrderAction } from '@/app/actions/shipments-write';
 import type { ShipmentOrder } from '@/lib/types';
-import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS } from '@/lib/types';
+import { SHIPMENT_STATUS_LABELS, ORDER_TYPE_LABELS } from '@/lib/types';
 
 interface ShipmentOrderTableProps {
   orders: ShipmentOrder[];
   loading: boolean;
+  accountType: string | null;
+  onRefresh: () => void;
 }
 
 // ---------------------------------------------------------------------------
-// Status badge
+// Status icon
 // ---------------------------------------------------------------------------
 
-const STATUS_STYLES: Record<string, string> = {
-  gray:   'bg-gray-100 text-gray-600',
-  yellow: 'bg-yellow-100 text-yellow-700',
-  blue:   'bg-blue-100 text-blue-700',
-  orange: 'bg-orange-100 text-orange-700',
-  teal:   'bg-teal-100 text-teal-700',
-  sky:    'bg-sky-100 text-sky-700',
-  indigo: 'bg-indigo-100 text-indigo-700',
-  purple: 'bg-purple-100 text-purple-700',
-  red:    'bg-red-100 text-red-600',
-  green:  'bg-emerald-100 text-emerald-700',
-};
+function StatusIcon({ order }: { order: ShipmentOrder }) {
+  const label = SHIPMENT_STATUS_LABELS[order.status] ?? `${order.status}`;
 
-function StatusBadge({ status }: { status: number }) {
-  const label = SHIPMENT_STATUS_LABELS[status] ?? `${status}`;
-  const color = SHIPMENT_STATUS_COLOR[status] ?? 'gray';
-  const style = STATUS_STYLES[color] ?? STATUS_STYLES.gray;
+  const iconMap: Record<number, { icon: React.ReactNode; color: string }> = {
+    1001: { icon: <FileText className="w-4 h-4" />,      color: 'var(--text-muted)' },
+    1002: { icon: <FilePen className="w-4 h-4" />,       color: '#ca8a04' },
+    2001: { icon: <CircleCheck className="w-4 h-4" />,   color: '#2563eb' },
+    2002: { icon: <BookmarkCheck className="w-4 h-4" />, color: '#ea580c' },
+    3001: { icon: <Bookmark className="w-4 h-4" />,      color: '#0d9488' },
+    3002: { icon: order.order_type === 'AIR'
+              ? <Plane className="w-4 h-4" />
+              : <Ship className="w-4 h-4" />,            color: '#0284c7' },
+    3003: { icon: <Anchor className="w-4 h-4" />,        color: '#4f46e5' },
+    4001: { icon: <Stamp className="w-4 h-4" />,         color: '#7c3aed' },
+    4002: { icon: <AlertTriangle className="w-4 h-4" />, color: '#dc2626' },
+    5001: { icon: <PackageCheck className="w-4 h-4" />,  color: '#16a34a' },
+    [-1]: { icon: <Ban className="w-4 h-4" />,           color: '#6b7280' },
+  };
+
+  const entry = iconMap[order.status] ?? iconMap[1001];
+
   return (
-    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${style}`}>
-      {label}
-    </span>
+    <div className="flex items-center gap-2">
+      <span title={label} style={{ color: entry.color }}>{entry.icon}</span>
+      {order.status === 5001 && (
+        order.issued_invoice
+          ? <span title="Invoiced" style={{ color: '#16a34a' }}><ReceiptText className="w-4 h-4" /></span>
+          : <span title="Awaiting Invoice" style={{ color: '#ca8a04' }}><Receipt className="w-4 h-4" /></span>
+      )}
+    </div>
   );
 }
 
@@ -51,18 +69,202 @@ function StatusBadge({ status }: { status: number }) {
 // ---------------------------------------------------------------------------
 
 function OrderTypeIcon({ type }: { type: ShipmentOrder['order_type'] }) {
-  const icons: Record<string, React.ReactNode> = {
-    SEA_FCL: <Ship className="w-3.5 h-3.5" />,
-    SEA_LCL: <Ship className="w-3.5 h-3.5" />,
-    AIR:     <Plane className="w-3.5 h-3.5" />,
-    GROUND:  <Truck className="w-3.5 h-3.5" />,
-    CROSS_BORDER: <ArrowRight className="w-3.5 h-3.5" />,
+  const map: Record<string, { icon: React.ReactNode; label: string }> = {
+    SEA_FCL:      { icon: <Container className="w-4 h-4" />, label: ORDER_TYPE_LABELS.SEA_FCL },
+    SEA_LCL:      { icon: <Package className="w-4 h-4" />,   label: ORDER_TYPE_LABELS.SEA_LCL },
+    AIR:          { icon: <Plane className="w-4 h-4" />,      label: ORDER_TYPE_LABELS.AIR },
+    CROSS_BORDER: { icon: <Truck className="w-4 h-4" />,      label: ORDER_TYPE_LABELS.CROSS_BORDER },
+    GROUND:       { icon: <Truck className="w-4 h-4" />,      label: ORDER_TYPE_LABELS.GROUND },
   };
+  const entry = map[type] ?? { icon: null, label: type };
   return (
-    <div className="flex items-center gap-1.5 text-[var(--text-mid)]">
-      {icons[type] ?? null}
-      <span className="text-xs">{ORDER_TYPE_LABELS[type] ?? type}</span>
-    </div>
+    <span title={entry.label} className="text-[var(--text-muted)] flex items-center justify-center">
+      {entry.icon}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Actions menu
+// ---------------------------------------------------------------------------
+
+function ShipmentActionsMenu({
+  order,
+  accountType,
+  onDeleted,
+}: {
+  order: ShipmentOrder;
+  accountType: string | null;
+  onDeleted: () => void;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [copied, setCopied] = useState<'id' | 'tracking' | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  function handleCopy(text: string, type: 'id' | 'tracking') {
+    navigator.clipboard.writeText(text);
+    setCopied(type);
+    setOpen(false);
+    setTimeout(() => setCopied(null), 1500);
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    setDeleteError(null);
+    const result = await deleteShipmentOrderAction(order.quotation_id);
+    setDeleting(false);
+    if (result.success) {
+      setShowConfirm(false);
+      onDeleted();
+    } else {
+      setDeleteError(result.error);
+    }
+  }
+
+  const showDelete = accountType?.startsWith('AFU') === true;
+
+  return (
+    <>
+      <div className="relative" ref={menuRef}>
+        <button
+          ref={buttonRef}
+          onClick={() => {
+            if (!open && buttonRef.current) {
+              const rect = buttonRef.current.getBoundingClientRect();
+              setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+            }
+            setOpen((v) => !v);
+          }}
+          className="p-1.5 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+        >
+          <MoreVertical className="w-4 h-4" />
+        </button>
+
+        {open && menuPos && (
+          <div
+            className="fixed z-50 w-48 bg-white rounded-xl border border-[var(--border)] shadow-lg py-1 text-sm"
+            style={{ top: menuPos.top, right: menuPos.right }}
+          >
+            {/* View Details */}
+            <button
+              onClick={() => { setOpen(false); router.push(`/shipments/${order.quotation_id}`); }}
+              className="w-full flex items-center gap-2.5 px-4 py-2 text-left text-[var(--text)] hover:bg-[var(--surface)] transition-colors"
+            >
+              <ExternalLink className="w-4 h-4" />
+              View Details
+            </button>
+
+            {/* Copy Order ID */}
+            <button
+              onClick={() => handleCopy(order.quotation_id, 'id')}
+              className="w-full flex items-center gap-2.5 px-4 py-2 text-left text-[var(--text)] hover:bg-[var(--surface)] transition-colors"
+            >
+              <Copy className="w-4 h-4" />
+              {copied === 'id' ? 'Copied!' : 'Copy Order ID'}
+            </button>
+
+            {/* Copy Tracking ID */}
+            {order.tracking_id && (
+              <button
+                onClick={() => handleCopy(order.tracking_id!, 'tracking')}
+                className="w-full flex items-center gap-2.5 px-4 py-2 text-left text-[var(--text)] hover:bg-[var(--surface)] transition-colors"
+              >
+                <Hash className="w-4 h-4" />
+                {copied === 'tracking' ? 'Copied!' : 'Copy Tracking ID'}
+              </button>
+            )}
+
+            {/* Duplicate Shipment (disabled) */}
+            <button
+              disabled
+              title="Coming soon"
+              className="w-full flex items-center gap-2.5 px-4 py-2 text-left text-[var(--text)] opacity-40 cursor-not-allowed"
+            >
+              <CopyPlus className="w-4 h-4" />
+              Duplicate Shipment
+            </button>
+
+            {/* Divider + Delete */}
+            {showDelete && (
+              <>
+                <div className="my-1 border-t border-[var(--border)]" />
+                <button
+                  onClick={() => { setShowConfirm(true); setOpen(false); setDeleteError(null); }}
+                  className="w-full flex items-center gap-2.5 px-4 py-2 text-left text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Delete confirmation modal */}
+      {showConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowConfirm(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center mb-4">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+            </div>
+
+            <h3 className="text-base font-semibold text-[var(--text)] mb-1">Delete Shipment?</h3>
+            <p className="text-sm text-[var(--text-muted)] mb-1">
+              This will permanently delete <span className="font-medium text-[var(--text)]">{order.quotation_id}</span>.
+            </p>
+            <p className="text-sm text-[var(--text-muted)] mb-1">
+              {order.quotation_id.startsWith('AF2-')
+                ? 'All associated records will also be removed.'
+                : 'Only the order record will be removed. Legacy records are preserved.'}
+            </p>
+            <p className="text-sm text-red-600 font-medium mb-5">
+              This action cannot be undone.
+            </p>
+
+            {deleteError && (
+              <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                {deleteError}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowConfirm(false)}
+                className="flex-1 px-4 py-2 text-sm rounded-lg border border-[var(--border)] text-[var(--text-mid)] hover:bg-[var(--surface)] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex-1 px-4 py-2 text-sm rounded-lg bg-red-600 text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {deleting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -70,7 +272,7 @@ function OrderTypeIcon({ type }: { type: ShipmentOrder['order_type'] }) {
 // Table
 // ---------------------------------------------------------------------------
 
-export function ShipmentOrderTable({ orders, loading }: ShipmentOrderTableProps) {
+export function ShipmentOrderTable({ orders, loading, accountType, onRefresh }: ShipmentOrderTableProps) {
   const router = useRouter();
 
   if (loading) return <ShipmentTableSkeleton />;
@@ -105,7 +307,9 @@ export function ShipmentOrderTable({ orders, loading }: ShipmentOrderTableProps)
               <ShipmentRow
                 key={order.quotation_id}
                 order={order}
+                accountType={accountType}
                 onRowClick={() => router.push(`/shipments/${order.quotation_id}`)}
+                onDeleted={onRefresh}
               />
             ))}
           </tbody>
@@ -128,11 +332,18 @@ function Th({ children }: { children: React.ReactNode }) {
 
 function ShipmentRow({
   order,
+  accountType,
   onRowClick,
+  onDeleted,
 }: {
   order: ShipmentOrder;
+  accountType: string | null;
   onRowClick: () => void;
+  onDeleted: () => void;
 }) {
+  const originCode = order.origin?.port_un_code ?? order.origin?.label ?? '—';
+  const destCode = order.destination?.port_un_code ?? order.destination?.label ?? '—';
+
   return (
     <tr
       className="hover:bg-[var(--surface)] transition-colors cursor-pointer"
@@ -152,22 +363,22 @@ function ShipmentRow({
         </div>
       </td>
 
-      {/* Status */}
+      {/* Status + Invoice icon */}
       <td className="px-4 py-3">
-        <StatusBadge status={order.status} />
+        <StatusIcon order={order} />
       </td>
 
-      {/* Order type */}
-      <td className="px-4 py-3">
+      {/* Order type — icon only */}
+      <td className="px-4 py-3 text-center">
         <OrderTypeIcon type={order.order_type} />
       </td>
 
-      {/* Route */}
+      {/* Route — port codes only */}
       <td className="px-4 py-3">
-        <div className="flex items-center gap-1.5 text-xs text-[var(--text-mid)]">
-          <span className="font-mono">{order.origin?.label ?? order.origin?.port_un_code ?? '—'}</span>
-          <ArrowRight className="w-3 h-3 text-[var(--text-muted)]" />
-          <span className="font-mono">{order.destination?.label ?? order.destination?.port_un_code ?? '—'}</span>
+        <div className="flex items-center gap-1.5 text-sm text-[var(--text-mid)]">
+          <span className="font-mono">{originCode}</span>
+          <ArrowRight className="w-3 h-3 text-[var(--text-muted)] flex-shrink-0" />
+          <span className="font-mono">{destCode}</span>
         </div>
       </td>
 
@@ -202,20 +413,17 @@ function ShipmentRow({
         {formatDate(order.updated)}
       </td>
 
-      {/* Actions (stop propagation so row click doesn't also fire) */}
+      {/* Actions */}
       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-        <button className="p-1.5 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--text)]">
-          <MoreVertical className="w-4 h-4" />
-        </button>
+        <ShipmentActionsMenu order={order} accountType={accountType} onDeleted={onDeleted} />
       </td>
     </tr>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Skeleton
 // ---------------------------------------------------------------------------
-
 
 function ShipmentTableSkeleton() {
   return (

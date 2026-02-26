@@ -160,7 +160,7 @@ export type ShipmentOrderStatus =
   | 1002  // Draft — Pending Review
   | 2001  // Confirmed
   | 2002  // Booking Pending
-  | 3001  // Booked
+  | 3001  // Booking Confirmed
   | 3002  // In Transit
   | 3003  // Arrived
   | 4001  // Clearance In Progress
@@ -173,7 +173,7 @@ export const SHIPMENT_STATUS_LABELS: Record<number, string> = {
   1002: 'Pending Review',
   2001: 'Confirmed',
   2002: 'Booking Pending',
-  3001: 'Booked',
+  3001: 'Booking Confirmed',
   3002: 'In Transit',
   3003: 'Arrived',
   4001: 'Clearance In Progress',
@@ -196,6 +196,21 @@ export const SHIPMENT_STATUS_COLOR: Record<number, string> = {
   [-1]: 'gray',
 };
 
+/** Valid status transitions map — used by both server writes and client UI */
+export const VALID_TRANSITIONS: Record<number, number[]> = {
+  1001: [1002, -1],
+  1002: [2001, 1001, -1],
+  2001: [2002, -1],
+  2002: [3001, -1],
+  3001: [3002, 4002, -1],
+  3002: [3003, 4002, -1],
+  3003: [4001, 4002, -1],
+  4001: [5001, 4002, -1],
+  4002: [1001, 1002, 2001, 2002, 3001, 3002, 3003, 4001, 5001, -1],
+  5001: [],
+  [-1]: [],
+};
+
 export const ORDER_TYPE_LABELS: Record<OrderType, string> = {
   SEA_FCL: 'Sea FCL',
   SEA_LCL: 'Sea LCL',
@@ -203,6 +218,14 @@ export const ORDER_TYPE_LABELS: Record<OrderType, string> = {
   CROSS_BORDER: 'Cross-Border',
   GROUND: 'Ground',
 };
+
+export interface StatusHistoryEntry {
+  status: ShipmentOrderStatus;
+  label: string;
+  timestamp: string;         // ISO datetime
+  changed_by: string;        // user email
+  note: string | null;
+}
 
 export interface ShipmentOrder {
   // Identity
@@ -216,6 +239,9 @@ export interface ShipmentOrder {
   transaction_type: TransactionType;
   incoterm_code: string | null;
   status: ShipmentOrderStatus;
+  issued_invoice: boolean;                    // V1: maps from issued_invoice. V2: direct field. Default: false
+  last_status_updated: string | null;         // ISO datetime. Default: null
+  status_history: StatusHistoryEntry[];       // Append-only log. Default: []
 
   // Relationships
   parent_id: string | null;       // AFCQ-XXXXXX if child ground leg
