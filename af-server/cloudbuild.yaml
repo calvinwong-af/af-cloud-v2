@@ -1,0 +1,49 @@
+# af-server/cloudbuild.yaml
+# Cloud Build CI/CD pipeline for AF Server V2
+# Mirrors the pattern used in af-platform/cloudbuild.yaml
+#
+# Trigger: push to main branch (configure in GCP Console > Cloud Build > Triggers)
+# Region: asia-northeast1 (Tokyo — matches Datastore)
+# Service name: af-server
+
+steps:
+  # 1. Build container image
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "asia-northeast1-docker.pkg.dev/$PROJECT_ID/af-server/af-server:$COMMIT_SHA"
+      - "-t"
+      - "asia-northeast1-docker.pkg.dev/$PROJECT_ID/af-server/af-server:latest"
+      - "."
+
+  # 2. Push to Artifact Registry
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "--all-tags"
+      - "asia-northeast1-docker.pkg.dev/$PROJECT_ID/af-server/af-server"
+
+  # 3. Deploy to Cloud Run
+  - name: "gcr.io/cloud-builders/gcloud"
+    args:
+      - "run"
+      - "deploy"
+      - "af-server"
+      - "--image"
+      - "asia-northeast1-docker.pkg.dev/$PROJECT_ID/af-server/af-server:$COMMIT_SHA"
+      - "--region"
+      - "asia-northeast1"
+      - "--platform"
+      - "managed"
+      - "--allow-unauthenticated"       # Auth handled inside the app via Firebase tokens
+      - "--service-account"
+      - "af-server@$PROJECT_ID.iam.gserviceaccount.com"
+      - "--set-env-vars"
+      - "GOOGLE_CLOUD_PROJECT=$PROJECT_ID"
+
+images:
+  - "asia-northeast1-docker.pkg.dev/$PROJECT_ID/af-server/af-server:$COMMIT_SHA"
+  - "asia-northeast1-docker.pkg.dev/$PROJECT_ID/af-server/af-server:latest"
+
+timeout: "1200s"
