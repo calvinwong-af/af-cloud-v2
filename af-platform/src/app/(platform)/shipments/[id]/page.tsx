@@ -1,24 +1,18 @@
-/**
- * /shipments/[id] — ShipmentOrder detail view
- *
- * Renders full assembled ShipmentOrder. V1 records use the assembly layer;
- * V2 records are read directly.
- *
- * Currently read-only. Write/edit functionality comes in the next phase.
- */
-
 'use client';
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  ArrowLeft, Ship, Plane, Truck, Package, MapPin, Calendar,
-  Users, FileText, AlertTriangle, Loader2
+  ArrowLeft, Ship, Plane, Package, MapPin, Calendar,
+  Users, FileText, AlertTriangle, Loader2, Hash,
+  Container, Weight,
 } from 'lucide-react';
 import { fetchShipmentOrderDetailAction } from '@/app/actions/shipments';
 import { formatDate } from '@/lib/utils';
 import type { ShipmentOrder } from '@/lib/types';
 import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS } from '@/lib/types';
+
+// ─── Status styles ───────────────────────────────────────────────────────────
 
 const STATUS_STYLES: Record<string, string> = {
   gray:   'bg-gray-100 text-gray-700',
@@ -32,6 +26,249 @@ const STATUS_STYLES: Record<string, string> = {
   red:    'bg-red-100 text-red-700',
   green:  'bg-emerald-100 text-emerald-800',
 };
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function SectionCard({ title, icon, children }: {
+  title: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="bg-white border border-[var(--border)] rounded-xl p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-[var(--text-muted)]">{icon}</span>
+        <h2 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">{title}</h2>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function DataRow({ label, value, mono = false }: {
+  label: string;
+  value: string | null | undefined;
+  mono?: boolean;
+}) {
+  if (!value) return null;
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-1.5 border-b border-[var(--border)] last:border-0">
+      <span className="text-xs text-[var(--text-muted)] flex-shrink-0">{label}</span>
+      <span className={`text-sm text-[var(--text)] text-right ${mono ? 'font-mono' : ''}`}>{value}</span>
+    </div>
+  );
+}
+
+function EmptyState({ message }: { message: string }) {
+  return <p className="text-sm text-[var(--text-muted)] italic">{message}</p>;
+}
+
+// ─── Route card ───────────────────────────────────────────────────────────────
+
+function RouteCard({ order }: { order: ShipmentOrder }) {
+  const isAir = order.order_type === 'AIR';
+  const origin = order.origin;
+  const dest = order.destination;
+
+  // Prefer port code as primary; fall back to label if no code available
+  const originCode = origin?.port_un_code ?? origin?.label ?? '—';
+  const originName = origin?.port_un_code && origin?.label && origin.label !== origin.port_un_code
+    ? origin.label
+    : origin?.country_code ?? null;
+
+  const destCode = dest?.port_un_code ?? dest?.label ?? '—';
+  const destName = dest?.port_un_code && dest?.label && dest.label !== dest.port_un_code
+    ? dest.label
+    : dest?.country_code ?? null;
+
+  return (
+    <div className="bg-white border border-[var(--border)] rounded-xl p-5">
+      <div className="flex items-center gap-2 mb-5">
+        <span className="text-[var(--text-muted)]">
+          <MapPin className="w-4 h-4" />
+        </span>
+        <h2 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Route</h2>
+      </div>
+
+      {/* Port codes row — aligned with icon */}
+      <div className="flex items-center">
+        {/* Origin */}
+        <div className="flex-1 min-w-0">
+          <div className="text-xs text-[var(--text-muted)] mb-1">Origin</div>
+          <div className="text-2xl font-bold font-mono text-[var(--text)] tracking-wide">
+            {originCode}
+          </div>
+          {originName && (
+            <div className="text-xs text-[var(--text-muted)] mt-0.5 truncate">{originName}</div>
+          )}
+        </div>
+
+        {/* Connecting line + icon */}
+        <div className="flex items-center flex-shrink-0 mx-4">
+          <div className="h-px w-12 bg-[var(--border)]" />
+          <div className="p-2 rounded-full bg-[var(--sky-pale)] mx-2">
+            {isAir
+              ? <Plane className="w-4 h-4 text-[var(--sky)]" />
+              : <Ship className="w-4 h-4 text-[var(--sky)]" />}
+          </div>
+          <div className="h-px w-12 bg-[var(--border)]" />
+        </div>
+
+        {/* Destination */}
+        <div className="flex-1 min-w-0 text-right">
+          <div className="text-xs text-[var(--text-muted)] mb-1">Destination</div>
+          <div className="text-2xl font-bold font-mono text-[var(--text)] tracking-wide">
+            {destCode}
+          </div>
+          {destName && (
+            <div className="text-xs text-[var(--text-muted)] mt-0.5 truncate">{destName}</div>
+          )}
+        </div>
+      </div>
+
+      {/* Incoterm pill */}
+      {order.incoterm_code && (
+        <div className="mt-4 pt-4 border-t border-[var(--border)] flex items-center gap-2">
+          <span className="text-xs text-[var(--text-muted)]">Incoterm</span>
+          <span className="px-2 py-0.5 bg-[var(--surface)] border border-[var(--border)] rounded text-xs font-mono font-semibold text-[var(--text-mid)]">
+            {order.incoterm_code}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Type details card ────────────────────────────────────────────────────────
+
+function TypeDetailsCard({ order }: { order: ShipmentOrder }) {
+  const td = order.type_details;
+
+  if (!td) {
+    return (
+      <SectionCard title="Cargo Details" icon={<Container className="w-4 h-4" />}>
+        <EmptyState message="No cargo details recorded" />
+      </SectionCard>
+    );
+  }
+
+  if (td.type === 'SEA_FCL') {
+    return (
+      <SectionCard title="Containers" icon={<Container className="w-4 h-4" />}>
+        {td.containers.length === 0
+          ? <EmptyState message="No containers recorded" />
+          : (
+            <div className="space-y-2">
+              {td.containers.map((c, i) => (
+                <div key={i} className="flex items-center justify-between py-2 border-b border-[var(--border)] last:border-0">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 bg-[var(--surface)] border border-[var(--border)] rounded text-xs font-mono font-semibold text-[var(--text-mid)]">
+                      {c.container_size}
+                    </span>
+                    <span className="text-sm text-[var(--text-mid)]">{c.container_type}</span>
+                  </div>
+                  <span className="text-sm font-semibold text-[var(--text)]">× {c.quantity}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        <p className="text-xs text-[var(--text-muted)] mt-3">Container and seal numbers assigned at booking.</p>
+      </SectionCard>
+    );
+  }
+
+  if (td.type === 'SEA_LCL' || td.type === 'AIR') {
+    const totalWeight = td.packages.reduce((sum, p) => sum + (p.gross_weight_kg ?? 0), 0);
+    const totalVolume = td.packages.reduce((sum, p) => sum + (p.volume_cbm ?? 0), 0);
+
+    return (
+      <SectionCard title="Packages" icon={<Package className="w-4 h-4" />}>
+        {td.packages.length === 0
+          ? <EmptyState message="No packages recorded" />
+          : (
+            <div className="space-y-2 mb-3">
+              {td.packages.map((p, i) => (
+                <div key={i} className="flex items-center justify-between py-2 border-b border-[var(--border)] last:border-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-[var(--text)]">{p.quantity}×</span>
+                    <span className="text-sm text-[var(--text-mid)]">{p.packaging_type}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
+                    {p.gross_weight_kg != null && <span>{p.gross_weight_kg} kg</span>}
+                    {p.volume_cbm != null && <span>{p.volume_cbm} CBM</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+        {/* Totals row */}
+        {(totalWeight > 0 || totalVolume > 0) && (
+          <div className="flex items-center gap-4 pt-3 border-t border-[var(--border)]">
+            <span className="text-xs text-[var(--text-muted)] mr-auto">Totals</span>
+            {totalWeight > 0 && (
+              <div className="flex items-center gap-1 text-xs text-[var(--text-mid)]">
+                <Weight className="w-3 h-3" />
+                <span className="font-semibold">{totalWeight.toFixed(2)} kg</span>
+              </div>
+            )}
+            {totalVolume > 0 && (
+              <div className="text-xs text-[var(--text-mid)]">
+                <span className="font-semibold">{totalVolume.toFixed(3)} CBM</span>
+              </div>
+            )}
+          </div>
+        )}
+      </SectionCard>
+    );
+  }
+
+  return (
+    <SectionCard title="Cargo Details" icon={<Package className="w-4 h-4" />}>
+      <EmptyState message="Details not available for this order type" />
+    </SectionCard>
+  );
+}
+
+// ─── Parties card ─────────────────────────────────────────────────────────────
+
+function PartiesCard({ order }: { order: ShipmentOrder }) {
+  const parties = order.parties;
+  const hasParties = parties && (parties.shipper || parties.consignee || parties.notify_party);
+
+  return (
+    <SectionCard title="Parties" icon={<Users className="w-4 h-4" />}>
+      {!hasParties
+        ? <EmptyState message="Parties not yet assigned" />
+        : (
+          <div className="space-y-4">
+            {parties.shipper && (
+              <div>
+                <div className="text-xs font-semibold text-[var(--text-muted)] uppercase mb-1">Shipper</div>
+                <div className="text-sm text-[var(--text)]">{parties.shipper.name}</div>
+                {parties.shipper.address && <div className="text-xs text-[var(--text-muted)]">{parties.shipper.address}</div>}
+              </div>
+            )}
+            {parties.consignee && (
+              <div>
+                <div className="text-xs font-semibold text-[var(--text-muted)] uppercase mb-1">Consignee</div>
+                <div className="text-sm text-[var(--text)]">{parties.consignee.name}</div>
+                {parties.consignee.address && <div className="text-xs text-[var(--text-muted)]">{parties.consignee.address}</div>}
+              </div>
+            )}
+            {parties.notify_party && (
+              <div>
+                <div className="text-xs font-semibold text-[var(--text-muted)] uppercase mb-1">Notify Party</div>
+                <div className="text-sm text-[var(--text)]">{parties.notify_party.name}</div>
+              </div>
+            )}
+          </div>
+        )}
+    </SectionCard>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function ShipmentOrderDetailPage() {
   const params = useParams();
@@ -75,260 +312,148 @@ export default function ShipmentOrderDetailPage() {
     );
   }
 
+  const isV2 = order.data_version === 2;
   const statusLabel = SHIPMENT_STATUS_LABELS[order.status] ?? `${order.status}`;
   const statusColor = SHIPMENT_STATUS_COLOR[order.status] ?? 'gray';
   const statusStyle = STATUS_STYLES[statusColor] ?? STATUS_STYLES.gray;
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl">
-      {/* Back + Header */}
-      <div>
-        <button
-          onClick={() => router.back()}
-          className="flex items-center gap-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--text)] mb-3"
-        >
-          <ArrowLeft className="w-4 h-4" /> Back to Shipments
-        </button>
+    <div className="p-6 space-y-5 max-w-4xl">
 
+      {/* Back button */}
+      <button
+        onClick={() => router.back()}
+        className="flex items-center gap-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        Back to Shipments
+      </button>
+
+      {/* Header */}
+      <div className="bg-white border border-[var(--border)] rounded-xl p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-xl font-semibold font-mono text-[var(--text)]">
                 {order.quotation_id}
               </h1>
-              <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusStyle}`}>
+              <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${statusStyle}`}>
                 {statusLabel}
               </span>
-              {order.data_version === 1 && (
-                <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded">
+              {!isV2 && (
+                <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded font-mono">
                   Legacy V1
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-3 mt-1 text-sm text-[var(--text-muted)]">
-              <span>{ORDER_TYPE_LABELS[order.order_type] ?? order.order_type}</span>
-              <span>·</span>
-              <span>{order.transaction_type}</span>
-              {order.incoterm_code && (
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              <span className="text-sm text-[var(--text-mid)]">
+                {ORDER_TYPE_LABELS[order.order_type] ?? order.order_type}
+              </span>
+              <span className="text-[var(--border)]">·</span>
+              <span className="text-sm text-[var(--text-mid)]">{order.transaction_type}</span>
+              {order.tracking_id && (
                 <>
-                  <span>·</span>
-                  <span className="font-mono">{order.incoterm_code}</span>
+                  <span className="text-[var(--border)]">·</span>
+                  <span className="text-xs font-mono text-[var(--text-muted)]">{order.tracking_id}</span>
                 </>
               )}
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Route card */}
-      <div className="bg-white border border-[var(--border)] rounded-xl p-5">
-        <h2 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-4">Route</h2>
-        <div className="flex items-center gap-4">
-          <LocationDisplay label="Origin" location={order.origin} />
-          <div className="flex-1 flex items-center justify-center">
-            <div className="h-px flex-1 bg-[var(--border)]" />
-            <div className="mx-3 p-1.5 rounded-full bg-[var(--sky-pale)]">
-              {order.order_type === 'AIR'
-                ? <Plane className="w-4 h-4 text-[var(--sky)]" />
-                : order.order_type === 'GROUND'
-                ? <Truck className="w-4 h-4 text-[var(--sky)]" />
-                : <Ship className="w-4 h-4 text-[var(--sky)]" />}
+          {/* Company */}
+          {order.company_id && (
+            <div className="text-right flex-shrink-0">
+              <div className="text-xs text-[var(--text-muted)] mb-0.5">Customer</div>
+              <div className="text-sm font-semibold text-[var(--text)]">
+                {order._company_name ?? order.company_id}
+              </div>
+              {order._company_name && (
+                <div className="text-xs font-mono text-[var(--text-muted)]">{order.company_id}</div>
+              )}
             </div>
-            <div className="h-px flex-1 bg-[var(--border)]" />
-          </div>
-          <LocationDisplay label="Destination" location={order.destination} align="right" />
+          )}
         </div>
       </div>
 
-      {/* Details grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Route */}
+      <RouteCard order={order} />
+
+      {/* Two-column grid for the detail cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
         {/* Cargo */}
-        {order.cargo && (
-          <DetailCard title="Cargo" icon={<Package className="w-4 h-4" />}>
-            <DetailRow label="Description" value={order.cargo.description} />
-            <DetailRow label="HS Code" value={order.cargo.hs_code} />
-            {order.cargo.dg_classification && (
-              <DetailRow
-                label="DG Class"
-                value={`Class ${order.cargo.dg_classification.class}${order.cargo.dg_classification.un_number ? ` (${order.cargo.dg_classification.un_number})` : ''}`}
-              />
+        <SectionCard title="Cargo" icon={<Package className="w-4 h-4" />}>
+          {!order.cargo
+            ? <EmptyState message="No cargo description" />
+            : (
+              <>
+                {order.cargo.description && (
+                  <div className="mb-3">
+                    <div className="text-xs text-[var(--text-muted)] mb-1.5">Description</div>
+                    <div className="text-sm text-[var(--text)] whitespace-pre-wrap leading-relaxed bg-[var(--surface)] rounded-lg px-3 py-2.5 border border-[var(--border)]">
+                      {order.cargo.description}
+                    </div>
+                  </div>
+                )}
+                <DataRow label="HS Code" value={order.cargo.hs_code} mono />
+                {order.cargo.dg_classification && (
+                  <DataRow
+                    label="DG Classification"
+                    value={`Class ${order.cargo.dg_classification.class}${order.cargo.dg_classification.un_number ? ` · ${order.cargo.dg_classification.un_number}` : ''}`}
+                  />
+                )}
+              </>
             )}
-          </DetailCard>
-        )}
+        </SectionCard>
 
         {/* Dates */}
-        <DetailCard title="Dates" icon={<Calendar className="w-4 h-4" />}>
-          <DetailRow label="Cargo Ready" value={formatDate(order.cargo_ready_date)} />
-          <DetailRow label="Created" value={formatDate(order.created)} />
-          <DetailRow label="Updated" value={formatDate(order.updated)} />
-        </DetailCard>
+        <SectionCard title="Dates" icon={<Calendar className="w-4 h-4" />}>
+          <DataRow label="Cargo Ready" value={formatDate(order.cargo_ready_date)} />
+          <DataRow label="Created" value={formatDate(order.created)} />
+          <DataRow label="Updated" value={formatDate(order.updated)} />
+        </SectionCard>
+
+        {/* Type details — containers or packages */}
+        <TypeDetailsCard order={order} />
 
         {/* Parties */}
-        {order.parties && (
-          <DetailCard title="Parties" icon={<Users className="w-4 h-4" />}>
-            {order.parties.shipper && (
-              <DetailRow label="Shipper" value={order.parties.shipper.name} />
-            )}
-            {order.parties.consignee && (
-              <DetailRow label="Consignee" value={order.parties.consignee.name} />
-            )}
-            {order.parties.notify_party && (
-              <DetailRow label="Notify Party" value={order.parties.notify_party.name} />
-            )}
-          </DetailCard>
-        )}
+        <PartiesCard order={order} />
 
-        {/* Customs */}
+        {/* Customs — only if there are events */}
         {order.customs_clearance.length > 0 && (
-          <DetailCard title="Customs Clearance" icon={<FileText className="w-4 h-4" />}>
-            {order.customs_clearance.map((event, i) => (
-              <div key={i} className="flex items-center justify-between py-1">
-                <span className="text-xs text-[var(--text-mid)]">
-                  {event.type} — {event.port_un_code}
-                </span>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium
-                  ${event.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700'
-                  : event.status === 'EXCEPTION' ? 'bg-red-100 text-red-700'
-                  : event.status === 'IN_PROGRESS' ? 'bg-sky-100 text-sky-700'
-                  : 'bg-gray-100 text-gray-600'}`}>
-                  {event.status}
-                </span>
-              </div>
-            ))}
-          </DetailCard>
+          <SectionCard title="Customs Clearance" icon={<FileText className="w-4 h-4" />}>
+            <div className="space-y-2">
+              {order.customs_clearance.map((event, i) => (
+                <div key={i} className="flex items-center justify-between py-1.5 border-b border-[var(--border)] last:border-0">
+                  <span className="text-xs text-[var(--text-mid)]">
+                    {event.type} — {event.port_un_code}
+                  </span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                    event.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700'
+                    : event.status === 'EXCEPTION' ? 'bg-red-100 text-red-700'
+                    : event.status === 'IN_PROGRESS' ? 'bg-sky-100 text-sky-700'
+                    : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {event.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
         )}
+
+        {/* Meta */}
+        <SectionCard title="Reference" icon={<Hash className="w-4 h-4" />}>
+          <DataRow label="Order ID" value={order.quotation_id} mono />
+          <DataRow label="Tracking ID" value={order.tracking_id} mono />
+          <DataRow label="Data Version" value={isV2 ? 'V2 (Native)' : 'V1 (Legacy)'} />
+          {order.files.length > 0 && (
+            <DataRow label="Files" value={`${order.files.length} attached`} />
+          )}
+        </SectionCard>
+
       </div>
-
-      {/* Type details */}
-      {order.type_details && (
-        <div className="bg-white border border-[var(--border)] rounded-xl p-5">
-          <h2 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-4">
-            {ORDER_TYPE_LABELS[order.order_type]} Details
-          </h2>
-          <TypeDetailsView typeDetails={order.type_details} />
-        </div>
-      )}
-
-      {/* Files count */}
-      {order.files.length > 0 && (
-        <div className="text-sm text-[var(--text-muted)]">
-          <FileText className="w-4 h-4 inline mr-1.5" />
-          {order.files.length} file{order.files.length !== 1 ? 's' : ''} attached
-        </div>
-      )}
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
-function LocationDisplay({
-  label,
-  location,
-  align = 'left',
-}: {
-  label: string;
-  location: ShipmentOrder['origin'];
-  align?: 'left' | 'right';
-}) {
-  return (
-    <div className={`${align === 'right' ? 'text-right' : ''}`}>
-      <div className="text-xs text-[var(--text-muted)] mb-1">{label}</div>
-      <div className="flex items-center gap-1.5">
-        <MapPin className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-        <span className="font-medium text-[var(--text)]">
-          {location?.label ?? location?.port_un_code ?? '—'}
-        </span>
-      </div>
-      {location?.port_un_code && location.label !== location.port_un_code && (
-        <div className="text-xs font-mono text-[var(--text-muted)] mt-0.5">
-          {location.port_un_code}
-        </div>
-      )}
-      {location?.country_code && (
-        <div className="text-xs text-[var(--text-muted)]">{location.country_code}</div>
-      )}
-    </div>
-  );
-}
-
-function DetailCard({
-  title,
-  icon,
-  children,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="bg-white border border-[var(--border)] rounded-xl p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <span className="text-[var(--text-muted)]">{icon}</span>
-        <h2 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">{title}</h2>
-      </div>
-      <div className="space-y-2">{children}</div>
-    </div>
-  );
-}
-
-function DetailRow({ label, value }: { label: string; value: string | null | undefined }) {
-  if (!value) return null;
-  return (
-    <div className="flex items-baseline justify-between gap-4">
-      <span className="text-xs text-[var(--text-muted)] flex-shrink-0">{label}</span>
-      <span className="text-sm text-[var(--text)] text-right">{value}</span>
-    </div>
-  );
-}
-
-function TypeDetailsView({ typeDetails }: { typeDetails: ShipmentOrder['type_details'] }) {
-  if (!typeDetails) return null;
-
-  if (typeDetails.type === 'SEA_FCL') {
-    return (
-      <div className="space-y-2">
-        {typeDetails.containers.map((c, i) => (
-          <div key={i} className="flex items-center gap-3 text-sm text-[var(--text-mid)]">
-            <span className="font-mono bg-[var(--surface)] px-2 py-0.5 rounded">{c.container_size}</span>
-            <span>{c.container_type}</span>
-            <span>× {c.quantity}</span>
-            {c.container_numbers.length > 0 && (
-              <span className="font-mono text-xs text-[var(--text-muted)]">
-                {c.container_numbers.join(', ')}
-              </span>
-            )}
-          </div>
-        ))}
-        {typeDetails.containers.length === 0 && (
-          <p className="text-sm text-[var(--text-muted)]">No container details recorded</p>
-        )}
-      </div>
-    );
-  }
-
-  if (typeDetails.type === 'SEA_LCL' || typeDetails.type === 'AIR') {
-    const packages = typeDetails.packages;
-    return (
-      <div className="space-y-1.5">
-        {packages.map((p, i) => (
-          <div key={i} className="flex items-center gap-3 text-sm text-[var(--text-mid)]">
-            <span>{p.quantity}× {p.packaging_type}</span>
-            {p.gross_weight_kg != null && <span>{p.gross_weight_kg} kg</span>}
-            {p.volume_cbm != null && <span>{p.volume_cbm} CBM</span>}
-          </div>
-        ))}
-        {typeDetails.type === 'AIR' && typeDetails.chargeable_weight != null && (
-          <div className="text-sm text-[var(--text-mid)]">
-            Chargeable weight: <strong>{typeDetails.chargeable_weight} kg</strong>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  return <p className="text-sm text-[var(--text-muted)]">Details not available for this order type</p>;
-}
-

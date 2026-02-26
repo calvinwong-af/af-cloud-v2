@@ -240,7 +240,20 @@ export async function getShipmentOrderDetail(
   const dataVersion = (raw.data_version as number | null) ?? 1;
 
   if (dataVersion >= 2) {
-    return readV2ShipmentOrder(raw as Record<string, never>);
+    const order = readV2ShipmentOrder(raw as Record<string, never>);
+    // Resolve company name for display
+    if (order.company_id) {
+      try {
+        const companyKey = datastore.key(['Company', order.company_id]);
+        const [companyEntity] = await datastore.get(companyKey);
+        if (companyEntity) {
+          order._company_name = companyEntity.name ?? companyEntity.short_name ?? order.company_id;
+        }
+      } catch {
+        // Non-critical — fall back to showing company_id
+      }
+    }
+    return order;
   }
 
   // V1: parallel fetch of all related Kinds
@@ -269,12 +282,25 @@ export async function getShipmentOrderDetail(
   const [[freightEntity], [typeEntity], [oldShipmentEntity]] =
     await Promise.all(fetchPromises);
 
-  return assembleV1ShipmentOrder({
+  const assembled = assembleV1ShipmentOrder({
     quotation: raw,
     quotationFreight: freightEntity as Record<string, unknown> | null,
     typeKind: typeEntity as Record<string, unknown> | null,
     oldShipmentOrder: oldShipmentEntity as Record<string, unknown> | null,
   });
+  // Resolve company name for display
+  if (assembled.company_id) {
+    try {
+      const companyKey = datastore.key(['Company', assembled.company_id]);
+      const [companyEntity] = await datastore.get(companyKey);
+      if (companyEntity) {
+        assembled._company_name = companyEntity.name ?? companyEntity.short_name ?? assembled.company_id;
+      }
+    } catch {
+      // Non-critical — fall back to showing company_id
+    }
+  }
+  return assembled;
 }
 
 // ---------------------------------------------------------------------------
