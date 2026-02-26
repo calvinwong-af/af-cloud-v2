@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { updateCompanyAction } from '@/app/actions/companies';
 import { CURRENCIES, COUNTRIES, SUGGESTED_TAGS } from '@/lib/company-constants';
+import { formatDate } from '@/lib/utils';
 import type { Company } from '@/lib/types';
 
 interface EditCompanyModalProps {
@@ -107,7 +108,7 @@ export function EditCompanyModal({ company, onClose, onUpdated }: EditCompanyMod
             {company.created && (
               <div>
                 <span className="uppercase tracking-wide font-medium">Created</span>
-                <p className="text-[var(--text-mid)] mt-0.5">{new Date(company.created).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                <p className="text-[var(--text-mid)] mt-0.5">{formatDate(company.created)}</p>
               </div>
             )}
           </div>

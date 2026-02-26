@@ -9,7 +9,6 @@
  */
 
 import { getDatastore } from './datastore-query';
-import { Transaction } from '@google-cloud/datastore';
 import { logAction } from './auth-server';
 
 // ---------------------------------------------------------------------------
@@ -59,11 +58,19 @@ export interface CreateShipmentOrderInput {
     dg_un_number: string | null;
   };
 
-  // FCL containers
+  // FCL containers (SEA_FCL only)
   containers: Array<{
     container_size: string;
     container_type: string;
     quantity: number;
+  }>;
+
+  // LCL / AIR packages (SEA_LCL and AIR only)
+  packages: Array<{
+    packaging_type: string;
+    quantity: number;
+    gross_weight_kg: number | null;
+    volume_cbm: number | null;
   }>;
 
   // Parties
@@ -119,37 +126,25 @@ function deriveContainerLoad(orderType: string): 'FCL' | 'LCL' | 'AIR' | '' {
 }
 
 // ---------------------------------------------------------------------------
-// Next shipment ID — transactional counter on ShipmentOrderV2Counter
+// Next shipment ID — scan ShipmentOrderV2CountId for true max
 // ---------------------------------------------------------------------------
 
-async function nextShipmentId(): Promise<{ shipment_id: string; countid: number }> {
-  const ds = getDatastore();
-  const counterKey = ds.key(['ShipmentOrderV2Counter', 'counter']);
+async function generateShipmentOrderV2Id(datastore: ReturnType<typeof getDatastore>): Promise<{ id: string; countid: number }> {
+  // Scan all ShipmentOrderV2CountId records and find true max in memory.
+  // Same pattern as Company ID generation — avoids index freshness issues
+  // and does not rely on transactions or ORDER BY queries.
+  const query = datastore.createQuery('ShipmentOrderV2CountId');
+  const [entities] = await datastore.runQuery(query);
 
-  const [countid] = await ds.runInTransaction(async (transaction: Transaction) => {
-    const [entity] = await transaction.get(counterKey);
+  let maxCountId = 0;
+  for (const entity of entities) {
+    const val = typeof entity.countid === 'number' ? entity.countid : 0;
+    if (val > maxCountId) maxCountId = val;
+  }
 
-    let newCount: number;
-    if (!entity) {
-      // First ever V2 shipment — bootstrap the counter
-      newCount = 1;
-      transaction.save({
-        key: counterKey,
-        data: { countid: newCount },
-      });
-    } else {
-      newCount = (entity.countid as number) + 1;
-      transaction.save({
-        key: counterKey,
-        data: { countid: newCount },
-      });
-    }
-
-    return [newCount];
-  });
-
-  const shipment_id = 'AF2-' + String(countid).padStart(6, '0');
-  return { shipment_id, countid };
+  const newCountId = maxCountId + 1;
+  const id = 'AF2-' + String(newCountId).padStart(6, '0');
+  return { id, countid: newCountId };
 }
 
 // ---------------------------------------------------------------------------
@@ -164,7 +159,6 @@ function validateInput(input: CreateShipmentOrderInput): string | null {
   if (!input.origin_port_un_code?.trim()) return 'origin_port_un_code is required';
   if (!input.destination_port_un_code?.trim()) return 'destination_port_un_code is required';
   if (!input.incoterm_code?.trim()) return 'incoterm_code is required';
-  if (!input.cargo?.description?.trim()) return 'cargo description is required';
   if (!input.creator_uid?.trim()) return 'creator_uid is required';
   if (!input.creator_email?.trim()) return 'creator_email is required';
   return null;
@@ -187,8 +181,8 @@ export async function createShipmentOrder(
     const ds = getDatastore();
     const now = new Date().toISOString();
 
-    // 1. Generate shipment ID (transactional counter)
-    const { shipment_id, countid } = await nextShipmentId();
+    // 1. Generate shipment ID (scan-based counter)
+    const { id: shipment_id, countid } = await generateShipmentOrderV2Id(ds);
 
     // 2. Generate tracking ID
     const trackingId = generateTrackingId();
@@ -235,7 +229,7 @@ export async function createShipmentOrder(
 
       // Cargo
       cargo: {
-        description: input.cargo.description,
+        description: input.cargo.description?.trim() || 'General Cargo',
         hs_code: input.cargo.hs_code ?? null,
         dg_classification: input.cargo.is_dg
           ? {
@@ -247,17 +241,37 @@ export async function createShipmentOrder(
           : null,
       },
 
-      // Type details
-      type_details: {
-        type: input.order_type,
-        containers: input.containers.map((c) => ({
-          container_size: c.container_size,
-          container_type: c.container_type,
-          quantity: c.quantity,
-          container_numbers: [],
-          seal_numbers: [],
-        })),
-      },
+      // Type details — shape depends on order type
+      type_details: input.order_type === 'SEA_FCL'
+        ? {
+            type: 'SEA_FCL' as const,
+            containers: input.containers.map((c) => ({
+              container_size: c.container_size,
+              container_type: c.container_type,
+              quantity: c.quantity,
+              container_numbers: [],
+              seal_numbers: [],
+            })),
+          }
+        : input.order_type === 'SEA_LCL'
+        ? {
+            type: 'SEA_LCL' as const,
+            packages: (input.packages ?? []).map((p) => ({
+              packaging_type: p.packaging_type,
+              quantity: p.quantity,
+              gross_weight_kg: p.gross_weight_kg ?? null,
+              volume_cbm: p.volume_cbm ?? null,
+            })),
+          }
+        : {
+            type: 'AIR' as const,
+            packages: (input.packages ?? []).map((p) => ({
+              packaging_type: p.packaging_type,
+              quantity: p.quantity,
+              gross_weight_kg: p.gross_weight_kg ?? null,
+              volume_cbm: p.volume_cbm ?? null,
+            })),
+          },
 
       // Parties
       parties: {
@@ -293,7 +307,18 @@ export async function createShipmentOrder(
       updated: now,
     };
 
-    // 4. Save Quotation entity
+    // 4a. Save ShipmentOrderV2CountId record — must be written first to advance the counter
+    const counterKey = ds.key(['ShipmentOrderV2CountId', shipment_id]);
+    await ds.save({
+      key: counterKey,
+      data: {
+        shipment_id,
+        countid,
+        created: now,
+      },
+    });
+
+    // 4b. Save Quotation entity
     const quotationKey = ds.key(['Quotation', shipment_id]);
     await ds.save({
       key: quotationKey,

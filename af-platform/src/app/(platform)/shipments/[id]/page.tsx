@@ -16,6 +16,7 @@ import {
   Users, FileText, AlertTriangle, Loader2
 } from 'lucide-react';
 import { fetchShipmentOrderDetailAction } from '@/app/actions/shipments';
+import { formatDate } from '@/lib/utils';
 import type { ShipmentOrder } from '@/lib/types';
 import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS } from '@/lib/types';
 
@@ -331,13 +332,3 @@ function TypeDetailsView({ typeDetails }: { typeDetails: ShipmentOrder['type_det
   return <p className="text-sm text-[var(--text-muted)]">Details not available for this order type</p>;
 }
 
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleDateString('en-MY', {
-      day: '2-digit', month: 'short', year: 'numeric',
-    });
-  } catch {
-    return '—';
-  }
-}

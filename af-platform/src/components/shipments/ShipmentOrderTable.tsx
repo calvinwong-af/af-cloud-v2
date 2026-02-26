@@ -9,6 +9,7 @@
 
 import { useRouter } from 'next/navigation';
 import { MoreVertical, Ship, Plane, Truck, ArrowRight } from 'lucide-react';
+import { formatDate } from '@/lib/utils';
 import type { ShipmentOrder } from '@/lib/types';
 import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS } from '@/lib/types';
 
@@ -215,18 +216,6 @@ function ShipmentRow({
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleDateString('en-MY', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    });
-  } catch {
-    return '—';
-  }
-}
 
 function ShipmentTableSkeleton() {
   return (

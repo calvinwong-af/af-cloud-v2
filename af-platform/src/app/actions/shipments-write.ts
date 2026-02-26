@@ -24,6 +24,12 @@ export interface CreateShipmentOrderPayload {
     container_type: string;
     quantity: number;
   }>;
+  packages: Array<{
+    packaging_type: string;
+    quantity: number;
+    gross_weight_kg: number | null;
+    volume_cbm: number | null;
+  }>;
   shipper: {
     name: string;
     address: string | null;
@@ -69,13 +75,23 @@ export async function createShipmentOrderAction(
   if (!payload.company_id) return { success: false, error: 'Company is required' };
   if (!payload.origin_port_un_code) return { success: false, error: 'Origin port is required' };
   if (!payload.destination_port_un_code) return { success: false, error: 'Destination port is required' };
-  if (!payload.cargo_description?.trim()) return { success: false, error: 'Cargo description is required' };
-  if (!payload.containers || payload.containers.length === 0) {
-    return { success: false, error: 'At least one container is required' };
-  }
-  for (const c of payload.containers) {
-    if (!c.container_size || !c.container_type || !c.quantity || c.quantity < 1) {
-      return { success: false, error: 'All container fields are required and quantity must be ≥ 1' };
+  if (payload.order_type === 'SEA_FCL') {
+    if (!payload.containers || payload.containers.length === 0) {
+      return { success: false, error: 'At least one container is required' };
+    }
+    for (const c of payload.containers) {
+      if (!c.container_size || !c.container_type || !c.quantity || c.quantity < 1) {
+        return { success: false, error: 'All container fields are required and quantity must be ≥ 1' };
+      }
+    }
+  } else {
+    if (!payload.packages || payload.packages.length === 0) {
+      return { success: false, error: 'At least one package is required' };
+    }
+    for (const p of payload.packages) {
+      if (!p.quantity || p.quantity < 1) {
+        return { success: false, error: 'Package quantity must be at least 1' };
+      }
     }
   }
 
@@ -97,7 +113,8 @@ export async function createShipmentOrderAction(
       dg_class: null,
       dg_un_number: null,
     },
-    containers: payload.containers,
+    containers: payload.containers ?? [],
+    packages: payload.packages ?? [],
     parties: {
       shipper: payload.shipper,
       consignee: payload.consignee,

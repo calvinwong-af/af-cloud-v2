@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import type { UserRecord } from "@/lib/users";
 import { UserActionsMenu } from './UserActionsMenu';
 
@@ -10,16 +10,6 @@ interface UserTableProps {
   loading: boolean;
   onRefresh: () => void;
   onEdit: (user: UserRecord) => void;
-}
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "—";
-  try {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-  } catch {
-    return "—";
-  }
 }
 
 const COLUMNS = ["Name", "Email", "Type", "Role", "Company", "Validated", "Access", "Created", "Actions"];

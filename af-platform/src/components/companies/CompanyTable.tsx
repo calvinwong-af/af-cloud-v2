@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { AlertCircle, CheckCircle2, XCircle } from 'lucide-react';
+import { formatDate } from '@/lib/utils';
 import type { Company } from '@/lib/types';
 import { CompanyActionsMenu } from './CompanyActionsMenu';
 
@@ -282,15 +283,3 @@ function CompanyTableSkeleton() {
   );
 }
 
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleDateString('en-MY', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    });
-  } catch {
-    return '—';
-  }
-}

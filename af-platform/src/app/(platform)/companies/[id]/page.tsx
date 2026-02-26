@@ -13,6 +13,7 @@ import {
   AlertCircle, Loader2, ArrowRight,
 } from 'lucide-react';
 import { fetchCompanyAction, fetchCompanyUsersAction, fetchCompanyShipmentsAction } from '@/app/actions/companies';
+import { formatDate } from '@/lib/utils';
 import type { Company } from '@/lib/types';
 import type { ShipmentOrder } from '@/lib/types';
 import type { CompanyUser } from '@/lib/companies';
@@ -448,9 +449,3 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' });
-  } catch { return '—'; }
-}

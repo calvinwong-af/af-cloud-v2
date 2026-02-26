@@ -1,22 +1,19 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { fetchCompaniesForShipmentAction } from '@/app/actions/shipments';
+import { useState } from 'react';
 import CreateShipmentModal from './CreateShipmentModal';
 
-export default function NewShipmentButton() {
-  const [open, setOpen] = useState(false);
-  const [companies, setCompanies] = useState<{ company_id: string; name: string }[]>([]);
-  const router = useRouter();
+interface Props {
+  companies: { company_id: string; name: string }[];
+  ports: { un_code: string; name: string; country: string; port_type: string }[];
+}
 
-  useEffect(() => {
-    fetchCompaniesForShipmentAction().then(setCompanies);
-  }, []);
+export default function NewShipmentButton({ companies, ports }: Props) {
+  const [open, setOpen] = useState(false);
 
   function handleCreated(shipmentOrderId: string) {
     setOpen(false);
-    router.push(`/shipments/${shipmentOrderId}`);
+    window.location.href = `/shipments/${shipmentOrderId}`;
   }
 
   return (
@@ -31,6 +28,7 @@ export default function NewShipmentButton() {
       {open && (
         <CreateShipmentModal
           companies={companies}
+          ports={ports}
           onClose={() => setOpen(false)}
           onCreated={handleCreated}
         />

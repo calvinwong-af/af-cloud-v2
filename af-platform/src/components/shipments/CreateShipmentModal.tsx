@@ -1,22 +1,38 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { createShipmentOrderAction, CreateShipmentOrderPayload } from '@/app/actions/shipments-write';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const CONTAINER_SIZES = ['20GP', '40GP', '40HC', '45HC', '20RF', '40RF'];
 const CONTAINER_TYPES = ['DRY', 'REEFER', 'OPEN_TOP', 'FLAT_RACK'];
-const INCOTERMS = ['EXW', 'FCA', 'FAS', 'FOB', 'CFR', 'CIF', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP'];
+const INCOTERMS = ['EXW', 'FCA', 'FAS', 'FOB', 'CFR', 'CNF', 'CIF', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP'];
 
-const STEPS = [
+const ORDER_TYPES = [
+  { value: 'SEA_FCL', label: 'Sea Freight — FCL', sublabel: 'Full Container Load' },
+  { value: 'SEA_LCL', label: 'Sea Freight — LCL', sublabel: 'Less than Container Load' },
+  { value: 'AIR',     label: 'Air Freight',        sublabel: 'Airport to Airport' },
+] as const;
+
+type OrderType = 'SEA_FCL' | 'SEA_LCL' | 'AIR';
+
+const PACKAGING_TYPES = [
+  { value: 'CARTON', label: 'Carton' },
+  { value: 'PALLET', label: 'Pallet' },
+  { value: 'CRATE',  label: 'Crate' },
+  { value: 'DRUM',   label: 'Drum' },
+  { value: 'BAG',    label: 'Bag' },
+  { value: 'BUNDLE', label: 'Bundle' },
+  { value: 'OTHER',  label: 'Other' },
+];
+
+const BASE_STEPS = [
   { id: 1, label: 'Order' },
   { id: 2, label: 'Route' },
   { id: 3, label: 'Cargo' },
   { id: 4, label: 'Containers' },
-  { id: 5, label: 'Parties' },
-  { id: 6, label: 'Dates' },
-  { id: 7, label: 'Review' },
+  { id: 5, label: 'Review' },
 ];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -27,13 +43,11 @@ interface ContainerRow {
   quantity: number;
 }
 
-interface PartyForm {
-  name: string;
-  address: string;
-  contact_person: string;
-  phone: string;
-  email: string;
-  company_id: string;
+interface PackageRow {
+  packaging_type: string;
+  quantity: number;
+  gross_weight_kg: number | null;
+  volume_cbm: number | null;
 }
 
 interface Company {
@@ -41,49 +55,36 @@ interface Company {
   name: string;
 }
 
+interface Port {
+  un_code: string;
+  name: string;
+  country: string;
+  port_type: string;
+}
+
 interface Props {
   companies: Company[];
+  ports: Port[];
   onClose: () => void;
   onCreated: (shipmentOrderId: string) => void;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Port filtering ───────────────────────────────────────────────────────────
 
-function emptyParty(): PartyForm {
-  return { name: '', address: '', contact_person: '', phone: '', email: '', company_id: '' };
+function isAirport(port: Port): boolean {
+  // Matches port_type values like 'AIR', 'airport', 'AIRPORT', 'air_port' etc.
+  return port.port_type?.toLowerCase().includes('air') ?? false;
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function StepIndicator({ currentStep }: { currentStep: number }) {
-  return (
-    <div className="flex items-center gap-1 mb-6">
-      {STEPS.map((step, i) => (
-        <div key={step.id} className="flex items-center gap-1">
-          <div
-            className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-semibold transition-colors ${
-              step.id < currentStep
-                ? 'bg-[var(--sky)] text-white'
-                : step.id === currentStep
-                ? 'bg-[var(--slate)] text-white'
-                : 'bg-[var(--border)] text-[var(--text-muted)]'
-            }`}
-          >
-            {step.id < currentStep ? '✓' : step.id}
-          </div>
-          <span
-            className={`text-xs hidden sm:inline ${
-              step.id === currentStep ? 'text-[var(--text)] font-medium' : 'text-[var(--text-muted)]'
-            }`}
-          >
-            {step.label}
-          </span>
-          {i < STEPS.length - 1 && <div className="w-4 h-px bg-[var(--border)] mx-1" />}
-        </div>
-      ))}
-    </div>
-  );
+function getSeaPorts(ports: Port[]): Port[] {
+  return ports.filter(p => !isAirport(p));
 }
+
+function getAirports(ports: Port[]): Port[] {
+  return ports.filter(p => isAirport(p));
+}
+
+// ─── Shared UI ────────────────────────────────────────────────────────────────
 
 function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
@@ -93,146 +94,347 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
   );
 }
 
-function Input({ value, onChange, placeholder, className = '' }: {
+function StepIndicator({ currentStep }: { currentStep: number }) {
+  return (
+    <div className="flex items-center gap-1 mb-6">
+      {BASE_STEPS.map((step, i) => (
+        <div key={step.id} className="flex items-center gap-1">
+          <div className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-semibold transition-colors ${
+            step.id < currentStep ? 'bg-[var(--sky)] text-white'
+              : step.id === currentStep ? 'bg-[var(--slate)] text-white'
+              : 'bg-[var(--border)] text-[var(--text-muted)]'
+          }`}>
+            {step.id < currentStep ? '✓' : step.id}
+          </div>
+          <span className={`text-xs hidden sm:inline ${step.id === currentStep ? 'text-[var(--text)] font-medium' : 'text-[var(--text-muted)]'}`}>
+            {step.label}
+          </span>
+          {i < BASE_STEPS.length - 1 && <div className="w-4 h-px bg-[var(--border)] mx-1" />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Date Input (DD / MMM / YYYY) ────────────────────────────────────────────
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function DateInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  // value = 'YYYY-MM-DD' or ''
+  const parts = value ? value.split('-') : ['', '', ''];
+  const year  = parts[0] ?? '';
+  const month = parts[1] ?? '';
+  const day   = parts[2] ?? '';
+
+  function emit(d: string, m: string, y: string) {
+    if (d && m && y && y.length === 4) {
+      onChange(`${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`);
+    } else if (!d && !m && !y) {
+      onChange('');
+    }
+  }
+
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 6 }, (_, i) => currentYear + i);
+  const days  = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'));
+
+  const sel = "px-2 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent";
+
+  return (
+    <div className="flex items-center gap-2">
+      {/* Day */}
+      <select value={day} onChange={e => emit(e.target.value, month, year)} className={`${sel} w-[72px]`}>
+        <option value="">DD</option>
+        {days.map(d => <option key={d} value={d}>{d}</option>)}
+      </select>
+      {/* Month */}
+      <select value={month ? String(parseInt(month)) : ''} onChange={e => { const m = e.target.value ? String(parseInt(e.target.value)).padStart(2,'0') : ''; emit(day, m, year); }} className={`${sel} w-[88px]`}>
+        <option value="">MMM</option>
+        {MONTHS.map((label, i) => <option key={label} value={String(i+1)}>{label}</option>)}
+      </select>
+      {/* Year */}
+      <select value={year} onChange={e => emit(day, month, e.target.value)} className={`${sel} w-[88px]`}>
+        <option value="">YYYY</option>
+        {years.map(y => <option key={y} value={String(y)}>{y}</option>)}
+      </select>
+    </div>
+  );
+}
+
+// ─── Searchable Combobox ──────────────────────────────────────────────────────
+
+function Combobox({ value, onChange, options, placeholder }: {
   value: string;
-  onChange: (v: string) => void;
+  onChange: (value: string) => void;
+  options: { value: string; label: string; sublabel?: string }[];
   placeholder?: string;
-  className?: string;
 }) {
-  return (
-    <input
-      type="text"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className={`w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent ${className}`}
-    />
-  );
-}
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [highlighted, setHighlighted] = useState<number>(-1);
+  const ref = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
-function Select({ value, onChange, children, className = '' }: {
-  value: string;
-  onChange: (v: string) => void;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className={`w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent ${className}`}
-    >
-      {children}
-    </select>
-  );
-}
+  useEffect(() => {
+    if (!value) setQuery('');
+  }, [value]);
 
-function PartySection({ title, party, onChange }: {
-  title: string;
-  party: PartyForm;
-  onChange: (updated: PartyForm) => void;
-}) {
-  const set = (field: keyof PartyForm) => (v: string) => onChange({ ...party, [field]: v });
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setHighlighted(-1);
+        const selected = options.find(o => o.value === value);
+        setQuery(selected?.label ?? '');
+      }
+    }
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [value, options]);
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (highlighted >= 0 && listRef.current) {
+      const item = listRef.current.children[highlighted] as HTMLElement;
+      item?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [highlighted]);
+
+  const filtered = query.trim().length === 0
+    ? options.slice(0, 80)
+    : options.filter(o =>
+        o.label.toLowerCase().includes(query.toLowerCase()) ||
+        o.value.toLowerCase().includes(query.toLowerCase()) ||
+        (o.sublabel ?? '').toLowerCase().includes(query.toLowerCase())
+      ).slice(0, 80);
+
+  const selectedLabel = options.find(o => o.value === value)?.label ?? '';
+  const inputValue = open ? query : selectedLabel;
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!open) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter') {
+        setQuery('');
+        setOpen(true);
+        setHighlighted(0);
+        e.preventDefault();
+      }
+      return;
+    }
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setHighlighted(h => Math.min(h + 1, filtered.length - 1));
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setHighlighted(h => Math.max(h - 1, 0));
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (highlighted >= 0 && filtered[highlighted]) {
+          const chosen = filtered[highlighted];
+          onChange(chosen.value);
+          setQuery(chosen.label);
+          setOpen(false);
+          setHighlighted(-1);
+        }
+        break;
+      case 'Escape':
+        setOpen(false);
+        setHighlighted(-1);
+        {
+          const selected = options.find(o => o.value === value);
+          setQuery(selected?.label ?? '');
+        }
+        break;
+      case 'Tab':
+        setOpen(false);
+        setHighlighted(-1);
+        break;
+    }
+  }
+
   return (
-    <div className="border border-[var(--border)] rounded-lg p-4 space-y-3">
-      <p className="text-sm font-semibold text-[var(--text)]">{title}</p>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="col-span-2">
-          <FieldLabel>Name</FieldLabel>
-          <Input value={party.name} onChange={set('name')} placeholder="Company or individual name" />
+    <div ref={ref} className="relative">
+      <input
+        type="text"
+        value={inputValue}
+        onChange={e => {
+          setQuery(e.target.value);
+          setOpen(true);
+          setHighlighted(0);
+          if (e.target.value === '') onChange('');
+        }}
+        onFocus={() => {
+          setQuery('');
+          setOpen(true);
+          setHighlighted(-1);
+        }}
+        onMouseDown={() => {
+          if (!open) {
+            setQuery('');
+            setOpen(true);
+            setHighlighted(-1);
+          }
+        }}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        autoComplete="off"
+        className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent"
+      />
+      {open && filtered.length > 0 && (
+        <div
+          ref={listRef}
+          className="absolute z-50 w-full mt-1 bg-white border border-[var(--border)] rounded-lg shadow-lg max-h-56 overflow-y-auto"
+        >
+          {filtered.map((o, i) => (
+            <div
+              key={o.value}
+              onMouseDown={e => {
+                e.preventDefault();
+                onChange(o.value);
+                setQuery(o.label);
+                setOpen(false);
+                setHighlighted(-1);
+              }}
+              onMouseEnter={() => setHighlighted(i)}
+              className={`px-3 py-2 text-sm cursor-pointer ${
+                i === highlighted
+                  ? 'bg-[var(--sky-mist)]'
+                  : o.value === value
+                  ? 'bg-[var(--sky-pale)]'
+                  : 'hover:bg-[var(--sky-mist)]'
+              }`}
+            >
+              <div className="text-[var(--text)]">{o.label}</div>
+              {o.sublabel && <div className="text-xs text-[var(--text-muted)]">{o.sublabel}</div>}
+            </div>
+          ))}
         </div>
-        <div className="col-span-2">
-          <FieldLabel>Address</FieldLabel>
-          <Input value={party.address} onChange={set('address')} placeholder="Full address" />
+      )}
+      {open && filtered.length === 0 && query.trim().length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-[var(--border)] rounded-lg shadow-lg px-3 py-2 text-sm text-[var(--text-muted)]">
+          No results for &quot;{query}&quot;
         </div>
-        <div>
-          <FieldLabel>Contact Person</FieldLabel>
-          <Input value={party.contact_person} onChange={set('contact_person')} placeholder="Full name" />
-        </div>
-        <div>
-          <FieldLabel>Phone</FieldLabel>
-          <Input value={party.phone} onChange={set('phone')} placeholder="+60 12 345 6789" />
-        </div>
-        <div className="col-span-2">
-          <FieldLabel>Email</FieldLabel>
-          <Input value={party.email} onChange={set('email')} placeholder="email@company.com" />
-        </div>
-        <div>
-          <FieldLabel>AFC Company ID (if registered)</FieldLabel>
-          <Input value={party.company_id} onChange={set('company_id')} placeholder="AFC-XXXX" />
-        </div>
-      </div>
+      )}
     </div>
   );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function CreateShipmentModal({ companies, onClose, onCreated }: Props) {
+export default function CreateShipmentModal({ companies, ports, onClose, onCreated }: Props) {
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Step 1: Order type
-  const [orderType] = useState<'SEA_FCL'>('SEA_FCL'); // locked to FCL for initial scope
-  const [transactionType, setTransactionType] = useState<'IMPORT' | 'EXPORT' | 'DOMESTIC'>('IMPORT');
+  // Step 1: Order
+  const [orderType, setOrderType] = useState<OrderType>('SEA_FCL');
+  const [transactionType, setTransactionType] = useState<'IMPORT' | 'EXPORT'>('IMPORT');
+  const [companyId, setCompanyId] = useState('');
+  const [cargoReadyDate, setCargoReadyDate] = useState<string>(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  });
 
   // Step 2: Route
   const [originCode, setOriginCode] = useState('');
-  const [originLabel, setOriginLabel] = useState('');
   const [destCode, setDestCode] = useState('');
-  const [destLabel, setDestLabel] = useState('');
   const [incoterm, setIncoterm] = useState('');
 
-  // Step 3: Customer + Cargo
-  const [companyId, setCompanyId] = useState('');
+  // Step 3: Cargo
   const [cargoDesc, setCargoDesc] = useState('');
   const [cargoHsCode, setCargoHsCode] = useState('');
   const [cargoDg, setCargoDg] = useState(false);
 
-  // Step 4: Containers
+  // Step 4: Containers (SEA_FCL)
   const [containers, setContainers] = useState<ContainerRow[]>([
     { container_size: '20GP', container_type: 'DRY', quantity: 1 },
   ]);
 
-  // Step 5: Parties
-  const [shipper, setShipper] = useState<PartyForm>(emptyParty());
-  const [consignee, setConsignee] = useState<PartyForm>(emptyParty());
-  const [notifyParty, setNotifyParty] = useState<PartyForm>(emptyParty());
+  // Step 4: Packages (SEA_LCL / AIR)
+  const [packages, setPackages] = useState<PackageRow[]>([
+    { packaging_type: 'CARTON', quantity: 1, gross_weight_kg: null, volume_cbm: null },
+  ]);
 
-  // Step 6: Dates
-  const [cargoReadyDate, setCargoReadyDate] = useState('');
-  const [etd, setEtd] = useState('');
-  const [eta, setEta] = useState('');
+  // ── Derived data ──
+  const seaPorts = getSeaPorts(ports);
+  const airports = getAirports(ports);
+  const activePorts = orderType === 'AIR' ? airports : seaPorts;
+  const portOptions = activePorts.map(p => ({
+    value: p.un_code,
+    label: p.name || p.un_code,
+    sublabel: `${p.un_code}${p.country ? ' · ' + p.country : ''}`,
+  }));
+
+  const incotermOptions = INCOTERMS.map(i => ({ value: i, label: i }));
+
+  const companyOptions = companies.map(c => ({
+    value: c.company_id,
+    label: c.name,
+    sublabel: c.company_id,
+  }));
+
+  const originPort = activePorts.find(p => p.un_code === originCode);
+  const destPort = activePorts.find(p => p.un_code === destCode);
+  const selectedCompany = companies.find(c => c.company_id === companyId);
 
   // ── Container helpers ──
   function addContainer() {
     setContainers([...containers, { container_size: '20GP', container_type: 'DRY', quantity: 1 }]);
   }
   function removeContainer(i: number) {
-    setContainers(containers.filter((_, idx) => idx !== i));
+    if (containers.length > 1) setContainers(containers.filter((_, idx) => idx !== i));
   }
   function updateContainer(i: number, field: keyof ContainerRow, value: string | number) {
     setContainers(containers.map((c, idx) => idx === i ? { ...c, [field]: value } : c));
   }
 
-  // ── Validation per step ──
+  // ── Package helpers ──
+  function addPackage() {
+    setPackages([...packages, { packaging_type: 'CARTON', quantity: 1, gross_weight_kg: null, volume_cbm: null }]);
+  }
+  function removePackage(i: number) {
+    if (packages.length > 1) setPackages(packages.filter((_, idx) => idx !== i));
+  }
+  function updatePackage(i: number, field: keyof PackageRow, value: string | number | null) {
+    setPackages(packages.map((p, idx) => idx === i ? { ...p, [field]: value } : p));
+  }
+
+  // Reset route and cargo state when order type changes
+  useEffect(() => {
+    setOriginCode('');
+    setDestCode('');
+    setContainers([{ container_size: '20GP', container_type: 'DRY', quantity: 1 }]);
+    setPackages([{ packaging_type: 'CARTON', quantity: 1, gross_weight_kg: null, volume_cbm: null }]);
+  }, [orderType]);
+
+  // ── Validation ──
   function validateStep(): string | null {
-    if (step === 2) {
-      if (!originCode.trim()) return 'Origin port UN code is required';
-      if (!originLabel.trim()) return 'Origin port name is required';
-      if (!destCode.trim()) return 'Destination port UN code is required';
-      if (!destLabel.trim()) return 'Destination port name is required';
-    }
-    if (step === 3) {
+    if (step === 1) {
       if (!companyId) return 'Customer company is required';
-      if (!cargoDesc.trim()) return 'Cargo description is required';
+    }
+    if (step === 2) {
+      if (!originCode) return 'Origin port is required';
+      if (!destCode) return 'Destination port is required';
+      if (originCode === destCode) return 'Origin and destination cannot be the same port';
+      if (!incoterm) return 'Incoterm is required';
     }
     if (step === 4) {
-      if (containers.length === 0) return 'At least one container is required';
-      for (const c of containers) {
-        if (!c.container_size || !c.container_type) return 'All container fields are required';
-        if (!c.quantity || c.quantity < 1) return 'Container quantity must be at least 1';
+      if (orderType === 'SEA_FCL') {
+        if (containers.length === 0) return 'At least one container is required';
+        for (const c of containers) {
+          if (!c.container_size || !c.container_type) return 'All container fields are required';
+          if (!c.quantity || c.quantity < 1) return 'Container quantity must be at least 1';
+        }
+      } else {
+        if (packages.length === 0) return 'At least one package is required';
+        for (const p of packages) {
+          if (!p.quantity || p.quantity < 1) return 'Package quantity must be at least 1';
+        }
       }
     }
     return null;
@@ -242,54 +444,44 @@ export default function CreateShipmentModal({ companies, onClose, onCreated }: P
     const err = validateStep();
     if (err) { setError(err); return; }
     setError(null);
-    setStep((s) => s + 1);
+    setStep(s => s + 1);
   }
-  function back() {
-    setError(null);
-    setStep((s) => s - 1);
-  }
+  function back() { setError(null); setStep(s => s - 1); }
 
   // ── Submit ──
   async function handleSubmit() {
     setSubmitting(true);
     setError(null);
 
-    const toParty = (p: PartyForm) =>
-      p.name.trim()
-        ? {
-            name: p.name.trim(),
-            address: p.address.trim() || null,
-            contact_person: p.contact_person.trim() || null,
-            phone: p.phone.trim() || null,
-            email: p.email.trim() || null,
-            company_id: p.company_id.trim() || null,
-            company_contact_id: null,
-          }
-        : null;
-
     const payload: CreateShipmentOrderPayload = {
       order_type: orderType,
       transaction_type: transactionType,
       company_id: companyId,
-      origin_port_un_code: originCode.trim().toUpperCase(),
-      origin_label: originLabel.trim(),
-      destination_port_un_code: destCode.trim().toUpperCase(),
-      destination_label: destLabel.trim(),
+      origin_port_un_code: originCode,
+      origin_label: originPort?.name || originCode,
+      destination_port_un_code: destCode,
+      destination_label: destPort?.name || destCode,
       incoterm_code: incoterm || null,
-      cargo_description: cargoDesc.trim(),
+      cargo_description: cargoDesc.trim() || '',
       cargo_hs_code: cargoHsCode.trim() || null,
       cargo_is_dg: cargoDg,
-      containers: containers.map((c) => ({
+      containers: orderType === 'SEA_FCL' ? containers.map(c => ({
         container_size: c.container_size,
         container_type: c.container_type,
         quantity: Number(c.quantity),
-      })),
-      shipper: toParty(shipper),
-      consignee: toParty(consignee),
-      notify_party: toParty(notifyParty),
+      })) : [],
+      packages: orderType !== 'SEA_FCL' ? packages.map(p => ({
+        packaging_type: p.packaging_type,
+        quantity: Number(p.quantity),
+        gross_weight_kg: p.gross_weight_kg,
+        volume_cbm: p.volume_cbm,
+      })) : [],
+      shipper: null,
+      consignee: null,
+      notify_party: null,
       cargo_ready_date: cargoReadyDate || null,
-      etd: etd || null,
-      eta: eta || null,
+      etd: null,
+      eta: null,
     };
 
     const result = await createShipmentOrderAction(payload);
@@ -303,26 +495,36 @@ export default function CreateShipmentModal({ companies, onClose, onCreated }: P
     onCreated(result.shipment_id);
   }
 
-  const selectedCompany = companies.find((c) => c.company_id === companyId);
-
   // ── Step content ──
   function renderStep() {
     switch (step) {
+
       case 1:
         return (
           <div className="space-y-5">
             <div>
-              <FieldLabel>Order Type</FieldLabel>
-              <div className="flex items-center gap-2 px-3 py-2 bg-[var(--surface)] rounded-lg border border-[var(--border)]">
-                <span className="text-sm font-semibold text-[var(--sky)]">SEA FCL</span>
-                <span className="text-xs text-[var(--text-muted)]">— Sea Freight, Full Container Load</span>
+              <FieldLabel required>Order Type</FieldLabel>
+              <div className="grid grid-cols-3 gap-2">
+                {ORDER_TYPES.map(t => (
+                  <button
+                    key={t.value}
+                    onClick={() => setOrderType(t.value as OrderType)}
+                    className={`flex flex-col items-center justify-center px-2 py-2.5 rounded-lg border text-center transition-colors ${
+                      orderType === t.value
+                        ? 'bg-[var(--slate)] text-white border-[var(--slate)]'
+                        : 'bg-white text-[var(--text)] border-[var(--border)] hover:border-[var(--sky)]'
+                    }`}
+                  >
+                    <span className="text-xs font-semibold leading-tight">{t.label}</span>
+                    <span className={`text-[10px] mt-0.5 leading-tight ${orderType === t.value ? 'text-white/60' : 'text-[var(--text-muted)]'}`}>{t.sublabel}</span>
+                  </button>
+                ))}
               </div>
-              <p className="text-xs text-[var(--text-muted)] mt-1">LCL and Air will be available in a future update.</p>
             </div>
             <div>
               <FieldLabel required>Transaction Type</FieldLabel>
               <div className="flex gap-2">
-                {(['IMPORT', 'EXPORT', 'DOMESTIC'] as const).map((t) => (
+                {(['IMPORT', 'EXPORT'] as const).map(t => (
                   <button
                     key={t}
                     onClick={() => setTransactionType(t)}
@@ -337,36 +539,60 @@ export default function CreateShipmentModal({ companies, onClose, onCreated }: P
                 ))}
               </div>
             </div>
+            <div>
+              <FieldLabel required>Customer Company</FieldLabel>
+              <Combobox
+                value={companyId}
+                onChange={setCompanyId}
+                options={companyOptions}
+                placeholder="Search by company name or ID…"
+              />
+              {selectedCompany && (
+                <p className="text-xs text-[var(--text-muted)] mt-1">{selectedCompany.company_id}</p>
+              )}
+            </div>
+            <div>
+              <FieldLabel>Cargo Ready Date</FieldLabel>
+              <DateInput value={cargoReadyDate} onChange={setCargoReadyDate} />
+            </div>
           </div>
         );
 
       case 2:
         return (
           <div className="space-y-5">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <FieldLabel required>Origin Port (UN Code)</FieldLabel>
-                <Input value={originCode} onChange={(v) => setOriginCode(v.toUpperCase())} placeholder="e.g. CNSHA" />
-              </div>
-              <div>
-                <FieldLabel required>Origin Port Name</FieldLabel>
-                <Input value={originLabel} onChange={setOriginLabel} placeholder="e.g. Shanghai" />
-              </div>
-              <div>
-                <FieldLabel required>Destination Port (UN Code)</FieldLabel>
-                <Input value={destCode} onChange={(v) => setDestCode(v.toUpperCase())} placeholder="e.g. MYPKG" />
-              </div>
-              <div>
-                <FieldLabel required>Destination Port Name</FieldLabel>
-                <Input value={destLabel} onChange={setDestLabel} placeholder="e.g. Port Klang" />
-              </div>
+            <div>
+              <FieldLabel required>Origin Port</FieldLabel>
+              <Combobox
+                value={originCode}
+                onChange={setOriginCode}
+                options={portOptions}
+                placeholder="Search by port name or UN code…"
+              />
+              {originPort && (
+                <p className="text-xs text-[var(--text-muted)] mt-1">{originPort.un_code} · {originPort.country}</p>
+              )}
             </div>
             <div>
-              <FieldLabel>Incoterm</FieldLabel>
-              <Select value={incoterm} onChange={setIncoterm}>
-                <option value="">— Select Incoterm —</option>
-                {INCOTERMS.map((i) => <option key={i} value={i}>{i}</option>)}
-              </Select>
+              <FieldLabel required>Destination Port</FieldLabel>
+              <Combobox
+                value={destCode}
+                onChange={setDestCode}
+                options={portOptions}
+                placeholder="Search by port name or UN code…"
+              />
+              {destPort && (
+                <p className="text-xs text-[var(--text-muted)] mt-1">{destPort.un_code} · {destPort.country}</p>
+              )}
+            </div>
+            <div>
+              <FieldLabel required>Incoterm</FieldLabel>
+              <Combobox
+                value={incoterm}
+                onChange={setIncoterm}
+                options={incotermOptions}
+                placeholder="Select or type incoterm…"
+              />
             </div>
           </div>
         );
@@ -375,21 +601,10 @@ export default function CreateShipmentModal({ companies, onClose, onCreated }: P
         return (
           <div className="space-y-5">
             <div>
-              <FieldLabel required>Customer Company</FieldLabel>
-              <Select value={companyId} onChange={setCompanyId}>
-                <option value="">— Select Company —</option>
-                {companies.map((c) => (
-                  <option key={c.company_id} value={c.company_id}>
-                    {c.name} ({c.company_id})
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <FieldLabel required>Cargo Description</FieldLabel>
+              <FieldLabel>Cargo Description</FieldLabel>
               <textarea
                 value={cargoDesc}
-                onChange={(e) => setCargoDesc(e.target.value)}
+                onChange={e => setCargoDesc(e.target.value)}
                 placeholder="e.g. Electronic components, automotive parts"
                 rows={3}
                 className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent resize-none"
@@ -397,14 +612,20 @@ export default function CreateShipmentModal({ companies, onClose, onCreated }: P
             </div>
             <div>
               <FieldLabel>HS Code</FieldLabel>
-              <Input value={cargoHsCode} onChange={setCargoHsCode} placeholder="e.g. 8471.30" />
+              <input
+                type="text"
+                value={cargoHsCode}
+                onChange={e => setCargoHsCode(e.target.value)}
+                placeholder="e.g. 8471.30"
+                className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent"
+              />
             </div>
             <div className="flex items-center gap-3">
               <input
                 type="checkbox"
                 id="dg-check"
                 checked={cargoDg}
-                onChange={(e) => setCargoDg(e.target.checked)}
+                onChange={e => setCargoDg(e.target.checked)}
                 className="w-4 h-4 accent-[var(--sky)]"
               />
               <label htmlFor="dg-check" className="text-sm text-[var(--text)]">
@@ -420,124 +641,125 @@ export default function CreateShipmentModal({ companies, onClose, onCreated }: P
         );
 
       case 4:
-        return (
-          <div className="space-y-4">
-            <p className="text-xs text-[var(--text-muted)]">Add the container types for this shipment. Container numbers and seal numbers are assigned later.</p>
-            {containers.map((c, i) => (
-              <div key={i} className="grid grid-cols-12 gap-2 items-end border border-[var(--border)] rounded-lg p-3">
-                <div className="col-span-4">
-                  <FieldLabel required>Size</FieldLabel>
-                  <Select value={c.container_size} onChange={(v) => updateContainer(i, 'container_size', v)}>
-                    {CONTAINER_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </Select>
-                </div>
-                <div className="col-span-4">
-                  <FieldLabel required>Type</FieldLabel>
-                  <Select value={c.container_type} onChange={(v) => updateContainer(i, 'container_type', v)}>
-                    {CONTAINER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </Select>
-                </div>
-                <div className="col-span-3">
-                  <FieldLabel required>Qty</FieldLabel>
-                  <input
-                    type="number"
-                    min={1}
-                    value={c.quantity}
-                    onChange={(e) => updateContainer(i, 'quantity', parseInt(e.target.value) || 1)}
-                    className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent"
-                  />
-                </div>
-                <div className="col-span-1 flex justify-center pb-0.5">
-                  {containers.length > 1 && (
-                    <button onClick={() => removeContainer(i)} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
-                  )}
-                </div>
+          if (orderType === 'SEA_FCL') {
+            return (
+              <div className="space-y-4">
+                <p className="text-xs text-[var(--text-muted)]">Container numbers and seal numbers are assigned later.</p>
+                {containers.map((c, i) => (
+                  <div key={i} className="grid grid-cols-12 gap-2 items-end border border-[var(--border)] rounded-lg p-3">
+                    <div className="col-span-4">
+                      <FieldLabel required>Size</FieldLabel>
+                      <select value={c.container_size} onChange={e => updateContainer(i, 'container_size', e.target.value)} className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)]">
+                        {CONTAINER_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div className="col-span-4">
+                      <FieldLabel required>Type</FieldLabel>
+                      <select value={c.container_type} onChange={e => updateContainer(i, 'container_type', e.target.value)} className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)]">
+                        {CONTAINER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div className="col-span-3">
+                      <FieldLabel required>Qty</FieldLabel>
+                      <input type="number" min={1} value={c.quantity} onChange={e => updateContainer(i, 'quantity', parseInt(e.target.value) || 1)} className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)]" />
+                    </div>
+                    <div className="col-span-1 flex justify-center pb-0.5">
+                      {containers.length > 1 && (
+                        <button onClick={() => removeContainer(i)} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <button onClick={addContainer} className="w-full py-2 border border-dashed border-[var(--border)] rounded-lg text-sm text-[var(--sky)] hover:bg-[var(--sky-mist)] transition-colors">
+                  + Add Container
+                </button>
               </div>
-            ))}
-            <button
-              onClick={addContainer}
-              className="w-full py-2 border border-dashed border-[var(--border)] rounded-lg text-sm text-[var(--sky)] hover:bg-[var(--sky-mist)] transition-colors"
-            >
-              + Add Container
-            </button>
-          </div>
-        );
+            );
+          }
+          return (
+            <div className="space-y-4">
+              <p className="text-xs text-[var(--text-muted)]">Enter the total gross weight and volume for each package row.</p>
+              {packages.map((p, i) => (
+                <div key={i} className="border border-[var(--border)] rounded-lg p-3">
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <div className="grid grid-cols-3 gap-2 flex-1 items-end">
+                      <div className="col-span-1">
+                        <FieldLabel required>Packaging</FieldLabel>
+                        <select value={p.packaging_type} onChange={e => updatePackage(i, 'packaging_type', e.target.value)} className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] h-[38px] align-middle">
+                          {PACKAGING_TYPES.map(pt => <option key={pt.value} value={pt.value}>{pt.label}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <FieldLabel required>Qty</FieldLabel>
+                        <input type="number" min={1} value={p.quantity} onChange={e => updatePackage(i, 'quantity', parseInt(e.target.value) || 1)} className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] h-[38px]" />
+                      </div>
+                      <div>
+                        <FieldLabel>Total Weight (kg)</FieldLabel>
+                        <input type="number" min={0} step="0.01" value={p.gross_weight_kg ?? ''} placeholder="—" onChange={e => updatePackage(i, 'gross_weight_kg', e.target.value ? parseFloat(e.target.value) : null)} className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] h-[38px]" />
+                      </div>
+                    </div>
+                    {packages.length > 1 && (
+                      <button onClick={() => removePackage(i)} className="mt-5 text-red-400 hover:text-red-600 text-lg leading-none flex-shrink-0">×</button>
+                    )}
+                  </div>
+                  <div className="w-1/3 pr-2">
+                    <FieldLabel>Total Volume (CBM)</FieldLabel>
+                    <input type="number" min={0} step="0.001" value={p.volume_cbm ?? ''} placeholder="—" onChange={e => updatePackage(i, 'volume_cbm', e.target.value ? parseFloat(e.target.value) : null)} className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)]" />
+                  </div>
+                </div>
+              ))}
+              <button onClick={addPackage} className="w-full py-2 border border-dashed border-[var(--border)] rounded-lg text-sm text-[var(--sky)] hover:bg-[var(--sky-mist)] transition-colors">
+                + Add Package
+              </button>
+            </div>
+          );
 
       case 5:
         return (
-          <div className="space-y-4">
-            <p className="text-xs text-[var(--text-muted)]">All parties are optional. Leave blank if unknown at this stage.</p>
-            <PartySection title="Shipper" party={shipper} onChange={setShipper} />
-            <PartySection title="Consignee" party={consignee} onChange={setConsignee} />
-            <PartySection title="Notify Party" party={notifyParty} onChange={setNotifyParty} />
-          </div>
-        );
-
-      case 6:
-        return (
-          <div className="space-y-5">
-            <p className="text-xs text-[var(--text-muted)]">All dates are optional and can be updated later.</p>
-            <div>
-              <FieldLabel>Cargo Ready Date</FieldLabel>
-              <input
-                type="date"
-                value={cargoReadyDate}
-                onChange={(e) => setCargoReadyDate(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent"
-              />
-            </div>
-            <div>
-              <FieldLabel>ETD (Estimated Time of Departure)</FieldLabel>
-              <input
-                type="date"
-                value={etd}
-                onChange={(e) => setEtd(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent"
-              />
-            </div>
-            <div>
-              <FieldLabel>ETA (Estimated Time of Arrival)</FieldLabel>
-              <input
-                type="date"
-                value={eta}
-                onChange={(e) => setEta(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent"
-              />
-            </div>
-          </div>
-        );
-
-      case 7:
-        return (
           <div className="space-y-4 text-sm">
             <div className="bg-[var(--surface)] rounded-lg p-4 space-y-3">
-              <ReviewRow label="Order Type" value="SEA FCL" />
+              <ReviewRow label="Order Type" value={ORDER_TYPES.find(t => t.value === orderType)?.label ?? orderType} />
               <ReviewRow label="Transaction" value={transactionType} />
               <ReviewRow label="Customer" value={selectedCompany ? `${selectedCompany.name} (${selectedCompany.company_id})` : companyId} />
-              <ReviewRow label="Origin" value={`${originLabel} (${originCode})`} />
-              <ReviewRow label="Destination" value={`${destLabel} (${destCode})`} />
-              {incoterm && <ReviewRow label="Incoterm" value={incoterm} />}
+              {cargoReadyDate && (
+                <ReviewRow
+                  label="Cargo Ready Date"
+                  value={(() => {
+                    const d = new Date(cargoReadyDate);
+                    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                  })()}
+                />
+              )}
             </div>
             <div className="bg-[var(--surface)] rounded-lg p-4 space-y-3">
-              <ReviewRow label="Cargo" value={cargoDesc} />
-              {cargoHsCode && <ReviewRow label="HS Code" value={cargoHsCode} />}
-              {cargoDg && <ReviewRow label="DG" value="Yes — Dangerous Goods" />}
+              <ReviewRow label="Origin" value={originPort ? `${originPort.name} (${originPort.un_code})` : originCode} />
+              <ReviewRow label="Destination" value={destPort ? `${destPort.name} (${destPort.un_code})` : destCode} />
+              {incoterm && <ReviewRow label="Incoterm" value={incoterm} />}
             </div>
-            <div className="bg-[var(--surface)] rounded-lg p-4 space-y-2">
-              <p className="text-xs font-semibold text-[var(--text-mid)] mb-2">Containers</p>
-              {containers.map((c, i) => (
-                <ReviewRow key={i} label={`Container ${i + 1}`} value={`${c.quantity} × ${c.container_size} ${c.container_type}`} />
-              ))}
-            </div>
-            {(cargoReadyDate || etd || eta) && (
+            {(cargoDesc || cargoHsCode || cargoDg) && (
               <div className="bg-[var(--surface)] rounded-lg p-4 space-y-3">
-                {cargoReadyDate && <ReviewRow label="Cargo Ready" value={cargoReadyDate} />}
-                {etd && <ReviewRow label="ETD" value={etd} />}
-                {eta && <ReviewRow label="ETA" value={eta} />}
+                {cargoDesc && <ReviewRow label="Cargo" value={cargoDesc} />}
+                {cargoHsCode && <ReviewRow label="HS Code" value={cargoHsCode} />}
+                {cargoDg && <ReviewRow label="DG" value="Yes — Dangerous Goods" />}
+              </div>
+            )}
+            {orderType === 'SEA_FCL' ? (
+              <div className="bg-[var(--surface)] rounded-lg p-4 space-y-2">
+                <p className="text-xs font-semibold text-[var(--text-mid)] mb-2">Containers</p>
+                {containers.map((c, i) => (
+                  <ReviewRow key={i} label={`Container ${i + 1}`} value={`${c.quantity} × ${c.container_size} ${c.container_type}`} />
+                ))}
+              </div>
+            ) : (
+              <div className="bg-[var(--surface)] rounded-lg p-4 space-y-2">
+                <p className="text-xs font-semibold text-[var(--text-mid)] mb-2">Packages</p>
+                {packages.map((p, i) => (
+                  <ReviewRow key={i} label={`Package ${i + 1}`} value={`${p.quantity} × ${PACKAGING_TYPES.find(pt => pt.value === p.packaging_type)?.label ?? p.packaging_type}${p.gross_weight_kg ? ` · ${p.gross_weight_kg} kg` : ''}${p.volume_cbm ? ` · ${p.volume_cbm} CBM` : ''}`} />
+                ))}
               </div>
             )}
             <div className="bg-[var(--sky-pale)] border border-[var(--sky)] rounded-lg px-3 py-2 text-xs text-[var(--sky)]">
-              The shipment will be created with status <strong>Draft</strong>. You can update parties, dates, and status after creation.
+              The shipment will be created with status <strong>Draft</strong>.
             </div>
           </div>
         );
@@ -547,16 +769,14 @@ export default function CreateShipmentModal({ companies, onClose, onCreated }: P
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-[var(--border)]">
           <div>
             <h2 className="text-lg font-semibold text-[var(--text)]">New Shipment Order</h2>
-            <p className="text-xs text-[var(--text-muted)] mt-0.5">Step {step} of {STEPS.length} — {STEPS[step - 1].label}</p>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">Step {step} of {BASE_STEPS.length} — {step === 4 ? (orderType === 'SEA_FCL' ? 'Containers' : 'Packages') : BASE_STEPS[step - 1].label}</p>
           </div>
           <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text)] text-xl leading-none">×</button>
         </div>
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <StepIndicator currentStep={step} />
           {renderStep()}
@@ -567,7 +787,6 @@ export default function CreateShipmentModal({ companies, onClose, onCreated }: P
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-[var(--border)]">
           <button
             onClick={step === 1 ? onClose : back}
@@ -576,8 +795,8 @@ export default function CreateShipmentModal({ companies, onClose, onCreated }: P
             {step === 1 ? 'Cancel' : '← Back'}
           </button>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-[var(--text-muted)]">{step} / {STEPS.length}</span>
-            {step < STEPS.length ? (
+            <span className="text-xs text-[var(--text-muted)]">{step} / {BASE_STEPS.length}</span>
+            {step < BASE_STEPS.length ? (
               <button
                 onClick={next}
                 className="px-5 py-2 bg-[var(--slate)] text-white rounded-lg text-sm font-medium hover:bg-[var(--slate-mid)] transition-colors"

@@ -8,6 +8,7 @@
 
 import { getShipmentOrders, getShipmentOrderDetail, getShipmentOrderStats } from '@/lib/shipments';
 import { verifySessionAndRole, logAction } from '@/lib/auth-server';
+import { getDatastore } from '@/lib/datastore-query';
 import { getCompanies } from '@/lib/companies';
 import type { ShipmentOrder, OrderType, ShipmentOrderStatus } from '@/lib/types';
 
@@ -76,7 +77,7 @@ export async function fetchShipmentOrderDetailAction(
       return { success: false, error: 'Unauthorised' };
     }
 
-    if (!quotationId?.match(/^AFCQ-\d+$/)) {
+    if (!quotationId?.match(/^(AFCQ|AF2)-\d+$/)) {
       return { success: false, error: 'Invalid shipment order ID format' };
     }
 
@@ -154,6 +155,36 @@ export async function fetchCompaniesForShipmentAction(): Promise<{ company_id: s
     return companies
       .filter((c) => !c.trash)
       .map((c) => ({ company_id: c.company_id, name: c.name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch {
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fetch all ports from Datastore for the shipment creation form
+// ---------------------------------------------------------------------------
+
+export async function fetchPortsAction(): Promise<{ un_code: string; name: string; country: string; port_type: string }[]> {
+  const session = await verifySessionAndRole(['AFU-ADMIN']);
+  if (!session.valid) return [];
+
+  try {
+    const datastore = getDatastore();
+    const query = datastore.createQuery('Port');
+    const [entities] = await datastore.runQuery(query);
+
+    type PortRow = { un_code: string; name: string; country: string; port_type: string };
+
+    return (entities as Record<string, unknown>[])
+      .map((e): PortRow => ({
+        un_code: (e.un_code ?? '').toString().trim(),
+        // Port Kind may use 'name' or 'port_name' — check both
+        name: (e.name ?? e.port_name ?? e.un_code ?? '').toString().trim(),
+        country: (e.country ?? '').toString().trim(),
+        port_type: (e.port_type ?? '').toString().trim(),
+      }))
+      .filter((p) => p.un_code.length > 0)
       .sort((a, b) => a.name.localeCompare(b.name));
   } catch {
     return [];

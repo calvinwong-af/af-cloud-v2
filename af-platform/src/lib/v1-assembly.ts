@@ -122,12 +122,15 @@ export function assembleCargo(
 
   const commodity = quotationFreight.commodity as string | null ?? null;
   const hsCode = quotationFreight.hs_code as string | null ?? null;
-  const cargoType = quotationFreight.cargo_type as string | null ?? null;
+  const rawCargoType = quotationFreight.cargo_type;
+  const cargoType = typeof rawCargoType === 'string'
+    ? rawCargoType
+    : String(rawCargoType ?? '');
 
   return {
     description: commodity ?? 'General Cargo',
     hs_code: hsCode,
-    dg_classification: cargoType?.startsWith('DG')
+    dg_classification: cargoType.startsWith('DG')
       ? {
           class: quotationFreight.dg_class ?? cargoType,
           un_number: null,
@@ -204,7 +207,7 @@ export function assembleTypeDetails(
       const detail: TypeDetailsLCL = {
         type: 'SEA_LCL',
         packages: cargoUnits.map(u => ({
-          packaging_type: (u.packaging_type?.toUpperCase() as TypeDetailsLCL['packages'][0]['packaging_type']) ?? 'CARTON',
+          packaging_type: (typeof u.packaging_type === 'string' ? u.packaging_type.toUpperCase() : 'CARTON') as TypeDetailsLCL['packages'][0]['packaging_type'],
           quantity: u.quantity ?? 1,
           gross_weight_kg: u.gross_weight ?? null,
           volume_cbm: u.volume_cbm ?? null,
@@ -224,7 +227,7 @@ export function assembleTypeDetails(
       const detail: TypeDetailsAir = {
         type: 'AIR',
         packages: packages.map(u => ({
-          packaging_type: (u.packaging_type?.toUpperCase() as TypeDetailsAir['packages'][0]['packaging_type']) ?? 'CARTON',
+          packaging_type: (typeof u.packaging_type === 'string' ? u.packaging_type.toUpperCase() : 'CARTON') as TypeDetailsAir['packages'][0]['packaging_type'],
           quantity: u.quantity ?? 1,
           gross_weight_kg: u.gross_weight ?? null,
           volume_cbm: u.volume_cbm ?? null,

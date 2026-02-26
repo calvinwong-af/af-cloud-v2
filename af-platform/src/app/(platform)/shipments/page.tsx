@@ -10,7 +10,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Package, Truck, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
-import { fetchShipmentOrdersAction, fetchShipmentOrderStatsAction } from '@/app/actions/shipments';
+import { fetchShipmentOrdersAction, fetchShipmentOrderStatsAction, fetchCompaniesForShipmentAction, fetchPortsAction } from '@/app/actions/shipments';
 import type { ShipmentOrder, ShipmentOrderStatus } from '@/lib/types';
 import { ShipmentOrderTable } from '@/components/shipments/ShipmentOrderTable';
 import { KpiCard } from '@/components/shared/KpiCard';
@@ -52,6 +52,15 @@ export default function ShipmentsPage() {
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [companies, setCompanies] = useState<{ company_id: string; name: string }[]>([]);
+  const [ports, setPorts] = useState<{ un_code: string; name: string; country: string; port_type: string }[]>([]);
+
+  useEffect(() => {
+    Promise.all([fetchCompaniesForShipmentAction(), fetchPortsAction()]).then(([c, p]) => {
+      setCompanies(c);
+      setPorts(p);
+    });
+  }, []);
 
   const load = useCallback(async (tab: FilterTab, cursor?: string) => {
     if (!cursor) setLoading(true);
@@ -116,7 +125,7 @@ export default function ShipmentsPage() {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
-          <NewShipmentButton />
+          <NewShipmentButton companies={companies} ports={ports} />
         </div>
       </div>
 
