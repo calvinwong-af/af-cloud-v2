@@ -1,11 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import type { Metadata } from "next";
-
-// Note: Metadata export doesn't work in client components.
-// Move to a parent layout or use generateMetadata if SSR needed.
-// For now, metadata is handled by the root layout fallback.
 
 const COMPANY_FAQS = [
   {
