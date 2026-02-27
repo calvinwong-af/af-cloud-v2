@@ -8,9 +8,9 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Package, Truck, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
-import { getShipmentListAction, fetchShipmentOrderStatsAction, fetchCompaniesForShipmentAction, fetchPortsAction } from '@/app/actions/shipments';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Package, Truck, CheckCircle2, AlertCircle, RefreshCw, Search, X } from 'lucide-react';
+import { getShipmentListAction, fetchShipmentOrderStatsAction, fetchCompaniesForShipmentAction, fetchPortsAction, searchShipmentsAction } from '@/app/actions/shipments';
 import type { ShipmentListItem } from '@/app/actions/shipments';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
 import type { ShipmentOrder, OrderType } from '@/lib/types';
@@ -102,6 +102,16 @@ export default function ShipmentsPage() {
   const [ports, setPorts] = useState<{ un_code: string; name: string; country: string; port_type: string }[]>([]);
   const [accountType, setAccountType] = useState<string | null>(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<ShipmentOrder[]>([]);
+  const [searching, setSearching] = useState(false);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Ref to track fetch generation — incremented on each new load call.
+  // Stale responses (where fetchId !== fetchIdRef.current) are ignored.
+  const fetchIdRef = useRef(0);
+  const statsRef = useRef(stats);
+  statsRef.current = stats;
 
   useEffect(() => {
     // Load profile, companies, ports and stats in parallel on mount
@@ -120,45 +130,102 @@ export default function ShipmentsPage() {
   }, []);
 
   const load = useCallback(async (tab: FilterTab, cursor?: string) => {
+    const fetchId = ++fetchIdRef.current;
+    console.log('[ShipmentsPage] fetching list for tab:', tab, 'fetchId:', fetchId);
+
     if (!cursor) setLoading(true);
     else setLoadingMore(true);
     setError(null);
 
     try {
+      const currentStats = statsRef.current;
       const [listResult, statsResult] = await Promise.all([
         getShipmentListAction(tab, cursor, 25),
         // Stats already loaded on mount — only refresh when explicitly requested (stats==null)
-        stats == null ? fetchShipmentOrderStatsAction() : Promise.resolve({ success: true as const, data: stats }),
+        currentStats == null ? fetchShipmentOrderStatsAction() : Promise.resolve({ success: true as const, data: currentStats }),
       ]);
+
+      // Ignore stale responses — a newer load() has been triggered
+      if (fetchId !== fetchIdRef.current) {
+        console.log('[ShipmentsPage] STALE response ignored — fetchId:', fetchId, 'current:', fetchIdRef.current);
+        return;
+      }
+
+      console.log('[ShipmentsPage] list result:', listResult.shipments?.length, 'items for tab:', tab);
 
       const fetchedOrders = listResult.shipments.map(toShipmentOrder);
 
       if (cursor) {
         setOrders((prev) => [...prev, ...fetchedOrders]);
       } else {
+        console.log('[ShipmentsPage] setOrders called with:', fetchedOrders.length, 'items');
         setOrders(fetchedOrders);
       }
       setNextCursor(listResult.next_cursor);
 
       if (statsResult.success) setStats(statsResult.data);
     } catch (err) {
+      if (fetchId !== fetchIdRef.current) return;
       setError(err instanceof Error ? err.message : 'Failed to load orders');
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (fetchId === fetchIdRef.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
-  }, [stats]);
+  }, []);
 
   useEffect(() => {
     load(activeTab);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
+  }, [activeTab, load]);
 
   function handleTabChange(tab: FilterTab) {
+    console.log('[ShipmentsPage] tab changed to:', tab);
+    console.log('[ShipmentsPage] list CLEARED at:', new Error().stack);
     setActiveTab(tab);
     setOrders([]);
     setNextCursor(null);
   }
+
+  function handleSearchChange(value: string) {
+    setSearchQuery(value);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+
+    if (value.trim().length < 3) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+
+    setSearching(true);
+    searchDebounceRef.current = setTimeout(async () => {
+      const results = await searchShipmentsAction(value.trim(), 'all', 25);
+      setSearchResults(results.map((r) => toShipmentOrder({
+        shipment_id: r.shipment_id,
+        data_version: r.data_version,
+        status: r.status,
+        order_type: r.order_type,
+        transaction_type: '',
+        incoterm: '',
+        origin_port: r.origin_port,
+        destination_port: r.destination_port,
+        company_id: r.company_id,
+        company_name: r.company_name,
+        cargo_ready_date: '',
+        updated: r.updated,
+      })));
+      setSearching(false);
+    }, 300);
+  }
+
+  function clearSearch() {
+    setSearchQuery('');
+    setSearchResults([]);
+    setSearching(false);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+  }
+
+  const isSearchActive = searchQuery.trim().length >= 3;
 
   return (
     <div className="p-6 space-y-6">
@@ -213,30 +280,58 @@ export default function ShipmentsPage() {
         />
       </div>
 
-      {/* Filter Tabs */}
-      <div className="border-b border-[var(--border)]">
-        <nav className="flex gap-1">
-          {FILTER_TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => handleTabChange(tab.key)}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap
-                ${activeTab === tab.key
-                  ? 'border-[var(--sky)] text-[var(--sky)]'
-                  : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text)]'
-                }`}
-            >
-              {tab.label}
-              {stats && tab.key !== 'all' && (
-                <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full
-                  ${activeTab === tab.key ? 'bg-sky-100 text-sky-700' : 'bg-gray-100 text-gray-500'}`}>
-                  {tab.key === 'to_invoice' ? stats.to_invoice : stats[tab.key as keyof typeof stats] ?? 0}
-                </span>
-              )}
+      {/* Search bar */}
+      <div className="relative">
+        <div className="flex items-center gap-2 rounded-lg px-3 py-2 border border-[var(--border)] bg-white">
+          <Search size={16} style={{ color: 'var(--text-muted)' }} />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            placeholder="Search shipments by ID, company name, or port code…"
+            className="flex-1 text-sm bg-transparent outline-none"
+            style={{ color: 'var(--text)' }}
+          />
+          {searchQuery && (
+            <button onClick={clearSearch} className="p-0.5 rounded hover:bg-[var(--surface)] transition-colors">
+              <X size={14} style={{ color: 'var(--text-muted)' }} />
             </button>
-          ))}
-        </nav>
+          )}
+        </div>
       </div>
+
+      {/* Search active indicator or filter tabs */}
+      {isSearchActive ? (
+        <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+          <span>Searching across all shipments</span>
+          {!searching && <span className="font-medium" style={{ color: 'var(--text)' }}>· {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}</span>}
+          {searching && <span className="italic">…</span>}
+        </div>
+      ) : (
+        <div className="border-b border-[var(--border)]">
+          <nav className="flex gap-1">
+            {FILTER_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => handleTabChange(tab.key)}
+                className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap
+                  ${activeTab === tab.key
+                    ? 'border-[var(--sky)] text-[var(--sky)]'
+                    : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text)]'
+                  }`}
+              >
+                {tab.label}
+                {stats && tab.key !== 'all' && (
+                  <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full
+                    ${activeTab === tab.key ? 'bg-sky-100 text-sky-700' : 'bg-gray-100 text-gray-500'}`}>
+                    {tab.key === 'to_invoice' ? stats.to_invoice : stats[tab.key as keyof typeof stats] ?? 0}
+                  </span>
+                )}
+              </button>
+            ))}
+          </nav>
+        </div>
+      )}
 
       {/* Error state */}
       {error && (
@@ -247,10 +342,15 @@ export default function ShipmentsPage() {
       )}
 
       {/* Table */}
-      <ShipmentOrderTable orders={orders} loading={loading || !profileLoaded} accountType={accountType} onRefresh={() => { setStats(null); load(activeTab); }} />
+      <ShipmentOrderTable
+        orders={isSearchActive ? searchResults : orders}
+        loading={isSearchActive ? searching : (loading || !profileLoaded)}
+        accountType={accountType}
+        onRefresh={() => { setStats(null); statsRef.current = null; load(activeTab); }}
+      />
 
       {/* Load more */}
-      {nextCursor && !loading && (
+      {!isSearchActive && nextCursor && !loading && (
         <div className="flex justify-center">
           <button
             onClick={() => load(activeTab, nextCursor)}

@@ -15,6 +15,7 @@ On Cloud Run: uses the service account attached to the Cloud Run service
 """
 
 import os
+from datetime import datetime
 from functools import lru_cache
 
 from google.cloud import datastore
@@ -50,6 +51,46 @@ def entity_to_dict(entity) -> dict:
     key = entity.key
     d["id"] = key.name or key.id
     return d
+
+
+def parse_timestamp(value) -> datetime | None:
+    """
+    Parse timestamp strings in any format stored in Datastore.
+
+    V1 format: '2024-03-15 10:22:05' (no timezone, no microseconds)
+    V2 format: '2026-02-27T05:02:31.499440+00:00' (ISO 8601 with tz)
+    Datastore native: datetime object (returned directly)
+    """
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        pass
+    try:
+        return datetime.strptime(str(value), '%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        pass
+    try:
+        return datetime.strptime(str(value), '%Y-%m-%d %H:%M:%S.%f')
+    except ValueError:
+        pass
+    return None
+
+
+def get_multi_chunked(client, keys: list, chunk_size: int = 500) -> list:
+    """
+    Fetch Datastore entities in chunks to avoid the 1000-key hard limit.
+    Returns a flat list of entities (None values for missing keys are excluded).
+    """
+    results = []
+    for i in range(0, len(keys), chunk_size):
+        chunk = keys[i:i + chunk_size]
+        entities = client.get_multi(chunk)
+        results.extend([e for e in entities if e is not None])
+    return results
 
 
 def make_key(kind: str, identifier: str | int):

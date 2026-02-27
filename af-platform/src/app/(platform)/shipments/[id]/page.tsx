@@ -1,14 +1,16 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft, Ship, Plane, Package, MapPin, Calendar,
   Users, FileText, AlertTriangle, Loader2, Hash,
-  Container, Weight, Activity, ChevronDown, ChevronRight,
+  Container, Weight, Activity, ChevronDown, ChevronRight, Pencil, X, Check,
 } from 'lucide-react';
-import { fetchShipmentOrderDetailAction } from '@/app/actions/shipments';
+import { fetchShipmentOrderDetailAction, fetchStatusHistoryAction, fetchCompaniesForShipmentAction, reassignShipmentCompanyAction } from '@/app/actions/shipments';
+import type { StatusHistoryEntry } from '@/app/actions/shipments';
 import { updateShipmentStatusAction, updateInvoicedStatusAction } from '@/app/actions/shipments-write';
+import { getCurrentUserProfileAction } from '@/app/actions/users';
 import { formatDate } from '@/lib/utils';
 import type { ShipmentOrder, ShipmentOrderStatus } from '@/lib/types';
 import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS, VALID_TRANSITIONS } from '@/lib/types';
@@ -274,16 +276,48 @@ function PartiesCard({ order }: { order: ShipmentOrder }) {
 /** Linear status flow (excludes Exception and Cancelled) */
 const LINEAR_FLOW: ShipmentOrderStatus[] = [1001, 1002, 2001, 2002, 3001, 3002, 3003, 4001, 5001];
 
-function StatusCard({ order, onReload }: { order: ShipmentOrder; onReload: () => void }) {
+/** Explicit step label → status code mapping for reversion clicks.
+ *  Never derive status codes from array index or position — always use this map. */
+const STEP_STATUS_CODES: Record<string, number> = {
+  'Draft': 1001,
+  'Pending Review': 1002,
+  'Confirmed': 2001,
+  'Booking Pending': 2002,
+  'Booking Confirmed': 3001,
+  'In Transit': 3002,
+  'Arrived': 3003,
+  'Clearance In Progress': 4001,
+  'Completed': 5001,
+};
+
+/** Two-line labels for the timeline stepper — long labels get a line break */
+const TIMELINE_LABELS: Partial<Record<number, React.ReactNode>> = {
+  1002: <>Pending{'\n'}Review</>,
+  2002: <>Booking{'\n'}Pending</>,
+  3001: <>Booking{'\n'}Confirmed</>,
+  3002: <>In{'\n'}Transit</>,
+  4001: <>Clearance{'\n'}In Progress</>,
+};
+
+function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; onReload: () => void; accountType: string | null }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [confirmAction, setConfirmAction] = useState<{ status: ShipmentOrderStatus; label: string; allowJump?: boolean } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{
+    status: ShipmentOrderStatus;
+    label: string;
+    allowJump?: boolean;
+    revert?: boolean;
+    undoneSteps?: string[];
+  } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState<StatusHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [invoiceLoading, setInvoiceLoading] = useState(false);
 
   const currentStatus = order.status;
   const validNext = VALID_TRANSITIONS[currentStatus] ?? [];
   const isTerminal = currentStatus === 5001 || currentStatus === -1;
+  const isAfu = accountType === 'AFU';
 
   // Find where current status sits in linear flow
   const currentLinearIdx = LINEAR_FLOW.indexOf(currentStatus);
@@ -313,13 +347,15 @@ function StatusCard({ order, onReload }: { order: ShipmentOrder; onReload: () =>
   // Invoiced toggle: only enabled when completed
   const invoiceEnabled = currentStatus === 5001;
 
-  async function executeStatusChange(newStatus: ShipmentOrderStatus, allowJump?: boolean) {
+  async function executeStatusChange(newStatus: ShipmentOrderStatus, allowJump?: boolean, reverted?: boolean) {
     setError(null);
     setLoading(true);
     setConfirmAction(null);
-    const result = await updateShipmentStatusAction(order.quotation_id, newStatus, allowJump || undefined);
+    const result = await updateShipmentStatusAction(order.quotation_id, newStatus, allowJump || undefined, reverted || undefined);
     setLoading(false);
     if (result.success) {
+      // Clear cached history so it refetches on next open
+      setHistoryEntries([]);
       onReload();
     } else {
       setError(result.error);
@@ -345,6 +381,29 @@ function StatusCard({ order, onReload }: { order: ShipmentOrder; onReload: () =>
     }
   }
 
+  function handleRevertClick(stepLabel: string, stepIdx: number) {
+    if (loading || !isAfu) return;
+    console.log('[revert click] raw stepLabel:', JSON.stringify(stepLabel));
+    const cleanLabel = stepLabel.trim();
+    const statusCode = STEP_STATUS_CODES[cleanLabel];
+    if (statusCode === undefined) {
+      console.warn('[revert] no status code found for step:', JSON.stringify(stepLabel));
+      return;
+    }
+    console.log('[revert click] stepLabel:', cleanLabel, 'stepIndex:', stepIdx, 'statusCode being sent:', statusCode, 'currentStatus:', currentStatus);
+    // Collect the names of steps that will be undone (from target+1 through current)
+    const undoneSteps: string[] = [];
+    for (let i = stepIdx + 1; i <= displayIdx; i++) {
+      undoneSteps.push(SHIPMENT_STATUS_LABELS[LINEAR_FLOW[i]] ?? `${LINEAR_FLOW[i]}`);
+    }
+    setConfirmAction({
+      status: statusCode as ShipmentOrderStatus,
+      label: cleanLabel,
+      revert: true,
+      undoneSteps,
+    });
+  }
+
   function handleExceptionClick() {
     executeStatusChange(4002 as ShipmentOrderStatus);
   }
@@ -364,6 +423,20 @@ function StatusCard({ order, onReload }: { order: ShipmentOrder; onReload: () =>
     }
   }
 
+  async function toggleHistory() {
+    if (historyOpen) {
+      setHistoryOpen(false);
+      return;
+    }
+    setHistoryOpen(true);
+    if (historyEntries.length === 0) {
+      setHistoryLoading(true);
+      const entries = await fetchStatusHistoryAction(order.quotation_id);
+      setHistoryEntries(entries);
+      setHistoryLoading(false);
+    }
+  }
+
   const statusColor = SHIPMENT_STATUS_COLOR[currentStatus] ?? 'gray';
   const statusStyle = STATUS_STYLES[statusColor] ?? STATUS_STYLES.gray;
   const statusLabel = SHIPMENT_STATUS_LABELS[currentStatus] ?? `${currentStatus}`;
@@ -374,7 +447,10 @@ function StatusCard({ order, onReload }: { order: ShipmentOrder; onReload: () =>
       <div className="flex items-center gap-0 overflow-x-auto pb-3 mb-4">
         {LINEAR_FLOW.map((step, i) => {
           const isFilled = i <= displayIdx;
+          const isCurrent = i === displayIdx;
           const isFuture = i > displayIdx && !isTerminal;
+          // Completed predecessor steps are clickable for AFU users (reversion)
+          const isRevertable = isFilled && !isCurrent && isAfu && !loading;
           const label = SHIPMENT_STATUS_LABELS[step] ?? `${step}`;
           const isLast = i === LINEAR_FLOW.length - 1;
           return (
@@ -385,20 +461,26 @@ function StatusCard({ order, onReload }: { order: ShipmentOrder; onReload: () =>
                     isFilled
                       ? 'bg-[var(--sky)] border-[var(--sky)]'
                       : 'bg-white border-gray-300'
-                  } ${isFuture ? 'cursor-pointer hover:border-[var(--sky)] hover:bg-sky-100' : ''}`}
-                  onClick={isFuture ? () => handleTimelineDotClick(step) : undefined}
+                  } ${isFuture ? 'cursor-pointer hover:border-[var(--sky)] hover:bg-sky-100' : ''} ${isRevertable ? 'cursor-pointer hover:bg-amber-400 hover:border-amber-400' : ''}`}
+                  onClick={isFuture ? () => handleTimelineDotClick(step) : isRevertable ? () => handleRevertClick(label, i) : undefined}
                 />
-                <span className={`text-[10px] mt-1 whitespace-nowrap ${
+                <span className={`text-[10px] mt-1 whitespace-pre-line text-center leading-tight ${
                   isFilled ? 'text-[var(--text)] font-medium' : 'text-gray-400'
-                } ${isFuture ? 'cursor-pointer' : ''}`}
-                  onClick={isFuture ? () => handleTimelineDotClick(step) : undefined}
+                } ${isFuture || isRevertable ? 'cursor-pointer' : ''}`}
+                  onClick={isFuture ? () => handleTimelineDotClick(step) : isRevertable ? () => handleRevertClick(label, i) : undefined}
                 >
-                  {label}
+                  {TIMELINE_LABELS[step] ?? label}
                 </span>
                 {/* Tooltip for future steps */}
                 {isFuture && (
                   <div className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 hidden group-hover:block z-10 px-2 py-1 bg-gray-800 text-white text-[10px] rounded whitespace-nowrap">
                     Jump to {label}
+                  </div>
+                )}
+                {/* Tooltip for revertable steps */}
+                {isRevertable && (
+                  <div className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 hidden group-hover:block z-10 px-2 py-1 bg-amber-700 text-white text-[10px] rounded whitespace-nowrap">
+                    Revert to {label}
                   </div>
                 )}
               </div>
@@ -490,13 +572,29 @@ function StatusCard({ order, onReload }: { order: ShipmentOrder; onReload: () =>
       {confirmAction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl shadow-lg p-6 max-w-sm w-full mx-4">
-            <h3 className="text-lg font-semibold text-[var(--text)] mb-2">
-              Confirm: {confirmAction.label}
-            </h3>
-            <p className="text-sm text-[var(--text-muted)] mb-5">
-              Are you sure you want to set this shipment to <strong>{confirmAction.label}</strong>?
-              This action cannot be easily undone.
-            </p>
+            {confirmAction.revert ? (
+              <>
+                <h3 className="text-lg font-semibold text-[var(--text)] mb-2">
+                  Revert to {confirmAction.label}?
+                </h3>
+                <p className="text-sm text-[var(--text-muted)] mb-2">
+                  This will undo {confirmAction.undoneSteps?.join(', ')}.
+                </p>
+                <p className="text-xs text-[var(--text-muted)] mb-5">
+                  This action will be recorded in the status history.
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-semibold text-[var(--text)] mb-2">
+                  Confirm: {confirmAction.label}
+                </h3>
+                <p className="text-sm text-[var(--text-muted)] mb-5">
+                  Are you sure you want to set this shipment to <strong>{confirmAction.label}</strong>?
+                  This action cannot be easily undone.
+                </p>
+              </>
+            )}
             <div className="flex items-center gap-3 justify-end">
               <button
                 onClick={() => setConfirmAction(null)}
@@ -505,12 +603,12 @@ function StatusCard({ order, onReload }: { order: ShipmentOrder; onReload: () =>
                 Cancel
               </button>
               <button
-                onClick={() => executeStatusChange(confirmAction.status, confirmAction.allowJump)}
+                onClick={() => executeStatusChange(confirmAction.status, confirmAction.allowJump, confirmAction.revert)}
                 className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-opacity hover:opacity-90 ${
-                  confirmAction.status === -1 ? 'bg-red-600' : 'bg-[var(--sky)]'
+                  confirmAction.revert ? 'bg-amber-600' : confirmAction.status === -1 ? 'bg-red-600' : 'bg-[var(--sky)]'
                 }`}
               >
-                Confirm
+                {confirmAction.revert ? 'Revert' : 'Confirm'}
               </button>
             </div>
           </div>
@@ -541,37 +639,175 @@ function StatusCard({ order, onReload }: { order: ShipmentOrder; onReload: () =>
       </div>
 
       {/* Status History */}
-      {(order.status_history ?? []).length > 0 && (
-        <div className="mt-4 pt-4 border-t border-[var(--border)]">
-          <button
-            onClick={() => setHistoryOpen(!historyOpen)}
-            className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide hover:text-[var(--text)] transition-colors"
-          >
-            {historyOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-            Status History
-          </button>
-          {historyOpen && (
-            <div className="mt-3 space-y-2">
-              {[...(order.status_history ?? [])].reverse().map((entry, i) => {
+      <div className="mt-4 pt-4 border-t border-[var(--border)]">
+        <button
+          onClick={toggleHistory}
+          className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide hover:text-[var(--text)] transition-colors"
+        >
+          {historyOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          Status History
+        </button>
+        {historyOpen && (
+          <div className="mt-3 space-y-2">
+            {historyLoading ? (
+              <div className="flex items-center gap-2 py-2 text-xs text-[var(--text-muted)]">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading history…
+              </div>
+            ) : historyEntries.length === 0 ? (
+              <p className="text-xs text-[var(--text-muted)] italic py-1">No status changes recorded yet.</p>
+            ) : (
+              [...historyEntries].reverse().map((entry, i) => {
                 const entryColor = SHIPMENT_STATUS_COLOR[entry.status] ?? 'gray';
                 const entryStyle = STATUS_STYLES[entryColor] ?? STATUS_STYLES.gray;
+                const isReverted = 'reverted' in entry && entry.reverted;
+                const revertedFromLabel = isReverted && 'reverted_from' in entry
+                  ? SHIPMENT_STATUS_LABELS[(entry as Record<string, unknown>).reverted_from as number] ?? ''
+                  : '';
                 return (
                   <div key={i} className="flex items-center justify-between py-1.5 border-b border-[var(--border)] last:border-0">
                     <div className="flex items-center gap-2">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${entryStyle}`}>
-                        {entry.label}
+                        {entry.status_label}
                       </span>
+                      {isReverted && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">
+                          reverted{revertedFromLabel ? ` from ${revertedFromLabel}` : ''}
+                        </span>
+                      )}
                       <span className="text-xs text-[var(--text-muted)]">{entry.changed_by}</span>
                     </div>
                     <span className="text-xs text-[var(--text-muted)]">{formatDate(entry.timestamp)}</span>
                   </div>
                 );
-              })}
+              })
+            )}
+          </div>
+        )}
+      </div>
+    </SectionCard>
+  );
+}
+
+// ─── Company reassign modal ──────────────────────────────────────────────────
+
+function CompanyReassignModal({ shipmentId, currentCompanyId, onClose, onReassigned }: {
+  shipmentId: string;
+  currentCompanyId: string;
+  onClose: () => void;
+  onReassigned: (companyId: string, companyName: string) => void;
+}) {
+  const [companies, setCompanies] = useState<{ company_id: string; name: string }[]>([]);
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<string | null>(null);
+  const [loadingList, setLoadingList] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetchCompaniesForShipmentAction().then((c) => {
+      setCompanies(c);
+      setLoadingList(false);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!loadingList) inputRef.current?.focus();
+  }, [loadingList]);
+
+  const filtered = search.trim()
+    ? companies.filter(c =>
+        c.name.toLowerCase().includes(search.toLowerCase()) ||
+        c.company_id.toLowerCase().includes(search.toLowerCase())
+      )
+    : companies;
+
+  async function handleConfirm() {
+    if (!selected) return;
+    setSaving(true);
+    setError(null);
+    const result = await reassignShipmentCompanyAction(shipmentId, selected);
+    setSaving(false);
+    if (result.success) {
+      onReassigned(result.data.company_id, result.data.company_name);
+      onClose();
+    } else {
+      setError(result.error);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-md mx-4">
+        <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
+          <h3 className="text-sm font-semibold text-[var(--text)]">Reassign Company</h3>
+          <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text)]">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-4">
+          <input
+            ref={inputRef}
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search companies…"
+            className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent mb-3"
+          />
+
+          <div className="max-h-56 overflow-y-auto border border-[var(--border)] rounded-lg">
+            {loadingList ? (
+              <div className="flex items-center gap-2 px-3 py-4 text-sm text-[var(--text-muted)]">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading companies…
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="px-3 py-4 text-sm text-[var(--text-muted)]">No companies found</div>
+            ) : (
+              filtered.map(c => (
+                <button
+                  key={c.company_id}
+                  onClick={() => setSelected(c.company_id)}
+                  className={`w-full text-left px-3 py-2 text-sm border-b border-[var(--border)] last:border-0 transition-colors ${
+                    selected === c.company_id
+                      ? 'bg-[var(--sky-pale)] text-[var(--sky)]'
+                      : c.company_id === currentCompanyId
+                      ? 'bg-gray-50 text-[var(--text-muted)]'
+                      : 'hover:bg-[var(--surface)] text-[var(--text)]'
+                  }`}
+                >
+                  <div className="font-medium">{c.name}</div>
+                  <div className="text-xs text-[var(--text-muted)] font-mono">{c.company_id}</div>
+                </button>
+              ))
+            )}
+          </div>
+
+          {error && (
+            <div className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {error}
             </div>
           )}
         </div>
-      )}
-    </SectionCard>
+
+        <div className="flex items-center justify-end gap-2 p-4 border-t border-[var(--border)]">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={!selected || selected === currentCompanyId || saving}
+            className="px-4 py-2 text-sm font-medium text-white bg-[var(--sky)] rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2"
+          >
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -585,6 +821,8 @@ export default function ShipmentOrderDetailPage() {
   const [order, setOrder] = useState<ShipmentOrder | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [accountType, setAccountType] = useState<string | null>(null);
+  const [showCompanyModal, setShowCompanyModal] = useState(false);
 
   const loadOrder = useCallback(async () => {
     const result = await fetchShipmentOrderDetailAction(quotationId);
@@ -598,7 +836,11 @@ export default function ShipmentOrderDetailPage() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      await loadOrder();
+      const [, profile] = await Promise.all([
+        loadOrder(),
+        getCurrentUserProfileAction(),
+      ]);
+      setAccountType(profile.account_type);
       setLoading(false);
     }
     load();
@@ -676,8 +918,19 @@ export default function ShipmentOrderDetailPage() {
           {order.company_id && (
             <div className="text-right flex-shrink-0">
               <div className="text-xs text-[var(--text-muted)] mb-0.5">Customer</div>
-              <div className="text-sm font-semibold text-[var(--text)]">
-                {order._company_name ?? order.company_id}
+              <div className="flex items-center gap-1.5 justify-end">
+                <div className="text-sm font-semibold text-[var(--text)]">
+                  {order._company_name ?? order.company_id}
+                </div>
+                {accountType === 'AFU' && (
+                  <button
+                    onClick={() => setShowCompanyModal(true)}
+                    className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
+                    title="Reassign company"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                )}
               </div>
               {order._company_name && (
                 <div className="text-xs font-mono text-[var(--text-muted)]">{order.company_id}</div>
@@ -691,7 +944,7 @@ export default function ShipmentOrderDetailPage() {
       <RouteCard order={order} />
 
       {/* Status Management */}
-      <StatusCard order={order} onReload={loadOrder} />
+      <StatusCard order={order} onReload={loadOrder} accountType={accountType} />
 
       {/* Two-column grid for the detail cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -768,6 +1021,18 @@ export default function ShipmentOrderDetailPage() {
         </SectionCard>
 
       </div>
+
+      {/* Company reassignment modal */}
+      {showCompanyModal && order.company_id && (
+        <CompanyReassignModal
+          shipmentId={order.quotation_id}
+          currentCompanyId={order.company_id}
+          onClose={() => setShowCompanyModal(false)}
+          onReassigned={(companyId, companyName) => {
+            setOrder(prev => prev ? { ...prev, company_id: companyId, _company_name: companyName } : prev);
+          }}
+        />
+      )}
     </div>
   );
 }

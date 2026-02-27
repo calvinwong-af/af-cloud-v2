@@ -4,6 +4,11 @@ Replaces: af-cloud-webserver (Python 3.7 / Flask / GAE)
 Deployed:  Cloud Run — asia-northeast1
 """
 
+import logging
+
+# Configure root logger to INFO so all logger.info() calls are visible in uvicorn output
+logging.basicConfig(level=logging.INFO)
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse

@@ -61,11 +61,25 @@ export function mapV1QuotationStatus(
 
 function mapV1ShipmentOrderStatus(status: number): ShipmentOrderStatus {
   switch (status) {
+    // Native V1 status codes
     case 100:   return 2001;  // Created → Confirmed
     case 110:   return 3001;  // Booking Confirmed
     case 4110:  return 3002;  // In Transit
     case 10000: return 5001;  // Completed
-    default:    return 2001;  // Intermediate states → Confirmed
+    // V2 codes that af-server may have written to V1 ShipmentOrder.status
+    // (occurs when reverting to a V2-only stage like Arrived or Clearance)
+    case 1001:  return 1001;
+    case 1002:  return 1002;
+    case 2001:  return 2001;
+    case 2002:  return 2002;
+    case 3001:  return 3001;
+    case 3002:  return 3002;
+    case 3003:  return 3003;
+    case 4001:  return 4001;
+    case 4002:  return 4002;
+    case 5001:  return 5001;
+    case -1:    return -1;
+    default:    return 2001;  // Truly unknown → Confirmed (safe fallback)
   }
 }
 

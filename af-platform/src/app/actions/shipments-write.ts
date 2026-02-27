@@ -3,16 +3,16 @@
 import { verifySessionAndRole, logAction } from '@/lib/auth-server';
 import {
   createShipmentOrder,
-  updateShipmentStatus,
   updateInvoicedStatus,
   deleteShipmentOrder,
   type CreateShipmentOrderInput,
   type CreateShipmentOrderResult,
-  type UpdateShipmentStatusResult,
   type UpdateInvoicedStatusResult,
   type DeleteShipmentOrderResult,
 } from '@/lib/shipments-write';
 import type { ShipmentOrderStatus } from '@/lib/types';
+
+type UpdateShipmentStatusResult = { success: true } | { success: false; error: string };
 
 export interface CreateShipmentOrderPayload {
   order_type: 'SEA_FCL' | 'SEA_LCL' | 'AIR';
@@ -171,19 +171,55 @@ export async function updateShipmentStatusAction(
   shipment_id: string,
   new_status: ShipmentOrderStatus,
   allow_jump?: boolean,
+  reverted?: boolean,
 ): Promise<UpdateShipmentStatusResult> {
   const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF', 'AFC-ADMIN', 'AFC-M']);
   if (!session.valid) {
     return { success: false, error: 'Unauthorised' };
   }
 
-  return updateShipmentStatus({
-    shipment_id,
-    new_status,
-    changed_by_uid: session.uid,
-    changed_by_email: session.email,
-    allow_jump,
-  });
+  try {
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) {
+      return { success: false, error: 'No session token' };
+    }
+
+    const url = new URL(
+      `/api/v2/shipments/${encodeURIComponent(shipment_id)}/status`,
+      process.env.AF_SERVER_URL,
+    );
+    const res = await fetch(url.toString(), {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        status: new_status,
+        allow_jump: allow_jump ?? false,
+        reverted: reverted ?? false,
+      }),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const msg = json?.detail ?? json?.msg ?? `Server responded ${res.status}`;
+      return { success: false, error: msg };
+    }
+
+    const json = await res.json();
+    if (json.status === 'ERROR') {
+      return { success: false, error: json.msg ?? 'Status update failed' };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error('[updateShipmentStatusAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to update shipment status' };
+  }
 }
 
 // ---------------------------------------------------------------------------

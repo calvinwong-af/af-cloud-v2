@@ -2,7 +2,8 @@
 
 import { usePathname } from "next/navigation";
 import type { User } from "firebase/auth";
-import { Search, Bell, Settings } from "lucide-react";
+import { Bell, Settings } from "lucide-react";
+import { QuickSearch } from "./QuickSearch";
 
 function getInitials(displayName: string | null): string {
   if (!displayName) return "U";
@@ -47,25 +48,7 @@ export function Topbar({ currentUser }: TopbarProps) {
       {/* Right — Actions */}
       <div className="flex items-center gap-3">
         {/* Search bar */}
-        <div
-          className="flex items-center gap-2 rounded-lg px-3 py-1.5"
-          style={{ background: "var(--surface)", width: 220 }}
-        >
-          <Search size={14} style={{ color: "var(--text-muted)" }} />
-          <span className="flex-1 text-xs" style={{ color: "var(--text-muted)" }}>
-            Quick search…
-          </span>
-          <kbd
-            className="font-mono text-[0.6rem] px-1.5 py-0.5 rounded"
-            style={{
-              background: "white",
-              color: "var(--text-muted)",
-              border: "1px solid var(--border)",
-            }}
-          >
-            ⌘K
-          </kbd>
-        </div>
+        <QuickSearch />
 
         {/* Notifications */}
         <button

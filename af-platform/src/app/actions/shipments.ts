@@ -138,6 +138,7 @@ export async function getShipmentListAction(
   total_shown: number;
 }> {
   const empty = { shipments: [], next_cursor: null, total_shown: 0 };
+  console.log('[getShipmentListAction] called with tab:', tab, 'cursor:', cursor);
 
   try {
     const session = await verifySessionAndRole(['AFC-ADMIN', 'AFC-M', 'AFU-ADMIN']);
@@ -161,12 +162,15 @@ export async function getShipmentListAction(
       cache: 'no-store',
     });
 
+    console.log('[getShipmentListAction] response status:', res.status);
+
     if (!res.ok) {
       console.error('[getShipmentListAction] af-server responded', res.status);
       return empty;
     }
 
     const json = await res.json();
+    console.log('[getShipmentListAction] shipments count:', json.shipments?.length, 'total_shown:', json.total_shown);
     return {
       shipments: json.shipments ?? [],
       next_cursor: json.next_cursor ?? null,
@@ -174,8 +178,62 @@ export async function getShipmentListAction(
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[getShipmentListAction]', message);
+    console.log('[getShipmentListAction] ERROR:', message);
     return empty;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Search (via af-server)
+// ---------------------------------------------------------------------------
+
+export interface SearchResult {
+  shipment_id: string;
+  data_version: number;
+  status: number;
+  status_label: string;
+  company_name: string;
+  origin_port: string;
+  destination_port: string;
+  order_type: string;
+  company_id: string;
+  updated: string;
+}
+
+export async function searchShipmentsAction(
+  q: string,
+  searchFields: 'id' | 'all' = 'id',
+  limit: number = 8,
+): Promise<SearchResult[]> {
+  try {
+    const session = await verifySessionAndRole(['AFC-ADMIN', 'AFC-M', 'AFU-ADMIN']);
+    if (!session.valid) return [];
+
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) return [];
+
+    const url = new URL('/api/v2/shipments/search', process.env.AF_SERVER_URL);
+    url.searchParams.set('q', q);
+    url.searchParams.set('search_fields', searchFields);
+    url.searchParams.set('limit', String(limit));
+
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${idToken}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      console.error('[searchShipmentsAction] af-server responded', res.status);
+      return [];
+    }
+
+    const json = await res.json();
+    return json.results ?? [];
+  } catch (err) {
+    console.error('[searchShipmentsAction]', err instanceof Error ? err.message : err);
+    return [];
   }
 }
 
@@ -295,6 +353,91 @@ export async function fetchPortsAction(): Promise<{ un_code: string; name: strin
       .filter((p) => p.un_code.length > 0)
       .sort((a, b) => a.name.localeCompare(b.name));
   } catch {
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Reassign company (via af-server)
+// ---------------------------------------------------------------------------
+
+export async function reassignShipmentCompanyAction(
+  shipmentId: string,
+  companyId: string
+): Promise<ActionResult<{ company_id: string; company_name: string }>> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN']);
+    if (!session.valid) {
+      return { success: false, error: 'Unauthorised — staff only' };
+    }
+
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) {
+      return { success: false, error: 'No session token' };
+    }
+
+    const url = new URL(`/api/v2/shipments/${encodeURIComponent(shipmentId)}/company`, process.env.AF_SERVER_URL);
+    const res = await fetch(url.toString(), {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ company_id: companyId }),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const msg = json?.detail ?? json?.msg ?? `Server responded ${res.status}`;
+      return { success: false, error: msg };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data };
+  } catch (err) {
+    console.error('[reassignShipmentCompanyAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to reassign company' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Status history (via af-server)
+// ---------------------------------------------------------------------------
+
+export interface StatusHistoryEntry {
+  status: number;
+  status_label: string;
+  timestamp: string;
+  changed_by: string;
+}
+
+export async function fetchStatusHistoryAction(
+  shipmentId: string
+): Promise<StatusHistoryEntry[]> {
+  try {
+    const session = await verifySessionAndRole(['AFC-ADMIN', 'AFC-M', 'AFU-ADMIN']);
+    if (!session.valid) return [];
+
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) return [];
+
+    const url = new URL(`/api/v2/shipments/${encodeURIComponent(shipmentId)}/status-history`, process.env.AF_SERVER_URL);
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${idToken}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) return [];
+
+    const json = await res.json();
+    return json.history ?? [];
+  } catch (err) {
+    console.error('[fetchStatusHistoryAction]', err instanceof Error ? err.message : err);
     return [];
   }
 }
