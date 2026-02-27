@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft, Ship, Plane, Package, MapPin, Calendar,
   Users, FileText, AlertTriangle, Loader2, Hash,
-  Container, Weight, Activity, ChevronDown, ChevronRight, Pencil, X, Check,
+  Container, Weight, Activity, ChevronDown, ChevronRight, Pencil, X,
 } from 'lucide-react';
 import { fetchShipmentOrderDetailAction, fetchStatusHistoryAction, fetchCompaniesForShipmentAction, reassignShipmentCompanyAction } from '@/app/actions/shipments';
 import type { StatusHistoryEntry } from '@/app/actions/shipments';
