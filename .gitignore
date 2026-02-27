@@ -16,6 +16,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# ---- Old V1 Project (zips + extracted source — never commit) ----
+old-af-project/
+
 # ---- General ----
 .DS_Store
 Thumbs.db
