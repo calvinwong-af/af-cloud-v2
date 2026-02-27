@@ -9,6 +9,7 @@
 steps:
   # 1. Build container image
   - name: "gcr.io/cloud-builders/docker"
+    dir: "af-server"
     args:
       - "build"
       - "-t"
