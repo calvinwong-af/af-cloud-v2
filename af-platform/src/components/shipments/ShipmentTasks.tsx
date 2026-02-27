@@ -3,8 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   CheckCircle2, Circle, Lock, Loader2, Eye, EyeOff,
-  Pencil, X, Clock, AlertTriangle, Truck, Ship as ShipIcon,
-  FileCheck, FileSearch, PackageCheck, Undo2,
+  Pencil, X, Clock, AlertTriangle, Undo2,
 } from 'lucide-react';
 import { fetchShipmentTasksAction, updateShipmentTaskAction } from '@/app/actions/shipments-write';
 import type { WorkflowTask } from '@/app/actions/shipments-write';
@@ -38,14 +37,6 @@ function getTaskLabel(taskType: string, orderType: string): string {
   }
   return TASK_LABELS[taskType] ?? taskType;
 }
-
-const TASK_ICONS: Record<string, React.ReactNode> = {
-  ORIGIN_HAULAGE: <Truck className="w-4 h-4" />,
-  FREIGHT_BOOKING: <ShipIcon className="w-4 h-4" />,
-  EXPORT_CLEARANCE: <FileCheck className="w-4 h-4" />,
-  IMPORT_CLEARANCE: <FileSearch className="w-4 h-4" />,
-  DESTINATION_HAULAGE: <PackageCheck className="w-4 h-4" />,
-};
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; dot: string }> = {
   PENDING:     { bg: 'bg-gray-100',   text: 'text-gray-700',   dot: 'bg-gray-400' },

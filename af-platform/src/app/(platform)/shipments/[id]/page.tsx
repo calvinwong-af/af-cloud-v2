@@ -15,7 +15,7 @@ import { getCurrentUserProfileAction } from '@/app/actions/users';
 import { formatDate } from '@/lib/utils';
 import type { ShipmentOrder, ShipmentOrderStatus } from '@/lib/types';
 import ShipmentTasks from '@/components/shipments/ShipmentTasks';
-import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS, getStatusPath, getStatusPathList } from '@/lib/types';
+import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS, getStatusPathList } from '@/lib/types';
 
 // ─── Status styles ───────────────────────────────────────────────────────────
 
