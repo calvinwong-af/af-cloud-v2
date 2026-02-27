@@ -4,6 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
+## Autonomy
+
+Claude has standing permission to proceed with all queried processes without asking for confirmation. This includes:
+- Running builds, linters, and tests
+- Reading and editing files
+- Running shell commands (git, npm, pip, etc.)
+- Creating commits when asked
+- Installing dependencies
+
+Do not pause to ask "should I proceed?" — just do it.
+
+---
+
 ## Required Reading
 
 **Before writing any code, read `AF-Coding-Standards.md` in this repo root.**
