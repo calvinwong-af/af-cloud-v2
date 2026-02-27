@@ -12,6 +12,7 @@ All other endpoints are stubs — add implementations as each is needed.
 
 import base64
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -374,16 +375,36 @@ def _fmt_date(val) -> str:
     return s[:10] if s else ""
 
 
+_company_name_cache: dict[str, str] = {}
+_company_name_cache_ts: float = 0
+_COMPANY_CACHE_TTL = 300  # 5 minutes
+
+
 def _batch_company_names(client, company_ids: list[str]) -> dict[str, str]:
-    """Batch-fetch company names from Company Kind."""
+    """Batch-fetch company names from Company Kind with 5-minute cache."""
+    global _company_name_cache, _company_name_cache_ts
+
     if not company_ids:
         return {}
-    keys = [client.key("Company", cid) for cid in company_ids]
-    entities = get_multi_chunked(client, keys)
-    return {
-        (e.key.name or str(e.key.id)): e.get("name", "")
-        for e in entities
-    }
+
+    now = time.monotonic()
+    cache_fresh = (now - _company_name_cache_ts) < _COMPANY_CACHE_TTL
+
+    # If cache is fresh and all IDs are cached, return from cache
+    if cache_fresh and all(cid in _company_name_cache for cid in company_ids):
+        return {cid: _company_name_cache[cid] for cid in company_ids}
+
+    # Fetch only missing IDs from Datastore
+    missing = [cid for cid in company_ids if cid not in _company_name_cache or not cache_fresh]
+    if missing:
+        keys = [client.key("Company", cid) for cid in missing]
+        entities = get_multi_chunked(client, keys)
+        for e in entities:
+            eid = e.key.name or str(e.key.id)
+            _company_name_cache[eid] = e.get("name", "")
+        _company_name_cache_ts = now
+
+    return {cid: _company_name_cache.get(cid, "") for cid in company_ids}
 
 
 def _make_v2_summary(entity) -> dict:
@@ -395,9 +416,9 @@ def _make_v2_summary(entity) -> dict:
         "status": entity.get("status", 0),
         "order_type": entity.get("order_type", ""),
         "transaction_type": entity.get("transaction_type", ""),
-        "incoterm": entity.get("incoterm", ""),
-        "origin_port": entity.get("origin_port", ""),
-        "destination_port": entity.get("destination_port", ""),
+        "incoterm": entity.get("incoterm_code", "") or entity.get("incoterm", ""),
+        "origin_port": entity.get("origin_port_un_code", "") or entity.get("origin_port", ""),
+        "destination_port": entity.get("destination_port_un_code", "") or entity.get("destination_port", ""),
         "company_id": entity.get("company_id", ""),
         "company_name": "",  # batch-filled after merge
         "cargo_ready_date": _fmt_date(entity.get("cargo_ready_date")),
@@ -409,33 +430,28 @@ def _make_v1_summary(so_entity, q_entity, v2_status: int) -> dict:
     """
     Build summary dict for a V1 shipment.
 
-    so_entity:  ShipmentOrder entity (primary — has operational status + port codes)
-    q_entity:   Quotation entity (display fields — type, incoterm, dates)
+    so_entity:  ShipmentOrder entity (primary — has operational status + port codes + display fields)
+    q_entity:   Quotation entity (optional fallback — only used if ShipmentOrder is missing a field)
     v2_status:  V1 status mapped to V2 status code
     """
-    # Prefer ShipmentOrder updated, fall back to Quotation
     updated = (
         so_entity.get("updated")
         or so_entity.get("modified")
-        or (q_entity.get("updated") if q_entity else None)
         or so_entity.get("created")
         or ""
     )
-    # Display fields from Quotation if available, else ShipmentOrder
-    src = q_entity if q_entity else so_entity
     return {
         "shipment_id": so_entity.key.name or str(so_entity.key.id),
         "data_version": 1,
         "status": v2_status,
-        "order_type": src.get("order_type", "") or src.get("quotation_type", ""),
-        "transaction_type": src.get("transaction_type", ""),
-        "incoterm": src.get("incoterm_code", "") or src.get("incoterm", ""),
-        # Port codes live on ShipmentOrder for V1
-        "origin_port": so_entity.get("origin_port_un_code", "") or src.get("origin_port", "") or src.get("port_of_loading", ""),
-        "destination_port": so_entity.get("destination_port_un_code", "") or src.get("destination_port", "") or src.get("port_of_discharge", ""),
-        "company_id": so_entity.get("company_id", "") or src.get("company_id", ""),
+        "order_type": so_entity.get("order_type", "") or so_entity.get("quotation_type", "") or (q_entity.get("quotation_type", "") if q_entity else ""),
+        "transaction_type": so_entity.get("transaction_type", "") or (q_entity.get("transaction_type", "") if q_entity else ""),
+        "incoterm": so_entity.get("incoterm_code", "") or so_entity.get("incoterm", "") or (q_entity.get("incoterm_code", "") if q_entity else ""),
+        "origin_port": so_entity.get("origin_port_un_code", "") or so_entity.get("origin_port", "") or so_entity.get("port_of_loading", ""),
+        "destination_port": so_entity.get("destination_port_un_code", "") or so_entity.get("destination_port", "") or so_entity.get("port_of_discharge", ""),
+        "company_id": so_entity.get("company_id", ""),
         "company_name": "",  # batch-filled after merge
-        "cargo_ready_date": _fmt_date(src.get("cargo_ready_date")),
+        "cargo_ready_date": _fmt_date(so_entity.get("cargo_ready_date") or (q_entity.get("cargo_ready_date") if q_entity else None)),
         "updated": _fmt_date(updated),
     }
 
@@ -491,7 +507,6 @@ async def list_shipments(
         v2_query.add_filter(filter=PropertyFilter("trash", "=", False))
         if effective_company_id:
             v2_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
-
         v2_count = 0
         for entity in v2_query.fetch():
             if _v2_tab_match(tab, entity):
@@ -544,41 +559,24 @@ async def list_shipments(
             logger.info("[to_invoice] ShipmentOrder query returned: %d records", len(v1_shipment_orders))
 
         if v1_shipment_orders:
-            # Batch-fetch corresponding Quotation records for display fields
-            q_keys = [
-                client.key("Quotation", e.key.name or str(e.key.id))
-                for e in v1_shipment_orders
-            ]
-            q_entities = get_multi_chunked(client, q_keys)
-            q_map: dict[str, object] = {
-                (e.key.name or str(e.key.id)): e
-                for e in q_entities
-            }
-
+            # Display fields are read directly from ShipmentOrder — no Quotation batch fetch needed.
             if tab == "to_invoice":
-                logger.info("[to_invoice] After Quotation join: %d entities fetched for %d ShipmentOrders", len(q_map), len(v1_shipment_orders))
+                logger.info("[to_invoice] Processing %d ShipmentOrders (no Quotation join)", len(v1_shipment_orders))
 
             v1_to_invoice_count = 0
             for so_entity in v1_shipment_orders:
-                so_id = so_entity.key.name or str(so_entity.key.id)
                 v1_status = so_entity.get("status", 0)
-                q_entity = q_map.get(so_id)
 
                 # to_invoice: further filter — completed but invoice not issued.
-                # issued_invoice may live on Quotation Kind or ShipmentOrder —
-                # check both, treating int 0 / None / missing as "not issued".
                 if tab == "to_invoice":
-                    q_issued = q_entity.get("issued_invoice") if q_entity else None
                     so_issued = so_entity.get("issued_invoice")
-                    # Either source saying truthy means invoiced
-                    issued = bool(q_issued) or bool(so_issued)
-                    if issued:
+                    if bool(so_issued):
                         continue
                     v1_to_invoice_count += 1
 
                 # Map V1 status → V2; unmapped codes default to Confirmed (2001)
                 v2_status = V1_TO_V2_STATUS.get(v1_status, STATUS_CONFIRMED)
-                items.append(_make_v1_summary(so_entity, q_entity, v2_status))
+                items.append(_make_v1_summary(so_entity, None, v2_status))
 
             if tab == "to_invoice":
                 logger.info("[to_invoice] After issued_invoice filter: %d records", v1_to_invoice_count)
@@ -659,12 +657,13 @@ async def get_shipment(
     Get a single shipment by ID.
 
     Detects V1 vs V2 by prefix:
-      AF2-XXXXX  → V2 record (Quotation Kind, data_version=2)
+      AF-XXXXX   → V2 record (Quotation Kind, data_version=2)
+      AF2-XXXXX  → V2 record (legacy prefix, same as AF-)
       AFCQ-XXXXX → V1 record (Quotation + ShipmentOrder join)
     """
     client = get_client()
 
-    if shipment_id.startswith(PREFIX_V2_SHIPMENT):
+    if shipment_id.startswith(PREFIX_V2_SHIPMENT) or shipment_id.startswith("AF2-"):
         # V2 — read from Quotation Kind
         entity = client.get(client.key("Quotation", shipment_id))
         if not entity or entity.get("data_version") != 2:
@@ -759,7 +758,7 @@ async def update_shipment_status(
     """
     Update a shipment's status with atomic status + history write.
 
-    Handles both V1 (AFCQ-) and V2 (AF2-) records.
+    Handles both V1 (AFCQ-) and V2 (AF- / AF2-) records.
     Appends to ShipmentWorkFlow.status_history in the same request.
     """
     logger.info(f"[status write] shipment: {shipment_id} new_status: {body.status} reverted: {body.reverted}")
@@ -921,7 +920,7 @@ async def assign_company(
         or body.company_id
     )
 
-    if shipment_id.startswith(PREFIX_V2_SHIPMENT):
+    if shipment_id.startswith(PREFIX_V2_SHIPMENT) or shipment_id.startswith("AF2-"):
         # V2 — update Quotation only
         q_key = client.key("Quotation", shipment_id)
         q_entity = client.get(q_key)

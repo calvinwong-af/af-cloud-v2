@@ -22,3 +22,33 @@ indexes:
       - name: trash
       - name: countid
         direction: desc
+
+  # ShipmentOrder — V1 stats + list queries
+  - kind: ShipmentOrder
+    properties:
+      - name: status
+      - name: company_id
+
+  # Quotation V2 — base list (all companies, AFU staff view)
+  - kind: Quotation
+    properties:
+      - name: data_version
+      - name: trash
+      - name: updated
+        direction: desc
+
+  # Quotation V2 — company-filtered list (AFC users)
+  - kind: Quotation
+    properties:
+      - name: data_version
+      - name: trash
+      - name: company_id
+      - name: updated
+        direction: desc
+
+  # Quotation V2 — status-filtered queries (tab counts in stats)
+  - kind: Quotation
+    properties:
+      - name: data_version
+      - name: trash
+      - name: status

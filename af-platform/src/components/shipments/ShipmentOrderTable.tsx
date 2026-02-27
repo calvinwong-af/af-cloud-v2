@@ -231,7 +231,7 @@ function ShipmentActionsMenu({
               This will permanently delete <span className="font-medium text-[var(--text)]">{order.quotation_id}</span>.
             </p>
             <p className="text-sm text-[var(--text-muted)] mb-1">
-              {order.quotation_id.startsWith('AF2-')
+              {(order.quotation_id.startsWith('AF-') || order.quotation_id.startsWith('AF2-'))
                 ? 'All associated records will also be removed.'
                 : 'Only the order record will be removed. Legacy records are preserved.'}
             </p>

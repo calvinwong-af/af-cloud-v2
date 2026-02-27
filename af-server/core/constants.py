@@ -79,7 +79,7 @@ EXPORT = "EXPORT"
 
 # ---------------------------------------------------------------------------
 # V2 ShipmentOrder status codes
-# (Quotation Kind, prefix AF2-)
+# (Quotation Kind, prefix AF-)
 # ---------------------------------------------------------------------------
 STATUS_DRAFT              = 1001
 STATUS_DRAFT_REVIEW       = 1002
@@ -203,6 +203,6 @@ AIR_CUBIC_CONVERSION_FACTOR = 167   # kg per cbm for air chargeable weight
 # ---------------------------------------------------------------------------
 # ID prefixes
 # ---------------------------------------------------------------------------
-PREFIX_V2_SHIPMENT = "AF2-"
+PREFIX_V2_SHIPMENT = "AF-"
 PREFIX_V1_SHIPMENT = "AFCQ-"
 PREFIX_COMPANY     = "AFC-"

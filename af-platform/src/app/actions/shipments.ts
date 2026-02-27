@@ -77,7 +77,7 @@ export async function fetchShipmentOrderDetailAction(
       return { success: false, error: 'Unauthorised' };
     }
 
-    if (!quotationId?.match(/^(AFCQ|AF2)-\d+$/)) {
+    if (!quotationId?.match(/^(AFCQ|AF2|AF)-\d+$/)) {
       return { success: false, error: 'Invalid shipment order ID format' };
     }
 

@@ -2,7 +2,7 @@
  * AcceleFreight Platform — Shipment Order Write Operations (V2)
  *
  * Server-side only. Creates V2 ShipmentOrders in the Quotation Kind.
- * V2 records use the `AF2-` prefix with a separate counter (ShipmentOrderV2Counter).
+ * V2 records use the `AF-` prefix with a counter that continues from the V1 AFCQ- sequence.
  * The V1 `AFCQ-XXXXXX` counter is never touched.
  *
  * Three Core Pillars: process logging, error handling, security (caller enforces auth).
@@ -100,7 +100,7 @@ function generateTrackingId(): string {
   const suffix = Array.from({ length: 7 }, () =>
     TRACKING_CHARS[Math.floor(Math.random() * TRACKING_CHARS.length)]
   ).join('');
-  return `AF2${suffix}`;
+  return `AF${suffix}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -126,24 +126,35 @@ function deriveContainerLoad(orderType: string): 'FCL' | 'LCL' | 'AIR' | '' {
 }
 
 // ---------------------------------------------------------------------------
-// Next shipment ID — scan ShipmentOrderV2CountId for true max
+// Next shipment ID — scan V2 counter + V1 Quotation keys for global max
 // ---------------------------------------------------------------------------
 
 async function generateShipmentOrderV2Id(datastore: ReturnType<typeof getDatastore>): Promise<{ id: string; countid: number }> {
-  // Scan all ShipmentOrderV2CountId records and find true max in memory.
-  // Same pattern as Company ID generation — avoids index freshness issues
-  // and does not rely on transactions or ORDER BY queries.
-  const query = datastore.createQuery('ShipmentOrderV2CountId');
-  const [entities] = await datastore.runQuery(query);
+  // 1. Scan all ShipmentOrderV2CountId records — find max V2 countid
+  const v2Query = datastore.createQuery('ShipmentOrderV2CountId');
+  const [v2Entities] = await datastore.runQuery(v2Query);
 
-  let maxCountId = 0;
-  for (const entity of entities) {
+  let v2Max = 0;
+  for (const entity of v2Entities) {
     const val = typeof entity.countid === 'number' ? entity.countid : 0;
-    if (val > maxCountId) maxCountId = val;
+    if (val > v2Max) v2Max = val;
   }
 
-  const newCountId = maxCountId + 1;
-  const id = 'AF2-' + String(newCountId).padStart(6, '0');
+  // 2. Scan V1 Quotation keys (keys-only) — find max AFCQ- numeric suffix
+  const v1Query = datastore.createQuery('Quotation').select('__key__');
+  const [v1Entities] = await datastore.runQuery(v1Query);
+
+  let v1Max = 0;
+  for (const entity of v1Entities) {
+    const keyName = entity[datastore.KEY]?.name as string | undefined;
+    if (!keyName || !keyName.startsWith('AFCQ-')) continue;
+    const num = parseInt(keyName.replace('AFCQ-', ''), 10);
+    if (!isNaN(num) && num > v1Max) v1Max = num;
+  }
+
+  // 3. Global max + 1
+  const newCountId = Math.max(v2Max, v1Max) + 1;
+  const id = 'AF-' + String(newCountId).padStart(6, '0');
   return { id, countid: newCountId };
 }
 
@@ -505,7 +516,7 @@ export async function deleteShipmentOrder(
 
     // b. Determine version
     const dataVersion = (quotationEntity.data_version as number | null) ?? 1;
-    const isV2 = input.shipment_id.startsWith('AF2-') || dataVersion === 2;
+    const isV2 = input.shipment_id.startsWith('AF-') || input.shipment_id.startsWith('AF2-') || dataVersion === 2;
     const trackingId = quotationEntity.tracking_id as string | null ?? null;
 
     if (isV2) {
