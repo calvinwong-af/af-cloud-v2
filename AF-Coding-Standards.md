@@ -368,6 +368,22 @@ Before marking any task complete, confirm the following by checking the actual w
 - [ ] New endpoints added to the correct router and registered in `main.py` if required
 - [ ] Server Actions wrapped in try/catch — every path returns structured result, never throws
 - [ ] Client calls to Server Actions guarded with `if (!result)` null check and outer try/catch
+- [ ] **No unused imports/variables** — run `npm run lint` in `af-platform/` before committing platform changes
+
+---
+
+## 14. Pre-Push — Lint Check (Platform)
+
+**Rule:** Before committing any `af-platform` changes, run `npm run lint` (or `npm run build`) locally to catch ESLint errors. Cloud Build runs `next build` which fails on `@typescript-eslint/no-unused-vars` errors that the dev server silently ignores.
+
+**Common cause:** Refactoring or deleting code leaves behind unused imports or constants. The dev server (`npm run dev`) does NOT surface these as errors — only `next build` does.
+
+**Minimum check:**
+```bash
+cd af-platform && npm run lint
+```
+
+If lint passes locally, Cloud Build will not fail on ESLint errors.
 
 ---
 
