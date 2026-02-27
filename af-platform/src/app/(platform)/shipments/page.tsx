@@ -72,6 +72,7 @@ function toShipmentOrder(item: ShipmentListItem): ShipmentOrder {
     booking: null,
     parties: null,
     customs_clearance: [],
+    exception: null,
     tracking_id: null,
     files: [],
     trash: false,

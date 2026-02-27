@@ -78,43 +78,56 @@ IMPORT = "IMPORT"
 EXPORT = "EXPORT"
 
 # ---------------------------------------------------------------------------
-# V2 ShipmentOrder status codes
+# V2 ShipmentOrder status codes — first digit = node group
+# 1xxx = Pre-operational, 2xxx = Confirmed, 3xxx = Booking,
+# 4xxx = In Transit, 5xxx = Completed
 # (Quotation Kind, prefix AF-)
 # ---------------------------------------------------------------------------
 STATUS_DRAFT              = 1001
 STATUS_DRAFT_REVIEW       = 1002
 STATUS_CONFIRMED          = 2001
-STATUS_BOOKING_PENDING    = 2002
-STATUS_BOOKED             = 3001
-STATUS_IN_TRANSIT         = 3002
-STATUS_ARRIVED            = 3003
-STATUS_CLEARANCE          = 4001
-STATUS_EXCEPTION          = 4002
+STATUS_BOOKING_PENDING    = 3001
+STATUS_BOOKING_CONFIRMED  = 3002
+STATUS_DEPARTED           = 4001
+STATUS_ARRIVED            = 4002
 STATUS_COMPLETED          = 5001
 STATUS_CANCELLED          = -1
 
 V2_ACTIVE_STATUSES = [
     STATUS_CONFIRMED,
     STATUS_BOOKING_PENDING,
-    STATUS_BOOKED,
-    STATUS_IN_TRANSIT,
+    STATUS_BOOKING_CONFIRMED,
+    STATUS_DEPARTED,
     STATUS_ARRIVED,
-    STATUS_CLEARANCE,
-    STATUS_EXCEPTION,
 ]
 
 STATUS_LABELS = {
-    STATUS_DRAFT:           "Draft",
-    STATUS_DRAFT_REVIEW:    "Pending Review",
-    STATUS_CONFIRMED:       "Confirmed",
-    STATUS_BOOKING_PENDING: "Booking Pending",
-    STATUS_BOOKED:          "Booked",
-    STATUS_IN_TRANSIT:      "In Transit",
-    STATUS_ARRIVED:         "Arrived",
-    STATUS_CLEARANCE:       "Clearance In Progress",
-    STATUS_EXCEPTION:       "Exception",
-    STATUS_COMPLETED:       "Completed",
-    STATUS_CANCELLED:       "Cancelled",
+    STATUS_DRAFT:              "Draft",
+    STATUS_DRAFT_REVIEW:       "Pending Review",
+    STATUS_CONFIRMED:          "Confirmed",
+    STATUS_BOOKING_PENDING:    "Booking Pending",
+    STATUS_BOOKING_CONFIRMED:  "Booking Confirmed",
+    STATUS_DEPARTED:           "Departed",
+    STATUS_ARRIVED:            "Arrived",
+    STATUS_COMPLETED:          "Completed",
+    STATUS_CANCELLED:          "Cancelled",
+}
+
+# ---------------------------------------------------------------------------
+# Old → New status code mapping (for migration of existing records)
+# ---------------------------------------------------------------------------
+OLD_TO_NEW_STATUS = {
+    1001: 1001,   # Draft → Draft
+    1002: 1002,   # Pending Review → Pending Review
+    2001: 2001,   # Confirmed → Confirmed
+    2002: 3001,   # Booking Pending → Booking Pending (moved to 3xxx)
+    3001: 3002,   # Booked → Booking Confirmed (moved to 3xxx)
+    3002: 4001,   # In Transit → Departed (moved to 4xxx)
+    3003: 4002,   # Arrived → Arrived (moved to 4xxx)
+    4001: 4001,   # Clearance In Progress → Departed (collapsed)
+    # 4002 Exception → handled specially (set exception flag)
+    5001: 5001,   # Completed → Completed
+    -1:   -1,     # Cancelled → Cancelled
 }
 
 # ---------------------------------------------------------------------------
@@ -128,12 +141,12 @@ V1_STATUS_BOOKING_CONFIRMED  = 110    # equivalent to V2 STATUS_BOOKED (3001)
 V1_STATUS_IN_TRANSIT         = 4110   # equivalent to V2 STATUS_IN_TRANSIT (3002)
 V1_STATUS_COMPLETED          = 10000  # equivalent to V2 STATUS_COMPLETED (5001)
 
-# Mapping V1 ShipmentOrder.status → V2 status code
+# Mapping V1 ShipmentOrder.status → V2 status code (new codes)
 V1_TO_V2_STATUS = {
     V1_STATUS_CREATED:           STATUS_CONFIRMED,
     V1_STATUS_BOOKING_STARTED:   STATUS_BOOKING_PENDING,
-    V1_STATUS_BOOKING_CONFIRMED: STATUS_BOOKED,
-    V1_STATUS_IN_TRANSIT:        STATUS_IN_TRANSIT,
+    V1_STATUS_BOOKING_CONFIRMED: STATUS_BOOKING_CONFIRMED,
+    V1_STATUS_IN_TRANSIT:        STATUS_DEPARTED,
     V1_STATUS_COMPLETED:         STATUS_COMPLETED,
 }
 
@@ -162,6 +175,41 @@ CQ_SENT    = "SENT"
 CQ_ACCEPTED= "ACCEPTED"
 CQ_REVISED = "REVISED"
 CQ_EXPIRED = "EXPIRED"
+
+# ---------------------------------------------------------------------------
+# Status paths — incoterm-aware progression
+# ---------------------------------------------------------------------------
+
+# Path A: AF owns freight booking (includes 3xxx booking nodes)
+# 1001 → 1002 → 2001 → 3001 → 3002 → 4001 → 4002 → 5001
+STATUS_PATH_A = [1001, 1002, 2001, 3001, 3002, 4001, 4002, 5001]
+
+# Path B: AF does not own freight booking (skips 3xxx)
+# 1001 → 1002 → 2001 → 4001 → 4002 → 5001
+STATUS_PATH_B = [1001, 1002, 2001, 4001, 4002, 5001]
+
+# Incoterm + transaction_type combos that generate a FREIGHT_BOOKING task → Path A
+# Derived from logic/incoterm_tasks.py _INCOTERM_RULES
+_PATH_A_COMBOS = {
+    ("EXW", "IMPORT"),
+    ("FCA", "EXPORT"), ("FCA", "IMPORT"),
+    ("FOB", "EXPORT"), ("FOB", "IMPORT"),
+    ("CFR", "EXPORT"), ("CIF", "EXPORT"), ("CNF", "EXPORT"),
+    ("CPT", "EXPORT"), ("CIP", "EXPORT"),
+    ("DAP", "EXPORT"), ("DPU", "EXPORT"), ("DDP", "EXPORT"),
+}
+
+
+def get_status_path(incoterm: str, transaction_type: str) -> str:
+    """Returns 'A' if AF owns freight booking, 'B' otherwise."""
+    key = (incoterm.upper().strip(), transaction_type.upper().strip())
+    return "A" if key in _PATH_A_COMBOS else "B"
+
+
+def get_status_path_list(incoterm: str, transaction_type: str) -> list[int]:
+    """Returns the ordered list of status codes for the shipment's path."""
+    return STATUS_PATH_A if get_status_path(incoterm, transaction_type) == "A" else STATUS_PATH_B
+
 
 # ---------------------------------------------------------------------------
 # Incoterms

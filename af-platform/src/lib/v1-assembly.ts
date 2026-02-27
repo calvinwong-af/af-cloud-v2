@@ -52,7 +52,7 @@ export function mapV1QuotationStatus(
     case 2001: return 2001;  // Submitted → Confirmed
     case 2002: return 2001;  // Submitted Revised → Confirmed
     case 3001: return 2001;  // Confirmed (old naming)
-    case 4001: return 3002;  // Active → In Transit (if ShipmentOrder exists)
+    case 4001: return 4001;  // Active → Departed
     case 5001: return 5001;  // Completed
     case -1:   return -1;    // Cancelled
     default:   return 1001;  // Unknown → Draft (safe fallback)
@@ -61,24 +61,24 @@ export function mapV1QuotationStatus(
 
 function mapV1ShipmentOrderStatus(status: number): ShipmentOrderStatus {
   switch (status) {
-    // Native V1 status codes
+    // Native V1 status codes → new V2 codes (v2.18)
     case 100:   return 2001;  // Created → Confirmed
-    case 110:   return 3001;  // Booking Confirmed
-    case 4110:  return 3002;  // In Transit
+    case 110:   return 3002;  // Booking Confirmed → Booking Confirmed
+    case 4110:  return 4001;  // In Transit → Departed
     case 10000: return 5001;  // Completed
-    // V2 codes that af-server may have written to V1 ShipmentOrder.status
-    // (occurs when reverting to a V2-only stage like Arrived or Clearance)
+    // New V2 codes (v2.18) that af-server may have written to V1 ShipmentOrder.status
     case 1001:  return 1001;
     case 1002:  return 1002;
     case 2001:  return 2001;
-    case 2002:  return 2002;
     case 3001:  return 3001;
     case 3002:  return 3002;
-    case 3003:  return 3003;
     case 4001:  return 4001;
     case 4002:  return 4002;
     case 5001:  return 5001;
     case -1:    return -1;
+    // Legacy codes that might still be in Datastore from pre-migration
+    case 2002:  return 3001;  // old Booking Pending → new Booking Pending
+    case 3003:  return 4002;  // old Arrived → new Arrived
     default:    return 2001;  // Truly unknown → Confirmed (safe fallback)
   }
 }
@@ -449,6 +449,8 @@ export function assembleV1ShipmentOrder(params: {
 
     parties,
     customs_clearance: customsClearance,
+
+    exception: null,
 
     tracking_id: oldShipmentOrder?.tracking_id as string | null ?? null,
     files: q.files as string[] ?? [],

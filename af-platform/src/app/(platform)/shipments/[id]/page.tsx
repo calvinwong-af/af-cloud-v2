@@ -6,6 +6,7 @@ import {
   ArrowLeft, Ship, Plane, Package, MapPin, Calendar,
   Users, FileText, AlertTriangle, Loader2, Hash,
   Container, Weight, Activity, ChevronDown, ChevronRight, Pencil, X,
+  ClipboardList, Clock,
 } from 'lucide-react';
 import { fetchShipmentOrderDetailAction, fetchStatusHistoryAction, fetchCompaniesForShipmentAction, reassignShipmentCompanyAction } from '@/app/actions/shipments';
 import type { StatusHistoryEntry } from '@/app/actions/shipments';
@@ -13,7 +14,8 @@ import { updateShipmentStatusAction, updateInvoicedStatusAction } from '@/app/ac
 import { getCurrentUserProfileAction } from '@/app/actions/users';
 import { formatDate } from '@/lib/utils';
 import type { ShipmentOrder, ShipmentOrderStatus } from '@/lib/types';
-import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS, VALID_TRANSITIONS } from '@/lib/types';
+import ShipmentTasks from '@/components/shipments/ShipmentTasks';
+import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS, getStatusPath, getStatusPathList } from '@/lib/types';
 
 // ─── Status styles ───────────────────────────────────────────────────────────
 
@@ -271,32 +273,25 @@ function PartiesCard({ order }: { order: ShipmentOrder }) {
   );
 }
 
-// ─── Status card ──────────────────────────────────────────────────────────────
+// ─── Status card (v2.18 — redesigned) ─────────────────────────────────────────
 
-/** Linear status flow (excludes Exception and Cancelled) */
-const LINEAR_FLOW: ShipmentOrderStatus[] = [1001, 1002, 2001, 2002, 3001, 3002, 3003, 4001, 5001];
-
-/** Explicit step label → status code mapping for reversion clicks.
- *  Never derive status codes from array index or position — always use this map. */
-const STEP_STATUS_CODES: Record<string, number> = {
-  'Draft': 1001,
-  'Pending Review': 1002,
-  'Confirmed': 2001,
-  'Booking Pending': 2002,
-  'Booking Confirmed': 3001,
-  'In Transit': 3002,
-  'Arrived': 3003,
-  'Clearance In Progress': 4001,
-  'Completed': 5001,
+/** Node labels — keyed by thousands digit */
+const NODE_LABELS: Record<number, string> = {
+  1: 'Pre-op',
+  2: 'Confirmed',
+  3: 'Booking',
+  4: 'In Transit',
+  5: 'Completed',
 };
 
-/** Two-line labels for the timeline stepper — long labels get a line break */
-const TIMELINE_LABELS: Partial<Record<number, React.ReactNode>> = {
-  1002: <>Pending{'\n'}Review</>,
-  2002: <>Booking{'\n'}Pending</>,
-  3001: <>Booking{'\n'}Confirmed</>,
-  3002: <>In{'\n'}Transit</>,
-  4001: <>Clearance{'\n'}In Progress</>,
+/** Sub-step labels for display below parent node */
+const SUB_LABELS: Record<number, string> = {
+  1001: 'Draft',
+  1002: 'Pending Review',
+  3001: 'Bkg Pending',
+  3002: 'Bkg Confirmed',
+  4001: 'Departed',
+  4002: 'Arrived',
 };
 
 function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; onReload: () => void; accountType: string | null }) {
@@ -309,130 +304,172 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
     revert?: boolean;
     undoneSteps?: string[];
   } | null>(null);
+  const [subStepDialog, setSubStepDialog] = useState<{
+    nodeLabel: string;
+    steps: { status: ShipmentOrderStatus; label: string }[];
+    selected: ShipmentOrderStatus;
+  } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyEntries, setHistoryEntries] = useState<StatusHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [exceptionLoading, setExceptionLoading] = useState(false);
+  const [exceptionNotes, setExceptionNotes] = useState('');
+  const [showExceptionModal, setShowExceptionModal] = useState(false);
 
   const currentStatus = order.status;
-  const validNext = VALID_TRANSITIONS[currentStatus] ?? [];
   const isTerminal = currentStatus === 5001 || currentStatus === -1;
   const isAfu = accountType === 'AFU';
 
-  // Find where current status sits in linear flow
-  const currentLinearIdx = LINEAR_FLOW.indexOf(currentStatus);
-  // For Exception/Cancelled, find the last known linear position from pre_exception or history
-  const displayIdx = currentLinearIdx >= 0
-    ? currentLinearIdx
-    : (() => {
-        // Search history in reverse for last linear status
-        for (let i = (order.status_history ?? []).length - 1; i >= 0; i--) {
-          const idx = LINEAR_FLOW.indexOf(order.status_history[i].status as ShipmentOrderStatus);
-          if (idx >= 0) return idx;
-        }
-        return 0;
-      })();
+  // Determine path from incoterm + transaction_type
+  const pathList = getStatusPathList(order.incoterm_code, order.transaction_type);
 
-  // Determine the natural next linear step
-  const nextLinearStatus = displayIdx < LINEAR_FLOW.length - 1
-    ? LINEAR_FLOW[displayIdx + 1]
-    : null;
-  const advanceStatus = nextLinearStatus && validNext.includes(nextLinearStatus)
-    ? nextLinearStatus
-    : null;
+  // Find current position in path
+  const currentIdx = pathList.indexOf(currentStatus);
+  const displayIdx = currentIdx >= 0 ? currentIdx : 0;
 
-  const canException = validNext.includes(4002);
-  const canCancel = validNext.includes(-1);
+  // Next step on path
+  const nextStatus = displayIdx < pathList.length - 1 ? pathList[displayIdx + 1] : null;
+  const advanceStatus = nextStatus && !isTerminal ? nextStatus : null;
 
-  // Invoiced toggle: only enabled when completed
-  const invoiceEnabled = currentStatus === 5001;
+  // Exception flag state
+  const exceptionFlagged = order.exception?.flagged === true;
+
+  // Can cancel from any non-terminal status
+  const canCancel = !isTerminal;
+
+  // Group steps by node (thousands digit)
+  const nodes = (() => {
+    const grouped: { node: number; label: string; steps: ShipmentOrderStatus[] }[] = [];
+    let lastNode = -1;
+    for (const step of pathList) {
+      const node = step === -1 ? -1 : Math.floor(step / 1000);
+      if (node !== lastNode) {
+        grouped.push({ node, label: NODE_LABELS[node] ?? `${node}xxx`, steps: [step] });
+        lastNode = node;
+      } else {
+        grouped[grouped.length - 1].steps.push(step);
+      }
+    }
+    return grouped;
+  })();
+
+  // Determine node state: 'past' | 'current' | 'future'
+  function getNodeState(nodeGroup: { steps: ShipmentOrderStatus[] }): 'past' | 'current' | 'future' {
+    const hasCurrent = nodeGroup.steps.includes(currentStatus);
+    // Terminal statuses (Completed, Cancelled) show as past/done, not current
+    if (hasCurrent && (currentStatus === 5001 || currentStatus === -1)) return 'past';
+    if (hasCurrent) return 'current';
+    const firstIdx = pathList.indexOf(nodeGroup.steps[0]);
+    return firstIdx < displayIdx ? 'past' : 'future';
+  }
 
   async function executeStatusChange(newStatus: ShipmentOrderStatus, allowJump?: boolean, reverted?: boolean) {
     setError(null);
     setLoading(true);
     setConfirmAction(null);
-    const result = await updateShipmentStatusAction(order.quotation_id, newStatus, allowJump || undefined, reverted || undefined);
+    setSubStepDialog(null);
+    try {
+      const result = await updateShipmentStatusAction(order.quotation_id, newStatus, allowJump || undefined, reverted || undefined);
+      if (!result) { setError('No response from server'); setLoading(false); return; }
+      if (result.success) {
+        setHistoryEntries([]);
+        onReload();
+      } else {
+        setError(result.error);
+      }
+    } catch {
+      setError('Failed to update status');
+    }
     setLoading(false);
-    if (result.success) {
-      // Clear cached history so it refetches on next open
-      setHistoryEntries([]);
-      onReload();
-    } else {
-      setError(result.error);
-    }
   }
 
-  function handleAdvanceClick(newStatus: ShipmentOrderStatus) {
-    // Advance button: no allow_jump, uses VALID_TRANSITIONS
-    if (newStatus === 5001 || newStatus === -1) {
-      setConfirmAction({ status: newStatus, label: SHIPMENT_STATUS_LABELS[newStatus] ?? `${newStatus}` });
-    } else {
-      executeStatusChange(newStatus);
-    }
-  }
-
-  function handleTimelineDotClick(targetStatus: ShipmentOrderStatus) {
+  // Clicking a FUTURE node
+  function handleFutureNodeClick(nodeGroup: { node: number; label: string; steps: ShipmentOrderStatus[] }) {
     if (loading || isTerminal) return;
-    // Dot clicks always use allow_jump: true
-    if (targetStatus === 5001) {
-      setConfirmAction({ status: targetStatus, label: SHIPMENT_STATUS_LABELS[targetStatus] ?? `${targetStatus}`, allowJump: true });
+    if (nodeGroup.steps.length === 1) {
+      // Single-step node (Confirmed, Completed) → advance directly
+      const target = nodeGroup.steps[0];
+      if (target === 5001 || target === -1) {
+        setConfirmAction({ status: target, label: SHIPMENT_STATUS_LABELS[target] ?? `${target}`, allowJump: true });
+      } else {
+        executeStatusChange(target, true);
+      }
     } else {
-      executeStatusChange(targetStatus, true);
+      // Multi-step node (Booking, In Transit) → sub-step dialog
+      setSubStepDialog({
+        nodeLabel: nodeGroup.label,
+        steps: nodeGroup.steps.map(s => ({ status: s, label: SHIPMENT_STATUS_LABELS[s] ?? `${s}` })),
+        selected: nodeGroup.steps[0],
+      });
     }
   }
 
-  function handleRevertClick(stepLabel: string, stepIdx: number) {
+  // Clicking a PAST node or sub-step
+  function handlePastClick(targetStatus: ShipmentOrderStatus) {
     if (loading || !isAfu) return;
-    console.log('[revert click] raw stepLabel:', JSON.stringify(stepLabel));
-    const cleanLabel = stepLabel.trim();
-    const statusCode = STEP_STATUS_CODES[cleanLabel];
-    if (statusCode === undefined) {
-      console.warn('[revert] no status code found for step:', JSON.stringify(stepLabel));
-      return;
-    }
-    console.log('[revert click] stepLabel:', cleanLabel, 'stepIndex:', stepIdx, 'statusCode being sent:', statusCode, 'currentStatus:', currentStatus);
-    // Collect the names of steps that will be undone (from target+1 through current)
+    const targetIdx = pathList.indexOf(targetStatus);
+    const label = SHIPMENT_STATUS_LABELS[targetStatus] ?? `${targetStatus}`;
     const undoneSteps: string[] = [];
-    for (let i = stepIdx + 1; i <= displayIdx; i++) {
-      undoneSteps.push(SHIPMENT_STATUS_LABELS[LINEAR_FLOW[i]] ?? `${LINEAR_FLOW[i]}`);
+    for (let i = targetIdx + 1; i <= displayIdx; i++) {
+      undoneSteps.push(SHIPMENT_STATUS_LABELS[pathList[i]] ?? `${pathList[i]}`);
     }
-    setConfirmAction({
-      status: statusCode as ShipmentOrderStatus,
-      label: cleanLabel,
-      revert: true,
-      undoneSteps,
-    });
-  }
-
-  function handleExceptionClick() {
-    executeStatusChange(4002 as ShipmentOrderStatus);
+    setConfirmAction({ status: targetStatus, label, revert: true, undoneSteps });
   }
 
   function handleCancelClick() {
     setConfirmAction({ status: -1 as ShipmentOrderStatus, label: SHIPMENT_STATUS_LABELS[-1] ?? 'Cancelled' });
   }
 
-  async function handleInvoiceToggle() {
-    setInvoiceLoading(true);
-    const result = await updateInvoicedStatusAction(order.quotation_id, !order.issued_invoice);
-    setInvoiceLoading(false);
-    if (result.success) {
-      onReload();
+  async function handleExceptionToggle() {
+    if (exceptionFlagged) {
+      setExceptionLoading(true);
+      try {
+        const { flagExceptionAction } = await import('@/app/actions/shipments-write');
+        const result = await flagExceptionAction(order.quotation_id, false, null);
+        if (!result) { setError('No response'); setExceptionLoading(false); return; }
+        if (result.success) { onReload(); } else { setError(result.error); }
+      } catch { setError('Failed to clear exception'); }
+      setExceptionLoading(false);
     } else {
-      setError(typeof result === 'object' && 'error' in result ? result.error : 'Failed to update');
+      setExceptionNotes('');
+      setShowExceptionModal(true);
     }
   }
 
+  async function handleExceptionConfirm() {
+    setShowExceptionModal(false);
+    setExceptionLoading(true);
+    try {
+      const { flagExceptionAction } = await import('@/app/actions/shipments-write');
+      const result = await flagExceptionAction(order.quotation_id, true, exceptionNotes || null);
+      if (!result) { setError('No response'); setExceptionLoading(false); return; }
+      if (result.success) { onReload(); } else { setError(result.error); }
+    } catch { setError('Failed to flag exception'); }
+    setExceptionLoading(false);
+  }
+
+  async function handleInvoiceToggle() {
+    setInvoiceLoading(true);
+    try {
+      const result = await updateInvoicedStatusAction(order.quotation_id, !order.issued_invoice);
+      if (!result) { setError('No response'); setInvoiceLoading(false); return; }
+      if (result.success) { onReload(); } else {
+        setError(typeof result === 'object' && 'error' in result ? result.error : 'Failed to update');
+      }
+    } catch { setError('Failed to update invoice status'); }
+    setInvoiceLoading(false);
+  }
+
   async function toggleHistory() {
-    if (historyOpen) {
-      setHistoryOpen(false);
-      return;
-    }
+    if (historyOpen) { setHistoryOpen(false); return; }
     setHistoryOpen(true);
     if (historyEntries.length === 0) {
       setHistoryLoading(true);
-      const entries = await fetchStatusHistoryAction(order.quotation_id);
-      setHistoryEntries(entries);
+      try {
+        const entries = await fetchStatusHistoryAction(order.quotation_id);
+        setHistoryEntries(entries ?? []);
+      } catch { /* ignore */ }
       setHistoryLoading(false);
     }
   }
@@ -443,64 +480,148 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
 
   return (
     <SectionCard title="Shipment Status" icon={<Activity className="w-4 h-4" />}>
-      {/* Status Timeline */}
-      <div className="flex items-center gap-0 overflow-x-auto pb-3 mb-4">
-        {LINEAR_FLOW.map((step, i) => {
-          const isFilled = i <= displayIdx;
-          const isCurrent = i === displayIdx;
-          const isFuture = i > displayIdx && !isTerminal;
-          // Completed predecessor steps are clickable for AFU users (reversion)
-          const isRevertable = isFilled && !isCurrent && isAfu && !loading;
-          const label = SHIPMENT_STATUS_LABELS[step] ?? `${step}`;
-          const isLast = i === LINEAR_FLOW.length - 1;
+      {/* Exception banner */}
+      {exceptionFlagged && (
+        <div className="mb-4 px-3 py-2 bg-amber-50 border border-amber-300 rounded-lg flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+          <div className="flex-1">
+            <span className="text-sm font-medium text-amber-800">Exception Flagged</span>
+            {order.exception?.notes && (
+              <span className="text-xs text-amber-700 ml-2">{order.exception.notes}</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Node-based Status Timeline — label-based, no numbers, no path label */}
+      <div className="flex items-start justify-between overflow-x-auto pb-2 mb-4">
+        {nodes.map((nodeGroup, ni) => {
+          const state = getNodeState(nodeGroup);
+          const isLastNode = ni === nodes.length - 1;
+          const hasSubSteps = nodeGroup.steps.length > 1;
+
+          // Are all sub-steps within this node complete?
+          const currentSubsComplete = state === 'current' && (() => {
+            const lastStep = nodeGroup.steps[nodeGroup.steps.length - 1];
+            const lastIdx = pathList.indexOf(lastStep);
+            return lastIdx <= displayIdx;
+          })();
+
+          // Current node: clickable if multi-step with incomplete sub-steps
+          const currentIncomplete = state === 'current' && hasSubSteps && !currentSubsComplete;
+
+          // Circle styles — 4 states
+          const circleClass =
+            state === 'past' ? 'bg-[var(--sky)] border-[var(--sky)] text-white' :
+            state === 'current' ? 'bg-[var(--sky-pale)] border-[var(--sky)] text-[var(--sky)]' :
+            'bg-white border-[var(--border)] text-gray-400';
+
+          const circleBorder = state === 'current' ? 'border-[2.5px]' : 'border-2';
+
+          // Cursor
+          const nodeCursor =
+            state === 'future' ? 'cursor-pointer' :
+            state === 'past' && isAfu ? 'cursor-pointer' :
+            currentIncomplete ? 'cursor-pointer' :
+            'cursor-default';
+
+          // Label styles
+          const labelClass =
+            state === 'current' ? 'text-[var(--sky)] font-semibold' :
+            state === 'past' ? 'text-[var(--text-mid)]' :
+            'text-[var(--text-muted)]';
+
+          // Node click handler
+          function handleNodeClick() {
+            if (state === 'future') handleFutureNodeClick(nodeGroup);
+            else if (state === 'past') {
+              handlePastClick(nodeGroup.steps[nodeGroup.steps.length - 1]);
+            } else if (currentIncomplete) {
+              handleFutureNodeClick(nodeGroup);
+            }
+          }
+
           return (
-            <div key={step} className="flex items-center flex-shrink-0">
-              <div className="flex flex-col items-center group relative">
-                <div
-                  className={`w-3 h-3 rounded-full border-2 transition-colors ${
-                    isFilled
-                      ? 'bg-[var(--sky)] border-[var(--sky)]'
-                      : 'bg-white border-gray-300'
-                  } ${isFuture ? 'cursor-pointer hover:border-[var(--sky)] hover:bg-sky-100' : ''} ${isRevertable ? 'cursor-pointer hover:bg-amber-400 hover:border-amber-400' : ''}`}
-                  onClick={isFuture ? () => handleTimelineDotClick(step) : isRevertable ? () => handleRevertClick(label, i) : undefined}
-                />
-                <span className={`text-[10px] mt-1 whitespace-pre-line text-center leading-tight ${
-                  isFilled ? 'text-[var(--text)] font-medium' : 'text-gray-400'
-                } ${isFuture || isRevertable ? 'cursor-pointer' : ''}`}
-                  onClick={isFuture ? () => handleTimelineDotClick(step) : isRevertable ? () => handleRevertClick(label, i) : undefined}
-                >
-                  {TIMELINE_LABELS[step] ?? label}
+            <div key={nodeGroup.node} className="flex items-start flex-1 min-w-0">
+              <div className="flex flex-col items-center w-full">
+                {/* Main node circle + connector row */}
+                <div className="flex items-center w-full">
+                  {/* Left connector */}
+                  {ni > 0 && (
+                    <div className={`flex-1 h-0.5 ${
+                      state === 'past' || state === 'current' ? 'bg-[var(--sky)]' : 'border-t border-dashed border-gray-300'
+                    }`} />
+                  )}
+                  {ni === 0 && <div className="flex-1" />}
+
+                  {/* Node circle */}
+                  <div
+                    onClick={handleNodeClick}
+                    className={`w-7 h-7 rounded-full ${circleBorder} flex items-center justify-center flex-shrink-0 transition-colors ${circleClass} ${nodeCursor}`}
+                  >
+                    {state === 'past' && (
+                      <svg className="w-3.5 h-3.5" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                    )}
+                    {state === 'current' && currentSubsComplete && (
+                      <svg className="w-3.5 h-3.5" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                    )}
+                    {state === 'current' && !currentSubsComplete && (
+                      <Clock size={14} />
+                    )}
+                  </div>
+
+                  {/* Right connector */}
+                  {!isLastNode && (
+                    <div className={`flex-1 h-0.5 ${
+                      state === 'past' ? 'bg-[var(--sky)]' : 'border-t border-dashed border-gray-300'
+                    }`} />
+                  )}
+                  {isLastNode && <div className="flex-1" />}
+                </div>
+
+                {/* Counter badge — below circle, above label — only multi-step nodes */}
+                {hasSubSteps && (() => {
+                  const total = nodeGroup.steps.length;
+                  const completed = nodeGroup.steps.filter(s => {
+                    const idx = pathList.indexOf(s);
+                    return idx <= displayIdx;
+                  }).length;
+                  const badgeClass =
+                    state === 'past' ? 'bg-[var(--sky)] text-white border-transparent' :
+                    state === 'current' ? 'bg-white text-[var(--sky)] border-[var(--sky)]' :
+                    'bg-[var(--surface)] text-[var(--text-muted)] border-[var(--border)]';
+                  return (
+                    <span className={`mt-1 px-1.5 py-px rounded-full text-[9px] leading-none font-mono border ${badgeClass}`}>
+                      {completed}/{total}
+                    </span>
+                  );
+                })()}
+
+                {/* Node label */}
+                <span className={`text-[11px] ${hasSubSteps ? 'mt-0.5' : 'mt-1.5'} whitespace-nowrap text-center ${labelClass} ${nodeCursor}`} onClick={handleNodeClick}>
+                  {nodeGroup.label}
                 </span>
-                {/* Tooltip for future steps */}
-                {isFuture && (
-                  <div className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 hidden group-hover:block z-10 px-2 py-1 bg-gray-800 text-white text-[10px] rounded whitespace-nowrap">
-                    Jump to {label}
-                  </div>
-                )}
-                {/* Tooltip for revertable steps */}
-                {isRevertable && (
-                  <div className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 hidden group-hover:block z-10 px-2 py-1 bg-amber-700 text-white text-[10px] rounded whitespace-nowrap">
-                    Revert to {label}
-                  </div>
-                )}
+
+                {/* Current sub-step label — only on active multi-step node */}
+                {hasSubSteps && state === 'current' && (() => {
+                  const currentSub = SUB_LABELS[currentStatus] ?? SHIPMENT_STATUS_LABELS[currentStatus] ?? '';
+                  return currentSub ? (
+                    <span className="text-[10px] text-[var(--sky)]/70 whitespace-nowrap">
+                      {currentSub}
+                    </span>
+                  ) : null;
+                })()}
               </div>
-              {!isLast && (
-                <div className={`h-0.5 w-6 mx-0.5 mt-[-10px] ${
-                  i < displayIdx ? 'bg-[var(--sky)]' : 'bg-gray-200'
-                }`} />
-              )}
             </div>
           );
         })}
-        {/* Exception / Cancelled indicator */}
-        {(currentStatus === 4002 || currentStatus === -1) && (
-          <div className="flex items-center flex-shrink-0 ml-2">
-            <div className="flex flex-col items-center">
-              <div className="w-3 h-3 rounded-full bg-red-500 border-2 border-red-500" />
-              <span className="text-[10px] mt-1 whitespace-nowrap text-red-600 font-medium">
-                {statusLabel}
-              </span>
+        {/* Cancelled indicator */}
+        {currentStatus === -1 && (
+          <div className="flex flex-col items-center flex-shrink-0 ml-2">
+            <div className="w-7 h-7 rounded-full bg-red-500 border-2 border-red-500 flex items-center justify-center text-white">
+              <svg className="w-3.5 h-3.5" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
             </div>
+            <span className="text-[11px] mt-1.5 whitespace-nowrap text-red-600 font-medium">Cancelled</span>
           </div>
         )}
       </div>
@@ -526,7 +647,13 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
           {/* Main advance button */}
           {advanceStatus && (
             <button
-              onClick={() => handleAdvanceClick(advanceStatus)}
+              onClick={() => {
+                if (advanceStatus === 5001 || advanceStatus === -1) {
+                  setConfirmAction({ status: advanceStatus, label: SHIPMENT_STATUS_LABELS[advanceStatus] ?? `${advanceStatus}` });
+                } else {
+                  executeStatusChange(advanceStatus);
+                }
+              }}
               disabled={loading}
               className="px-4 py-2 bg-[var(--sky)] text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2"
             >
@@ -535,17 +662,19 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
             </button>
           )}
 
-          {/* Exception button */}
-          {canException && (
-            <button
-              onClick={handleExceptionClick}
-              disabled={loading}
-              className="px-4 py-2 border border-amber-400 text-amber-700 bg-amber-50 text-sm font-medium rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-50 flex items-center gap-2"
-            >
-              {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              &#x2691; Flag Exception
-            </button>
-          )}
+          {/* Exception flag/clear button */}
+          <button
+            onClick={handleExceptionToggle}
+            disabled={exceptionLoading || loading}
+            className={`px-4 py-2 border text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 ${
+              exceptionFlagged
+                ? 'border-green-400 text-green-700 bg-green-50 hover:bg-green-100'
+                : 'border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100'
+            }`}
+          >
+            {exceptionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            {exceptionFlagged ? 'Clear Exception' : '\u2691 Flag Exception'}
+          </button>
 
           {/* Cancel button */}
           {canCancel && (
@@ -568,7 +697,7 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
         </div>
       )}
 
-      {/* Confirmation Modal */}
+      {/* Status change confirmation / revert modal */}
       {confirmAction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl shadow-lg p-6 max-w-sm w-full mx-4">
@@ -578,8 +707,13 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
                   Revert to {confirmAction.label}?
                 </h3>
                 <p className="text-sm text-[var(--text-muted)] mb-2">
-                  This will undo {confirmAction.undoneSteps?.join(', ')}.
+                  This will move the shipment backwards.
                 </p>
+                {confirmAction.undoneSteps && confirmAction.undoneSteps.length > 0 && (
+                  <p className="text-xs text-[var(--text-muted)] mb-3">
+                    Steps undone: {confirmAction.undoneSteps.join(', ')}
+                  </p>
+                )}
                 <p className="text-xs text-[var(--text-muted)] mb-5">
                   This action will be recorded in the status history.
                 </p>
@@ -615,22 +749,93 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
         </div>
       )}
 
+      {/* Sub-step selection dialog */}
+      {subStepDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-lg p-6 max-w-sm w-full mx-4">
+            <h3 className="text-lg font-semibold text-[var(--text)] mb-4">
+              Set {subStepDialog.nodeLabel} Status
+            </h3>
+            <div className="space-y-2 mb-5">
+              {subStepDialog.steps.map(s => (
+                <label key={s.status} className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="substep"
+                    checked={subStepDialog.selected === s.status}
+                    onChange={() => setSubStepDialog({ ...subStepDialog, selected: s.status })}
+                    className="w-4 h-4 accent-[var(--sky)]"
+                  />
+                  <span className="text-sm text-[var(--text)]">{s.label}</span>
+                  <span className="text-xs text-[var(--text-muted)]">({s.status})</span>
+                </label>
+              ))}
+            </div>
+            <div className="flex items-center gap-3 justify-end">
+              <button
+                onClick={() => setSubStepDialog(null)}
+                className="px-4 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => executeStatusChange(subStepDialog.selected, true)}
+                className="px-4 py-2 text-sm font-medium text-white bg-[var(--sky)] rounded-lg transition-opacity hover:opacity-90"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Exception flag modal */}
+      {showExceptionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-lg p-6 max-w-sm w-full mx-4">
+            <h3 className="text-lg font-semibold text-[var(--text)] mb-2">Flag Exception</h3>
+            <p className="text-sm text-[var(--text-muted)] mb-3">Add a note describing the exception (optional).</p>
+            <textarea
+              value={exceptionNotes}
+              onChange={e => setExceptionNotes(e.target.value)}
+              placeholder="e.g. Carrier delayed departure by 3 days"
+              className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent mb-4 resize-none"
+              rows={3}
+            />
+            <div className="flex items-center gap-3 justify-end">
+              <button
+                onClick={() => setShowExceptionModal(false)}
+                className="px-4 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleExceptionConfirm}
+                className="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-lg transition-opacity hover:opacity-90"
+              >
+                Flag Exception
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Invoiced Toggle */}
       <div className="mt-4 pt-4 border-t border-[var(--border)] flex items-center justify-between">
         <div>
           <span className="text-sm text-[var(--text)]">Invoiced</span>
           <span className="text-xs text-[var(--text-muted)] ml-2">
-            {invoiceEnabled
+            {currentStatus === 5001
               ? (order.issued_invoice ? 'Invoice processed' : 'Awaiting invoice')
               : 'Available after shipment is completed'}
           </span>
         </div>
         <button
-          onClick={invoiceEnabled ? handleInvoiceToggle : undefined}
-          disabled={!invoiceEnabled || invoiceLoading}
+          onClick={currentStatus === 5001 ? handleInvoiceToggle : undefined}
+          disabled={currentStatus !== 5001 || invoiceLoading}
           className={`relative w-10 h-5 rounded-full transition-colors ${
-            order.issued_invoice && invoiceEnabled ? 'bg-[var(--sky)]' : 'bg-gray-300'
-          } ${!invoiceEnabled ? 'opacity-40 cursor-not-allowed' : ''} ${invoiceLoading ? 'opacity-50' : ''}`}
+            order.issued_invoice && currentStatus === 5001 ? 'bg-[var(--sky)]' : 'bg-gray-300'
+          } ${currentStatus !== 5001 ? 'opacity-40 cursor-not-allowed' : ''} ${invoiceLoading ? 'opacity-50' : ''}`}
         >
           <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
             order.issued_invoice ? 'translate-x-5' : ''
@@ -822,7 +1027,9 @@ export default function ShipmentOrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [accountType, setAccountType] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
   const [showCompanyModal, setShowCompanyModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'tasks'>('overview');
 
   const loadOrder = useCallback(async () => {
     const result = await fetchShipmentOrderDetailAction(quotationId);
@@ -841,6 +1048,7 @@ export default function ShipmentOrderDetailPage() {
         getCurrentUserProfileAction(),
       ]);
       setAccountType(profile.account_type);
+      setUserRole(profile.role ?? null);
       setLoading(false);
     }
     load();
@@ -946,7 +1154,42 @@ export default function ShipmentOrderDetailPage() {
       {/* Status Management */}
       <StatusCard order={order} onReload={loadOrder} accountType={accountType} />
 
-      {/* Two-column grid for the detail cards */}
+      {/* Tab bar */}
+      <div className="flex gap-1 border-b border-[var(--border)]">
+        <button
+          onClick={() => setActiveTab('overview')}
+          className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            activeTab === 'overview'
+              ? 'border-[var(--sky)] text-[var(--sky)]'
+              : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text)]'
+          }`}
+        >
+          Overview
+        </button>
+        <button
+          onClick={() => setActiveTab('tasks')}
+          className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-1.5 ${
+            activeTab === 'tasks'
+              ? 'border-[var(--sky)] text-[var(--sky)]'
+              : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text)]'
+          }`}
+        >
+          <ClipboardList className="w-3.5 h-3.5" />
+          Tasks
+        </button>
+      </div>
+
+      {/* Tab content */}
+      {activeTab === 'tasks' ? (
+        <ShipmentTasks
+          shipmentId={order.quotation_id}
+          orderType={order.order_type}
+          accountType={accountType}
+          userRole={userRole}
+        />
+      ) : (
+
+      /* Two-column grid for the detail cards */
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
 
         {/* Cargo */}
@@ -1021,6 +1264,8 @@ export default function ShipmentOrderDetailPage() {
         </SectionCard>
 
       </div>
+
+      )}
 
       {/* Company reassignment modal */}
       {showCompanyModal && order.company_id && (

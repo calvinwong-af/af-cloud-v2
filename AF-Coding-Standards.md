@@ -50,21 +50,21 @@ raise HTTPException(status_code=400, detail=f"Unrecognised tab value: {tab}")
 | Incoterm | `Quotation.incoterm_code` | ShipmentOrder |
 | Company | `ShipmentOrder.company_id` | — |
 
-**V1 status mapping (ShipmentOrder.status → V2 status code):**
+**V1 status mapping (ShipmentOrder.status → V2 status code, v2.18):**
 | V1 | V2 |
 |---|---|
 | `100` | `2001` Confirmed |
-| `110` | `3001` Booked |
-| `4110` | `3002` In Transit |
+| `110` | `3002` Booking Confirmed |
+| `4110` | `4001` Departed |
 | `10000` | `5001` Completed |
-| anything >= 110 and < 10000 (not 4110) | `3001` Booked |
+| anything >= 110 and < 10000 (not 4110) | `3002` Booking Confirmed |
 
 **Reverse mapping (V2 → V1) for status writes:**
 | V2 | V1 |
 |---|---|
 | `2001` | `100` |
-| `3001` | `110` |
-| `3002` | `4110` |
+| `3002` | `110` |
+| `4001` | `4110` |
 | `5001` | `10000` |
 | `-1` | `-1` |
 
@@ -218,19 +218,21 @@ If step 3 fails, do not execute steps 4–6.
 
 ```typescript
 const STATUS_MAP: Record<number, { label: string; icon: string }> = {
-  1001: { label: 'Draft',                 icon: 'draft' },
-  1002: { label: 'Pending Review',        icon: 'draft' },
-  2001: { label: 'Confirmed',             icon: 'confirmed' },
-  2002: { label: 'Booking Pending',       icon: 'confirmed' },
-  3001: { label: 'Booking Confirmed',     icon: 'booked' },
-  3002: { label: 'In Transit',            icon: 'transit' },
-  3003: { label: 'Arrived',              icon: 'arrived' },
-  4001: { label: 'Clearance In Progress', icon: 'clearance' },
-  4002: { label: 'Exception',             icon: 'exception' },
-  5001: { label: 'Completed',             icon: 'completed' },
-  [-1]: { label: 'Cancelled',             icon: 'cancelled' },
+  1001: { label: 'Draft',              icon: 'draft' },
+  1002: { label: 'Pending Review',     icon: 'draft' },
+  2001: { label: 'Confirmed',          icon: 'confirmed' },
+  3001: { label: 'Booking Pending',    icon: 'booking' },
+  3002: { label: 'Booking Confirmed',  icon: 'booked' },
+  4001: { label: 'Departed',           icon: 'departed' },
+  4002: { label: 'Arrived',            icon: 'arrived' },
+  5001: { label: 'Completed',          icon: 'completed' },
+  [-1]: { label: 'Cancelled',          icon: 'cancelled' },
 }
 ```
+
+**Node grouping** — first digit defines the node: 1xxx Pre-op, 2xxx Confirmed, 3xxx Booking, 4xxx In Transit, 5xxx Completed. Use `status // 1000` (Python) or `Math.floor(status / 1000)` (TS) to determine which node is active.
+
+**Exception is now a flag**, not a status code. The `exception` field on the shipment contains `{ flagged, raised_at, raised_by, notes }`.
 
 If a status code is not in the map, log a warning — never silently render a default/wrong icon.
 
@@ -277,7 +279,77 @@ Then restart the `af-platform` dev server. This is a local dev issue only — Cl
 
 ---
 
-## 12. Verification Checklist (Required at End of Every Task)
+## 12. Server Actions — Null Safety & Error Handling
+
+**Rule:** Every Next.js Server Action call in a client component MUST be wrapped in try/catch and must guard against the result being `undefined` or `null`.
+
+**Why:** When a Server Action throws an unhandled exception, Next.js returns `undefined` to the client. The minified error `Cannot read properties of undefined (reading 'payload')` in `core.js` is the symptom. This crashes the entire page.
+
+**Server Action side (in `app/actions/*.ts`):**
+- Every action must have a top-level try/catch that returns a structured `{ success: false, error: string }` on any failure
+- Never let an exception propagate out of a Server Action — Next.js converts unhandled throws to `undefined`
+- Guard `process.env.AF_SERVER_URL` — if missing, return error instead of crashing `new URL()`
+- Every code path must return a structured result object — never `undefined`, `null`, or a bare `throw`
+
+**Wrong:**
+```typescript
+export async function myAction(): Promise<Result> {
+  const session = await verifySessionAndRole([...]);
+  // If verifySessionAndRole throws → action returns undefined → client crashes
+  const res = await fetch(url); // If url is undefined → throws → undefined
+  return { success: true, data: await res.json() };
+}
+```
+
+**Correct:**
+```typescript
+export async function myAction(): Promise<Result> {
+  try {
+    const session = await verifySessionAndRole([...]);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) return { success: false, error: 'Server URL not configured' };
+
+    const res = await fetch(url);
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: json?.detail ?? `Server responded ${res.status}` };
+    }
+    return { success: true, data: await res.json() };
+  } catch (err) {
+    console.error('[myAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Operation failed' };
+  }
+}
+```
+
+**Client component side:**
+- Always wrap `await someAction()` in try/catch
+- Always check `if (!result)` before reading any property on the result
+- Show a user-friendly error message — never let the page crash
+
+**Wrong:**
+```typescript
+const result = await fetchTasksAction(id);
+if (result.success) { ... } // Crashes if result is undefined
+```
+
+**Correct:**
+```typescript
+try {
+  const result = await fetchTasksAction(id);
+  if (!result) { setError('No response'); return; }
+  if (result.success) { setData(result.data ?? []); }
+  else { setError(result.error ?? 'Unknown error'); }
+} catch (err) {
+  setError('Failed to load data');
+}
+```
+
+---
+
+## 13. Verification Checklist (Required at End of Every Task)
 
 Before marking any task complete, confirm the following by checking the actual written code:
 
@@ -291,10 +363,12 @@ Before marking any task complete, confirm the following by checking the actual w
 - [ ] Timestamps written with `datetime.now(timezone.utc).isoformat()`
 - [ ] Batch-fetch used for cross-Kind joins — no N+1 loops
 - [ ] Status writes and `status_history` appends in the same server handler
-- [ ] Status code → UI mapping is explicit and covers all 11 codes including `-1`
+- [ ] Status code → UI mapping is explicit and covers all 9 codes (1001, 1002, 2001, 3001, 3002, 4001, 4002, 5001, -1)
 - [ ] List page state cleared only on tab change, not on re-render
 - [ ] New endpoints added to the correct router and registered in `main.py` if required
+- [ ] Server Actions wrapped in try/catch — every path returns structured result, never throws
+- [ ] Client calls to Server Actions guarded with `if (!result)` null check and outer try/catch
 
 ---
 
-*Last updated: 27 Feb 2026 — v2.12 session*
+*Last updated: 28 Feb 2026 — v2.18 session*

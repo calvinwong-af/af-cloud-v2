@@ -154,17 +154,15 @@ export interface CustomsClearanceEvent {
 // read directly for V2 records (data_version: 2).
 // ---------------------------------------------------------------------------
 
-/** V2 status codes for ShipmentOrder */
+/** V2 status codes for ShipmentOrder (v2.18 — incoterm-aware) */
 export type ShipmentOrderStatus =
   | 1001  // Draft
-  | 1002  // Draft — Pending Review
+  | 1002  // Pending Review
   | 2001  // Confirmed
-  | 2002  // Booking Pending
-  | 3001  // Booking Confirmed
-  | 3002  // In Transit
-  | 3003  // Arrived
-  | 4001  // Clearance In Progress
-  | 4002  // Exception
+  | 3001  // Booking Pending
+  | 3002  // Booking Confirmed
+  | 4001  // Departed
+  | 4002  // Arrived
   | 5001  // Completed
   | -1;   // Cancelled
 
@@ -172,12 +170,10 @@ export const SHIPMENT_STATUS_LABELS: Record<number, string> = {
   1001: 'Draft',
   1002: 'Pending Review',
   2001: 'Confirmed',
-  2002: 'Booking Pending',
-  3001: 'Booking Confirmed',
-  3002: 'In Transit',
-  3003: 'Arrived',
-  4001: 'Clearance In Progress',
-  4002: 'Exception',
+  3001: 'Booking Pending',
+  3002: 'Booking Confirmed',
+  4001: 'Departed',
+  4002: 'Arrived',
   5001: 'Completed',
   [-1]: 'Cancelled',
 };
@@ -186,30 +182,51 @@ export const SHIPMENT_STATUS_COLOR: Record<number, string> = {
   1001: 'gray',
   1002: 'yellow',
   2001: 'blue',
-  2002: 'orange',
-  3001: 'teal',
-  3002: 'sky',
-  3003: 'indigo',
-  4001: 'purple',
-  4002: 'red',
+  3001: 'orange',
+  3002: 'teal',
+  4001: 'sky',
+  4002: 'indigo',
   5001: 'green',
   [-1]: 'gray',
 };
 
-/** Valid status transitions map — used by both server writes and client UI */
-export const VALID_TRANSITIONS: Record<number, number[]> = {
-  1001: [1002, -1],
-  1002: [2001, 1001, -1],
-  2001: [2002, -1],
-  2002: [3001, -1],
-  3001: [3002, 4002, -1],
-  3002: [3003, 4002, -1],
-  3003: [4001, 4002, -1],
-  4001: [5001, 4002, -1],
-  4002: [1001, 1002, 2001, 2002, 3001, 3002, 3003, 4001, 5001, -1],
-  5001: [],
-  [-1]: [],
-};
+/** Exception flag on a shipment — separate from status */
+export interface ShipmentException {
+  flagged: boolean;
+  raised_at: string | null;
+  raised_by: string | null;
+  notes: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Status paths — incoterm-aware progression
+// ---------------------------------------------------------------------------
+
+/** Path A: AF owns freight booking (includes booking nodes) */
+export const STATUS_PATH_A: ShipmentOrderStatus[] = [1001, 1002, 2001, 3001, 3002, 4001, 4002, 5001];
+
+/** Path B: AF does NOT own freight booking (skips booking nodes) */
+export const STATUS_PATH_B: ShipmentOrderStatus[] = [1001, 1002, 2001, 4001, 4002, 5001];
+
+/** Incoterm + transaction_type combos that use Path A (AF owns booking) */
+const _PATH_A_COMBOS = new Set([
+  'EXW_IMPORT',
+  'FCA_EXPORT', 'FCA_IMPORT',
+  'FOB_EXPORT', 'FOB_IMPORT',
+  'CFR_EXPORT', 'CIF_EXPORT', 'CNF_EXPORT',
+  'CPT_EXPORT', 'CIP_EXPORT',
+  'DAP_EXPORT', 'DPU_EXPORT', 'DDP_EXPORT',
+]);
+
+export function getStatusPath(incoterm: string | null, transactionType: string | null): 'A' | 'B' {
+  if (!incoterm || !transactionType) return 'A'; // default to full path
+  const key = `${incoterm.toUpperCase().trim()}_${transactionType.toUpperCase().trim()}`;
+  return _PATH_A_COMBOS.has(key) ? 'A' : 'B';
+}
+
+export function getStatusPathList(incoterm: string | null, transactionType: string | null): ShipmentOrderStatus[] {
+  return getStatusPath(incoterm, transactionType) === 'A' ? STATUS_PATH_A : STATUS_PATH_B;
+}
 
 export const ORDER_TYPE_LABELS: Record<OrderType, string> = {
   SEA_FCL: 'Sea FCL',
@@ -262,6 +279,9 @@ export interface ShipmentOrder {
 
   // Customs
   customs_clearance: CustomsClearanceEvent[];
+
+  // Exception flag (v2.18)
+  exception: ShipmentException | null;
 
   // Admin
   tracking_id: string | null;

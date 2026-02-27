@@ -5,6 +5,8 @@ Deployed:  Cloud Run — asia-northeast1
 """
 
 import logging
+from dotenv import load_dotenv
+load_dotenv('.env.local')
 
 # Configure root logger to INFO so all logger.info() calls are visible in uvicorn output
 logging.basicConfig(level=logging.INFO)
@@ -40,7 +42,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
 

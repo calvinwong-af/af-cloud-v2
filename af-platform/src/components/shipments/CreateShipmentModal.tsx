@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import { createShipmentOrderAction, CreateShipmentOrderPayload } from '@/app/actions/shipments-write';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { createShipmentOrderAction, CreateShipmentOrderPayload, createShipmentFromBLAction, type CreateFromBLPayload } from '@/app/actions/shipments-write';
+import BLUploadTab, { type BLFormState, getDefaultBLFormState } from './BLUploadTab';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -327,6 +328,73 @@ function Combobox({ value, onChange, options, placeholder }: {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CreateShipmentModal({ companies, ports, onClose, onCreated }: Props) {
+  const [activeTab, setActiveTab] = useState<'manual' | 'bl'>('manual');
+
+  // ── BL Upload state ──
+  const [blParsedResult, setBLParsedResult] = useState<Record<string, unknown> | null>(null);
+  const [blFormState, setBLFormState] = useState<BLFormState>(getDefaultBLFormState());
+  const [blConfirmReady, setBLConfirmReady] = useState(false);
+  const [blSubmitting, setBLSubmitting] = useState(false);
+  const [blError, setBLError] = useState<string | null>(null);
+
+  const handleBLConfirmCreate = useCallback(async () => {
+    if (!blParsedResult || !blConfirmReady) return;
+    setBLSubmitting(true);
+    setBLError(null);
+
+    const parsed = (blParsedResult as Record<string, unknown>).parsed as Record<string, unknown> | undefined;
+
+    try {
+      const originPort = ports.find(p => p.un_code === blFormState.originCode);
+      const destPort = ports.find(p => p.un_code === blFormState.destCode);
+
+      const payload: CreateFromBLPayload = {
+        order_type: (blParsedResult as Record<string, unknown>).order_type as string ?? 'SEA_FCL',
+        transaction_type: 'IMPORT',
+        incoterm_code: 'CNF',
+        company_id: blFormState.linkedCompanyId,
+        origin_port_un_code: blFormState.originCode || null,
+        origin_label: originPort?.name ?? (blFormState.originCode || null),
+        destination_port_un_code: blFormState.destCode || null,
+        destination_label: destPort?.name ?? (blFormState.destCode || null),
+        cargo_description: blFormState.cargoDescription || null,
+        cargo_weight_kg: blFormState.cargoWeight ? parseFloat(blFormState.cargoWeight) : null,
+        etd: blFormState.etd || null,
+        initial_status: (blParsedResult as Record<string, unknown>).initial_status as number ?? 3001,
+        carrier: blFormState.carrier || null,
+        waybill_number: blFormState.waybillNumber || null,
+        vessel_name: blFormState.vesselName || null,
+        voyage_number: blFormState.voyageNumber || null,
+        shipper_name: parsed?.shipper_name as string | null ?? null,
+        shipper_address: parsed?.shipper_address as string | null ?? null,
+        consignee_name: blFormState.consigneeName || null,
+        consignee_address: parsed?.consignee_address as string | null ?? null,
+        notify_party_name: parsed?.notify_party_name as string | null ?? null,
+        containers: (parsed?.containers as CreateFromBLPayload['containers']) ?? null,
+        customer_reference: blFormState.customerReference || null,
+      };
+
+      const result = await createShipmentFromBLAction(payload);
+      setBLSubmitting(false);
+
+      if (!result) {
+        setBLError('No response from server');
+        return;
+      }
+      if (!result.success) {
+        setBLError(result.error ?? 'Failed to create shipment');
+        return;
+      }
+
+      onCreated(result.shipment_id);
+    } catch (err) {
+      console.error('[CreateShipmentModal] BL create error:', err);
+      setBLSubmitting(false);
+      setBLError('Failed to create shipment');
+    }
+  }, [blParsedResult, blConfirmReady, blFormState, ports, onCreated]);
+
+  // ── Manual Entry state ──
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -769,50 +837,115 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-[var(--border)]">
-          <div>
+        {/* Header with tabs */}
+        <div className="px-6 pt-6 pb-0 border-b border-[var(--border)]">
+          <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-[var(--text)]">New Shipment Order</h2>
-            <p className="text-xs text-[var(--text-muted)] mt-0.5">Step {step} of {BASE_STEPS.length} — {step === 4 ? (orderType === 'SEA_FCL' ? 'Containers' : 'Packages') : BASE_STEPS[step - 1].label}</p>
+            <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text)] text-xl leading-none">×</button>
           </div>
-          <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text)] text-xl leading-none">×</button>
+          <div className="flex gap-0">
+            <button
+              onClick={() => setActiveTab('manual')}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'manual'
+                  ? 'text-[var(--text)] border-[var(--sky)]'
+                  : 'text-[var(--text-muted)] border-transparent hover:text-[var(--text)] hover:border-[var(--border)]'
+              }`}
+            >
+              Manual Entry
+            </button>
+            <button
+              onClick={() => setActiveTab('bl')}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'bl'
+                  ? 'text-[var(--text)] border-[var(--sky)]'
+                  : 'text-[var(--text-muted)] border-transparent hover:text-[var(--text)] hover:border-[var(--border)]'
+              }`}
+            >
+              Upload BL
+            </button>
+          </div>
         </div>
 
+        {/* Content */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          <StepIndicator currentStep={step} />
-          {renderStep()}
-          {error && (
-            <div className="mt-4 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600">
-              {error}
-            </div>
+          {activeTab === 'manual' ? (
+            <>
+              <p className="text-xs text-[var(--text-muted)] mb-3">Step {step} of {BASE_STEPS.length} — {step === 4 ? (orderType === 'SEA_FCL' ? 'Containers' : 'Packages') : BASE_STEPS[step - 1]?.label}</p>
+              <StepIndicator currentStep={step} />
+              {renderStep()}
+              {error && (
+                <div className="mt-4 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600">
+                  {error}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <BLUploadTab
+                ports={ports}
+                onParsed={(result) => setBLParsedResult(result as unknown as Record<string, unknown>)}
+                parsedResult={blParsedResult as never}
+                onConfirmReady={setBLConfirmReady}
+                formState={blFormState}
+                onFormChange={setBLFormState}
+              />
+              {blError && (
+                <div className="mt-4 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600">
+                  {blError}
+                </div>
+              )}
+            </>
           )}
         </div>
 
+        {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-[var(--border)]">
-          <button
-            onClick={step === 1 ? onClose : back}
-            className="px-4 py-2 text-sm text-[var(--text-mid)] hover:text-[var(--text)] transition-colors"
-          >
-            {step === 1 ? 'Cancel' : '← Back'}
-          </button>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-[var(--text-muted)]">{step} / {BASE_STEPS.length}</span>
-            {step < BASE_STEPS.length ? (
+          {activeTab === 'manual' ? (
+            <>
               <button
-                onClick={next}
-                className="px-5 py-2 bg-[var(--slate)] text-white rounded-lg text-sm font-medium hover:bg-[var(--slate-mid)] transition-colors"
+                onClick={step === 1 ? onClose : back}
+                className="px-4 py-2 text-sm text-[var(--text-mid)] hover:text-[var(--text)] transition-colors"
               >
-                Next →
+                {step === 1 ? 'Cancel' : '← Back'}
               </button>
-            ) : (
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-[var(--text-muted)]">{step} / {BASE_STEPS.length}</span>
+                {step < BASE_STEPS.length ? (
+                  <button
+                    onClick={next}
+                    className="px-5 py-2 bg-[var(--slate)] text-white rounded-lg text-sm font-medium hover:bg-[var(--slate-mid)] transition-colors"
+                  >
+                    Next →
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSubmit}
+                    disabled={submitting}
+                    className="px-5 py-2 bg-[var(--sky)] text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+                  >
+                    {submitting ? 'Creating…' : 'Create Shipment Order'}
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
               <button
-                onClick={handleSubmit}
-                disabled={submitting}
+                onClick={onClose}
+                className="px-4 py-2 text-sm text-[var(--text-mid)] hover:text-[var(--text)] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBLConfirmCreate}
+                disabled={!blParsedResult || !blConfirmReady || blSubmitting}
                 className="px-5 py-2 bg-[var(--sky)] text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
               >
-                {submitting ? 'Creating…' : 'Create Shipment Order'}
+                {blSubmitting ? 'Creating…' : 'Confirm & Create'}
               </button>
-            )}
-          </div>
+            </>
+          )}
         </div>
       </div>
     </div>

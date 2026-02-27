@@ -184,7 +184,9 @@ Platform route groups:
 - [ ] Status code → UI mapping is explicit and covers all 11 codes including `-1`
 - [ ] List page state cleared only on tab change, not on re-render
 - [ ] New endpoints registered in `main.py` if added to a router
+- [ ] Server Actions: top-level try/catch, every path returns structured result — never throws
+- [ ] Client calls to Server Actions: null guard on result (`if (!result)`) + outer try/catch
 
 ---
 
-*Last updated: 27 Feb 2026*
+*Last updated: 28 Feb 2026*

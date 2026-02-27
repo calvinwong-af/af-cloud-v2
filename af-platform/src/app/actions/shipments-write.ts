@@ -247,6 +247,200 @@ export async function updateInvoicedStatusAction(
 // Delete Shipment Order
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Fetch Shipment Tasks (via af-server)
+// ---------------------------------------------------------------------------
+
+export interface WorkflowTask {
+  task_id: string;
+  task_type: string;
+  leg_level: number;
+  status: string;
+  assigned_to: string;
+  third_party_name: string | null;
+  visibility: string;
+  due_date: string | null;
+  due_date_override: boolean;
+  notes: string | null;
+  completed_at: string | null;
+  updated_by: string;
+  updated_at: string;
+}
+
+type FetchTasksResult =
+  | { success: true; data: WorkflowTask[] }
+  | { success: false; error: string };
+
+export async function fetchShipmentTasksAction(
+  shipmentId: string
+): Promise<FetchTasksResult> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF', 'AFC-ADMIN', 'AFC-M']);
+    if (!session.valid) {
+      return { success: false, error: 'Unauthorised' };
+    }
+
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) {
+      return { success: false, error: 'No session token' };
+    }
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) {
+      return { success: false, error: 'Server URL not configured' };
+    }
+
+    const url = new URL(
+      `/api/v2/shipments/${encodeURIComponent(shipmentId)}/tasks`,
+      serverUrl,
+    );
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${idToken}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const msg = json?.detail ?? `Server responded ${res.status}`;
+      return { success: false, error: msg };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.tasks ?? [] };
+  } catch (err) {
+    console.error('[fetchShipmentTasksAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to load tasks' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Update Shipment Task (via af-server)
+// ---------------------------------------------------------------------------
+
+type UpdateTaskResult =
+  | { success: true; data: WorkflowTask; warning?: string }
+  | { success: false; error: string };
+
+export async function updateShipmentTaskAction(
+  shipmentId: string,
+  taskId: string,
+  updates: Record<string, unknown>,
+): Promise<UpdateTaskResult> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF', 'AFC-ADMIN', 'AFC-M']);
+    if (!session.valid) {
+      return { success: false, error: 'Unauthorised' };
+    }
+
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) {
+      return { success: false, error: 'No session token' };
+    }
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) {
+      return { success: false, error: 'Server URL not configured' };
+    }
+
+    const url = new URL(
+      `/api/v2/shipments/${encodeURIComponent(shipmentId)}/tasks/${encodeURIComponent(taskId)}`,
+      serverUrl,
+    );
+    const res = await fetch(url.toString(), {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updates),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const msg = json?.detail ?? `Server responded ${res.status}`;
+      return { success: false, error: msg };
+    }
+
+    const json = await res.json();
+    const result: UpdateTaskResult = { success: true, data: json.data ?? {} as WorkflowTask };
+    if (json.warning) {
+      result.warning = json.warning;
+    }
+    return result;
+  } catch (err) {
+    console.error('[updateShipmentTaskAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to update task' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Flag / Clear Exception
+// ---------------------------------------------------------------------------
+
+type FlagExceptionResult =
+  | { success: true; data: { exception: { flagged: boolean; raised_at: string | null; raised_by: string | null; notes: string | null } } }
+  | { success: false; error: string };
+
+export async function flagExceptionAction(
+  shipmentId: string,
+  flagged: boolean,
+  notes: string | null,
+): Promise<FlagExceptionResult> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF', 'AFC-ADMIN', 'AFC-M']);
+    if (!session.valid) {
+      return { success: false, error: 'Unauthorised' };
+    }
+
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) {
+      return { success: false, error: 'No session token' };
+    }
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) {
+      return { success: false, error: 'Server URL not configured' };
+    }
+
+    const url = new URL(
+      `/api/v2/shipments/${encodeURIComponent(shipmentId)}/exception`,
+      serverUrl,
+    );
+    const res = await fetch(url.toString(), {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ flagged, notes }),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const msg = json?.detail ?? `Server responded ${res.status}`;
+      return { success: false, error: msg };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data ?? {} };
+  } catch (err) {
+    console.error('[flagExceptionAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to update exception flag' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Delete Shipment Order
+// ---------------------------------------------------------------------------
+
 export async function deleteShipmentOrderAction(
   shipment_id: string
 ): Promise<DeleteShipmentOrderResult> {
@@ -260,4 +454,141 @@ export async function deleteShipmentOrderAction(
     changed_by_uid: session.uid,
     changed_by_email: session.email,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Parse BL (Upload BL → Claude API)
+// ---------------------------------------------------------------------------
+
+type ParseBLResult =
+  | { success: true; data: Record<string, unknown> }
+  | { success: false; error: string };
+
+export async function parseBLAction(
+  formData: FormData,
+): Promise<ParseBLResult> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) {
+      return { success: false, error: 'Unauthorised' };
+    }
+
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) {
+      return { success: false, error: 'No session token' };
+    }
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) {
+      return { success: false, error: 'Server URL not configured' };
+    }
+
+    const url = new URL('/api/v2/shipments/parse-bl', serverUrl);
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${idToken}` },
+      body: formData,
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const msg = json?.detail ?? `Server responded ${res.status}`;
+      return { success: false, error: msg };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json };
+  } catch (err) {
+    console.error('[parseBLAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to parse BL' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Create Shipment from BL
+// ---------------------------------------------------------------------------
+
+export interface CreateFromBLPayload {
+  order_type: string;
+  transaction_type: string;
+  incoterm_code: string;
+  company_id: string | null;
+  origin_port_un_code: string | null;
+  origin_label: string | null;
+  destination_port_un_code: string | null;
+  destination_label: string | null;
+  cargo_description: string | null;
+  cargo_weight_kg: number | null;
+  etd: string | null;
+  initial_status: number;
+  carrier: string | null;
+  waybill_number: string | null;
+  vessel_name: string | null;
+  voyage_number: string | null;
+  shipper_name: string | null;
+  shipper_address: string | null;
+  consignee_name: string | null;
+  consignee_address: string | null;
+  notify_party_name: string | null;
+  containers: Array<{
+    container_number: string | null;
+    container_type: string | null;
+    seal_number: string | null;
+    packages: string | null;
+    weight_kg: number | null;
+  }> | null;
+  customer_reference: string | null;
+}
+
+type CreateFromBLResult =
+  | { success: true; shipment_id: string }
+  | { success: false; error: string };
+
+export async function createShipmentFromBLAction(
+  payload: CreateFromBLPayload,
+): Promise<CreateFromBLResult> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) {
+      return { success: false, error: 'Unauthorised' };
+    }
+
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) {
+      return { success: false, error: 'No session token' };
+    }
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) {
+      return { success: false, error: 'Server URL not configured' };
+    }
+
+    const url = new URL('/api/v2/shipments/create-from-bl', serverUrl);
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const msg = json?.detail ?? `Server responded ${res.status}`;
+      return { success: false, error: msg };
+    }
+
+    const json = await res.json();
+    return { success: true, shipment_id: json.data?.shipment_id ?? '' };
+  } catch (err) {
+    console.error('[createShipmentFromBLAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to create shipment from BL' };
+  }
 }

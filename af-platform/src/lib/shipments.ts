@@ -59,6 +59,8 @@ function readV2ShipmentOrder(raw: Record<string, any>): ShipmentOrder {
     parties:                  raw.parties ?? null,
     customs_clearance:        raw.customs_clearance ?? [],
 
+    exception:                raw.exception ?? null,
+
     tracking_id:              raw.tracking_id ?? null,
     files:                    raw.files ?? [],
     trash:                    raw.trash ?? false,
@@ -197,6 +199,7 @@ export async function getShipmentOrders(
         booking:                  null,
         parties:                  null,   // Not assembled for list view
         customs_clearance:        [],
+        exception:                null,
         tracking_id:              null,
         files:                    raw.files as string[] ?? [],
         trash:                    raw.trash as boolean ?? false,
