@@ -254,11 +254,17 @@ export async function updateInvoicedStatusAction(
 export interface WorkflowTask {
   task_id: string;
   task_type: string;
+  display_name: string;
   leg_level: number;
+  mode: string;
   status: string;
   assigned_to: string;
   third_party_name: string | null;
   visibility: string;
+  scheduled_start: string | null;
+  scheduled_end: string | null;
+  actual_start: string | null;
+  actual_end: string | null;
   due_date: string | null;
   due_date_override: boolean;
   notes: string | null;
@@ -590,5 +596,103 @@ export async function createShipmentFromBLAction(
   } catch (err) {
     console.error('[createShipmentFromBLAction]', err instanceof Error ? err.message : err);
     return { success: false, error: 'Failed to create shipment from BL' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Update Shipment from BL (PATCH /api/v2/shipments/{id}/bl)
+// ---------------------------------------------------------------------------
+
+export interface UpdateFromBLPayload {
+  waybill_number?: string;
+  carrier_agent?: string;
+  vessel_name?: string;
+  voyage_number?: string;
+  etd?: string;
+  shipper_name?: string;
+  shipper_address?: string;
+  containers?: Array<{
+    container_number: string;
+    container_type: string;
+    seal_number?: string;
+  }>;
+  cargo_items?: Array<{
+    description?: string;
+    quantity?: string;
+    gross_weight?: string;
+    measurement?: string;
+  }>;
+  file?: File;
+}
+
+export interface UpdateFromBLResult {
+  shipment_id: string;
+  booking: Record<string, unknown>;
+  parties: Record<string, unknown>;
+  etd: string | null;
+}
+
+type UpdateFromBLActionResult =
+  | { success: true; data: UpdateFromBLResult }
+  | { success: false; error: string };
+
+export async function updateShipmentFromBLAction(
+  shipmentId: string,
+  payload: UpdateFromBLPayload,
+): Promise<UpdateFromBLActionResult> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) {
+      return { success: false, error: 'Unauthorised' };
+    }
+
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) {
+      return { success: false, error: 'No session token' };
+    }
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) {
+      return { success: false, error: 'Server URL not configured' };
+    }
+
+    const url = new URL(
+      `/api/v2/shipments/${encodeURIComponent(shipmentId)}/bl`,
+      serverUrl,
+    );
+
+    // Always use multipart/form-data since the server expects Form fields
+    const formData = new FormData();
+    if (payload.waybill_number !== undefined) formData.append('waybill_number', payload.waybill_number);
+    if (payload.carrier_agent !== undefined) formData.append('carrier_agent', payload.carrier_agent);
+    if (payload.vessel_name !== undefined) formData.append('vessel_name', payload.vessel_name);
+    if (payload.voyage_number !== undefined) formData.append('voyage_number', payload.voyage_number);
+    if (payload.etd !== undefined) formData.append('etd', payload.etd);
+    if (payload.shipper_name !== undefined) formData.append('shipper_name', payload.shipper_name);
+    if (payload.shipper_address !== undefined) formData.append('shipper_address', payload.shipper_address);
+    if (payload.containers !== undefined) formData.append('containers', JSON.stringify(payload.containers));
+    if (payload.cargo_items !== undefined) formData.append('cargo_items', JSON.stringify(payload.cargo_items));
+    if (payload.file) formData.append('file', payload.file);
+
+    const res = await fetch(url.toString(), {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${idToken}` },
+      body: formData,
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const msg = json?.detail ?? json?.msg ?? `Server responded ${res.status}`;
+      return { success: false, error: msg };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data };
+  } catch (err) {
+    console.error('[updateShipmentFromBLAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to update shipment from BL' };
   }
 }

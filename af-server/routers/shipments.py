@@ -11,25 +11,31 @@ All other endpoints are stubs — add implementations as each is needed.
 """
 
 import base64
+import json as _json
 import logging
 import time
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 from core.auth import Claims, require_auth, require_afu, require_afu_admin
 from logic.incoterm_tasks import (
     generate_tasks as generate_incoterm_tasks,
+    migrate_task_on_read,
     PENDING, IN_PROGRESS, COMPLETED, BLOCKED,
-    FREIGHT_BOOKING, EXPORT_CLEARANCE,
+    ASSIGNED, TRACKED, IGNORED,
+    FREIGHT_BOOKING, EXPORT_CLEARANCE, POL, POD,
 )
 from core.constants import (
     AFU,
+    AFC,
     AFU_ROLES,
     AFC_ADMIN,
     AFC_M,
+    AFC_ROLES,
+    FILES_BUCKET_NAME,
     V1_ACTIVE_MIN,
     V1_ACTIVE_MAX,
     V1_STATUS_COMPLETED,
@@ -54,7 +60,7 @@ from core.constants import (
 from google.cloud.datastore.query import PropertyFilter
 
 from core.datastore import get_client, get_multi_chunked, parse_timestamp, run_query, entity_to_dict
-from core.exceptions import NotFoundError
+from core.exceptions import NotFoundError, ForbiddenError
 
 logger = logging.getLogger(__name__)
 
@@ -855,6 +861,25 @@ def _lazy_init_tasks(client, shipment_id: str, shipment_data: dict) -> list[dict
 
 
 # ---------------------------------------------------------------------------
+# 1b. GET /file-tags
+# ---------------------------------------------------------------------------
+
+@router.get("/file-tags")
+async def get_file_tags(
+    claims: Claims = Depends(require_auth),
+):
+    """Return all file tags from FileTags Kind."""
+    client = get_client()
+    query = client.query(kind="FileTags")
+    results = []
+    for entity in query.fetch():
+        d = dict(entity)
+        d["tag_id"] = entity.key.name or str(entity.key.id)
+        results.append(d)
+    return {"status": "OK", "data": results}
+
+
+# ---------------------------------------------------------------------------
 # Get single shipment by ID
 # ---------------------------------------------------------------------------
 
@@ -1271,10 +1296,15 @@ _BL_EXTRACTION_PROMPT = """You are extracting structured data from a Bill of Lad
 Return ONLY valid JSON, no preamble, no markdown, no code fences.
 Use null for any field not present.
 
+For containers: extract container details if present (FCL shipments). Set to null if no container numbers are found (LCL/loose cargo).
+For cargo_items: extract individual cargo line items for LCL/loose cargo shipments (pallets, cartons, etc.). Set to null if the BL only lists containers.
+
+The carrier_agent field is the party issuing the BL — may be a carrier, NVOCC, co-loader, or freight forwarder acting as agent.
+
 {
   "waybill_number": "string or null",
   "booking_number": "string or null",
-  "carrier": "string or null",
+  "carrier_agent": "string or null — the party issuing the BL",
   "vessel_name": "string or null",
   "voyage_number": "string or null",
   "port_of_loading": "string or null",
@@ -1297,6 +1327,14 @@ Use null for any field not present.
       "seal_number": "string or null",
       "packages": "string or null",
       "weight_kg": "number or null"
+    }
+  ],
+  "cargo_items": [
+    {
+      "description": "string or null",
+      "quantity": "string or null — e.g. 2 PALLET(S)",
+      "gross_weight": "string or null — e.g. 2190.00 kg",
+      "measurement": "string or null — e.g. 2.1600 M3"
     }
   ]
 }"""
@@ -1871,6 +1909,9 @@ async def get_shipment_tasks(
 
     tasks = _lazy_init_tasks(client, shipment_id, shipment_data)
 
+    # Apply migration-on-read for tasks missing new fields
+    tasks = [migrate_task_on_read(t) for t in tasks]
+
     # Filter hidden tasks for AFC users
     if claims.is_afc():
         tasks = [t for t in tasks if t.get("visibility") != "HIDDEN"]
@@ -1887,12 +1928,17 @@ async def get_shipment_tasks(
 
 class UpdateTaskRequest(BaseModel):
     status: Optional[str] = None
+    mode: Optional[str] = None
     assigned_to: Optional[str] = None
     third_party_name: Optional[str] = None
     due_date: Optional[str] = None
     due_date_override: Optional[bool] = None
     notes: Optional[str] = None
     visibility: Optional[str] = None
+    scheduled_start: Optional[str] = None
+    scheduled_end: Optional[str] = None
+    actual_start: Optional[str] = None
+    actual_end: Optional[str] = None
 
 
 @router.patch("/{shipment_id}/tasks/{task_id}")
@@ -1923,6 +1969,8 @@ async def update_shipment_task(
     # --- Validate enum values ---
     if body.status is not None and body.status not in (PENDING, IN_PROGRESS, COMPLETED, BLOCKED):
         raise HTTPException(status_code=400, detail=f"Invalid status: {body.status}")
+    if body.mode is not None and body.mode not in (ASSIGNED, TRACKED, IGNORED):
+        raise HTTPException(status_code=400, detail=f"Invalid mode: {body.mode}")
     if body.assigned_to is not None and body.assigned_to not in ("AF", "CUSTOMER", "THIRD_PARTY"):
         raise HTTPException(status_code=400, detail=f"Invalid assigned_to: {body.assigned_to}")
     if body.visibility is not None and body.visibility not in ("VISIBLE", "HIDDEN"):
@@ -1949,10 +1997,34 @@ async def update_shipment_task(
     task = tasks[target_idx]
     warning = None
 
-    # --- Apply updates ---
+    # --- Apply mode updates (before status — mode affects valid statuses) ---
+    if body.mode is not None:
+        task["mode"] = body.mode
+        if body.mode == IGNORED:
+            task["visibility"] = "HIDDEN"
+            task["status"] = PENDING
+        elif task.get("mode") == IGNORED and body.mode != IGNORED:
+            # Coming out of IGNORED — restore visibility
+            task["visibility"] = "VISIBLE"
+
+    # --- Apply status updates ---
     if body.status is not None:
+        # BLOCKED is only valid when mode is ASSIGNED
+        if body.status == BLOCKED and task.get("mode", ASSIGNED) != ASSIGNED:
+            raise HTTPException(status_code=400, detail="BLOCKED status only valid for ASSIGNED mode tasks")
+
+        old_status = task.get("status")
         task["status"] = body.status
+
+        # Auto-set actual_start when moving to IN_PROGRESS
+        if body.status == IN_PROGRESS and old_status != IN_PROGRESS:
+            if body.actual_start is None and not task.get("actual_start"):
+                task["actual_start"] = now
+
+        # Auto-set actual_end + completed_at when moving to COMPLETED
         if body.status == COMPLETED:
+            if body.actual_end is None and not task.get("actual_end"):
+                task["actual_end"] = now
             task["completed_at"] = now
 
     if body.assigned_to is not None:
@@ -1963,6 +2035,7 @@ async def update_shipment_task(
 
     if body.due_date is not None:
         task["due_date"] = body.due_date
+        task["scheduled_end"] = body.due_date
         task["due_date_override"] = True
     elif body.due_date_override is not None:
         task["due_date_override"] = body.due_date_override
@@ -1972,6 +2045,17 @@ async def update_shipment_task(
 
     if body.visibility is not None:
         task["visibility"] = body.visibility
+
+    # --- Timing fields ---
+    if body.scheduled_start is not None:
+        task["scheduled_start"] = body.scheduled_start
+    if body.scheduled_end is not None:
+        task["scheduled_end"] = body.scheduled_end
+    if body.actual_start is not None:
+        task["actual_start"] = body.actual_start
+    if body.actual_end is not None:
+        task["actual_end"] = body.actual_end
+        task["completed_at"] = body.actual_end
 
     task["updated_by"] = claims.uid
     task["updated_at"] = now
@@ -2010,3 +2094,766 @@ async def update_shipment_task(
     if warning:
         response["warning"] = warning
     return response
+
+
+# ---------------------------------------------------------------------------
+# File management helpers
+# ---------------------------------------------------------------------------
+
+def _resolve_gcs_path(company_id: str, shipment_id: str, filename: str) -> str:
+    """
+    Build GCS upload path matching existing Files entity patterns.
+    Pattern: company/{company_id}/shipments/{shipment_id}/{filename}
+    """
+    safe_company = company_id or "unknown"
+    return f"company/{safe_company}/shipments/{shipment_id}/{filename}"
+
+
+def _file_entity_to_dict(entity) -> dict:
+    """Convert a Files Datastore entity to a response dict."""
+    d = dict(entity)
+    d["file_id"] = entity.key.id
+    return d
+
+
+def _save_file_to_gcs(bucket, gcs_path: str, file_bytes: bytes, content_type: str = "application/octet-stream"):
+    """Upload bytes to GCS at the given path."""
+    blob = bucket.blob(gcs_path)
+    blob.upload_from_string(file_bytes, content_type=content_type)
+
+
+def _create_file_entity(
+    client,
+    shipment_id: str,
+    company_id: str,
+    file_name: str,
+    gcs_path: str,
+    file_size_kb: float,
+    file_tags: list,
+    visibility: bool,
+    uploader_uid: str,
+    uploader_email: str,
+) -> dict:
+    """Create a Files entity in Datastore and return it as dict."""
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Use incomplete key for auto-ID
+    key = client.key("Files")
+    entity = client.entity(key)
+    entity.update({
+        "shipment_order_id": shipment_id,
+        "company_id": company_id,
+        "category": "shipments",
+        "file_name": file_name,
+        "file_location": gcs_path,
+        "file_tags": file_tags or [],
+        "file_description": None,
+        "file_size": round(file_size_kb, 2),
+        "visibility": visibility,
+        "notification_sent": False,
+        "permission": {"role": "AFU", "owner": uploader_uid},
+        "user": uploader_email,
+        "created": now,
+        "updated": now,
+        "trash": False,
+    })
+    entity.exclude_from_indexes = {"file_tags", "permission", "file_description"}
+    client.put(entity)
+
+    return _file_entity_to_dict(entity)
+
+
+# ---------------------------------------------------------------------------
+# 1a. GET /shipments/{shipment_id}/files
+# ---------------------------------------------------------------------------
+
+@router.get("/{shipment_id}/files")
+async def list_shipment_files(
+    shipment_id: str,
+    claims: Claims = Depends(require_auth),
+):
+    """List files for a shipment. AFC regular users only see visible files."""
+    client = get_client()
+
+    query = client.query(kind="Files")
+    query.add_filter(filter=PropertyFilter("shipment_order_id", "=", shipment_id))
+    query.add_filter(filter=PropertyFilter("trash", "=", False))
+
+    results = []
+    for entity in query.fetch():
+        # AFC regular users: only visible files
+        if claims.is_afc() and claims.role not in (AFC_ADMIN, AFC_M):
+            if not entity.get("visibility", True):
+                continue
+        results.append(_file_entity_to_dict(entity))
+
+    # Sort by created DESC
+    results.sort(key=lambda f: f.get("created", ""), reverse=True)
+
+    return {"status": "OK", "data": results}
+
+
+# ---------------------------------------------------------------------------
+# 1c. POST /shipments/{shipment_id}/files
+# ---------------------------------------------------------------------------
+
+@router.post("/{shipment_id}/files")
+async def upload_shipment_file(
+    shipment_id: str,
+    file: UploadFile = File(...),
+    file_tags: str = Form("[]"),
+    visibility: str = Form("true"),
+    claims: Claims = Depends(require_auth),
+):
+    """Upload a file to a shipment. AFU or AFC Admin/Manager only."""
+    # Permission check
+    if claims.is_afc() and claims.role not in (AFC_ADMIN, AFC_M):
+        raise ForbiddenError("Only staff or company admins/managers can upload files")
+
+    client = get_client()
+
+    # Parse form fields
+    try:
+        tags_list = _json.loads(file_tags)
+    except (ValueError, TypeError):
+        tags_list = []
+    vis_bool = visibility.lower() in ("true", "1", "yes")
+
+    # Read the shipment to get company_id
+    q_entity = client.get(client.key("Quotation", shipment_id))
+    if not q_entity:
+        q_entity = client.get(client.key("ShipmentOrder", shipment_id))
+    if not q_entity:
+        raise NotFoundError(f"Shipment {shipment_id} not found")
+
+    company_id = q_entity.get("company_id", "")
+
+    # Read file
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    file_size_kb = len(file_bytes) / 1024.0
+    original_name = file.filename or "untitled"
+
+    # Build GCS path
+    gcs_path = _resolve_gcs_path(company_id, shipment_id, original_name)
+
+    # Upload to GCS
+    from google.cloud import storage as gcs_storage
+    gcs_client = gcs_storage.Client(project="cloud-accele-freight")
+    bucket = gcs_client.bucket(FILES_BUCKET_NAME)
+    content_type = file.content_type or "application/octet-stream"
+    _save_file_to_gcs(bucket, gcs_path, file_bytes, content_type)
+
+    # Create Files entity
+    file_record = _create_file_entity(
+        client=client,
+        shipment_id=shipment_id,
+        company_id=company_id,
+        file_name=original_name,
+        gcs_path=gcs_path,
+        file_size_kb=file_size_kb,
+        file_tags=tags_list,
+        visibility=vis_bool,
+        uploader_uid=claims.uid,
+        uploader_email=claims.email,
+    )
+
+    logger.info("File uploaded for %s by %s: %s", shipment_id, claims.uid, original_name)
+
+    return {"status": "OK", "data": file_record, "msg": "File uploaded"}
+
+
+# ---------------------------------------------------------------------------
+# 1d. PATCH /shipments/{shipment_id}/files/{file_id}
+# ---------------------------------------------------------------------------
+
+class UpdateFileRequest(BaseModel):
+    file_tags: list | None = None
+    visibility: bool | None = None
+
+
+@router.patch("/{shipment_id}/files/{file_id}")
+async def update_shipment_file(
+    shipment_id: str,
+    file_id: int,
+    body: UpdateFileRequest,
+    claims: Claims = Depends(require_auth),
+):
+    """Update file tags and/or visibility. AFU or AFC Admin/Manager."""
+    if claims.is_afc() and claims.role not in (AFC_ADMIN, AFC_M):
+        raise ForbiddenError("Only staff or company admins/managers can edit files")
+
+    client = get_client()
+    now = datetime.now(timezone.utc).isoformat()
+
+    key = client.key("Files", file_id)
+    entity = client.get(key)
+    if not entity:
+        raise NotFoundError(f"File {file_id} not found")
+    if entity.get("shipment_order_id") != shipment_id:
+        raise NotFoundError(f"File {file_id} not found on shipment {shipment_id}")
+
+    if body.file_tags is not None:
+        entity["file_tags"] = body.file_tags
+
+    # AFC Admin/Manager cannot change visibility
+    if body.visibility is not None:
+        if claims.is_afc():
+            raise ForbiddenError("Only AF staff can change file visibility")
+        entity["visibility"] = body.visibility
+
+    entity["updated"] = now
+    client.put(entity)
+
+    return {"status": "OK", "data": _file_entity_to_dict(entity), "msg": "File updated"}
+
+
+# ---------------------------------------------------------------------------
+# 1e. DELETE /shipments/{shipment_id}/files/{file_id}
+# ---------------------------------------------------------------------------
+
+@router.delete("/{shipment_id}/files/{file_id}")
+async def delete_shipment_file(
+    shipment_id: str,
+    file_id: int,
+    claims: Claims = Depends(require_afu),
+):
+    """Soft-delete a file. AFU only."""
+    client = get_client()
+    now = datetime.now(timezone.utc).isoformat()
+
+    key = client.key("Files", file_id)
+    entity = client.get(key)
+    if not entity:
+        raise NotFoundError(f"File {file_id} not found")
+    if entity.get("shipment_order_id") != shipment_id:
+        raise NotFoundError(f"File {file_id} not found on shipment {shipment_id}")
+
+    entity["trash"] = True
+    entity["updated"] = now
+    client.put(entity)
+
+    logger.info("File %d soft-deleted on %s by %s", file_id, shipment_id, claims.uid)
+    return {"deleted": True, "file_id": file_id}
+
+
+# ---------------------------------------------------------------------------
+# 1f. GET /shipments/{shipment_id}/files/{file_id}/download
+# ---------------------------------------------------------------------------
+
+@router.get("/{shipment_id}/files/{file_id}/download")
+async def download_shipment_file(
+    shipment_id: str,
+    file_id: int,
+    claims: Claims = Depends(require_auth),
+):
+    """Generate a signed GCS URL for file download."""
+    client = get_client()
+
+    key = client.key("Files", file_id)
+    entity = client.get(key)
+    if not entity:
+        raise NotFoundError(f"File {file_id} not found")
+    if entity.get("shipment_order_id") != shipment_id:
+        raise NotFoundError(f"File {file_id} not found on shipment {shipment_id}")
+
+    # AFC regular: only visible files
+    if claims.is_afc() and claims.role not in (AFC_ADMIN, AFC_M):
+        if not entity.get("visibility", True):
+            raise NotFoundError(f"File {file_id} not found")
+
+    file_location = entity.get("file_location", "")
+    if not file_location:
+        raise HTTPException(status_code=500, detail="File location not set")
+
+    from google.cloud import storage as gcs_storage
+    from datetime import timedelta
+    gcs_client = gcs_storage.Client(project="cloud-accele-freight")
+    bucket = gcs_client.bucket(FILES_BUCKET_NAME)
+    blob = bucket.blob(file_location)
+
+    signed_url = blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(minutes=15),
+        method="GET",
+    )
+
+    return {"download_url": signed_url}
+
+
+# ---------------------------------------------------------------------------
+# 2a. PATCH /shipments/{shipment_id}/bl  — Update from BL
+# ---------------------------------------------------------------------------
+
+@router.patch("/{shipment_id}/bl")
+async def update_from_bl(
+    shipment_id: str,
+    waybill_number: Optional[str] = Form(None),
+    carrier: Optional[str] = Form(None),
+    carrier_agent: Optional[str] = Form(None),
+    vessel_name: Optional[str] = Form(None),
+    voyage_number: Optional[str] = Form(None),
+    etd: Optional[str] = Form(None),
+    shipper_name: Optional[str] = Form(None),
+    shipper_address: Optional[str] = Form(None),
+    containers: Optional[str] = Form(None),
+    cargo_items: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    claims: Claims = Depends(require_afu),
+):
+    """
+    Update a shipment from parsed BL data. AFU only.
+    Accepts multipart/form-data with optional BL PDF file.
+    """
+    client = get_client()
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Load Quotation entity
+    q_key = client.key("Quotation", shipment_id)
+    q_entity = client.get(q_key)
+    if not q_entity:
+        raise NotFoundError(f"Shipment {shipment_id} not found")
+    if q_entity.get("trash"):
+        raise HTTPException(status_code=410, detail=f"Shipment {shipment_id} has been deleted")
+
+    # Merge booking fields (don't replace whole dict)
+    booking = q_entity.get("booking") or {}
+    if not isinstance(booking, dict):
+        booking = {}
+    if waybill_number is not None:
+        booking["booking_reference"] = waybill_number
+    # Write carrier_agent as new field alongside existing carrier (backward compat)
+    if carrier_agent is not None:
+        booking["carrier_agent"] = carrier_agent
+    elif carrier is not None:
+        booking["carrier_agent"] = carrier
+    if vessel_name is not None:
+        booking["vessel_name"] = vessel_name
+    if voyage_number is not None:
+        booking["voyage_number"] = voyage_number
+    q_entity["booking"] = booking
+
+    # ETD
+    if etd is not None:
+        q_entity["etd"] = etd
+
+    # Merge parties.shipper (don't replace whole parties dict)
+    parties = q_entity.get("parties") or {}
+    if not isinstance(parties, dict):
+        parties = {}
+    if shipper_name is not None or shipper_address is not None:
+        shipper = parties.get("shipper") or {}
+        if not isinstance(shipper, dict):
+            shipper = {}
+        if shipper_name is not None:
+            shipper["name"] = shipper_name
+        if shipper_address is not None:
+            shipper["address"] = shipper_address
+        parties["shipper"] = shipper
+    q_entity["parties"] = parties
+
+    # Containers — replace array if provided and non-empty
+    if containers is not None:
+        try:
+            containers_list = _json.loads(containers)
+        except (ValueError, TypeError):
+            containers_list = None
+        if containers_list:
+            td = q_entity.get("type_details") or {}
+            if not isinstance(td, dict):
+                td = {}
+            td["containers"] = containers_list
+            q_entity["type_details"] = td
+
+    # Cargo items — replace array if provided and non-empty (LCL shipments)
+    if cargo_items is not None:
+        try:
+            cargo_items_list = _json.loads(cargo_items)
+        except (ValueError, TypeError):
+            cargo_items_list = None
+        if cargo_items_list:
+            td = q_entity.get("type_details") or {}
+            if not isinstance(td, dict):
+                td = {}
+            td["cargo_items"] = cargo_items_list
+            q_entity["type_details"] = td
+
+    q_entity["updated"] = now
+    q_entity.exclude_from_indexes = set(q_entity.exclude_from_indexes or set()) | {
+        "booking", "parties", "type_details",
+    }
+
+    # Unblock export clearance if waybill set
+    if waybill_number:
+        _maybe_unblock_export_clearance(client, shipment_id, claims.uid)
+
+    client.put(q_entity)
+
+    # Log to AFSystemLogs
+    _log_system_action(client, "BL_UPDATED", shipment_id, claims.uid, claims.email)
+
+    # Auto-save BL file if provided (Task 3b)
+    if file:
+        file_bytes = await file.read()
+        if file_bytes:
+            company_id = q_entity.get("company_id", "")
+            original_name = file.filename or f"BL_{shipment_id}.pdf"
+            gcs_path = _resolve_gcs_path(company_id, shipment_id, original_name)
+
+            from google.cloud import storage as gcs_storage
+            gcs_client = gcs_storage.Client(project="cloud-accele-freight")
+            bucket = gcs_client.bucket(FILES_BUCKET_NAME)
+            content_type = file.content_type or "application/pdf"
+            _save_file_to_gcs(bucket, gcs_path, file_bytes, content_type)
+
+            _create_file_entity(
+                client=client,
+                shipment_id=shipment_id,
+                company_id=company_id,
+                file_name=original_name,
+                gcs_path=gcs_path,
+                file_size_kb=len(file_bytes) / 1024.0,
+                file_tags=["bl"],
+                visibility=True,
+                uploader_uid=claims.uid,
+                uploader_email=claims.email,
+            )
+
+    logger.info("BL update applied to %s by %s", shipment_id, claims.uid)
+
+    return {
+        "status": "OK",
+        "data": {
+            "shipment_id": shipment_id,
+            "booking": dict(q_entity.get("booking") or {}),
+            "parties": dict(q_entity.get("parties") or {}),
+            "etd": q_entity.get("etd"),
+        },
+        "msg": "Shipment updated from BL",
+    }
+
+
+def _maybe_unblock_export_clearance(client, shipment_id: str, user_id: str):
+    """Unblock EXPORT_CLEARANCE if FREIGHT_BOOKING is completed and waybill is set."""
+    wf_key = client.key("ShipmentWorkFlow", shipment_id)
+    wf_entity = client.get(wf_key)
+    if not wf_entity:
+        return
+
+    tasks = wf_entity.get("workflow_tasks") or []
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Check FREIGHT_BOOKING status
+    fb_completed = False
+    for t in tasks:
+        if t.get("task_type") == FREIGHT_BOOKING and t.get("status") == COMPLETED:
+            fb_completed = True
+            break
+
+    if not fb_completed:
+        return
+
+    # Unblock EXPORT_CLEARANCE
+    changed = False
+    for t in tasks:
+        if t.get("task_type") == EXPORT_CLEARANCE and t.get("status") == BLOCKED:
+            t["status"] = PENDING
+            t["updated_by"] = user_id
+            t["updated_at"] = now
+            changed = True
+            break
+
+    if changed:
+        wf_entity["workflow_tasks"] = tasks
+        wf_entity["updated"] = now
+        wf_entity.exclude_from_indexes = set(wf_entity.exclude_from_indexes or set()) | {"workflow_tasks"}
+        client.put(wf_entity)
+        logger.info("EXPORT_CLEARANCE unblocked for %s", shipment_id)
+
+
+def _log_system_action(client, action: str, entity_id: str, uid: str, email: str):
+    """Write a log entry to AFSystemLogs Kind."""
+    now = datetime.now(timezone.utc).isoformat()
+    log_key = client.key("AFSystemLogs")
+    log_entity = client.entity(log_key)
+    log_entity.update({
+        "action": action,
+        "entity_id": entity_id,
+        "uid": uid,
+        "email": email,
+        "timestamp": now,
+    })
+    client.put(log_entity)
+
+
+# ---------------------------------------------------------------------------
+# Route node helpers
+# ---------------------------------------------------------------------------
+
+def _derive_route_nodes(shipment_data: dict) -> list[dict]:
+    """
+    Derive display-only route nodes from origin/destination port codes.
+    Used when route_nodes is empty on existing shipments.
+    """
+    nodes = []
+    origin_code = shipment_data.get("origin_port_un_code") or shipment_data.get("origin_port") or ""
+    dest_code = shipment_data.get("destination_port_un_code") or shipment_data.get("destination_port") or ""
+
+    if origin_code:
+        nodes.append({
+            "port_un_code": origin_code,
+            "port_name": origin_code,
+            "sequence": 1,
+            "role": "ORIGIN",
+            "scheduled_eta": None,
+            "actual_eta": None,
+            "scheduled_etd": shipment_data.get("etd"),
+            "actual_etd": None,
+        })
+
+    if dest_code:
+        nodes.append({
+            "port_un_code": dest_code,
+            "port_name": dest_code,
+            "sequence": 2 if origin_code else 1,
+            "role": "DESTINATION",
+            "scheduled_eta": shipment_data.get("eta"),
+            "actual_eta": None,
+            "scheduled_etd": None,
+            "actual_etd": None,
+        })
+
+    return nodes
+
+
+def _enrich_route_nodes(client, nodes: list[dict]) -> list[dict]:
+    """Enrich route nodes with port details from Port Kind if available."""
+    if not nodes:
+        return nodes
+
+    port_codes = [n.get("port_un_code") for n in nodes if n.get("port_un_code")]
+    if not port_codes:
+        return nodes
+
+    # Batch-fetch Port entities
+    port_keys = [client.key("Port", code) for code in port_codes]
+    port_entities = get_multi_chunked(client, port_keys)
+
+    port_map = {}
+    for entity in port_entities:
+        if entity:
+            code = entity.key.name or entity.key.id_or_name
+            port_map[code] = entity
+
+    for node in nodes:
+        port = port_map.get(node.get("port_un_code", ""))
+        if port:
+            node["port_name"] = port.get("port_name") or port.get("name") or node.get("port_name", "")
+            node["country"] = port.get("country") or port.get("country_code") or ""
+            node["port_type"] = port.get("port_type") or ""
+
+    return nodes
+
+
+def _assign_sequences(nodes: list[dict]) -> list[dict]:
+    """Auto-assign sequence numbers: ORIGIN=1, TRANSHIP=2..N-1, DESTINATION=N."""
+    # Sort: ORIGIN first, then TRANSHIP in order, then DESTINATION
+    role_order = {"ORIGIN": 0, "TRANSHIP": 1, "DESTINATION": 2}
+    nodes.sort(key=lambda n: (role_order.get(n.get("role", ""), 1), n.get("sequence", 0)))
+
+    for i, node in enumerate(nodes):
+        node["sequence"] = i + 1
+
+    return nodes
+
+
+# ---------------------------------------------------------------------------
+# GET /shipments/{shipment_id}/route-nodes
+# ---------------------------------------------------------------------------
+
+@router.get("/{shipment_id}/route-nodes")
+async def get_route_nodes(
+    shipment_id: str,
+    claims: Claims = Depends(require_auth),
+):
+    """Get route nodes for a shipment. Derives from ports if not yet saved."""
+    client = get_client()
+
+    q_entity = client.get(client.key("Quotation", shipment_id))
+    if not q_entity:
+        q_entity = client.get(client.key("ShipmentOrder", shipment_id))
+    if not q_entity:
+        raise NotFoundError(f"Shipment {shipment_id} not found")
+
+    shipment_data = entity_to_dict(q_entity)
+
+    # AFC users can only see their own company's shipments
+    if claims.is_afc() and shipment_data.get("company_id") != claims.company_id:
+        raise NotFoundError(f"Shipment {shipment_id} not found")
+
+    nodes = shipment_data.get("route_nodes") or []
+
+    # Derive from origin/destination if no saved route nodes
+    if not nodes:
+        nodes = _derive_route_nodes(shipment_data)
+
+    # Enrich with port details
+    nodes = _enrich_route_nodes(client, nodes)
+
+    return {
+        "shipment_id": shipment_id,
+        "route_nodes": nodes,
+        "derived": not bool(shipment_data.get("route_nodes")),
+    }
+
+
+# ---------------------------------------------------------------------------
+# PUT /shipments/{shipment_id}/route-nodes
+# ---------------------------------------------------------------------------
+
+class RouteNodeInput(BaseModel):
+    port_un_code: str
+    port_name: str
+    role: str
+    scheduled_eta: Optional[str] = None
+    actual_eta: Optional[str] = None
+    scheduled_etd: Optional[str] = None
+    actual_etd: Optional[str] = None
+
+
+@router.put("/{shipment_id}/route-nodes")
+async def save_route_nodes(
+    shipment_id: str,
+    nodes: list[RouteNodeInput],
+    claims: Claims = Depends(require_auth),
+):
+    """Replace route nodes array on a shipment. AFU + AFC Admin/Manager only."""
+    client = get_client()
+
+    # Permission check
+    if claims.is_afc():
+        if claims.role not in ("AFC-ADMIN", "AFC-M"):
+            raise HTTPException(status_code=403, detail="Only admin/manager can update route nodes")
+
+    # V1 shipments are read-only for route nodes
+    if shipment_id.startswith(PREFIX_V1_SHIPMENT):
+        raise HTTPException(status_code=400, detail="Cannot write route nodes to V1 shipments")
+
+    q_entity = client.get(client.key("Quotation", shipment_id))
+    if not q_entity:
+        raise NotFoundError(f"Shipment {shipment_id} not found")
+
+    # Validate roles
+    roles = [n.role for n in nodes]
+    if roles.count("ORIGIN") != 1:
+        raise HTTPException(status_code=400, detail="Exactly one ORIGIN node required")
+    if roles.count("DESTINATION") != 1:
+        raise HTTPException(status_code=400, detail="Exactly one DESTINATION node required")
+    for r in roles:
+        if r not in ("ORIGIN", "TRANSHIP", "DESTINATION"):
+            raise HTTPException(status_code=400, detail=f"Invalid role: {r}")
+
+    # Build node dicts and assign sequences
+    node_dicts = [n.dict() for n in nodes]
+    node_dicts = _assign_sequences(node_dicts)
+
+    # Write to Quotation entity
+    q_entity["route_nodes"] = node_dicts
+    q_entity.exclude_from_indexes = set(q_entity.exclude_from_indexes or set()) | {"route_nodes"}
+
+    # Sync flat ETD/ETA from ORIGIN and DESTINATION nodes
+    for nd in node_dicts:
+        if nd["role"] == "ORIGIN" and nd.get("scheduled_etd"):
+            q_entity["etd"] = nd["scheduled_etd"]
+        if nd["role"] == "DESTINATION" and nd.get("scheduled_eta"):
+            q_entity["eta"] = nd["scheduled_eta"]
+
+    q_entity["updated"] = datetime.now(timezone.utc).isoformat()
+    client.put(q_entity)
+
+    # Enrich for response
+    node_dicts = _enrich_route_nodes(client, node_dicts)
+
+    # Log
+    _log_system_action(client, "ROUTE_NODES_UPDATED", shipment_id, claims.uid, claims.email)
+
+    return {
+        "shipment_id": shipment_id,
+        "route_nodes": node_dicts,
+    }
+
+
+# ---------------------------------------------------------------------------
+# PATCH /shipments/{shipment_id}/route-nodes/{sequence}
+# ---------------------------------------------------------------------------
+
+class RouteNodeTimingUpdate(BaseModel):
+    scheduled_eta: Optional[str] = None
+    actual_eta: Optional[str] = None
+    scheduled_etd: Optional[str] = None
+    actual_etd: Optional[str] = None
+
+
+@router.patch("/{shipment_id}/route-nodes/{sequence}")
+async def update_route_node_timing(
+    shipment_id: str,
+    sequence: int,
+    body: RouteNodeTimingUpdate,
+    claims: Claims = Depends(require_auth),
+):
+    """Update timing on a single route node by sequence number."""
+    client = get_client()
+
+    # Permission check
+    if claims.is_afc():
+        if claims.role not in ("AFC-ADMIN", "AFC-M"):
+            raise HTTPException(status_code=403, detail="Only admin/manager can update route nodes")
+
+    if shipment_id.startswith(PREFIX_V1_SHIPMENT):
+        raise HTTPException(status_code=400, detail="Cannot write route nodes to V1 shipments")
+
+    q_entity = client.get(client.key("Quotation", shipment_id))
+    if not q_entity:
+        raise NotFoundError(f"Shipment {shipment_id} not found")
+
+    nodes = q_entity.get("route_nodes") or []
+    if not nodes:
+        raise HTTPException(status_code=400, detail="No route nodes saved — use PUT to initialize first")
+
+    # Find node by sequence
+    target = None
+    for nd in nodes:
+        if nd.get("sequence") == sequence:
+            target = nd
+            break
+
+    if target is None:
+        raise NotFoundError(f"Route node with sequence {sequence} not found")
+
+    # Apply timing updates
+    if body.scheduled_eta is not None:
+        target["scheduled_eta"] = body.scheduled_eta
+    if body.actual_eta is not None:
+        target["actual_eta"] = body.actual_eta
+    if body.scheduled_etd is not None:
+        target["scheduled_etd"] = body.scheduled_etd
+    if body.actual_etd is not None:
+        target["actual_etd"] = body.actual_etd
+
+    # Sync flat fields if ORIGIN or DESTINATION
+    if target.get("role") == "ORIGIN" and body.scheduled_etd is not None:
+        q_entity["etd"] = body.scheduled_etd
+    if target.get("role") == "DESTINATION" and body.scheduled_eta is not None:
+        q_entity["eta"] = body.scheduled_eta
+
+    q_entity["route_nodes"] = nodes
+    q_entity.exclude_from_indexes = set(q_entity.exclude_from_indexes or set()) | {"route_nodes"}
+    q_entity["updated"] = datetime.now(timezone.utc).isoformat()
+    client.put(q_entity)
+
+    return {
+        "shipment_id": shipment_id,
+        "node": target,
+    }

@@ -11,7 +11,7 @@ import { formatDate } from '@/lib/utils';
 
 interface ShipmentTasksProps {
   shipmentId: string;
-  orderType: string;
+  orderType?: string;
   accountType: string | null;
   userRole: string | null;
 }
@@ -20,29 +20,32 @@ interface ShipmentTasksProps {
 // Constants
 // ---------------------------------------------------------------------------
 
+/** Fallback label map for tasks missing display_name */
 const TASK_LABELS: Record<string, string> = {
-  ORIGIN_HAULAGE: 'Origin Haulage',
+  ORIGIN_HAULAGE: 'Origin Haulage / Pickup',
   FREIGHT_BOOKING: 'Freight Booking',
-  EXPORT_CLEARANCE: 'Export Clearance',
-  IMPORT_CLEARANCE: 'Import Clearance',
-  DESTINATION_HAULAGE: 'Destination Haulage',
+  EXPORT_CLEARANCE: 'Export Customs Clearance',
+  POL: 'Port of Loading',
+  POD: 'Port of Discharge',
+  IMPORT_CLEARANCE: 'Import Customs Clearance',
+  DESTINATION_HAULAGE: 'Destination Haulage / Delivery',
 };
 
-/** Returns display label adjusted for order type — LCL/Air use "Ground Transportation" instead of "Haulage" */
-function getTaskLabel(taskType: string, orderType: string): string {
-  const usesGround = orderType === 'SEA_LCL' || orderType === 'AIR';
-  if (usesGround) {
-    if (taskType === 'ORIGIN_HAULAGE') return 'Origin Ground Transportation';
-    if (taskType === 'DESTINATION_HAULAGE') return 'Destination Ground Transportation';
-  }
-  return TASK_LABELS[taskType] ?? taskType;
+function getTaskLabel(task: WorkflowTask): string {
+  return task.display_name || TASK_LABELS[task.task_type] || task.task_type;
 }
 
-const STATUS_STYLES: Record<string, { bg: string; text: string; dot: string }> = {
-  PENDING:     { bg: 'bg-gray-100',   text: 'text-gray-700',   dot: 'bg-gray-400' },
-  IN_PROGRESS: { bg: 'bg-blue-100',   text: 'text-blue-700',   dot: 'bg-blue-500' },
-  COMPLETED:   { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },
-  BLOCKED:     { bg: 'bg-amber-100',  text: 'text-amber-700',  dot: 'bg-amber-500' },
+const STATUS_STYLES: Record<string, { bg: string; text: string }> = {
+  PENDING:     { bg: 'bg-gray-100',   text: 'text-gray-700' },
+  IN_PROGRESS: { bg: 'bg-blue-100',   text: 'text-blue-700' },
+  COMPLETED:   { bg: 'bg-emerald-100', text: 'text-emerald-700' },
+  BLOCKED:     { bg: 'bg-amber-100',  text: 'text-amber-700' },
+};
+
+const MODE_STYLES: Record<string, { bg: string; text: string; border: string }> = {
+  ASSIGNED: { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200' },
+  TRACKED:  { bg: 'bg-purple-50',  text: 'text-purple-700',  border: 'border-purple-200' },
+  IGNORED:  { bg: 'bg-gray-50',    text: 'text-gray-400',    border: 'border-gray-200' },
 };
 
 const ASSIGNED_LABELS: Record<string, string> = {
@@ -65,13 +68,18 @@ function canToggleVisibility(accountType: string | null): boolean {
   return accountType === 'AFU';
 }
 
+function canChangeMode(accountType: string | null, userRole: string | null): boolean {
+  if (accountType === 'AFU') return true;
+  if (accountType === 'AFC' && (userRole === 'AFC-ADMIN' || userRole === 'AFC-M')) return true;
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Task card sub-component
 // ---------------------------------------------------------------------------
 
 function TaskCard({
   task,
-  orderType,
   accountType,
   userRole,
   onMarkComplete,
@@ -81,7 +89,6 @@ function TaskCard({
   saving,
 }: {
   task: WorkflowTask;
-  orderType: string;
   accountType: string | null;
   userRole: string | null;
   onMarkComplete: (taskId: string) => void;
@@ -91,17 +98,19 @@ function TaskCard({
   saving: string | null;
 }) {
   const style = STATUS_STYLES[task.status] ?? STATUS_STYLES.PENDING;
+  const modeStyle = MODE_STYLES[task.mode] ?? MODE_STYLES.ASSIGNED;
   const isHidden = task.visibility === 'HIDDEN';
+  const isIgnored = task.mode === 'IGNORED';
   const isSaving = saving === task.task_id;
   const editable = canEdit(accountType, userRole);
-  const showComplete = editable && (task.status === 'PENDING' || task.status === 'IN_PROGRESS');
+  const showComplete = editable && !isIgnored && (task.status === 'PENDING' || task.status === 'IN_PROGRESS');
   const showUndo = editable && task.status === 'COMPLETED';
-  const label = getTaskLabel(task.task_type, orderType);
+  const label = getTaskLabel(task);
 
   return (
     <div
       className={`bg-white border border-[var(--border)] rounded-xl p-4 transition-opacity ${
-        isHidden ? 'opacity-50' : ''
+        isHidden || isIgnored ? 'opacity-50' : ''
       }`}
     >
       {/* Header row */}
@@ -121,13 +130,16 @@ function TaskCard({
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-mono text-[var(--text-muted)]">Leg {task.leg_level}</span>
-              <span className={`text-sm font-semibold ${isHidden ? 'line-through text-[var(--text-muted)]' : 'text-[var(--text)]'}`}>
+              <span className={`text-sm font-semibold ${isHidden || isIgnored ? 'line-through text-[var(--text-muted)]' : 'text-[var(--text)]'}`}>
                 {label}
               </span>
             </div>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${style.bg} ${style.text}`}>
                 {task.status.replace('_', ' ')}
+              </span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${modeStyle.bg} ${modeStyle.text} ${modeStyle.border}`}>
+                {task.mode}
               </span>
               {task.status === 'BLOCKED' && (
                 <span className="text-[10px] text-amber-600">awaiting booking ref</span>
@@ -147,7 +159,7 @@ function TaskCard({
               {isHidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
             </button>
           )}
-          {editable && task.status !== 'COMPLETED' && (
+          {editable && task.status !== 'COMPLETED' && !isIgnored && (
             <button
               onClick={() => onEdit(task)}
               className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
@@ -159,32 +171,49 @@ function TaskCard({
         </div>
       </div>
 
-      {/* Details row */}
-      <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5 text-xs">
-        <div>
-          <span className="text-[var(--text-muted)]">Assigned to</span>
-          <div className="text-[var(--text-mid)] font-medium">
-            {task.assigned_to === 'THIRD_PARTY' && task.third_party_name
-              ? task.third_party_name
-              : ASSIGNED_LABELS[task.assigned_to] ?? task.assigned_to}
+      {/* Details row — not shown when IGNORED */}
+      {!isIgnored && (
+        <>
+          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1.5 text-xs">
+            <div>
+              <span className="text-[var(--text-muted)]">Assigned to</span>
+              <div className="text-[var(--text-mid)] font-medium">
+                {task.assigned_to === 'THIRD_PARTY' && task.third_party_name
+                  ? task.third_party_name
+                  : ASSIGNED_LABELS[task.assigned_to] ?? task.assigned_to}
+              </div>
+            </div>
+            <div>
+              <span className="text-[var(--text-muted)]">Sched. End</span>
+              <div className="text-[var(--text-mid)] font-medium">
+                {task.scheduled_end ? formatDate(task.scheduled_end) : task.due_date ? formatDate(task.due_date) : '—'}
+              </div>
+            </div>
+            {task.actual_start && (
+              <div>
+                <span className="text-[var(--text-muted)]">Started</span>
+                <div className="text-blue-600 font-medium">{formatDate(task.actual_start)}</div>
+              </div>
+            )}
+            {task.actual_end && (
+              <div>
+                <span className="text-[var(--text-muted)]">Completed</span>
+                <div className="text-emerald-600 font-medium">{formatDate(task.actual_end)}</div>
+              </div>
+            )}
           </div>
-        </div>
-        <div>
-          <span className="text-[var(--text-muted)]">Due</span>
-          <div className="text-[var(--text-mid)] font-medium">
-            {task.due_date ? formatDate(task.due_date) : '—'}
-          </div>
-        </div>
-        {task.completed_at && (
-          <div>
-            <span className="text-[var(--text-muted)]">Completed</span>
-            <div className="text-emerald-600 font-medium">{formatDate(task.completed_at)}</div>
-          </div>
-        )}
-      </div>
+
+          {/* Deviation indicator */}
+          {task.actual_end && task.scheduled_end && task.actual_end > task.scheduled_end && (
+            <div className="mt-1.5 text-[10px] text-red-500 font-medium">
+              Completed after scheduled end
+            </div>
+          )}
+        </>
+      )}
 
       {/* Notes */}
-      {task.notes && (
+      {task.notes && !isIgnored && (
         <div className="mt-2 text-xs text-[var(--text-mid)] bg-[var(--surface)] rounded-lg px-3 py-2 border border-[var(--border)]">
           {task.notes}
         </div>
@@ -235,33 +264,58 @@ function TaskCard({
 
 function EditTaskModal({
   task,
-  orderType,
+  accountType,
+  userRole,
   onSave,
   onClose,
   saving,
 }: {
   task: WorkflowTask;
-  orderType: string;
+  accountType: string | null;
+  userRole: string | null;
   onSave: (taskId: string, updates: Record<string, unknown>) => void;
   onClose: () => void;
   saving: boolean;
 }) {
   const [status, setStatus] = useState(task.status);
+  const [mode, setMode] = useState(task.mode || 'ASSIGNED');
   const [assignedTo, setAssignedTo] = useState(task.assigned_to);
   const [thirdPartyName, setThirdPartyName] = useState(task.third_party_name ?? '');
-  const [dueDate, setDueDate] = useState(task.due_date ?? '');
+  const [scheduledStart, setScheduledStart] = useState(task.scheduled_start ?? '');
+  const [scheduledEnd, setScheduledEnd] = useState(task.scheduled_end ?? task.due_date ?? '');
+  const [actualStart, setActualStart] = useState(task.actual_start ?? '');
+  const [actualEnd, setActualEnd] = useState(task.actual_end ?? '');
   const [notes, setNotes] = useState(task.notes ?? '');
+
+  const showModeSelector = canChangeMode(accountType, userRole);
+
+  // When TRACKED mode, remove BLOCKED from status options
+  const statusOptions = mode === 'TRACKED'
+    ? [{ v: 'PENDING', l: 'Pending' }, { v: 'IN_PROGRESS', l: 'In Progress' }, { v: 'COMPLETED', l: 'Completed' }]
+    : [{ v: 'PENDING', l: 'Pending' }, { v: 'IN_PROGRESS', l: 'In Progress' }, { v: 'COMPLETED', l: 'Completed' }, { v: 'BLOCKED', l: 'Blocked' }];
 
   function handleSave() {
     const updates: Record<string, unknown> = {};
+
+    if (mode !== (task.mode || 'ASSIGNED')) updates.mode = mode;
     if (status !== task.status) updates.status = status;
     if (assignedTo !== task.assigned_to) updates.assigned_to = assignedTo;
     if (assignedTo === 'THIRD_PARTY' && thirdPartyName !== (task.third_party_name ?? '')) {
       updates.third_party_name = thirdPartyName || null;
     }
-    if (dueDate !== (task.due_date ?? '')) {
-      updates.due_date = dueDate || null;
+    if (scheduledStart !== (task.scheduled_start ?? '')) {
+      updates.scheduled_start = scheduledStart || null;
+    }
+    if (scheduledEnd !== (task.scheduled_end ?? task.due_date ?? '')) {
+      updates.scheduled_end = scheduledEnd || null;
+      updates.due_date = scheduledEnd || null;
       updates.due_date_override = true;
+    }
+    if (actualStart !== (task.actual_start ?? '')) {
+      updates.actual_start = actualStart || null;
+    }
+    if (actualEnd !== (task.actual_end ?? '')) {
+      updates.actual_end = actualEnd || null;
     }
     if (notes !== (task.notes ?? '')) updates.notes = notes;
 
@@ -272,12 +326,14 @@ function EditTaskModal({
     onSave(task.task_id, updates);
   }
 
+  const inputCls = 'w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)]';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-xl shadow-lg w-full max-w-md mx-4">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-md mx-4 max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
           <h3 className="text-sm font-semibold text-[var(--text)]">
-            Edit {getTaskLabel(task.task_type, orderType)}
+            Edit {getTaskLabel(task)}
           </h3>
           <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text)]">
             <X className="w-4 h-4" />
@@ -285,18 +341,43 @@ function EditTaskModal({
         </div>
 
         <div className="p-4 space-y-4">
+          {/* Mode selector */}
+          {showModeSelector && (
+            <div>
+              <label className="text-xs font-medium text-[var(--text-muted)] block mb-1.5">Mode</label>
+              <div className="flex gap-1">
+                {(['ASSIGNED', 'TRACKED', 'IGNORED'] as const).map((m) => {
+                  const ms = MODE_STYLES[m];
+                  const active = mode === m;
+                  return (
+                    <button
+                      key={m}
+                      onClick={() => setMode(m)}
+                      className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                        active
+                          ? `${ms.bg} ${ms.text} ${ms.border}`
+                          : 'bg-white text-[var(--text-muted)] border-[var(--border)] hover:bg-[var(--surface)]'
+                      }`}
+                    >
+                      {m.charAt(0) + m.slice(1).toLowerCase()}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Status */}
           <div>
             <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Status</label>
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)]"
+              className={inputCls}
             >
-              <option value="PENDING">Pending</option>
-              <option value="IN_PROGRESS">In Progress</option>
-              <option value="COMPLETED">Completed</option>
-              <option value="BLOCKED">Blocked</option>
+              {statusOptions.map(o => (
+                <option key={o.v} value={o.v}>{o.l}</option>
+              ))}
             </select>
           </div>
 
@@ -306,7 +387,7 @@ function EditTaskModal({
             <select
               value={assignedTo}
               onChange={(e) => setAssignedTo(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)]"
+              className={inputCls}
             >
               <option value="AF">AcceleFreight</option>
               <option value="CUSTOMER">Customer</option>
@@ -323,20 +404,39 @@ function EditTaskModal({
                 value={thirdPartyName}
                 onChange={(e) => setThirdPartyName(e.target.value)}
                 placeholder="e.g. DHL, Kuehne+Nagel"
-                className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)]"
+                className={`${inputCls} placeholder:text-[var(--text-muted)]`}
               />
             </div>
           )}
 
-          {/* Due date */}
+          {/* Timing — Scheduled */}
           <div>
-            <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Due Date</label>
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)]"
-            />
+            <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Scheduled</label>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <span className="text-[10px] text-[var(--text-muted)]">Start</span>
+                <input type="date" value={scheduledStart} onChange={e => setScheduledStart(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <span className="text-[10px] text-[var(--text-muted)]">End / Due</span>
+                <input type="date" value={scheduledEnd} onChange={e => setScheduledEnd(e.target.value)} className={inputCls} />
+              </div>
+            </div>
+          </div>
+
+          {/* Timing — Actual */}
+          <div>
+            <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Actual</label>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <span className="text-[10px] text-[var(--text-muted)]">Start</span>
+                <input type="date" value={actualStart} onChange={e => setActualStart(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <span className="text-[10px] text-[var(--text-muted)]">End</span>
+                <input type="date" value={actualEnd} onChange={e => setActualEnd(e.target.value)} className={inputCls} />
+              </div>
+            </div>
           </div>
 
           {/* Notes */}
@@ -347,7 +447,7 @@ function EditTaskModal({
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
               placeholder="Add notes…"
-              className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] resize-none"
+              className={`${inputCls} resize-none placeholder:text-[var(--text-muted)]`}
             />
           </div>
         </div>
@@ -377,7 +477,7 @@ function EditTaskModal({
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function ShipmentTasks({ shipmentId, orderType, accountType, userRole }: ShipmentTasksProps) {
+export default function ShipmentTasks({ shipmentId, accountType, userRole }: ShipmentTasksProps) {
   const [tasks, setTasks] = useState<WorkflowTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -425,7 +525,7 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, user
     setTasks((prev) =>
       prev.map((t) =>
         t.task_id === taskId
-          ? { ...t, status: 'COMPLETED', completed_at: new Date().toISOString() }
+          ? { ...t, status: 'COMPLETED', completed_at: new Date().toISOString(), actual_end: new Date().toISOString() }
           : t
       )
     );
@@ -435,7 +535,6 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, user
       setSaving(null);
 
       if (!result || !result.success) {
-        // Revert optimistic update
         await loadTasks();
         setError(result?.error ?? 'Failed to mark task complete');
         return;
@@ -444,7 +543,6 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, user
       if (result.warning) {
         setWarning(result.warning);
       }
-      // Reload to get server state (e.g. unblocked tasks)
       await loadTasks();
     } catch (err) {
       console.error('[ShipmentTasks] handleMarkComplete failed:', err);
@@ -456,11 +554,10 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, user
 
   async function handleUndo(taskId: string) {
     setSaving(taskId);
-    // Optimistic update — revert to PENDING
     setTasks((prev) =>
       prev.map((t) =>
         t.task_id === taskId
-          ? { ...t, status: 'PENDING', completed_at: null }
+          ? { ...t, status: 'PENDING', completed_at: null, actual_end: null }
           : t
       )
     );
@@ -510,7 +607,6 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, user
     const newVisibility = currentlyHidden ? 'VISIBLE' : 'HIDDEN';
     setSaving(taskId);
 
-    // Optimistic update
     setTasks((prev) =>
       prev.map((t) => (t.task_id === taskId ? { ...t, visibility: newVisibility } : t))
     );
@@ -584,7 +680,6 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, user
         <TaskCard
           key={task.task_id}
           task={task}
-          orderType={orderType}
           accountType={accountType}
           userRole={userRole}
           onMarkComplete={handleMarkComplete}
@@ -599,7 +694,8 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, user
       {editingTask && (
         <EditTaskModal
           task={editingTask}
-          orderType={orderType}
+          accountType={accountType}
+          userRole={userRole}
           onSave={handleEditSave}
           onClose={() => setEditingTask(null)}
           saving={editSaving}

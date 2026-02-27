@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  ArrowLeft, Ship, Plane, Package, MapPin, Calendar,
+  ArrowLeft, Ship, Plane, Package, MapPin, Calendar, Upload,
   Users, FileText, AlertTriangle, Loader2, Hash,
   Container, Weight, Activity, ChevronDown, ChevronRight, Pencil, X,
   ClipboardList, Clock,
@@ -15,6 +15,9 @@ import { getCurrentUserProfileAction } from '@/app/actions/users';
 import { formatDate } from '@/lib/utils';
 import type { ShipmentOrder, ShipmentOrderStatus } from '@/lib/types';
 import ShipmentTasks from '@/components/shipments/ShipmentTasks';
+import ShipmentFilesTab from '@/components/shipments/ShipmentFilesTab';
+import BLUpdateModal from '@/components/shipments/BLUpdateModal';
+import RouteNodeTimeline from '@/components/shipments/RouteNodeTimeline';
 import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS, getStatusPathList } from '@/lib/types';
 
 // ─── Status styles ───────────────────────────────────────────────────────────
@@ -1029,7 +1032,8 @@ export default function ShipmentOrderDetailPage() {
   const [accountType, setAccountType] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [showCompanyModal, setShowCompanyModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'tasks'>('overview');
+  const [showBLModal, setShowBLModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'files'>('overview');
 
   const loadOrder = useCallback(async () => {
     const result = await fetchShipmentOrderDetailAction(quotationId);
@@ -1151,6 +1155,19 @@ export default function ShipmentOrderDetailPage() {
       {/* Route */}
       <RouteCard order={order} />
 
+      {/* BL Upload button — AFU, status >= 3001, sea shipments */}
+      {accountType === 'AFU' && order.status >= 3001 && ['SEA_FCL', 'SEA_LCL'].includes(order.order_type) && (
+        <div className="flex justify-end">
+          <button
+            onClick={() => setShowBLModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--sky)] border border-[var(--sky)] rounded-lg hover:bg-[var(--sky-mist)] transition-colors"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            Upload BL
+          </button>
+        </div>
+      )}
+
       {/* Status Management */}
       <StatusCard order={order} onReload={loadOrder} accountType={accountType} />
 
@@ -1177,15 +1194,38 @@ export default function ShipmentOrderDetailPage() {
           <ClipboardList className="w-3.5 h-3.5" />
           Tasks
         </button>
+        <button
+          onClick={() => setActiveTab('files')}
+          className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-1.5 ${
+            activeTab === 'files'
+              ? 'border-[var(--sky)] text-[var(--sky)]'
+              : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text)]'
+          }`}
+        >
+          <FileText className="w-3.5 h-3.5" />
+          Files
+        </button>
       </div>
 
       {/* Tab content */}
       {activeTab === 'tasks' ? (
-        <ShipmentTasks
+        <div className="space-y-4">
+          <RouteNodeTimeline
+            shipmentId={order.quotation_id}
+            accountType={accountType}
+            userRole={userRole}
+          />
+          <ShipmentTasks
+            shipmentId={order.quotation_id}
+            orderType={order.order_type}
+            accountType={accountType}
+            userRole={userRole}
+          />
+        </div>
+      ) : activeTab === 'files' ? (
+        <ShipmentFilesTab
           shipmentId={order.quotation_id}
-          orderType={order.order_type}
-          accountType={accountType}
-          userRole={userRole}
+          userRole={accountType === 'AFU' ? 'AFU' : (userRole ?? 'AFC_USER')}
         />
       ) : (
 
@@ -1275,6 +1315,18 @@ export default function ShipmentOrderDetailPage() {
           onClose={() => setShowCompanyModal(false)}
           onReassigned={(companyId, companyName) => {
             setOrder(prev => prev ? { ...prev, company_id: companyId, _company_name: companyName } : prev);
+          }}
+        />
+      )}
+
+      {/* BL Update modal */}
+      {showBLModal && (
+        <BLUpdateModal
+          shipmentId={order.quotation_id}
+          onClose={() => setShowBLModal(false)}
+          onSuccess={() => {
+            setShowBLModal(false);
+            loadOrder();
           }}
         />
       )}

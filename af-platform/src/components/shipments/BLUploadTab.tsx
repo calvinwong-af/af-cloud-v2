@@ -29,6 +29,7 @@ interface BLContainer {
 interface ParsedBL {
   waybill_number: string | null;
   booking_number: string | null;
+  carrier_agent: string | null;
   carrier: string | null;
   vessel_name: string | null;
   voyage_number: string | null;
@@ -165,7 +166,7 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
         originCode: data.origin_un_code ?? '',
         destCode: data.destination_un_code ?? '',
         etd: data.parsed.on_board_date ?? '',
-        carrier: data.parsed.carrier ?? '',
+        carrier: data.parsed.carrier_agent ?? data.parsed.carrier ?? '',
         waybillNumber: data.parsed.waybill_number ?? '',
         vesselName: data.parsed.vessel_name ?? '',
         voyageNumber: data.parsed.voyage_number ?? '',
@@ -358,10 +359,10 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
 
       {/* Carrier & Vessel */}
       <div>
-        <SectionLabel>Carrier & Vessel</SectionLabel>
+        <SectionLabel>Carrier / Agent & Vessel</SectionLabel>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <FieldLabel>Carrier</FieldLabel>
+            <FieldLabel>Carrier / Agent</FieldLabel>
             <input
               type="text"
               value={formState.carrier}
