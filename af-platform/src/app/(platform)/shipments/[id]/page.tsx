@@ -659,7 +659,7 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
               [...historyEntries].reverse().map((entry, i) => {
                 const entryColor = SHIPMENT_STATUS_COLOR[entry.status] ?? 'gray';
                 const entryStyle = STATUS_STYLES[entryColor] ?? STATUS_STYLES.gray;
-                const isReverted = 'reverted' in entry && entry.reverted;
+                const isReverted = 'reverted' in entry && !!(entry as Record<string, unknown>).reverted;
                 const revertedFromLabel = isReverted && 'reverted_from' in entry
                   ? SHIPMENT_STATUS_LABELS[(entry as Record<string, unknown>).reverted_from as number] ?? ''
                   : '';
