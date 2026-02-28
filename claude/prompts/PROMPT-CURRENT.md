@@ -1,4 +1,4 @@
-# VS Code Prompt — Port Pair Display Standardisation
+# VS Code Prompt — Task Card Labels + Vessel Display
 **Date:** 28 February 2026
 **Prepared by:** Claude AI
 **For:** Opus 4.6 via VS Code
@@ -7,207 +7,128 @@
 
 ## Context
 
-AcceleFreight platform (Next.js + TypeScript + Tailwind). We are in the strangler-fig migration from a Vue TMS to the new platform. All work must be backward-compatible with V1 (AFCQ-) Datastore records.
+AcceleFreight platform (Next.js + TypeScript + Tailwind). Strangler-fig migration from Vue TMS. All work must be backward-compatible with V1 (AFCQ-) Datastore records.
 
-Port pairs currently appear in three places with inconsistent treatment:
+Shipment tasks are rendered in `ShipmentTasks.tsx`. Each task has a `mode` field — tasks with `mode === "TRACKED"` represent physical port events (Port of Loading, Port of Discharge). These tasks currently show generic timing labels that don't match freight terminology.
 
-| Location | Current | Problems |
-|---|---|---|
-| `RouteCard` in `shipments/[id]/page.tsx` | Large bold UN code, "Origin / Destination" labels, optional name below | Port codes displayed as-is (MYPKG_N decision pending), no ETD/ETA |
-| `RouteNodeTimeline.tsx` | Circle badges with POL/POD labels, ETD/ETA shown | Port code only, no name even on hover |
-| Task cards (TRACKED tasks) | No port display | Out of scope for this session |
+Vessel and voyage data lives on `order.booking` (assembled by `assembleV1ShipmentOrder` in `v1-assembly.ts` for V1 records, or read directly for V2). The shipment detail page (`page.tsx`) holds the full `order` object in state but does not currently pass vessel data down to task cards.
 
 ---
 
-## Design Decisions (confirmed)
-
-| Decision | Answer |
-|---|---|
-| Port name display | **Tooltip / hover only** — never show port name as persistent text |
-| Label convention | **Context-dependent** — staff (AFC) sees POL/POD, customer (AFU) sees Origin/Destination |
-| ETD / ETA location | **Both** — route card header AND timeline |
-| MYPKG_N suffix | **Deferred** — display as-is for now, decision pending separate discussion |
-
----
-
-## Task 1 — DateTimeInput Bug Fix (DT-10) + ETD/ETA Field Changes
-
-### Bug: Two-digit hour/minute input broken
-The `DateTimeInput` component in `af-platform/src/components/shared/DateInput.tsx` — the hour and minute numeric fields do not accept two-digit values. Typing `11`, `12`, `24`, `25` etc. fails; only single digits work.
-
-Investigate the input handler logic. The likely cause is the field value being clamped or replaced after the first digit, preventing a second digit from being appended. Fix so that:
-- The field accepts up to 2 digits
-- Hour clamps to 0–23
-- Minute clamps to 0–59
-- Arrow key increment/decrement continues to work
-- Single digit values (e.g. `9`) are accepted and displayed as `09` on blur
-
-### Change: ETD/ETA fields → DateTimeInput everywhere
-The following fields currently use `DateInput` (date only). Change all of them to `DateTimeInput` (date + time):
-
-| File | Field |
-|---|---|
-| `af-platform/src/components/shipments/BLUpdateModal.tsx` | ETD |
-| `af-platform/src/components/shipments/BLUploadTab.tsx` | ETD |
-| `af-platform/src/components/shipments/RouteNodeTimeline.tsx` | scheduled_etd, actual_etd, scheduled_eta, actual_eta |
-
-### Default time behaviour
-When a user enters a date but leaves the time blank, the time must default to `00:00`. Specifically:
-- On blur of the date portion, if time fields are empty, auto-populate HH as `00` and mm as `00`
-- If the user manually enters a time, that value is used as-is
-- Stored value format remains ISO datetime string (e.g. `2026-02-28T00:00:00`)
-
----
-
-## Task 2 — BL-16 / BL-17 Quick Fix
+## Task 1 — POL/POD Task Card Timing Labels
 
 ### Problem
-After a BL update on AFCQ-003829, the Transport section (vessel/voyage) does not appear on the Overview tab.
+TRACKED tasks at POL and POD show generic labels:
+- `Sched. End`, `Started`, `Completed`
 
-### Root Cause Suspected
-`af-server/routers/shipments.py` — the `update_from_bl` handler writes `vessel_name` and `voyage_number` as flat fields on the Datastore entity AND inside the `booking` dict. The assembly layer function that builds the `ShipmentOrder` response (for the detail page fetch) may not be passing through flat `vessel_name`/`voyage_number` fields to the client.
+These should reflect freight terminology based on the task's port role.
 
-### What to Check
-1. Find the assembly function in `af-server` that converts raw Datastore entity → `ShipmentOrder` dict for the API response.
-2. Confirm whether `vessel_name` and `voyage_number` are included in the response dict.
-3. If missing, add them. The detail page (`page.tsx`) already reads with this pattern:
-   ```typescript
-   const vesselName = (order as Record<string, unknown>).vessel_name as string
-     || bk.vessel_name as string || null;
-   ```
-   So if the server sends either flat field or inside `booking{}`, the UI will render it.
+### Required Label Changes
 
-### Files Likely Involved
-- `af-server/routers/shipments.py` — `update_from_bl` handler and assembly function
+| Field | POL task (role: POL) | POD task (role: POD) | Non-TRACKED task |
+|---|---|---|---|
+| `scheduled_start` | ETD | ETA | Sched. Start |
+| `scheduled_end` | ETD | ETA | Sched. End |
+| `actual_start` | ATD | ATA | Started |
+| `actual_end` | ATD | ATA | Completed |
+| `completed_at` | ATD | ATA | Completed |
+
+### Logic
+- Only apply freight labels when `task.mode === "TRACKED"`
+- Determine POL vs POD from `task.task_type`:
+  - `task_type === "POL"` → use ETD / ATD
+  - `task_type === "POD"` → use ETA / ATA
+- All other tasks (mode !== TRACKED, or task_type not POL/POD) → keep existing generic labels
+- This is a display-only change — field names (`scheduled_start`, `actual_end` etc.) do not change
+
+### File
+`af-platform/src/components/shipments/ShipmentTasks.tsx`
+
+Find where timing field labels are rendered (look for "Sched. End", "Started", "Completed" strings) and apply the conditional label logic above.
 
 ---
 
-## Task 3 — Create `PortPair` Shared Component
+## Task 2 — Vessel + Voyage in Route Card Header
 
-### File to Create
-`af-platform/src/components/shared/PortPair.tsx`
+### Problem
+The route card shows port pair + ETD/ETA but no vessel information. Vessel and voyage are key identifiers for a sea freight shipment and should be visible at a glance without needing to open the Overview tab.
 
-### Props Interface
+### Design
+Add vessel name and voyage number as a subtitle row below the port pair inside the existing `RouteCard` component, centered between the two ports:
+
+```
+[POL]  ——[Ship icon]——  [POD]
+ETD: 15 Feb 2026          ETA: 28 Feb 2026
+
+        MTT LUMUT  ·  V.26LM073E
+```
+
+- Only render the vessel row if at least one of `vessel_name` or `voyage_number` is present
+- Muted small text — this is supplementary info, not primary
+- Ship icon (lucide `Ship`) before vessel name
+- Dot separator between vessel name and voyage number
+- If only one field present, show just that field without the separator
+
+### Data Source
+The detail page (`page.tsx`) already loads `order` which contains `order.booking`. The booking object (after the v1-assembly fix applied today) contains:
 ```typescript
-interface PortPairProps {
-  // Port data
-  origin: {
-    port_un_code: string | null;
-    port_name?: string | null;    // For tooltip
-    country_code?: string | null;
-  };
-  destination: {
-    port_un_code: string | null;
-    port_name?: string | null;    // For tooltip
-    country_code?: string | null;
-  };
-
-  // Context determines labelling
-  viewContext: 'staff' | 'customer';
-
-  // Optional scheduling data
-  etd?: string | null;           // ISO date string — shown on origin side
-  eta?: string | null;           // ISO date string — shown on destination side
-
-  // Optional
-  incoterm?: string | null;
-  orderType?: string;            // 'SEA_FCL' | 'SEA_LCL' | 'AIR' etc. — for icon
-  size?: 'lg' | 'sm';           // lg = route card header, sm = timeline node
+{
+  vessel_name: string | null,
+  voyage_number: string | null,
+  booking_reference: string | null,
+  carrier_agent: string | null,
 }
 ```
 
-### Labelling Logic
-```typescript
-// Staff (AFC) sees freight operations terminology
-// Customer (AFU) sees plain language
-const originLabel = viewContext === 'staff' ? 'POL' : 'Origin';
-const destLabel   = viewContext === 'staff' ? 'POD' : 'Destination';
-```
-
-### Port Name Tooltip
-- Port name (if provided) shown **only** as a `title` attribute tooltip on hover — no persistent text.
-- If `port_un_code` is null/empty, show `—`.
-- Apply `cursor-help` class when port name tooltip is available.
-
-### ETD / ETA Display
-- Below the port code, show ETD on the origin side and ETA on the destination side.
-- Format using the existing `formatDate()` util from `@/lib/utils`.
-- If no date: show a muted `—` placeholder.
-- Label as `ETD` / `ETA` in small muted text above the formatted date.
-
-### Sizing
-- `lg` (default): `text-2xl font-bold font-mono` for port code — matches current RouteCard style.
-- `sm`: `text-xs font-bold font-mono` — suitable for timeline nodes.
-
-### Visual Layout (lg size)
-```
-[Origin label]          [arrow/icon]          [Destination label]
-[PORT CODE]          ←  Ship/Plane  →          [PORT CODE]
-[ETD: 15 Feb 2026]                             [ETA: 28 Feb 2026]
-[Incoterm pill — full width below]
-```
-
----
-
-## Task 4 — Update `RouteCard` in `page.tsx`
-
-### Current Location
-`RouteCard` function component — approximately line 95–155 in `af-platform/src/app/(platform)/shipments/[id]/page.tsx`.
-
 ### Changes Required
 
-**4a. Add ETD/ETA to RouteCard**
-The detail page already fetches route nodes via `RouteNodeTimeline`. To avoid a second fetch, update the main page load (`loadOrder`) to also call `getRouteNodesAction` and extract:
-- `etd` from the ORIGIN node's `scheduled_etd` (or `actual_etd` if present)
-- `eta` from the DESTINATION node's `scheduled_eta` (or `actual_eta` if present)
+**In `page.tsx`:**
+- Extract `vessel_name` and `voyage_number` from `order.booking` and pass as props to `RouteCard`
 
-Store these in component state. Pass them as props into `RouteCard`.
-
-Update `RouteCard` props interface:
+**Update `RouteCard` props:**
 ```typescript
-interface RouteCardProps {
+function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumber }: {
   order: ShipmentOrder;
-  accountType: string | null;  // For viewContext
+  accountType: string | null;
   etd?: string | null;
   eta?: string | null;
-}
+  vesselName?: string | null;
+  voyageNumber?: string | null;
+})
 ```
 
-**4b. Replace port display with `PortPair` component**
-Replace the current manual origin/destination JSX block inside `RouteCard` with the new `<PortPair>` component:
-```typescript
-<PortPair
-  origin={{
-    port_un_code: order.origin?.port_un_code ?? null,
-    port_name: order.origin?.label ?? null,
-    country_code: order.origin?.country_code ?? null,
-  }}
-  destination={{
-    port_un_code: order.destination?.port_un_code ?? null,
-    port_name: order.destination?.label ?? null,
-    country_code: order.destination?.country_code ?? null,
-  }}
-  viewContext={accountType === 'AFU' ? 'customer' : 'staff'}
-  etd={etd}
-  eta={eta}
-  incoterm={order.incoterm_code}
-  orderType={order.order_type}
-  size="lg"
-/>
-```
-Remove the `incoterm` pill from `RouteCard` — it is now handled inside `PortPair`.
+**Inside `RouteCard`:** Add vessel row below the `<PortPair>` component, above the card bottom edge.
 
 ---
 
-## Task 5 — Update `RouteNodeTimeline.tsx`
+## Task 3 — Vessel + Voyage on TRACKED Task Cards
 
-The timeline circles currently show port code only with no hover state for port name.
+### Problem
+TRACKED task cards (POL/POD) have no vessel information displayed. Since these tasks directly represent vessel departure/arrival events, the vessel name and voyage should be visible on the card.
 
-### Changes Required
-1. The `RouteNode` type (in `shipments-route` action) — confirm whether `port_name` field exists. If not, add it as optional: `port_name?: string | null`.
-2. On each circle node, add `title={node.port_name ?? undefined}` and `cursor-help` class if `port_name` is present.
-3. The `ROLE_LABELS` mapping already maps to POL/T-S/POD. This is correct for staff view. If the timeline is ever shown to customers (AFU), revisit.
-4. ETD/ETA display in the timeline is already correct — no change needed to the timing display logic.
+### Design
+Add a small vessel info row at the bottom of TRACKED task cards (POL and POD only):
+
+```
+[Ship icon]  MTT LUMUT  ·  V.26LM073E
+```
+
+- Small muted text, same style as other supplementary info on task cards
+- Only render if at least one of vessel_name / voyage_number is present
+- Only on tasks where `mode === "TRACKED"` and `task_type` is `"POL"` or `"POD"`
+
+### Data Source Challenge
+`ShipmentTasks.tsx` currently receives `shipmentId`, `orderType`, `accountType`, `userRole` as props — it does NOT receive the full shipment order or booking data. Vessel info needs to be passed in.
+
+**Investigate the prop chain:**
+1. `page.tsx` holds `order.booking` with vessel data
+2. `ShipmentTasks` is rendered in `page.tsx` — add `vesselName` and `voyageNumber` as optional props
+3. Pass them down from `page.tsx` into `ShipmentTasks`
+4. Inside `ShipmentTasks`, pass to individual task card render where `mode === "TRACKED"` and `task_type` is POL or POD
+
+### Files
+- `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — extract vessel from order.booking, pass to ShipmentTasks
+- `af-platform/src/components/shipments/ShipmentTasks.tsx` — accept vesselName/voyageNumber props, render on TRACKED POL/POD cards
 
 ---
 
@@ -215,37 +136,27 @@ The timeline circles currently show port code only with no hover state for port 
 
 | File | Change |
 |---|---|
-| `af-platform/src/components/shared/DateInput.tsx` | Fix two-digit hour/minute input; add 00:00 default on date entry |
-| `af-platform/src/components/shipments/BLUpdateModal.tsx` | ETD → DateTimeInput |
-| `af-platform/src/components/shipments/BLUploadTab.tsx` | ETD → DateTimeInput |
-| `af-platform/src/components/shipments/RouteNodeTimeline.tsx` | ETD/ETA fields → DateTimeInput; add port name tooltip |
-| `af-platform/src/components/shared/PortPair.tsx` | **CREATE** — new shared component |
-| `af-platform/src/app/(platform)/shipments/[id]/page.tsx` | Update `RouteCard`, load ETD/ETA from route nodes |
-| `af-server/routers/shipments.py` | BL-16/17 fix — confirm vessel_name in assembly response |
+| `af-platform/src/components/shipments/ShipmentTasks.tsx` | Task 1 (label changes) + Task 3 (vessel on task cards) |
+| `af-platform/src/app/(platform)/shipments/[id]/page.tsx` | Task 2 (pass vessel to RouteCard) + Task 3 (pass vessel to ShipmentTasks) |
+| `af-platform/src/components/shared/PortPair.tsx` | Task 2 — vessel row added inside RouteCard (may be inside PortPair or RouteCard depending on Opus assessment) |
+
+---
+
+## Do Not Change
+- Field names on task objects (`scheduled_start`, `actual_end` etc.)
+- `ShipmentTasks` fetch logic or task update handlers
+- `PortPair` component props interface (unless Opus determines vessel row belongs inside it)
+- `assembleV1ShipmentOrder` in `v1-assembly.ts` — fixed today, do not touch
+- `booking` field structure on `ShipmentOrder`
 
 ---
 
 ## Tests to Run After
 
-From `AF-Test-List.md`:
-- **DT-10** — DateTimeInput hour/minute fields accept two-digit input (11, 12, 24, 25)
-- **DT-14** — ETD date entry auto-sets time to 00:00
-- **DT-15** — ETA date entry auto-sets time to 00:00
-- **DT-16** — Manually entered time overrides 00:00 default
-- **DT-01 to DT-05** — BLUpdateModal / BLUploadTab ETD as DateTimeInput
-- **DT-12, DT-13** — RouteNodeTimeline ETD/ETA as DateTimeInput, saves correctly
-- **BL-16** — Vessel and voyage saved and displayed after BL update (test on AFCQ-003829)
-- **BL-17** — Transport section visible on shipment detail Overview tab after BL update
-- **New** — Route card shows POL/POD for AFC user, Origin/Destination for AFU user
-- **New** — Port name tooltip appears on hover over port code (if port_name data available)
-- **New** — ETD shown on origin side of route card, ETA on destination side
-- **New** — ETD/ETA in route card matches values in timeline below
-
----
-
-## Do Not Change
-
-- `AFCQ-XXXXXX` key format or generation logic
-- `booking` field on `ShipmentOrder` — V1 compat only, leave as `Record<string, unknown> | null`
-- Existing timing edit functionality in `RouteNodeTimeline`
-- The `DateInput` component
+- TRACKED POL task card shows `ETD` / `ATD` labels instead of `Sched. End` / `Started`
+- TRACKED POD task card shows `ETA` / `ATA` labels instead of `Sched. End` / `Completed`
+- Non-TRACKED tasks retain generic labels unchanged
+- Route card shows vessel name + voyage below port pair (test on AFCQ-003829 — MTT LUMUT · V.26LM073E)
+- Route card vessel row absent on shipment with no BL update (no vessel data)
+- TRACKED POL/POD task cards show vessel name + voyage inline
+- Non-TRACKED and non-POL/POD task cards do not show vessel info

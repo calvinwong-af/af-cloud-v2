@@ -118,26 +118,41 @@ function TimeField({
   value: number; max: number;
   onChange: (v: number) => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const raw = e.target.value.replace(/\D/g, '').slice(0, 2);
-    const n = parseInt(raw, 10);
+    setDraft(raw);
     if (raw === '') return;
+    const n = parseInt(raw, 10);
     if (!isNaN(n) && n >= 0 && n <= max) onChange(n);
   }
 
+  function handleFocus(e: React.FocusEvent<HTMLInputElement>) {
+    setEditing(true);
+    setDraft('');
+    e.target.select();
+  }
+
+  function handleBlur() {
+    setEditing(false);
+  }
+
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'ArrowUp') { e.preventDefault(); onChange(value >= max ? 0 : value + 1); }
-    if (e.key === 'ArrowDown') { e.preventDefault(); onChange(value <= 0 ? max : value - 1); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); onChange(value >= max ? 0 : value + 1); setDraft(''); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); onChange(value <= 0 ? max : value - 1); setDraft(''); }
   }
 
   return (
     <input
       type="text"
       inputMode="numeric"
-      value={pad(value)}
+      value={editing ? draft : pad(value)}
       onChange={handleChange}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
       onKeyDown={handleKeyDown}
-      onFocus={e => e.target.select()}
       className="w-10 text-center text-sm font-mono font-medium border border-[var(--border)] rounded-lg py-1.5 bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)]"
       maxLength={2}
     />
@@ -367,7 +382,14 @@ export function DateTimeInput({
   function handleBlur() {
     if (display === '') { onChange(''); return; }
     const dt = displayToDatetime(display);
-    if (dt) { onChange(dt); setDisplay(datetimeToDisplay(dt)); }
+    if (dt) { onChange(dt); setDisplay(datetimeToDisplay(dt)); return; }
+    // If user entered just a date (DD/MM/YYYY) without time, default to 00:00
+    const dateOnly = displayToISO(display.trim());
+    if (dateOnly) {
+      const withTime = `${dateOnly}T00:00`;
+      onChange(withTime);
+      setDisplay(datetimeToDisplay(withTime));
+    }
   }
 
   function handleCalendarSelect(d: Date) {
@@ -454,10 +476,19 @@ function parseISO(iso: string): Date | null {
 
 function parseDatetime(dt: string): Date | null {
   if (!dt) return null;
+  // Try full datetime first
   const m = dt.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
-  if (!m) return null;
-  const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
-  return isNaN(d.getTime()) ? null : d;
+  if (m) {
+    const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  // Fall back to date-only (treat as 00:00)
+  const dm = dt.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dm) {
+    const d = new Date(+dm[1], +dm[2] - 1, +dm[3], 0, 0);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
 }
 
 /** YYYY-MM-DD → DD/MM/YYYY */
@@ -486,12 +517,15 @@ function autoSlash(raw: string): string {
   return digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4, 8);
 }
 
-/** YYYY-MM-DDTHH:mm → DD/MM/YYYY HH:mm */
+/** YYYY-MM-DDTHH:mm → DD/MM/YYYY HH:mm (also handles date-only → 00:00) */
 function datetimeToDisplay(dt: string): string {
   if (!dt) return '';
   const m = dt.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
-  if (!m) return '';
-  return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`;
+  if (m) return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`;
+  // Date-only fallback
+  const dm = dt.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dm) return `${dm[3]}/${dm[2]}/${dm[1]} 00:00`;
+  return '';
 }
 
 /** DD/MM/YYYY HH:mm → YYYY-MM-DDTHH:mm (returns '' if invalid) */

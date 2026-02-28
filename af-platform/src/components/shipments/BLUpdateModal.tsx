@@ -5,7 +5,7 @@ import {
   Upload, CheckCircle, AlertTriangle, X, Loader2, Ship, Plus,
 } from 'lucide-react';
 import { parseBLAction, updateShipmentFromBLAction } from '@/app/actions/shipments-write';
-import { DateInput } from '@/components/shared/DateInput';
+import { DateTimeInput } from '@/components/shared/DateInput';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -326,7 +326,7 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
             {/* ETD */}
             <div>
               <FieldLabel>ETD (On Board Date)</FieldLabel>
-              <DateInput value={etd} onChange={setEtd} className={`${inputBase} w-48 ${etd ? prefilled : ''}`} />
+              <DateTimeInput value={etd} onChange={setEtd} className={`${inputBase} w-56 ${etd ? prefilled : ''}`} />
             </div>
 
             {/* Shipper */}

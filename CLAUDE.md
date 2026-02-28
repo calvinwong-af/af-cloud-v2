@@ -24,6 +24,25 @@ It contains rules and patterns derived from real bugs encountered in this projec
 
 ---
 
+## Claude File Locations
+
+All AI-assisted project management files live under `claude/` in the repo root.
+Do not write these files to the repo root.
+
+| File | Path |
+|---|---|
+| Active Opus prompt | `claude/prompts/PROMPT-CURRENT.md` |
+| Test list | `claude/tests/AF-Test-List.md` |
+| Handover notes | `claude/handover/AF-Handover-Notes-v2_XX.md` |
+
+### Rules
+- Handover notes are written by Claude AI (Sonnet) via MCP at session end, only when prompted
+- `PROMPT-CURRENT.md` is overwritten each time a new prompt is prepared; cleared to `_No active prompt._` after Opus executes it
+- `AF-Test-List.md` is updated alongside each handover note
+- Opus reads `PROMPT-CURRENT.md` from `claude/prompts/` — not the repo root
+
+---
+
 ## Project Overview
 
 Monorepo: `af-cloud-v2/`

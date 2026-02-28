@@ -937,7 +937,15 @@ async def get_shipment(
             if quotation_id:
                 q_entity = client.get(client.key("Quotation", quotation_id))
                 if q_entity:
-                    data["quotation"] = entity_to_dict(q_entity)
+                    q_data = entity_to_dict(q_entity)
+                    data["quotation"] = q_data
+                    # Merge key display fields from Quotation into top-level
+                    # so platform reads them without needing to check data.quotation
+                    for field in ("vessel_name", "voyage_number", "booking", "parties", "etd"):
+                        # Use falsy check (not just None) — V1 SO fields may be empty string ""
+                        if not data.get(field):
+                            if q_data.get(field):
+                                data[field] = q_data[field]
             if claims.is_afc() and data.get("company_id") != claims.company_id:
                 raise NotFoundError(f"Shipment {shipment_id} not found")
             return {"status": "OK", "data": data, "msg": "V1 Shipment fetched"}
@@ -2517,14 +2525,24 @@ async def update_from_bl(
         logger.error("[bl_update] Failed to write Quotation %s: %s", shipment_id, str(e))
         raise HTTPException(status_code=500, detail=f"Failed to save shipment: {str(e)}")
 
-    # For V1, also write flat fields to ShipmentOrder
-    if is_v1 and so_entity and waybill_number:
-        so_entity["booking_reference"] = waybill_number
-        so_entity["updated"] = now
-        try:
-            client.put(so_entity)
-        except Exception as e:
-            logger.error("[bl_update] Failed to write ShipmentOrder %s: %s", shipment_id, str(e))
+    # For V1, also write flat fields to ShipmentOrder so detail endpoint returns them
+    if is_v1 and so_entity:
+        so_changed = False
+        if waybill_number:
+            so_entity["booking_reference"] = waybill_number
+            so_changed = True
+        if vessel_name is not None:
+            so_entity["vessel_name"] = vessel_name
+            so_changed = True
+        if voyage_number is not None:
+            so_entity["voyage_number"] = voyage_number
+            so_changed = True
+        if so_changed:
+            so_entity["updated"] = now
+            try:
+                client.put(so_entity)
+            except Exception as e:
+                logger.error("[bl_update] Failed to write ShipmentOrder %s: %s", shipment_id, str(e))
 
     # Log to AFSystemLogs
     _log_system_action(client, "BL_UPDATED", shipment_id, claims.uid, claims.email)

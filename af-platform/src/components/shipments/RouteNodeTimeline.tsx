@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   MapPin, Plus, Trash2, X, Loader2, AlertTriangle, Anchor,
 } from 'lucide-react';
-import { DateInput } from '@/components/shared/DateInput';
+import { DateTimeInput } from '@/components/shared/DateInput';
 import {
   getRouteNodesAction,
   saveRouteNodesAction,
@@ -99,11 +99,11 @@ function TimingEditPanel({
           <>
             <div>
               <label className="text-[10px] text-[var(--text-muted)] block mb-0.5">ETD (Scheduled)</label>
-              <DateInput value={scheduledEtd} onChange={setScheduledEtd} className={inputCls} />
+              <DateTimeInput value={scheduledEtd} onChange={setScheduledEtd} className={inputCls} />
             </div>
             <div>
               <label className="text-[10px] text-[var(--text-muted)] block mb-0.5">ATD (Actual)</label>
-              <DateInput value={actualEtd} onChange={setActualEtd} className={inputCls} />
+              <DateTimeInput value={actualEtd} onChange={setActualEtd} className={inputCls} />
             </div>
           </>
         )}
@@ -111,11 +111,11 @@ function TimingEditPanel({
           <>
             <div>
               <label className="text-[10px] text-[var(--text-muted)] block mb-0.5">ETA (Scheduled)</label>
-              <DateInput value={scheduledEta} onChange={setScheduledEta} className={inputCls} />
+              <DateTimeInput value={scheduledEta} onChange={setScheduledEta} className={inputCls} />
             </div>
             <div>
               <label className="text-[10px] text-[var(--text-muted)] block mb-0.5">ATA (Actual)</label>
-              <DateInput value={actualEta} onChange={setActualEta} className={inputCls} />
+              <DateTimeInput value={actualEta} onChange={setActualEta} className={inputCls} />
             </div>
           </>
         )}

@@ -445,7 +445,14 @@ export function assembleV1ShipmentOrder(params: {
 
     cargo,
     type_details: typeDetails,
-    booking: (oldShipmentOrder?.booking ?? q.booking) as Record<string, unknown> | null ?? null,
+    // Prefer q.booking if so.booking exists but has no vessel data (null fields from legacy system)
+    booking: (() => {
+      const soBooking = oldShipmentOrder?.booking as Record<string, unknown> | null ?? null;
+      const qBooking = q.booking as Record<string, unknown> | null ?? null;
+      if (!soBooking) return qBooking;
+      const soHasData = soBooking.vessel_name || soBooking.voyage_number || soBooking.bl_number || soBooking.booking_reference;
+      return soHasData ? soBooking : (qBooking ?? soBooking);
+    })() as Record<string, unknown> | null,
 
     parties,
     customs_clearance: customsClearance,
