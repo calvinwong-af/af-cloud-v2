@@ -3,11 +3,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   CheckCircle2, Circle, Lock, Loader2, Eye, EyeOff,
-  Pencil, X, Clock, AlertTriangle, Undo2,
+  Pencil, X, Clock, AlertTriangle, Undo2, Ship,
 } from 'lucide-react';
 import { fetchShipmentTasksAction, updateShipmentTaskAction } from '@/app/actions/shipments-write';
 import type { WorkflowTask } from '@/app/actions/shipments-write';
-import { DateInput, DateTimeInput } from '@/components/shared/DateInput';
+import { DateTimeInput } from '@/components/shared/DateInput';
 
 // ---------------------------------------------------------------------------
 // Timestamp helpers
@@ -45,6 +45,8 @@ interface ShipmentTasksProps {
   orderType?: string;
   accountType: string | null;
   userRole: string | null;
+  vesselName?: string | null;
+  voyageNumber?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,6 +122,23 @@ const ASSIGNED_LABELS: Record<string, string> = {
 // Permission helpers
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Freight-specific timing labels for TRACKED tasks
+// ---------------------------------------------------------------------------
+
+function getTimingLabels(task: WorkflowTask): {
+  scheduledStartLabel: string;
+  scheduledEndLabel: string;
+  startedLabel: string;
+  completedLabel: string;
+} {
+  if (task.mode === 'TRACKED') {
+    // Standardised across all TRACKED port tasks (POL, POD, transhipments)
+    return { scheduledStartLabel: 'ETA', scheduledEndLabel: 'ETD', startedLabel: 'ATA', completedLabel: 'ATD' };
+  }
+  return { scheduledStartLabel: 'Sched. Start', scheduledEndLabel: 'Sched. End', startedLabel: 'Started', completedLabel: 'Completed' };
+}
+
 function canEdit(accountType: string | null, userRole: string | null): boolean {
   if (accountType === 'AFU') return true;
   if (accountType === 'AFC' && (userRole === 'AFC-ADMIN' || userRole === 'AFC-M')) return true;
@@ -150,6 +169,8 @@ function TaskCard({
   onEdit,
   onToggleVisibility,
   saving,
+  vesselName,
+  voyageNumber,
 }: {
   task: WorkflowTask;
   orderType?: string;
@@ -160,6 +181,8 @@ function TaskCard({
   onEdit: (task: WorkflowTask) => void;
   onToggleVisibility: (taskId: string, visible: boolean) => void;
   saving: string | null;
+  vesselName?: string | null;
+  voyageNumber?: string | null;
 }) {
   const style = STATUS_STYLES[task.status] ?? STATUS_STYLES.PENDING;
   const modeStyle = MODE_STYLES[task.mode] ?? MODE_STYLES.ASSIGNED;
@@ -170,6 +193,7 @@ function TaskCard({
   const showComplete = editable && !isIgnored && (task.status === 'PENDING' || task.status === 'IN_PROGRESS');
   const showUndo = editable && task.status === 'COMPLETED';
   const label = getTaskLabel(task, orderType);
+  const timingLabels = getTimingLabels(task);
 
   return (
     <div
@@ -242,7 +266,8 @@ function TaskCard({
       {/* Details row — not shown when IGNORED */}
       {!isIgnored && (
         <>
-          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1.5 text-xs">
+          <div className="mt-3 text-xs space-y-2">
+            {/* Assigned to */}
             <div>
               <span className="text-[var(--text-muted)]">Assigned to</span>
               <div className="text-[var(--text-mid)] font-medium">
@@ -251,22 +276,42 @@ function TaskCard({
                   : ASSIGNED_LABELS[task.assigned_to] ?? task.assigned_to}
               </div>
             </div>
-            <div>
-              <span className="text-[var(--text-muted)]">Sched. End</span>
-              <div className="text-[var(--text-mid)] font-medium">
-                {task.scheduled_end ? formatDateTime(task.scheduled_end) : task.due_date ? formatDateTime(task.due_date) : '—'}
+            {/* Estimated row */}
+            <div className="grid grid-cols-2 gap-x-4">
+              <div>
+                <span className="text-[var(--text-muted)]">{timingLabels.scheduledStartLabel}</span>
+                <div className="text-[var(--text-mid)] font-medium">
+                  {task.scheduled_start ? formatDateTime(task.scheduled_start) : '—'}
+                </div>
               </div>
+              {/* ETD only shown on POL and non-TRACKED tasks — not on POD */}
+              {!(task.mode === 'TRACKED' && task.task_type === 'POD') && (
+                <div>
+                  <span className="text-[var(--text-muted)]">{timingLabels.scheduledEndLabel}</span>
+                  <div className="text-[var(--text-mid)] font-medium">
+                    {task.scheduled_end ? formatDateTime(task.scheduled_end) : task.due_date ? formatDateTime(task.due_date) : '—'}
+                  </div>
+                </div>
+              )}
             </div>
-            {task.actual_start && task.status !== 'PENDING' && (
-              <div>
-                <span className="text-[var(--text-muted)]">Started</span>
-                <div className="text-blue-600 font-medium">{formatDateTime(task.actual_start)}</div>
-              </div>
-            )}
-            {task.actual_end && task.status === 'COMPLETED' && (
-              <div>
-                <span className="text-[var(--text-muted)]">Completed</span>
-                <div className="text-emerald-600 font-medium">{formatDateTime(task.actual_end)}</div>
+            {/* Actual row — only shown if task has started */}
+            {task.status !== 'PENDING' && (
+              <div className="grid grid-cols-2 gap-x-4">
+                <div>
+                  <span className="text-[var(--text-muted)]">{timingLabels.startedLabel}</span>
+                  <div className="text-blue-600 font-medium">
+                    {task.actual_start ? formatDateTime(task.actual_start) : '—'}
+                  </div>
+                </div>
+                {/* ATD hidden for TRACKED POD — ATA is the meaningful completion event */}
+                {task.status === 'COMPLETED' && !(task.mode === 'TRACKED' && task.task_type === 'POD') && (
+                  <div>
+                    <span className="text-[var(--text-muted)]">{timingLabels.completedLabel}</span>
+                    <div className="text-emerald-600 font-medium">
+                      {task.actual_end ? formatDateTime(task.actual_end) : '—'}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -284,6 +329,16 @@ function TaskCard({
       {task.notes && !isIgnored && (
         <div className="mt-2 text-xs text-[var(--text-mid)] bg-[var(--surface)] rounded-lg px-3 py-2 border border-[var(--border)]">
           {task.notes}
+        </div>
+      )}
+
+      {/* Vessel info — TRACKED POL only */}
+      {!isIgnored && task.mode === 'TRACKED' && task.task_type === 'POL' && (vesselName || voyageNumber) && (
+        <div className="mt-2 flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
+          <Ship className="w-3 h-3" />
+          {vesselName && <span className="font-medium">{vesselName}</span>}
+          {vesselName && voyageNumber && <span>·</span>}
+          {voyageNumber && <span className="font-mono">{voyageNumber}</span>}
         </div>
       )}
 
@@ -400,7 +455,7 @@ function EditTaskModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-xl shadow-lg w-full max-w-md mx-4 max-h-[85vh] overflow-y-auto">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-md mx-4 max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
           <h3 className="text-sm font-semibold text-[var(--text)]">
             Edit {getTaskLabel(task)}
@@ -410,7 +465,7 @@ function EditTaskModal({
           </button>
         </div>
 
-        <div className="p-4 space-y-4">
+        <div className="overflow-y-auto flex-1 p-4 space-y-4">
           {/* Mode selector */}
           {showModeSelector && (
             <div>
@@ -485,12 +540,15 @@ function EditTaskModal({
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <span className="text-[10px] text-[var(--text-muted)]">Start</span>
-                <DateInput value={scheduledStart} onChange={setScheduledStart} className={inputCls} />
+                <DateTimeInput value={scheduledStart} onChange={setScheduledStart} className={inputCls} />
               </div>
-              <div>
-                <span className="text-[10px] text-[var(--text-muted)]">End / Due</span>
-                <DateInput value={scheduledEnd} onChange={setScheduledEnd} className={inputCls} />
-              </div>
+              {/* ETD hidden for TRACKED POD — not relevant */}
+              {!(task.mode === 'TRACKED' && task.task_type === 'POD') && (
+                <div>
+                  <span className="text-[10px] text-[var(--text-muted)]">End / Due</span>
+                  <DateTimeInput value={scheduledEnd} onChange={setScheduledEnd} className={inputCls} />
+                </div>
+              )}
             </div>
           </div>
 
@@ -502,10 +560,13 @@ function EditTaskModal({
                 <span className="text-[10px] text-[var(--text-muted)]">Start</span>
                 <DateTimeInput value={actualStart} onChange={setActualStart} className={inputCls} />
               </div>
-              <div>
-                <span className="text-[10px] text-[var(--text-muted)]">End</span>
-                <DateTimeInput value={actualEnd} onChange={setActualEnd} className={inputCls} />
-              </div>
+              {/* ATD hidden for TRACKED POD — ATA is the completion event */}
+              {!(task.mode === 'TRACKED' && task.task_type === 'POD') && (
+                <div>
+                  <span className="text-[10px] text-[var(--text-muted)]">End</span>
+                  <DateTimeInput value={actualEnd} onChange={setActualEnd} className={inputCls} />
+                </div>
+              )}
             </div>
           </div>
 
@@ -522,7 +583,7 @@ function EditTaskModal({
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 p-4 border-t border-[var(--border)]">
+        <div className="flex items-center justify-end gap-2 p-4 border-t border-[var(--border)] flex-shrink-0">
           <button
             onClick={onClose}
             className="px-4 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
@@ -547,7 +608,7 @@ function EditTaskModal({
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function ShipmentTasks({ shipmentId, orderType, accountType, userRole }: ShipmentTasksProps) {
+export default function ShipmentTasks({ shipmentId, orderType, accountType, userRole, vesselName, voyageNumber }: ShipmentTasksProps) {
   const [tasks, setTasks] = useState<WorkflowTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -591,11 +652,17 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, user
 
   async function handleMarkComplete(taskId: string) {
     setSaving(taskId);
-    // Optimistic update
+    const now = new Date().toISOString();
+    const matchedTask = tasks.find((t) => t.task_id === taskId);
+    const isTrackedPOD = matchedTask?.mode === 'TRACKED' && matchedTask?.task_type === 'POD';
+
+    // Optimistic update — TRACKED POD: ATA (actual_start) is the completion event
     setTasks((prev) =>
       prev.map((t) =>
         t.task_id === taskId
-          ? { ...t, status: 'COMPLETED', completed_at: new Date().toISOString(), actual_end: new Date().toISOString() }
+          ? isTrackedPOD
+            ? { ...t, status: 'COMPLETED', completed_at: now, actual_start: now }
+            : { ...t, status: 'COMPLETED', completed_at: now, actual_end: now }
           : t
       )
     );
@@ -758,6 +825,8 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, user
           onEdit={setEditingTask}
           onToggleVisibility={handleToggleVisibility}
           saving={saving}
+          vesselName={vesselName}
+          voyageNumber={voyageNumber}
         />
       ))}
 

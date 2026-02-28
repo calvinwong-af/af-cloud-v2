@@ -22,6 +22,8 @@ interface PortPairProps {
   incoterm?: string | null;
   orderType?: string;
   size?: 'lg' | 'sm';
+  vesselName?: string | null;
+  voyageNumber?: string | null;
 }
 
 export default function PortPair({
@@ -33,6 +35,8 @@ export default function PortPair({
   incoterm,
   orderType,
   size = 'lg',
+  vesselName,
+  voyageNumber,
 }: PortPairProps) {
   const originLabel = viewContext === 'staff' ? 'POL' : 'Origin';
   const destLabel = viewContext === 'staff' ? 'POD' : 'Destination';
@@ -123,6 +127,16 @@ export default function PortPair({
           )}
         </div>
       </div>
+
+      {/* Vessel row — between port pair and incoterm */}
+      {isLg && (vesselName || voyageNumber) && (
+        <div className="mt-2 flex items-center justify-center gap-1.5 text-xs text-[var(--text-muted)]">
+          <Ship className="w-3.5 h-3.5" />
+          {vesselName && <span className="font-medium">{vesselName}</span>}
+          {vesselName && voyageNumber && <span>·</span>}
+          {voyageNumber && <span className="font-mono">{voyageNumber}</span>}
+        </div>
+      )}
 
       {/* Incoterm pill */}
       {incoterm && (

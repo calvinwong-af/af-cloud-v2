@@ -457,6 +457,7 @@ export function assembleV1ShipmentOrder(params: {
     parties,
     customs_clearance: customsClearance,
 
+    bl_document: (q.bl_document as { shipper?: { name: string | null; address: string | null } | null; consignee?: { name: string | null; address: string | null } | null } | null) ?? null,
     exception: null,
 
     tracking_id: oldShipmentOrder?.tracking_id as string | null ?? null,

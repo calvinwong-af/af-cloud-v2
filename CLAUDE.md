@@ -34,12 +34,29 @@ Do not write these files to the repo root.
 | Active Opus prompt | `claude/prompts/PROMPT-CURRENT.md` |
 | Test list | `claude/tests/AF-Test-List.md` |
 | Handover notes | `claude/handover/AF-Handover-Notes-v2_XX.md` |
+| Prompt completion log | `claude/PROMPT-LOG.md` |
 
 ### Rules
 - Handover notes are written by Claude AI (Sonnet) via MCP at session end, only when prompted
 - `PROMPT-CURRENT.md` is overwritten each time a new prompt is prepared; cleared to `_No active prompt._` after Opus executes it
 - `AF-Test-List.md` is updated alongside each handover note
 - Opus reads `PROMPT-CURRENT.md` from `claude/prompts/` — not the repo root
+
+### Prompt Completion Log (`claude/PROMPT-LOG.md`)
+**Rule:** After completing any prompt (from `PROMPT-CURRENT.md` or user-issued tasks), Claude MUST append an entry to `claude/PROMPT-LOG.md` with the following format:
+
+```markdown
+### [YYYY-MM-DD HH:MM UTC] — Prompt Title
+- **Status:** Completed | Partial | Failed
+- **Tasks:** Brief list of what was done
+- **Files Modified:** List of changed files
+- **Notes:** Any issues, blockers, or follow-ups (optional)
+```
+
+- Append to the file — never overwrite previous entries
+- Use UTC timestamps
+- Log every prompt execution, including partial completions and failures
+- If a prompt has multiple tasks, report status per task
 
 ---
 

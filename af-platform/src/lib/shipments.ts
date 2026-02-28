@@ -59,6 +59,7 @@ function readV2ShipmentOrder(raw: Record<string, any>): ShipmentOrder {
     parties:                  raw.parties ?? null,
     customs_clearance:        raw.customs_clearance ?? [],
 
+    bl_document:              raw.bl_document ?? null,
     exception:                raw.exception ?? null,
 
     tracking_id:              raw.tracking_id ?? null,

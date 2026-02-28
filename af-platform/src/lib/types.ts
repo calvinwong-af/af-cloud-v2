@@ -280,6 +280,12 @@ export interface ShipmentOrder {
   // Customs
   customs_clearance: CustomsClearanceEvent[];
 
+  // BL document — raw parsed values from BL upload (audit record)
+  bl_document: {
+    shipper?: { name: string | null; address: string | null } | null;
+    consignee?: { name: string | null; address: string | null } | null;
+  } | null;
+
   // Exception flag (v2.18)
   exception: ShipmentException | null;
 

@@ -17,6 +17,7 @@ import type { ShipmentOrder, ShipmentOrderStatus } from '@/lib/types';
 import ShipmentTasks from '@/components/shipments/ShipmentTasks';
 import ShipmentFilesTab from '@/components/shipments/ShipmentFilesTab';
 import BLUpdateModal from '@/components/shipments/BLUpdateModal';
+import BLPartyDiffModal from '@/components/shipments/BLPartyDiffModal';
 import RouteNodeTimeline from '@/components/shipments/RouteNodeTimeline';
 import PortPair from '@/components/shared/PortPair';
 import { getRouteNodesAction } from '@/app/actions/shipments-route';
@@ -75,11 +76,13 @@ function EmptyState({ message }: { message: string }) {
 
 // ─── Route card ───────────────────────────────────────────────────────────────
 
-function RouteCard({ order, accountType, etd, eta }: {
+function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumber }: {
   order: ShipmentOrder;
   accountType: string | null;
   etd?: string | null;
   eta?: string | null;
+  vesselName?: string | null;
+  voyageNumber?: string | null;
 }) {
   return (
     <div className="bg-white border border-[var(--border)] rounded-xl p-5">
@@ -106,6 +109,8 @@ function RouteCard({ order, accountType, etd, eta }: {
         incoterm={order.incoterm_code}
         orderType={order.order_type}
         size="lg"
+        vesselName={vesselName}
+        voyageNumber={voyageNumber}
       />
     </div>
   );
@@ -204,9 +209,29 @@ function TypeDetailsCard({ order }: { order: ShipmentOrder }) {
 
 // ─── Parties card ─────────────────────────────────────────────────────────────
 
-function PartiesCard({ order }: { order: ShipmentOrder }) {
+function hasPartyDiff(
+  blParty: { name: string | null; address: string | null } | null | undefined,
+  orderParty: { name: string; address: string | null } | null | undefined,
+): boolean {
+  if (!blParty || !orderParty) return false;
+  return (blParty.name ?? '') !== (orderParty.name ?? '') || (blParty.address ?? '') !== (orderParty.address ?? '');
+}
+
+function truncate(s: string | null | undefined, max: number): string {
+  if (!s) return '';
+  return s.length > max ? s.slice(0, max) + '...' : s;
+}
+
+function PartiesCard({ order, onOpenDiff }: {
+  order: ShipmentOrder;
+  onOpenDiff?: (party: 'shipper' | 'consignee') => void;
+}) {
   const parties = order.parties;
+  const bl = order.bl_document;
   const hasParties = parties && (parties.shipper || parties.consignee || parties.notify_party);
+
+  const shipperDiff = hasPartyDiff(bl?.shipper, parties?.shipper);
+  const consigneeDiff = hasPartyDiff(bl?.consignee, parties?.consignee);
 
   return (
     <SectionCard title="Parties" icon={<Users className="w-4 h-4" />}>
@@ -216,16 +241,38 @@ function PartiesCard({ order }: { order: ShipmentOrder }) {
           <div className="space-y-4">
             {parties.shipper && (
               <div>
-                <div className="text-xs font-semibold text-[var(--text-muted)] uppercase mb-1">Shipper</div>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <div className="text-xs font-semibold text-[var(--text-muted)] uppercase">Shipper</div>
+                  {shipperDiff && (
+                    <button
+                      onClick={() => onOpenDiff?.('shipper')}
+                      className="text-amber-500 hover:text-amber-600 transition-colors"
+                      title={`BL shows: ${truncate(bl?.shipper?.name, 40)}`}
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
                 <div className="text-sm text-[var(--text)]">{parties.shipper.name}</div>
-                {parties.shipper.address && <div className="text-xs text-[var(--text-muted)]">{parties.shipper.address}</div>}
+                {parties.shipper.address && <div className="text-xs text-[var(--text-muted)] whitespace-pre-wrap">{parties.shipper.address}</div>}
               </div>
             )}
             {parties.consignee && (
               <div>
-                <div className="text-xs font-semibold text-[var(--text-muted)] uppercase mb-1">Consignee</div>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <div className="text-xs font-semibold text-[var(--text-muted)] uppercase">Consignee</div>
+                  {consigneeDiff && (
+                    <button
+                      onClick={() => onOpenDiff?.('consignee')}
+                      className="text-amber-500 hover:text-amber-600 transition-colors"
+                      title={`BL shows: ${truncate(bl?.consignee?.name, 40)}`}
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
                 <div className="text-sm text-[var(--text)]">{parties.consignee.name}</div>
-                {parties.consignee.address && <div className="text-xs text-[var(--text-muted)]">{parties.consignee.address}</div>}
+                {parties.consignee.address && <div className="text-xs text-[var(--text-muted)] whitespace-pre-wrap">{parties.consignee.address}</div>}
               </div>
             )}
             {parties.notify_party && (
@@ -997,6 +1044,7 @@ export default function ShipmentOrderDetailPage() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [showCompanyModal, setShowCompanyModal] = useState(false);
   const [showBLModal, setShowBLModal] = useState(false);
+  const [diffParty, setDiffParty] = useState<'shipper' | 'consignee' | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'files'>('overview');
   const [routeEtd, setRouteEtd] = useState<string | null>(null);
   const [routeEta, setRouteEta] = useState<string | null>(null);
@@ -1132,7 +1180,14 @@ export default function ShipmentOrderDetailPage() {
       </div>
 
       {/* Route */}
-      <RouteCard order={order} accountType={accountType} etd={routeEtd} eta={routeEta} />
+      <RouteCard
+        order={order}
+        accountType={accountType}
+        etd={routeEtd}
+        eta={routeEta}
+        vesselName={(order as unknown as Record<string, unknown>).vessel_name as string || ((order.booking ?? {}) as Record<string, unknown>).vessel_name as string || null}
+        voyageNumber={(order as unknown as Record<string, unknown>).voyage_number as string || ((order.booking ?? {}) as Record<string, unknown>).voyage_number as string || null}
+      />
 
       {/* BL Upload button — AFU, status >= 3001, sea shipments */}
       {accountType === 'AFU' && order.status >= 3001 && ['SEA_FCL', 'SEA_LCL'].includes(order.order_type) && (
@@ -1199,6 +1254,8 @@ export default function ShipmentOrderDetailPage() {
             orderType={order.order_type}
             accountType={accountType}
             userRole={userRole}
+            vesselName={(order as unknown as Record<string, unknown>).vessel_name as string || ((order.booking ?? {}) as Record<string, unknown>).vessel_name as string || null}
+            voyageNumber={(order as unknown as Record<string, unknown>).voyage_number as string || ((order.booking ?? {}) as Record<string, unknown>).voyage_number as string || null}
           />
         </div>
       ) : activeTab === 'files' ? (
@@ -1269,7 +1326,7 @@ export default function ShipmentOrderDetailPage() {
         <TypeDetailsCard order={order} />
 
         {/* Parties */}
-        <PartiesCard order={order} />
+        <PartiesCard order={order} onOpenDiff={setDiffParty} />
 
         {/* Customs — only if there are events */}
         {order.customs_clearance.length > 0 && (
@@ -1327,6 +1384,21 @@ export default function ShipmentOrderDetailPage() {
           onClose={() => setShowBLModal(false)}
           onSuccess={() => {
             setShowBLModal(false);
+            loadOrder();
+          }}
+        />
+      )}
+
+      {/* BL Party Diff modal */}
+      {diffParty && order.bl_document && (
+        <BLPartyDiffModal
+          party={diffParty}
+          blValues={diffParty === 'shipper' ? order.bl_document.shipper ?? null : order.bl_document.consignee ?? null}
+          orderValues={diffParty === 'shipper' ? order.parties?.shipper ?? null : order.parties?.consignee ?? null}
+          shipmentId={order.quotation_id}
+          onClose={() => setDiffParty(null)}
+          onUpdated={() => {
+            setDiffParty(null);
             loadOrder();
           }}
         />

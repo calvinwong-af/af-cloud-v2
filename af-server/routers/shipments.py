@@ -2029,10 +2029,16 @@ async def update_shipment_task(
             if body.actual_start is None and not task.get("actual_start"):
                 task["actual_start"] = now
 
-        # Auto-set actual_end + completed_at when moving to COMPLETED
+        # Auto-set completion timestamp when moving to COMPLETED
         if body.status == COMPLETED:
-            if body.actual_end is None and not task.get("actual_end"):
-                task["actual_end"] = now
+            # TRACKED POD: ATA (actual_start) is the meaningful completion event
+            # — the vessel arrives and discharges; ATD is irrelevant for POD
+            if task.get("mode") == TRACKED and task.get("task_type") == "POD":
+                if body.actual_start is None and not task.get("actual_start"):
+                    task["actual_start"] = now
+            else:
+                if body.actual_end is None and not task.get("actual_end"):
+                    task["actual_end"] = now
             task["completed_at"] = now
 
     if body.assigned_to is not None:
@@ -2406,6 +2412,13 @@ async def update_from_bl(
     etd: Optional[str] = Form(None),
     shipper_name: Optional[str] = Form(None),
     shipper_address: Optional[str] = Form(None),
+    consignee_name: Optional[str] = Form(None),
+    consignee_address: Optional[str] = Form(None),
+    bl_shipper_name: Optional[str] = Form(None),
+    bl_shipper_address: Optional[str] = Form(None),
+    bl_consignee_name: Optional[str] = Form(None),
+    bl_consignee_address: Optional[str] = Form(None),
+    force_update: Optional[str] = Form(None),
     containers: Optional[str] = Form(None),
     cargo_items: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
@@ -2464,20 +2477,51 @@ async def update_from_bl(
     if etd is not None:
         q_entity["etd"] = etd
 
-    # Merge parties.shipper (don't replace whole parties dict)
+    # Merge parties — shipper + consignee (don't replace whole parties dict)
+    # Only write to parties if currently empty — unless force_update is set
+    is_force = force_update == "true"
     parties = q_entity.get("parties") or {}
     if not isinstance(parties, dict):
         parties = {}
+
     if shipper_name is not None or shipper_address is not None:
         shipper = parties.get("shipper") or {}
         if not isinstance(shipper, dict):
             shipper = {}
-        if shipper_name is not None:
+        if (is_force or not shipper.get("name")) and shipper_name is not None:
             shipper["name"] = shipper_name
-        if shipper_address is not None:
+        if (is_force or not shipper.get("address")) and shipper_address is not None:
             shipper["address"] = shipper_address
         parties["shipper"] = shipper
+
+    if consignee_name is not None or consignee_address is not None:
+        consignee = parties.get("consignee") or {}
+        if not isinstance(consignee, dict):
+            consignee = {}
+        if (is_force or not consignee.get("name")) and consignee_name is not None:
+            consignee["name"] = consignee_name
+        if (is_force or not consignee.get("address")) and consignee_address is not None:
+            consignee["address"] = consignee_address
+        parties["consignee"] = consignee
+
     q_entity["parties"] = parties
+
+    # Write raw parsed BL values to bl_document (always overwrite — audit record)
+    bl_doc = q_entity.get("bl_document") or {}
+    if not isinstance(bl_doc, dict):
+        bl_doc = {}
+    if bl_shipper_name is not None or bl_shipper_address is not None:
+        bl_doc["shipper"] = {
+            "name": bl_shipper_name,
+            "address": bl_shipper_address,
+        }
+    if bl_consignee_name is not None or bl_consignee_address is not None:
+        bl_doc["consignee"] = {
+            "name": bl_consignee_name,
+            "address": bl_consignee_address,
+        }
+    if bl_doc:
+        q_entity["bl_document"] = bl_doc
 
     # Containers — replace array if provided and non-empty
     if containers is not None:
@@ -2510,7 +2554,7 @@ async def update_from_bl(
     # Safe exclude_from_indexes — V1 entities may not support reassignment
     try:
         existing = set(q_entity.exclude_from_indexes or set())
-        q_entity.exclude_from_indexes = existing | {"booking", "parties", "type_details"}
+        q_entity.exclude_from_indexes = existing | {"booking", "parties", "type_details", "bl_document"}
     except (TypeError, AttributeError):
         pass  # V1 entities may not support this — skip silently
 
@@ -2580,6 +2624,7 @@ async def update_from_bl(
             "shipment_id": shipment_id,
             "booking": dict(q_entity.get("booking") or {}),
             "parties": dict(q_entity.get("parties") or {}),
+            "bl_document": dict(q_entity.get("bl_document") or {}),
             "etd": q_entity.get("etd"),
         },
         "msg": "Shipment updated from BL",

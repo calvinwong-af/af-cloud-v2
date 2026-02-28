@@ -120,6 +120,8 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
   const [etd, setEtd] = useState('');
   const [shipperName, setShipperName] = useState('');
   const [shipperAddress, setShipperAddress] = useState('');
+  const [consigneeName, setConsigneeName] = useState('');
+  const [consigneeAddress, setConsigneeAddress] = useState('');
   const [containers, setContainers] = useState<BLContainer[]>([]);
   const [cargoItems, setCargoItems] = useState<BLCargoItem[]>([]);
 
@@ -156,6 +158,8 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
       setEtd(normaliseDateToISO(p.on_board_date));
       setShipperName(p.shipper_name ?? '');
       setShipperAddress(p.shipper_address ?? '');
+      setConsigneeName(p.consignee_name ?? '');
+      setConsigneeAddress(p.consignee_address ?? '');
       setContainers(p.containers ?? []);
       setCargoItems(p.cargo_items ?? []);
 
@@ -178,8 +182,15 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
       if (vesselName)      formData.append('vessel_name',     vesselName);
       if (voyageNumber)    formData.append('voyage_number',   voyageNumber);
       if (etd)             formData.append('etd',             etd);
-      if (shipperName)     formData.append('shipper_name',    shipperName);
-      if (shipperAddress)  formData.append('shipper_address', shipperAddress);
+      if (shipperName)       formData.append('shipper_name',      shipperName);
+      if (shipperAddress)    formData.append('shipper_address',   shipperAddress);
+      if (consigneeName)     formData.append('consignee_name',    consigneeName);
+      if (consigneeAddress)  formData.append('consignee_address', consigneeAddress);
+      // Raw parsed BL values (for bl_document storage — never edited)
+      if (parsed?.shipper_name)      formData.append('bl_shipper_name',      parsed.shipper_name);
+      if (parsed?.shipper_address)   formData.append('bl_shipper_address',   parsed.shipper_address);
+      if (parsed?.consignee_name)    formData.append('bl_consignee_name',    parsed.consignee_name);
+      if (parsed?.consignee_address) formData.append('bl_consignee_address', parsed.consignee_address);
       if (containers.length > 0) {
         formData.append('containers', JSON.stringify(
           containers.map(c => ({
@@ -216,16 +227,17 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
       setPhase('preview');
     }
   }, [shipmentId, waybillNumber, carrierAgent, vesselName, voyageNumber, etd,
-    shipperName, shipperAddress, containers, cargoItems, blFile, onSuccess]);
+    shipperName, shipperAddress, consigneeName, consigneeAddress,
+    containers, cargoItems, blFile, parsed, onSuccess]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
       <div
-        className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[85vh] overflow-y-auto p-5 space-y-4"
+        className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[85vh] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between">
+        {/* Header — sticky */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-[var(--border)] flex-shrink-0">
           <div className="flex items-center gap-2">
             <Ship className="w-4 h-4 text-[var(--sky)]" />
             <h3 className="text-sm font-semibold text-[var(--text)]">Upload BL — {shipmentId}</h3>
@@ -234,6 +246,9 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {/* Scrollable content */}
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
 
         {/* Phase: Upload */}
         {phase === 'upload' && (
@@ -340,6 +355,21 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
                 <div>
                   <FieldLabel>Address</FieldLabel>
                   <textarea value={shipperAddress} onChange={e => setShipperAddress(e.target.value)} rows={2} className={`${inputBase} resize-none ${shipperAddress ? prefilled : ''}`} />
+                </div>
+              </div>
+            </div>
+
+            {/* Consignee */}
+            <div>
+              <SectionLabel>Consignee</SectionLabel>
+              <div className="space-y-2">
+                <div>
+                  <FieldLabel>Name</FieldLabel>
+                  <input type="text" value={consigneeName} onChange={e => setConsigneeName(e.target.value)} className={`${inputBase} ${consigneeName ? prefilled : ''}`} />
+                </div>
+                <div>
+                  <FieldLabel>Address</FieldLabel>
+                  <textarea value={consigneeAddress} onChange={e => setConsigneeAddress(e.target.value)} rows={3} className={`${inputBase} resize-none ${consigneeAddress ? prefilled : ''}`} />
                 </div>
               </div>
             </div>
@@ -451,31 +481,35 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
                 <span>{error}</span>
               </div>
             )}
+          </div>
+        )}
 
-            {/* Actions */}
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={onClose}
-                disabled={phase === 'updating'}
-                className="px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleUpdate}
-                disabled={phase === 'updating'}
-                className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium text-white bg-[var(--sky)] rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity"
-              >
-                {phase === 'updating' ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Updating...
-                  </>
-                ) : (
-                  'Update Shipment'
-                )}
-              </button>
-            </div>
+        </div> {/* end scrollable content */}
+
+        {/* Footer — sticky, only shown in preview/updating phase */}
+        {(phase === 'preview' || phase === 'updating') && (
+          <div className="flex justify-end gap-2 px-5 py-4 border-t border-[var(--border)] flex-shrink-0">
+            <button
+              onClick={onClose}
+              disabled={phase === 'updating'}
+              className="px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleUpdate}
+              disabled={phase === 'updating'}
+              className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium text-white bg-[var(--sky)] rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity"
+            >
+              {phase === 'updating' ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                'Update Shipment'
+              )}
+            </button>
           </div>
         )}
       </div>
