@@ -445,7 +445,7 @@ export function assembleV1ShipmentOrder(params: {
 
     cargo,
     type_details: typeDetails,
-    booking: oldShipmentOrder?.booking as Record<string, unknown> | null ?? null,
+    booking: (oldShipmentOrder?.booking ?? q.booking) as Record<string, unknown> | null ?? null,
 
     parties,
     customs_clearance: customsClearance,

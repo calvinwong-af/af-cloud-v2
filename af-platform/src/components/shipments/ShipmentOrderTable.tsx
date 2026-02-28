@@ -3,11 +3,22 @@
  *
  * Works with both V1 (assembled) and V2 records via the unified ShipmentOrder shape.
  * Status and order type indicators are derived from V2 status codes.
+ *
+ * DROPDOWN STANDARD — AF Platform
+ *
+ * All floating menus (dropdowns, tooltips, popovers) that appear on top of
+ * table rows MUST be rendered via React Portal (createPortal to document.body).
+ *
+ * Reason: Table wrappers use overflow-x-auto. Any ancestor with overflow,
+ * transform, or filter creates a containing block that clips position:fixed
+ * elements — even at high z-index values. Portaling to document.body escapes
+ * all containing blocks unconditionally.
  */
 
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import {
   MoreVertical, Ship, Plane, Truck, ArrowRight, Container, Package,
@@ -104,18 +115,25 @@ function ShipmentActionsMenu({
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [copied, setCopied] = useState<'id' | 'tracking' | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const handleOutsideClick = useCallback((e: MouseEvent) => {
+    const target = e.target as Node;
+    if (
+      buttonRef.current && !buttonRef.current.contains(target) &&
+      dropdownRef.current && !dropdownRef.current.contains(target)
+    ) {
+      setOpen(false);
+    }
+  }, []);
 
   useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+    if (open) {
+      document.addEventListener('mousedown', handleOutsideClick);
+      return () => document.removeEventListener('mousedown', handleOutsideClick);
     }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, []);
+  }, [open, handleOutsideClick]);
 
   function handleCopy(text: string, type: 'id' | 'tracking') {
     navigator.clipboard.writeText(text);
@@ -141,7 +159,7 @@ function ShipmentActionsMenu({
 
   return (
     <>
-      <div className="relative" ref={menuRef}>
+      <div className="relative">
         <button
           ref={buttonRef}
           onClick={() => {
@@ -155,12 +173,14 @@ function ShipmentActionsMenu({
         >
           <MoreVertical className="w-4 h-4" />
         </button>
+      </div>
 
-        {open && menuPos && (
-          <div
-            className="fixed z-50 w-48 bg-white rounded-xl border border-[var(--border)] shadow-lg py-1 text-sm"
-            style={{ top: menuPos.top, right: menuPos.right }}
-          >
+      {open && menuPos && createPortal(
+        <div
+          ref={dropdownRef}
+          className="fixed z-[200] w-48 bg-white rounded-xl border border-[var(--border)] shadow-lg py-1 text-sm"
+          style={{ top: menuPos.top, right: menuPos.right }}
+        >
             {/* View Details */}
             <button
               onClick={() => { setOpen(false); router.push(`/shipments/${order.quotation_id}`); }}
@@ -213,9 +233,9 @@ function ShipmentActionsMenu({
                 </button>
               </>
             )}
-          </div>
-        )}
-      </div>
+          </div>,
+        document.body
+      )}
 
       {/* Delete confirmation modal */}
       {showConfirm && (

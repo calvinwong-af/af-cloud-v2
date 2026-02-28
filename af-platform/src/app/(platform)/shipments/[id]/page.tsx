@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  ArrowLeft, Ship, Plane, Package, MapPin, Calendar, Upload,
+  ArrowLeft, Ship, Package, MapPin, Calendar, Upload,
   Users, FileText, AlertTriangle, Loader2, Hash,
   Container, Weight, Activity, ChevronDown, ChevronRight, Pencil, X,
   ClipboardList, Clock,
@@ -18,6 +18,8 @@ import ShipmentTasks from '@/components/shipments/ShipmentTasks';
 import ShipmentFilesTab from '@/components/shipments/ShipmentFilesTab';
 import BLUpdateModal from '@/components/shipments/BLUpdateModal';
 import RouteNodeTimeline from '@/components/shipments/RouteNodeTimeline';
+import PortPair from '@/components/shared/PortPair';
+import { getRouteNodesAction } from '@/app/actions/shipments-route';
 import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS, getStatusPathList } from '@/lib/types';
 
 // ─── Status styles ───────────────────────────────────────────────────────────
@@ -73,22 +75,12 @@ function EmptyState({ message }: { message: string }) {
 
 // ─── Route card ───────────────────────────────────────────────────────────────
 
-function RouteCard({ order }: { order: ShipmentOrder }) {
-  const isAir = order.order_type === 'AIR';
-  const origin = order.origin;
-  const dest = order.destination;
-
-  // Prefer port code as primary; fall back to label if no code available
-  const originCode = origin?.port_un_code ?? origin?.label ?? '—';
-  const originName = origin?.port_un_code && origin?.label && origin.label !== origin.port_un_code
-    ? origin.label
-    : origin?.country_code ?? null;
-
-  const destCode = dest?.port_un_code ?? dest?.label ?? '—';
-  const destName = dest?.port_un_code && dest?.label && dest.label !== dest.port_un_code
-    ? dest.label
-    : dest?.country_code ?? null;
-
+function RouteCard({ order, accountType, etd, eta }: {
+  order: ShipmentOrder;
+  accountType: string | null;
+  etd?: string | null;
+  eta?: string | null;
+}) {
   return (
     <div className="bg-white border border-[var(--border)] rounded-xl p-5">
       <div className="flex items-center gap-2 mb-5">
@@ -97,52 +89,24 @@ function RouteCard({ order }: { order: ShipmentOrder }) {
         </span>
         <h2 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Route</h2>
       </div>
-
-      {/* Port codes row — aligned with icon */}
-      <div className="flex items-center">
-        {/* Origin */}
-        <div className="flex-1 min-w-0">
-          <div className="text-xs text-[var(--text-muted)] mb-1">Origin</div>
-          <div className="text-2xl font-bold font-mono text-[var(--text)] tracking-wide">
-            {originCode}
-          </div>
-          {originName && (
-            <div className="text-xs text-[var(--text-muted)] mt-0.5 truncate">{originName}</div>
-          )}
-        </div>
-
-        {/* Connecting line + icon */}
-        <div className="flex items-center flex-shrink-0 mx-4">
-          <div className="h-px w-12 bg-[var(--border)]" />
-          <div className="p-2 rounded-full bg-[var(--sky-pale)] mx-2">
-            {isAir
-              ? <Plane className="w-4 h-4 text-[var(--sky)]" />
-              : <Ship className="w-4 h-4 text-[var(--sky)]" />}
-          </div>
-          <div className="h-px w-12 bg-[var(--border)]" />
-        </div>
-
-        {/* Destination */}
-        <div className="flex-1 min-w-0 text-right">
-          <div className="text-xs text-[var(--text-muted)] mb-1">Destination</div>
-          <div className="text-2xl font-bold font-mono text-[var(--text)] tracking-wide">
-            {destCode}
-          </div>
-          {destName && (
-            <div className="text-xs text-[var(--text-muted)] mt-0.5 truncate">{destName}</div>
-          )}
-        </div>
-      </div>
-
-      {/* Incoterm pill */}
-      {order.incoterm_code && (
-        <div className="mt-4 pt-4 border-t border-[var(--border)] flex items-center gap-2">
-          <span className="text-xs text-[var(--text-muted)]">Incoterm</span>
-          <span className="px-2 py-0.5 bg-[var(--surface)] border border-[var(--border)] rounded text-xs font-mono font-semibold text-[var(--text-mid)]">
-            {order.incoterm_code}
-          </span>
-        </div>
-      )}
+      <PortPair
+        origin={{
+          port_un_code: order.origin?.port_un_code ?? null,
+          port_name: order.origin?.label ?? null,
+          country_code: order.origin?.country_code ?? null,
+        }}
+        destination={{
+          port_un_code: order.destination?.port_un_code ?? null,
+          port_name: order.destination?.label ?? null,
+          country_code: order.destination?.country_code ?? null,
+        }}
+        viewContext={accountType === 'AFU' ? 'customer' : 'staff'}
+        etd={etd}
+        eta={eta}
+        incoterm={order.incoterm_code}
+        orderType={order.order_type}
+        size="lg"
+      />
     </div>
   );
 }
@@ -1034,6 +998,8 @@ export default function ShipmentOrderDetailPage() {
   const [showCompanyModal, setShowCompanyModal] = useState(false);
   const [showBLModal, setShowBLModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'files'>('overview');
+  const [routeEtd, setRouteEtd] = useState<string | null>(null);
+  const [routeEta, setRouteEta] = useState<string | null>(null);
 
   const loadOrder = useCallback(async () => {
     const result = await fetchShipmentOrderDetailAction(quotationId);
@@ -1044,19 +1010,32 @@ export default function ShipmentOrderDetailPage() {
     }
   }, [quotationId]);
 
+  const loadRouteTimings = useCallback(async () => {
+    try {
+      const result = await getRouteNodesAction(quotationId);
+      if (result.success && result.data) {
+        const origin = result.data.find(n => n.role === 'ORIGIN');
+        const dest = result.data.find(n => n.role === 'DESTINATION');
+        setRouteEtd(origin?.actual_etd ?? origin?.scheduled_etd ?? null);
+        setRouteEta(dest?.actual_eta ?? dest?.scheduled_eta ?? null);
+      }
+    } catch { /* non-critical */ }
+  }, [quotationId]);
+
   useEffect(() => {
     async function load() {
       setLoading(true);
       const [, profile] = await Promise.all([
         loadOrder(),
         getCurrentUserProfileAction(),
+        loadRouteTimings(),
       ]);
       setAccountType(profile.account_type);
       setUserRole(profile.role ?? null);
       setLoading(false);
     }
     load();
-  }, [loadOrder]);
+  }, [loadOrder, loadRouteTimings]);
 
   if (loading) {
     return (
@@ -1153,7 +1132,7 @@ export default function ShipmentOrderDetailPage() {
       </div>
 
       {/* Route */}
-      <RouteCard order={order} />
+      <RouteCard order={order} accountType={accountType} etd={routeEtd} eta={routeEta} />
 
       {/* BL Upload button — AFU, status >= 3001, sea shipments */}
       {accountType === 'AFU' && order.status >= 3001 && ['SEA_FCL', 'SEA_LCL'].includes(order.order_type) && (
@@ -1256,6 +1235,28 @@ export default function ShipmentOrderDetailPage() {
               </>
             )}
         </SectionCard>
+
+        {/* Transport — vessel/voyage from booking dict or flat fields */}
+        {(() => {
+          const bk = (order.booking ?? {}) as Record<string, unknown>;
+          const vesselName = (order as unknown as Record<string, unknown>).vessel_name as string
+            || bk.vessel_name as string || null;
+          const voyageNumber = (order as unknown as Record<string, unknown>).voyage_number as string
+            || bk.voyage_number as string || null;
+          const bookingRef = bk.booking_reference as string || null;
+          const carrierAgent = bk.carrier_agent as string || null;
+          const etd = (order as unknown as Record<string, unknown>).etd as string || null;
+          if (!vesselName && !voyageNumber && !bookingRef && !carrierAgent && !etd) return null;
+          return (
+            <SectionCard title="Transport" icon={<Ship className="w-4 h-4" />}>
+              <DataRow label="Vessel" value={vesselName} />
+              <DataRow label="Voyage" value={voyageNumber} />
+              <DataRow label="Booking Ref" value={bookingRef} mono />
+              <DataRow label="Carrier / Agent" value={carrierAgent} />
+              <DataRow label="ETD" value={etd ? formatDate(etd) : null} />
+            </SectionCard>
+          );
+        })()}
 
         {/* Dates */}
         <SectionCard title="Dates" icon={<Calendar className="w-4 h-4" />}>

@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { Upload, CheckCircle, AlertTriangle, Link2, X, Loader2 } from 'lucide-react';
+import { DateInput } from '@/components/shared/DateInput';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -348,10 +349,9 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
         </div>
         <div className="mt-3">
           <FieldLabel>ETD (On Board Date)</FieldLabel>
-          <input
-            type="date"
+          <DateInput
             value={formState.etd}
-            onChange={e => update({ etd: e.target.value })}
+            onChange={v => update({ etd: v })}
             className={`${inputBase} w-48 ${formState.etd ? prefilled : ''}`}
           />
         </div>

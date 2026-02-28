@@ -638,43 +638,24 @@ type UpdateFromBLActionResult =
 
 export async function updateShipmentFromBLAction(
   shipmentId: string,
-  payload: UpdateFromBLPayload,
+  formData: FormData,
 ): Promise<UpdateFromBLActionResult> {
   try {
     const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
-    if (!session.valid) {
-      return { success: false, error: 'Unauthorised' };
-    }
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
 
     const { cookies } = await import('next/headers');
     const cookieStore = cookies();
     const idToken = cookieStore.get('af-session')?.value;
-    if (!idToken) {
-      return { success: false, error: 'No session token' };
-    }
+    if (!idToken) return { success: false, error: 'No session token' };
 
     const serverUrl = process.env.AF_SERVER_URL;
-    if (!serverUrl) {
-      return { success: false, error: 'Server URL not configured' };
-    }
+    if (!serverUrl) return { success: false, error: 'Server URL not configured' };
 
     const url = new URL(
       `/api/v2/shipments/${encodeURIComponent(shipmentId)}/bl`,
       serverUrl,
     );
-
-    // Always use multipart/form-data since the server expects Form fields
-    const formData = new FormData();
-    if (payload.waybill_number !== undefined) formData.append('waybill_number', payload.waybill_number);
-    if (payload.carrier_agent !== undefined) formData.append('carrier_agent', payload.carrier_agent);
-    if (payload.vessel_name !== undefined) formData.append('vessel_name', payload.vessel_name);
-    if (payload.voyage_number !== undefined) formData.append('voyage_number', payload.voyage_number);
-    if (payload.etd !== undefined) formData.append('etd', payload.etd);
-    if (payload.shipper_name !== undefined) formData.append('shipper_name', payload.shipper_name);
-    if (payload.shipper_address !== undefined) formData.append('shipper_address', payload.shipper_address);
-    if (payload.containers !== undefined) formData.append('containers', JSON.stringify(payload.containers));
-    if (payload.cargo_items !== undefined) formData.append('cargo_items', JSON.stringify(payload.cargo_items));
-    if (payload.file) formData.append('file', payload.file);
 
     const res = await fetch(url.toString(), {
       method: 'PATCH',

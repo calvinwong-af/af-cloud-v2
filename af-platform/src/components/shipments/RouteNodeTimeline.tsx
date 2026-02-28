@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   MapPin, Plus, Trash2, X, Loader2, AlertTriangle, Anchor,
 } from 'lucide-react';
+import { DateInput } from '@/components/shared/DateInput';
 import {
   getRouteNodesAction,
   saveRouteNodesAction,
@@ -98,11 +99,11 @@ function TimingEditPanel({
           <>
             <div>
               <label className="text-[10px] text-[var(--text-muted)] block mb-0.5">ETD (Scheduled)</label>
-              <input type="date" value={scheduledEtd} onChange={e => setScheduledEtd(e.target.value)} className={inputCls} />
+              <DateInput value={scheduledEtd} onChange={setScheduledEtd} className={inputCls} />
             </div>
             <div>
               <label className="text-[10px] text-[var(--text-muted)] block mb-0.5">ATD (Actual)</label>
-              <input type="date" value={actualEtd} onChange={e => setActualEtd(e.target.value)} className={inputCls} />
+              <DateInput value={actualEtd} onChange={setActualEtd} className={inputCls} />
             </div>
           </>
         )}
@@ -110,11 +111,11 @@ function TimingEditPanel({
           <>
             <div>
               <label className="text-[10px] text-[var(--text-muted)] block mb-0.5">ETA (Scheduled)</label>
-              <input type="date" value={scheduledEta} onChange={e => setScheduledEta(e.target.value)} className={inputCls} />
+              <DateInput value={scheduledEta} onChange={setScheduledEta} className={inputCls} />
             </div>
             <div>
               <label className="text-[10px] text-[var(--text-muted)] block mb-0.5">ATA (Actual)</label>
-              <input type="date" value={actualEta} onChange={e => setActualEta(e.target.value)} className={inputCls} />
+              <DateInput value={actualEta} onChange={setActualEta} className={inputCls} />
             </div>
           </>
         )}
@@ -291,10 +292,13 @@ export default function RouteNodeTimeline({ shipmentId, accountType, userRole }:
               {/* Port code circle */}
               <button
                 onClick={() => editable && !derived ? setEditingSeq(editingSeq === node.sequence ? null : node.sequence) : undefined}
+                title={node.port_name || undefined}
                 className={`w-12 h-12 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-colors ${
+                  node.port_name ? 'cursor-help' : ''
+                } ${
                   editable && !derived
                     ? 'cursor-pointer hover:border-[var(--sky)] hover:bg-[var(--sky-mist)]'
-                    : 'cursor-default'
+                    : ''
                 } ${
                   node.role === 'ORIGIN'
                     ? 'border-blue-300 bg-blue-50 text-blue-700'

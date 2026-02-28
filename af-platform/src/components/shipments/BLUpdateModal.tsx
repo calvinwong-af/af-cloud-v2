@@ -2,9 +2,10 @@
 
 import { useState, useCallback, useRef } from 'react';
 import {
-  Upload, CheckCircle, AlertTriangle, X, Loader2, Ship,
+  Upload, CheckCircle, AlertTriangle, X, Loader2, Ship, Plus,
 } from 'lucide-react';
 import { parseBLAction, updateShipmentFromBLAction } from '@/app/actions/shipments-write';
+import { DateInput } from '@/components/shared/DateInput';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -54,6 +55,45 @@ interface Props {
 }
 
 type Phase = 'upload' | 'parsing' | 'preview' | 'updating';
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Coerce a date string from BL parser to YYYY-MM-DD for <input type="date">.
+ * Handles: YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY, "DD Mon YYYY", "Month DD YYYY"
+ * Returns empty string if unparseable.
+ */
+function normaliseDateToISO(raw: string | null | undefined): string {
+  if (!raw) return '';
+  const s = raw.trim();
+
+  // Already ISO
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  // Try native Date parse first (handles "Feb 7 2026", "February 7, 2026", etc.)
+  const native = new Date(s);
+  if (!isNaN(native.getTime())) {
+    return native.toISOString().slice(0, 10);
+  }
+
+  // DD/MM/YYYY — dominant format in MY/SG/HK shipping docs
+  const slashMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    const [, a, b, year] = slashMatch;
+    const month = b.padStart(2, '0');
+    const day = a.padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  // DD-MM-YYYY
+  const dashMatch = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (dashMatch) {
+    const [, day, month, year] = dashMatch;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  return ''; // unparseable — let user fill manually
+}
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
@@ -113,7 +153,7 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
       setCarrierAgent(p.carrier_agent ?? p.carrier ?? '');
       setVesselName(p.vessel_name ?? '');
       setVoyageNumber(p.voyage_number ?? '');
-      setEtd(p.on_board_date ?? '');
+      setEtd(normaliseDateToISO(p.on_board_date));
       setShipperName(p.shipper_name ?? '');
       setShipperAddress(p.shipper_address ?? '');
       setContainers(p.containers ?? []);
@@ -132,35 +172,39 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
     setError(null);
 
     try {
-      const result = await updateShipmentFromBLAction(shipmentId, {
-        waybill_number: waybillNumber || undefined,
-        carrier_agent: carrierAgent || undefined,
-        vessel_name: vesselName || undefined,
-        voyage_number: voyageNumber || undefined,
-        etd: etd || undefined,
-        shipper_name: shipperName || undefined,
-        shipper_address: shipperAddress || undefined,
-        containers: containers.length > 0 ? containers.map(c => ({
-          container_number: c.container_number ?? '',
-          container_type: c.container_type ?? '',
-          seal_number: c.seal_number ?? undefined,
-        })) : undefined,
-        cargo_items: cargoItems.length > 0 ? cargoItems.map(c => ({
-          description: c.description ?? undefined,
-          quantity: c.quantity ?? undefined,
-          gross_weight: c.gross_weight ?? undefined,
-          measurement: c.measurement ?? undefined,
-        })) : undefined,
-        file: blFile ?? undefined,
-      });
-
-      if (!result) {
-        setError('No response from server');
-        setPhase('preview');
-        return;
+      const formData = new FormData();
+      if (waybillNumber)   formData.append('waybill_number',  waybillNumber);
+      if (carrierAgent)    formData.append('carrier_agent',   carrierAgent);
+      if (vesselName)      formData.append('vessel_name',     vesselName);
+      if (voyageNumber)    formData.append('voyage_number',   voyageNumber);
+      if (etd)             formData.append('etd',             etd);
+      if (shipperName)     formData.append('shipper_name',    shipperName);
+      if (shipperAddress)  formData.append('shipper_address', shipperAddress);
+      if (containers.length > 0) {
+        formData.append('containers', JSON.stringify(
+          containers.map(c => ({
+            container_number: c.container_number ?? '',
+            container_type:   c.container_type ?? '',
+            seal_number:      c.seal_number ?? '',
+          }))
+        ));
       }
-      if (!result.success) {
-        setError(result.error);
+      if (cargoItems.length > 0) {
+        formData.append('cargo_items', JSON.stringify(
+          cargoItems.map(c => ({
+            description:  c.description  ?? '',
+            quantity:     c.quantity     ?? '',
+            gross_weight: c.gross_weight ?? '',
+            measurement:  c.measurement  ?? '',
+          }))
+        ));
+      }
+      if (blFile) formData.append('file', blFile);
+
+      const result = await updateShipmentFromBLAction(shipmentId, formData);
+
+      if (!result?.success) {
+        setError(result?.error ?? 'Failed to update shipment');
         setPhase('preview');
         return;
       }
@@ -171,7 +215,8 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
       setError('Failed to update shipment');
       setPhase('preview');
     }
-  }, [shipmentId, waybillNumber, carrierAgent, vesselName, voyageNumber, etd, shipperName, shipperAddress, containers, cargoItems, blFile, onSuccess]);
+  }, [shipmentId, waybillNumber, carrierAgent, vesselName, voyageNumber, etd,
+    shipperName, shipperAddress, containers, cargoItems, blFile, onSuccess]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
@@ -281,7 +326,7 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
             {/* ETD */}
             <div>
               <FieldLabel>ETD (On Board Date)</FieldLabel>
-              <input type="date" value={etd} onChange={e => setEtd(e.target.value)} className={`${inputBase} w-48 ${etd ? prefilled : ''}`} />
+              <DateInput value={etd} onChange={setEtd} className={`${inputBase} w-48 ${etd ? prefilled : ''}`} />
             </div>
 
             {/* Shipper */}
@@ -299,7 +344,7 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
               </div>
             </div>
 
-            {/* Containers — only shown if non-empty (FCL) */}
+            {/* Containers — editable (FCL) */}
             {containers.length > 0 && (
               <div>
                 <SectionLabel>Containers</SectionLabel>
@@ -310,23 +355,44 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
                         <th className="text-left px-3 py-2 text-[var(--text-muted)] font-medium">Container No.</th>
                         <th className="text-left px-3 py-2 text-[var(--text-muted)] font-medium">Type</th>
                         <th className="text-left px-3 py-2 text-[var(--text-muted)] font-medium">Seal</th>
+                        <th className="w-8"></th>
                       </tr>
                     </thead>
                     <tbody>
                       {containers.map((c, i) => (
                         <tr key={i} className="border-t border-[var(--border)]">
-                          <td className="px-3 py-2 font-mono text-[var(--text)]">{c.container_number ?? '—'}</td>
-                          <td className="px-3 py-2 text-[var(--text)]">{c.container_type ?? '—'}</td>
-                          <td className="px-3 py-2 text-[var(--text)]">{c.seal_number ?? '—'}</td>
+                          <td className="px-3 py-1.5">
+                            <input type="text" value={c.container_number ?? ''} onChange={e => { const u = [...containers]; u[i] = { ...u[i], container_number: e.target.value }; setContainers(u); }}
+                              className="w-full text-xs font-mono bg-transparent border-b border-transparent focus:border-[var(--sky)] focus:outline-none py-0.5 transition-colors" />
+                          </td>
+                          <td className="px-3 py-1.5">
+                            <input type="text" value={c.container_type ?? ''} onChange={e => { const u = [...containers]; u[i] = { ...u[i], container_type: e.target.value }; setContainers(u); }}
+                              className="w-full text-xs bg-transparent border-b border-transparent focus:border-[var(--sky)] focus:outline-none py-0.5 transition-colors" />
+                          </td>
+                          <td className="px-3 py-1.5">
+                            <input type="text" value={c.seal_number ?? ''} onChange={e => { const u = [...containers]; u[i] = { ...u[i], seal_number: e.target.value }; setContainers(u); }}
+                              className="w-full text-xs bg-transparent border-b border-transparent focus:border-[var(--sky)] focus:outline-none py-0.5 transition-colors" />
+                          </td>
+                          <td className="px-2 py-1.5 text-right">
+                            <button onClick={() => setContainers(containers.filter((_, idx) => idx !== i))} className="text-[var(--text-muted)] hover:text-red-500 transition-colors">
+                              <X className="w-3 h-3" />
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                  <div className="px-3 py-2 border-t border-[var(--border)]">
+                    <button onClick={() => setContainers([...containers, { container_number: '', container_type: '', seal_number: '', packages: null, weight_kg: null }])}
+                      className="flex items-center gap-1 text-xs text-[var(--sky)] hover:underline">
+                      <Plus className="w-3 h-3" /> Add row
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* Cargo Items — shown for LCL when containers empty */}
+            {/* Cargo Items — editable (LCL) */}
             {cargoItems.length > 0 && (
               <div>
                 <SectionLabel>Cargo Summary</SectionLabel>
@@ -338,19 +404,43 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
                         <th className="text-left px-3 py-2 text-[var(--text-muted)] font-medium">Qty</th>
                         <th className="text-left px-3 py-2 text-[var(--text-muted)] font-medium">Weight</th>
                         <th className="text-left px-3 py-2 text-[var(--text-muted)] font-medium">CBM</th>
+                        <th className="w-8"></th>
                       </tr>
                     </thead>
                     <tbody>
                       {cargoItems.map((c, i) => (
                         <tr key={i} className="border-t border-[var(--border)]">
-                          <td className="px-3 py-2 text-[var(--text)]">{c.description ?? '—'}</td>
-                          <td className="px-3 py-2 text-[var(--text)]">{c.quantity ?? '—'}</td>
-                          <td className="px-3 py-2 text-[var(--text)]">{c.gross_weight ?? '—'}</td>
-                          <td className="px-3 py-2 text-[var(--text)]">{c.measurement ?? '—'}</td>
+                          <td className="px-3 py-1.5">
+                            <input type="text" value={c.description ?? ''} onChange={e => { const u = [...cargoItems]; u[i] = { ...u[i], description: e.target.value }; setCargoItems(u); }}
+                              className="w-full text-xs bg-transparent border-b border-transparent focus:border-[var(--sky)] focus:outline-none py-0.5 transition-colors" />
+                          </td>
+                          <td className="px-3 py-1.5">
+                            <input type="text" value={c.quantity ?? ''} onChange={e => { const u = [...cargoItems]; u[i] = { ...u[i], quantity: e.target.value }; setCargoItems(u); }}
+                              className="w-full text-xs bg-transparent border-b border-transparent focus:border-[var(--sky)] focus:outline-none py-0.5 transition-colors" />
+                          </td>
+                          <td className="px-3 py-1.5">
+                            <input type="text" value={c.gross_weight ?? ''} onChange={e => { const u = [...cargoItems]; u[i] = { ...u[i], gross_weight: e.target.value }; setCargoItems(u); }}
+                              className="w-full text-xs bg-transparent border-b border-transparent focus:border-[var(--sky)] focus:outline-none py-0.5 transition-colors" />
+                          </td>
+                          <td className="px-3 py-1.5">
+                            <input type="text" value={c.measurement ?? ''} onChange={e => { const u = [...cargoItems]; u[i] = { ...u[i], measurement: e.target.value }; setCargoItems(u); }}
+                              className="w-full text-xs bg-transparent border-b border-transparent focus:border-[var(--sky)] focus:outline-none py-0.5 transition-colors" />
+                          </td>
+                          <td className="px-2 py-1.5 text-right">
+                            <button onClick={() => setCargoItems(cargoItems.filter((_, idx) => idx !== i))} className="text-[var(--text-muted)] hover:text-red-500 transition-colors">
+                              <X className="w-3 h-3" />
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                  <div className="px-3 py-2 border-t border-[var(--border)]">
+                    <button onClick={() => setCargoItems([...cargoItems, { description: '', quantity: '', gross_weight: '', measurement: '' }])}
+                      className="flex items-center gap-1 text-xs text-[var(--sky)] hover:underline">
+                      <Plus className="w-3 h-3" /> Add row
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

@@ -2407,8 +2407,19 @@ async def update_from_bl(
     Update a shipment from parsed BL data. AFU only.
     Accepts multipart/form-data with optional BL PDF file.
     """
+    # Read file bytes immediately — stream cannot be re-read later
+    file_bytes = await file.read() if file else None
+    file_content_type = file.content_type if file else None
+    file_original_name = file.filename if file else None
+
     client = get_client()
     now = datetime.now(timezone.utc).isoformat()
+
+    # V1 detection
+    is_v1 = shipment_id.startswith(PREFIX_V1_SHIPMENT)
+    so_entity = None
+    if is_v1:
+        so_entity = client.get(client.key("ShipmentOrder", shipment_id))
 
     # Load Quotation entity
     q_key = client.key("Quotation", shipment_id)
@@ -2434,6 +2445,12 @@ async def update_from_bl(
     if voyage_number is not None:
         booking["voyage_number"] = voyage_number
     q_entity["booking"] = booking
+
+    # Also write flat fields so detail-page readers see updated values
+    if vessel_name is not None:
+        q_entity["vessel_name"] = vessel_name
+    if voyage_number is not None:
+        q_entity["voyage_number"] = voyage_number
 
     # ETD
     if etd is not None:
@@ -2481,45 +2498,61 @@ async def update_from_bl(
             q_entity["type_details"] = td
 
     q_entity["updated"] = now
-    q_entity.exclude_from_indexes = set(q_entity.exclude_from_indexes or set()) | {
-        "booking", "parties", "type_details",
-    }
+
+    # Safe exclude_from_indexes — V1 entities may not support reassignment
+    try:
+        existing = set(q_entity.exclude_from_indexes or set())
+        q_entity.exclude_from_indexes = existing | {"booking", "parties", "type_details"}
+    except (TypeError, AttributeError):
+        pass  # V1 entities may not support this — skip silently
 
     # Unblock export clearance if waybill set
     if waybill_number:
         _maybe_unblock_export_clearance(client, shipment_id, claims.uid)
 
-    client.put(q_entity)
+    logger.info("[bl_update] Writing to Quotation %s, is_v1=%s", shipment_id, is_v1)
+    try:
+        client.put(q_entity)
+    except Exception as e:
+        logger.error("[bl_update] Failed to write Quotation %s: %s", shipment_id, str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to save shipment: {str(e)}")
+
+    # For V1, also write flat fields to ShipmentOrder
+    if is_v1 and so_entity and waybill_number:
+        so_entity["booking_reference"] = waybill_number
+        so_entity["updated"] = now
+        try:
+            client.put(so_entity)
+        except Exception as e:
+            logger.error("[bl_update] Failed to write ShipmentOrder %s: %s", shipment_id, str(e))
 
     # Log to AFSystemLogs
     _log_system_action(client, "BL_UPDATED", shipment_id, claims.uid, claims.email)
 
-    # Auto-save BL file if provided (Task 3b)
-    if file:
-        file_bytes = await file.read()
-        if file_bytes:
-            company_id = q_entity.get("company_id", "")
-            original_name = file.filename or f"BL_{shipment_id}.pdf"
-            gcs_path = _resolve_gcs_path(company_id, shipment_id, original_name)
+    # Auto-save BL file if provided (file_bytes read at top of handler)
+    if file_bytes:
+        company_id = q_entity.get("company_id", "")
+        original_name = file_original_name or f"BL_{shipment_id}.pdf"
+        gcs_path = _resolve_gcs_path(company_id, shipment_id, original_name)
 
-            from google.cloud import storage as gcs_storage
-            gcs_client = gcs_storage.Client(project="cloud-accele-freight")
-            bucket = gcs_client.bucket(FILES_BUCKET_NAME)
-            content_type = file.content_type or "application/pdf"
-            _save_file_to_gcs(bucket, gcs_path, file_bytes, content_type)
+        from google.cloud import storage as gcs_storage
+        gcs_client = gcs_storage.Client(project="cloud-accele-freight")
+        bucket = gcs_client.bucket(FILES_BUCKET_NAME)
+        content_type = file_content_type or "application/pdf"
+        _save_file_to_gcs(bucket, gcs_path, file_bytes, content_type)
 
-            _create_file_entity(
-                client=client,
-                shipment_id=shipment_id,
-                company_id=company_id,
-                file_name=original_name,
-                gcs_path=gcs_path,
-                file_size_kb=len(file_bytes) / 1024.0,
-                file_tags=["bl"],
-                visibility=True,
-                uploader_uid=claims.uid,
-                uploader_email=claims.email,
-            )
+        _create_file_entity(
+            client=client,
+            shipment_id=shipment_id,
+            company_id=company_id,
+            file_name=original_name,
+            gcs_path=gcs_path,
+            file_size_kb=len(file_bytes) / 1024.0,
+            file_tags=["bl"],
+            visibility=True,
+            uploader_uid=claims.uid,
+            uploader_email=claims.email,
+        )
 
     logger.info("BL update applied to %s by %s", shipment_id, claims.uid)
 

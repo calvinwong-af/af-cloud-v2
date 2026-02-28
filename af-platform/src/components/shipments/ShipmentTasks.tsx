@@ -7,7 +7,38 @@ import {
 } from 'lucide-react';
 import { fetchShipmentTasksAction, updateShipmentTaskAction } from '@/app/actions/shipments-write';
 import type { WorkflowTask } from '@/app/actions/shipments-write';
-import { formatDate } from '@/lib/utils';
+import { DateInput, DateTimeInput } from '@/components/shared/DateInput';
+
+// ---------------------------------------------------------------------------
+// Timestamp helpers
+// ---------------------------------------------------------------------------
+
+/** Format ISO timestamp as "28 Feb 2026, 10:30" */
+function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric'
+  }) + ', ' + d.toLocaleTimeString('en-GB', {
+    hour: '2-digit', minute: '2-digit', hour12: false
+  });
+}
+
+/** Convert ISO timestamp to datetime-local input value (YYYY-MM-DDTHH:mm) */
+function isoToLocalDatetime(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Convert datetime-local input value to UTC ISO string */
+function localDatetimeToISO(value: string): string {
+  if (!value) return '';
+  return new Date(value).toISOString();
+}
 
 interface ShipmentTasksProps {
   shipmentId: string;
@@ -20,7 +51,7 @@ interface ShipmentTasksProps {
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Fallback label map for tasks missing display_name */
+/** Base fallback label map — used for all order types */
 const TASK_LABELS: Record<string, string> = {
   ORIGIN_HAULAGE: 'Origin Haulage / Pickup',
   FREIGHT_BOOKING: 'Freight Booking',
@@ -31,8 +62,39 @@ const TASK_LABELS: Record<string, string> = {
   DESTINATION_HAULAGE: 'Destination Haulage / Delivery',
 };
 
-function getTaskLabel(task: WorkflowTask): string {
-  return task.display_name || TASK_LABELS[task.task_type] || task.task_type;
+/**
+ * For loose cargo (AIR, SEA_LCL) the first/last mile is pickup/delivery,
+ * not haulage. Haulage implies heavy equipment for containers (FCL).
+ */
+const LOOSE_CARGO_LABEL_OVERRIDES: Record<string, string> = {
+  ORIGIN_HAULAGE: 'Origin Pickup',
+  DESTINATION_HAULAGE: 'Destination Delivery',
+};
+
+const LOOSE_CARGO_TYPES = new Set(['AIR', 'SEA_LCL']);
+
+/** Stale display_name values from old data model — must be replaced */
+const STALE_LABELS = new Set([
+  'Origin Haulage', 'Destination Ground Transportation', 'Vessel Departure', 'Vessel Arrival',
+]);
+
+function getTaskLabel(task: WorkflowTask, orderType?: string): string {
+  const stored = task.display_name;
+  // If stored name is valid (not stale), use it — unless it's a haulage
+  // label on a loose-cargo shipment, in which case override it.
+  if (stored && !STALE_LABELS.has(stored)) {
+    if (orderType && LOOSE_CARGO_TYPES.has(orderType)) {
+      const override = LOOSE_CARGO_LABEL_OVERRIDES[task.task_type];
+      if (override) return override;
+    }
+    return stored;
+  }
+  // Fallback: use label map, with loose-cargo override if applicable
+  if (orderType && LOOSE_CARGO_TYPES.has(orderType)) {
+    const override = LOOSE_CARGO_LABEL_OVERRIDES[task.task_type];
+    if (override) return override;
+  }
+  return TASK_LABELS[task.task_type] || task.task_type;
 }
 
 const STATUS_STYLES: Record<string, { bg: string; text: string }> = {
@@ -80,6 +142,7 @@ function canChangeMode(accountType: string | null, userRole: string | null): boo
 
 function TaskCard({
   task,
+  orderType,
   accountType,
   userRole,
   onMarkComplete,
@@ -89,6 +152,7 @@ function TaskCard({
   saving,
 }: {
   task: WorkflowTask;
+  orderType?: string;
   accountType: string | null;
   userRole: string | null;
   onMarkComplete: (taskId: string) => void;
@@ -105,12 +169,12 @@ function TaskCard({
   const editable = canEdit(accountType, userRole);
   const showComplete = editable && !isIgnored && (task.status === 'PENDING' || task.status === 'IN_PROGRESS');
   const showUndo = editable && task.status === 'COMPLETED';
-  const label = getTaskLabel(task);
+  const label = getTaskLabel(task, orderType);
 
   return (
     <div
       className={`bg-white border border-[var(--border)] rounded-xl p-4 transition-opacity ${
-        isHidden || isIgnored ? 'opacity-50' : ''
+        isIgnored ? 'opacity-50' : ''
       }`}
     >
       {/* Header row */}
@@ -130,7 +194,7 @@ function TaskCard({
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-mono text-[var(--text-muted)]">Leg {task.leg_level}</span>
-              <span className={`text-sm font-semibold ${isHidden || isIgnored ? 'line-through text-[var(--text-muted)]' : 'text-[var(--text)]'}`}>
+              <span className={`text-sm font-semibold ${isIgnored ? 'line-through text-[var(--text-muted)]' : 'text-[var(--text)]'}`}>
                 {label}
               </span>
             </div>
@@ -153,13 +217,17 @@ function TaskCard({
           {canToggleVisibility(accountType) && (
             <button
               onClick={() => onToggleVisibility(task.task_id, isHidden)}
-              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
+              className={`p-1.5 rounded-lg transition-colors ${
+                isHidden
+                  ? 'text-amber-600 bg-amber-50 hover:bg-amber-100'
+                  : 'text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)]'
+              }`}
               title={isHidden ? 'Show to customer' : 'Hide from customer'}
             >
               {isHidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
             </button>
           )}
-          {editable && task.status !== 'COMPLETED' && !isIgnored && (
+          {editable && (
             <button
               onClick={() => onEdit(task)}
               className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
@@ -186,19 +254,19 @@ function TaskCard({
             <div>
               <span className="text-[var(--text-muted)]">Sched. End</span>
               <div className="text-[var(--text-mid)] font-medium">
-                {task.scheduled_end ? formatDate(task.scheduled_end) : task.due_date ? formatDate(task.due_date) : '—'}
+                {task.scheduled_end ? formatDateTime(task.scheduled_end) : task.due_date ? formatDateTime(task.due_date) : '—'}
               </div>
             </div>
-            {task.actual_start && (
+            {task.actual_start && task.status !== 'PENDING' && (
               <div>
                 <span className="text-[var(--text-muted)]">Started</span>
-                <div className="text-blue-600 font-medium">{formatDate(task.actual_start)}</div>
+                <div className="text-blue-600 font-medium">{formatDateTime(task.actual_start)}</div>
               </div>
             )}
-            {task.actual_end && (
+            {task.actual_end && task.status === 'COMPLETED' && (
               <div>
                 <span className="text-[var(--text-muted)]">Completed</span>
-                <div className="text-emerald-600 font-medium">{formatDate(task.actual_end)}</div>
+                <div className="text-emerald-600 font-medium">{formatDateTime(task.actual_end)}</div>
               </div>
             )}
           </div>
@@ -283,8 +351,8 @@ function EditTaskModal({
   const [thirdPartyName, setThirdPartyName] = useState(task.third_party_name ?? '');
   const [scheduledStart, setScheduledStart] = useState(task.scheduled_start ?? '');
   const [scheduledEnd, setScheduledEnd] = useState(task.scheduled_end ?? task.due_date ?? '');
-  const [actualStart, setActualStart] = useState(task.actual_start ?? '');
-  const [actualEnd, setActualEnd] = useState(task.actual_end ?? '');
+  const [actualStart, setActualStart] = useState(isoToLocalDatetime(task.actual_start));
+  const [actualEnd, setActualEnd] = useState(isoToLocalDatetime(task.actual_end));
   const [notes, setNotes] = useState(task.notes ?? '');
 
   const showModeSelector = canChangeMode(accountType, userRole);
@@ -311,11 +379,13 @@ function EditTaskModal({
       updates.due_date = scheduledEnd || null;
       updates.due_date_override = true;
     }
-    if (actualStart !== (task.actual_start ?? '')) {
-      updates.actual_start = actualStart || null;
+    const origActualStart = isoToLocalDatetime(task.actual_start);
+    if (actualStart !== origActualStart) {
+      updates.actual_start = actualStart ? localDatetimeToISO(actualStart) : null;
     }
-    if (actualEnd !== (task.actual_end ?? '')) {
-      updates.actual_end = actualEnd || null;
+    const origActualEnd = isoToLocalDatetime(task.actual_end);
+    if (actualEnd !== origActualEnd) {
+      updates.actual_end = actualEnd ? localDatetimeToISO(actualEnd) : null;
     }
     if (notes !== (task.notes ?? '')) updates.notes = notes;
 
@@ -415,11 +485,11 @@ function EditTaskModal({
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <span className="text-[10px] text-[var(--text-muted)]">Start</span>
-                <input type="date" value={scheduledStart} onChange={e => setScheduledStart(e.target.value)} className={inputCls} />
+                <DateInput value={scheduledStart} onChange={setScheduledStart} className={inputCls} />
               </div>
               <div>
                 <span className="text-[10px] text-[var(--text-muted)]">End / Due</span>
-                <input type="date" value={scheduledEnd} onChange={e => setScheduledEnd(e.target.value)} className={inputCls} />
+                <DateInput value={scheduledEnd} onChange={setScheduledEnd} className={inputCls} />
               </div>
             </div>
           </div>
@@ -430,11 +500,11 @@ function EditTaskModal({
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <span className="text-[10px] text-[var(--text-muted)]">Start</span>
-                <input type="date" value={actualStart} onChange={e => setActualStart(e.target.value)} className={inputCls} />
+                <DateTimeInput value={actualStart} onChange={setActualStart} className={inputCls} />
               </div>
               <div>
                 <span className="text-[10px] text-[var(--text-muted)]">End</span>
-                <input type="date" value={actualEnd} onChange={e => setActualEnd(e.target.value)} className={inputCls} />
+                <DateTimeInput value={actualEnd} onChange={setActualEnd} className={inputCls} />
               </div>
             </div>
           </div>
@@ -477,7 +547,7 @@ function EditTaskModal({
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function ShipmentTasks({ shipmentId, accountType, userRole }: ShipmentTasksProps) {
+export default function ShipmentTasks({ shipmentId, orderType, accountType, userRole }: ShipmentTasksProps) {
   const [tasks, setTasks] = useState<WorkflowTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -680,6 +750,7 @@ export default function ShipmentTasks({ shipmentId, accountType, userRole }: Shi
         <TaskCard
           key={task.task_id}
           task={task}
+          orderType={orderType}
           accountType={accountType}
           userRole={userRole}
           onMarkComplete={handleMarkComplete}
