@@ -548,7 +548,7 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
 
   // Clicking a FUTURE node
   function handleFutureNodeClick(nodeGroup: { node: number; label: string; steps: ShipmentOrderStatus[] }) {
-    if (loading || isTerminal) return;
+    if (loading || isTerminal || !isAfu) return;
     if (nodeGroup.steps.length === 1) {
       // Single-step node (Confirmed, Completed) → advance directly
       const target = nodeGroup.steps[0];
@@ -682,9 +682,9 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
 
           // Cursor
           const nodeCursor =
-            state === 'future' ? 'cursor-pointer' :
+            state === 'future' && isAfu ? 'cursor-pointer' :
             state === 'past' && isAfu ? 'cursor-pointer' :
-            currentIncomplete ? 'cursor-pointer' :
+            currentIncomplete && isAfu ? 'cursor-pointer' :
             'cursor-default';
 
           // Label styles
@@ -803,8 +803,8 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
         )}
       </div>
 
-      {/* Action Buttons */}
-      {isTerminal ? null : (
+      {/* Action Buttons — AFU only */}
+      {isAfu && !isTerminal && (
         <div className="flex items-center gap-2 flex-wrap">
           {/* Main advance button */}
           {advanceStatus && (
@@ -982,28 +982,30 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
         </div>
       )}
 
-      {/* Invoiced Toggle */}
-      <div className="mt-4 pt-4 border-t border-[var(--border)] flex items-center justify-between">
-        <div>
-          <span className="text-sm text-[var(--text)]">Invoiced</span>
-          <span className="text-xs text-[var(--text-muted)] ml-2">
-            {currentStatus === 5001
-              ? (order.issued_invoice ? 'Invoice processed' : 'Awaiting invoice')
-              : 'Available after shipment is completed'}
-          </span>
+      {/* Invoiced Toggle — AFU only */}
+      {isAfu && (
+        <div className="mt-4 pt-4 border-t border-[var(--border)] flex items-center justify-between">
+          <div>
+            <span className="text-sm text-[var(--text)]">Invoiced</span>
+            <span className="text-xs text-[var(--text-muted)] ml-2">
+              {currentStatus === 5001
+                ? (order.issued_invoice ? 'Invoice processed' : 'Awaiting invoice')
+                : 'Available after shipment is completed'}
+            </span>
+          </div>
+          <button
+            onClick={currentStatus === 5001 ? handleInvoiceToggle : undefined}
+            disabled={currentStatus !== 5001 || invoiceLoading}
+            className={`relative w-10 h-5 rounded-full transition-colors ${
+              order.issued_invoice && currentStatus === 5001 ? 'bg-[var(--sky)]' : 'bg-gray-300'
+            } ${currentStatus !== 5001 ? 'opacity-40 cursor-not-allowed' : ''} ${invoiceLoading ? 'opacity-50' : ''}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+              order.issued_invoice ? 'translate-x-5' : ''
+            }`} />
+          </button>
         </div>
-        <button
-          onClick={currentStatus === 5001 ? handleInvoiceToggle : undefined}
-          disabled={currentStatus !== 5001 || invoiceLoading}
-          className={`relative w-10 h-5 rounded-full transition-colors ${
-            order.issued_invoice && currentStatus === 5001 ? 'bg-[var(--sky)]' : 'bg-gray-300'
-          } ${currentStatus !== 5001 ? 'opacity-40 cursor-not-allowed' : ''} ${invoiceLoading ? 'opacity-50' : ''}`}
-        >
-          <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
-            order.issued_invoice ? 'translate-x-5' : ''
-          }`} />
-        </button>
-      </div>
+      )}
 
       {/* Status History */}
       <div className="mt-4 pt-4 border-t border-[var(--border)]">

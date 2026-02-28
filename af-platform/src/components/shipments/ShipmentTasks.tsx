@@ -149,10 +149,8 @@ function canToggleVisibility(accountType: string | null): boolean {
   return accountType === 'AFU';
 }
 
-function canChangeMode(accountType: string | null, userRole: string | null): boolean {
-  if (accountType === 'AFU') return true;
-  if (accountType === 'AFC' && (userRole === 'AFC-ADMIN' || userRole === 'AFC-M')) return true;
-  return false;
+function canChangeMode(accountType: string | null): boolean {
+  return accountType === 'AFU';
 }
 
 // ---------------------------------------------------------------------------
@@ -388,14 +386,12 @@ function TaskCard({
 function EditTaskModal({
   task,
   accountType,
-  userRole,
   onSave,
   onClose,
   saving,
 }: {
   task: WorkflowTask;
   accountType: string | null;
-  userRole: string | null;
   onSave: (taskId: string, updates: Record<string, unknown>) => void;
   onClose: () => void;
   saving: boolean;
@@ -410,7 +406,7 @@ function EditTaskModal({
   const [actualEnd, setActualEnd] = useState(isoToLocalDatetime(task.actual_end));
   const [notes, setNotes] = useState(task.notes ?? '');
 
-  const showModeSelector = canChangeMode(accountType, userRole);
+  const showModeSelector = canChangeMode(accountType);
 
   // When TRACKED mode, remove BLOCKED from status options
   const statusOptions = mode === 'TRACKED'
@@ -835,7 +831,6 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, user
         <EditTaskModal
           task={editingTask}
           accountType={accountType}
-          userRole={userRole}
           onSave={handleEditSave}
           onClose={() => setEditingTask(null)}
           saving={editSaving}

@@ -197,3 +197,15 @@ Entries are appended chronologically — never overwrite.
   - `af-server/core/auth.py` — CompanyUserAccount lookup in `_build_claims`
 - **Notes:** Lint passes. Server compiles clean. Critical security fix: AFC users with missing company_id in UserIAM now correctly resolved from CompanyUserAccount.
 
+### [2026-03-01 13:00 UTC] — AFC Permission Fixes: Dashboard + Shipment Detail + Tasks
+- **Status:** Completed
+- **Tasks:**
+  - Fix 1: Dashboard — replaced "Total Companies" KPI with "My Company" (company_name) for AFC users; skipped `fetchCompanyStatsAction` for AFC; `companyStats` no longer blocks `statsLoading` for AFC
+  - Fix 2: Shipment detail — wrapped action buttons (Advance/Cancel/Flag Exception) with `isAfu && !isTerminal` guard; wrapped Invoiced toggle with `isAfu` guard; added `!isAfu` guard to `handleFutureNodeClick`; fixed cursor classes on all node states to only show pointer for AFU
+  - Fix 3: Tasks — simplified `canChangeMode` to `accountType === 'AFU'` only; removed unused `userRole` param from `canChangeMode` and `EditTaskModal`
+- **Files Modified:**
+  - `af-platform/src/app/(platform)/dashboard/page.tsx` — conditional company KPI, conditional stats fetch
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — action buttons + invoiced toggle + node click AFC guards
+  - `af-platform/src/components/shipments/ShipmentTasks.tsx` — `canChangeMode` simplified, `EditTaskModal` userRole removed
+- **Notes:** Lint passes. Status history accordion remains visible to AFC users (read-only).
+

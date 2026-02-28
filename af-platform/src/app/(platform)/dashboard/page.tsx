@@ -48,26 +48,36 @@ export default function DashboardPage() {
   const [accountType, setAccountType] = useState<string | null>(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
 
+  const [companyName, setCompanyName] = useState<string | null>(null);
+  const [companyId, setCompanyId] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [shipmentStatsResult, companyStatsResult, ordersResult, profile] = await Promise.all([
+      const [shipmentStatsResult, ordersResult, profile] = await Promise.all([
         fetchShipmentOrderStatsAction(),
-        fetchCompanyStatsAction(),
         fetchShipmentOrdersAction({ limit: 10 }),
         getCurrentUserProfileAction(),
       ]);
 
       if (!shipmentStatsResult.success) throw new Error(shipmentStatsResult.error);
-      if (!companyStatsResult.success) throw new Error(companyStatsResult.error);
       if (!ordersResult.success) throw new Error(ordersResult.error);
 
       setShipmentStats(shipmentStatsResult.data);
-      setCompanyStats(companyStatsResult.data);
       setRecentOrders(ordersResult.data.orders);
       setAccountType(profile.account_type);
+      setCompanyName(profile.company_name);
+      setCompanyId(profile.company_id);
       setProfileLoaded(true);
+
+      // Only fetch company stats for AFU (staff) users
+      if (profile.account_type === 'AFU') {
+        const companyStatsResult = await fetchCompanyStatsAction();
+        if (companyStatsResult.success) {
+          setCompanyStats(companyStatsResult.data);
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard');
     } finally {
@@ -80,7 +90,8 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const statsLoading = shipmentStats == null || companyStats == null;
+  const isAfc = accountType === 'AFC';
+  const statsLoading = shipmentStats == null || (!isAfc && companyStats == null);
 
   return (
     <div className="p-6 space-y-6">
@@ -116,13 +127,23 @@ export default function DashboardPage() {
           loading={statsLoading}
           color="sky"
         />
-        <KpiCard
-          icon={<Building2 className="w-5 h-5" />}
-          label="Total Companies"
-          value={companyStats?.total ?? '—'}
-          loading={statsLoading}
-          color="purple"
-        />
+        {isAfc ? (
+          <KpiCard
+            icon={<Building2 className="w-5 h-5" />}
+            label="My Company"
+            value={companyName || companyId || '—'}
+            loading={statsLoading}
+            color="purple"
+          />
+        ) : (
+          <KpiCard
+            icon={<Building2 className="w-5 h-5" />}
+            label="Total Companies"
+            value={companyStats?.total ?? '—'}
+            loading={statsLoading}
+            color="purple"
+          />
+        )}
         <KpiCard
           icon={<FileEdit className="w-5 h-5" />}
           label="To Invoice"

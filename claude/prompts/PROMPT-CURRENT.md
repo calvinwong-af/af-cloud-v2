@@ -1,188 +1,84 @@
-# PROMPT — AFC Permission Fixes: Dashboard + Shipment Detail + Tasks
+# PROMPT — Dashboard AFC KPI Cards Redesign
 **Session:** v2.25 (continued)
 **Date:** 01 Mar 2026
-**Priority:** Security / correctness
+**Priority:** UI correctness
 
 ---
 
 ## Context
 
-AFC customer accounts (e.g. wongyuenfatt@gmail.com, role=AFC-ADMIN, company=AFC-0005)
-are now correctly scoped to their company's shipments following the v2.25 auth fix.
-However, several UI elements remain unguarded and expose staff-only actions to customers.
-This prompt fixes all five open issues identified in the AFC testing session.
+The AFC dashboard KPI cards have three issues after the previous fix:
+1. "My Company" card label is redundant and not needed
+2. "To Invoice" must be hidden from AFC users — billing status is internal
+3. The company name card wraps awkwardly for long names and sits in the wrong slot
 
 Read `AF-Coding-Standards.md` and `CLAUDE.md` before starting.
 
 ---
 
-## Fix 1 — Dashboard: replace "Total Companies" KPI for AFC users
+## Change — `af-platform/src/app/(platform)/dashboard/page.tsx`
 
-**File:** `af-platform/src/app/(platform)/dashboard/page.tsx`
+### AFC KPI card layout (replace current implementation)
 
-The dashboard currently calls `fetchCompanyStatsAction()` unconditionally and renders
-a "Total Companies" KPI card for all users. AFC users have no business seeing global
-company counts — they should see their own company info instead.
+For AFC users, show exactly 4 cards:
+1. **Total Shipments** — `shipmentStats.total`, default color (unchanged)
+2. **Active Shipments** — `shipmentStats.active`, sky color (unchanged)
+3. **Completed** — `shipmentStats.completed`, green color (replaces To Invoice)
+4. **Company** — company identity card (replaces Total Companies)
 
-### Changes:
+For AFU users, keep the existing 4 cards unchanged:
+1. Total Shipments
+2. Active Shipments
+3. Total Companies
+4. To Invoice
 
-**1a. Skip `fetchCompanyStatsAction` for AFC users**
+### Company card design
 
-`accountType` is already fetched from `getCurrentUserProfileAction()` in the same
-`Promise.all`. Move the company stats fetch to be conditional:
+Do NOT use `KpiCard` for the company card — the standard KpiCard layout
+(large bold number + small label) doesn't suit a company name. Build a matching
+custom card inline in the dashboard page instead.
 
-```typescript
-const [shipmentStatsResult, ordersResult, profile] = await Promise.all([
-  fetchShipmentOrderStatsAction(),
-  fetchShipmentOrdersAction({ limit: 10 }),
-  getCurrentUserProfileAction(),
-]);
-
-// Only fetch company stats for AFU users
-const companyStatsResult = profile.account_type === 'AFU'
-  ? await fetchCompanyStatsAction()
-  : { success: true as const, data: null };
+The card must match the exact same outer shell as KpiCard:
+```
+bg-white rounded-xl border border-[var(--border)] p-4
 ```
 
-Adjust error handling to only throw on company stats failure for AFU users.
+Internal layout:
+- Top: icon container — same size and style as KpiCard (`w-9 h-9 rounded-lg`),
+  use `Building2` icon, purple color (`text-purple-600 bg-purple-50`)
+- Body (mt-3):
+  - Company name: `text-base font-semibold text-[var(--text)] leading-tight`
+    — truncate with `truncate` class, max one line
+  - Company ID below: `text-xs font-mono text-[var(--text-muted)] mt-0.5`
+- No label row — the icon and the ID are sufficient context
+- Loading state: two skeleton lines matching KpiCard pulse style
 
-**1b. Conditional KPI grid**
+Use `company_name` for the name and `company_id` for the ID subline.
+Both come from `getCurrentUserProfileAction()` which already returns them.
+If `company_name` is null, show `company_id` in the name position.
 
-For AFU users: render 4 cards as today (Total Shipments, Active, Total Companies,
-To Invoice).
+### Completed shipments card
 
-For AFC users: render 4 cards replacing "Total Companies" with a "My Company" card:
-- Icon: `Building2`
-- Label: `"My Company"`
-- Value: the user's `company_name` from `getCurrentUserProfileAction()` (already
-  extended in v2.25 to return this)
-- If company_name is null/empty, fall back to `company_id`
-- Color: `"purple"` (matching existing KpiCard color prop)
+Use the existing `shipmentStats.completed` value.
+- Icon: `CheckCircle2` from lucide-react (already imported as `PackageCheck` —
+  replace with `CheckCircle2` or keep `PackageCheck`, whichever is cleaner)
+- Label: `"Completed"`
+- Color: `"green"`
 
-`getCurrentUserProfileAction()` now returns `company_name` and `company_id` — use
-those directly; no additional fetch needed.
+### Grid
 
-**1c. KpiCard — support string values**
-
-`KpiCard` currently types `value` as `number | string`. Confirm it renders string
-values correctly (it should — just verify and don't change if already working).
-
----
-
-## Fix 2 — Shipment detail: hide staff-only status actions from AFC users
-
-**File:** `af-platform/src/app/(platform)/shipments/[id]/page.tsx`
-
-Inside `StatusCard`, the action buttons area currently only checks `isTerminal`.
-AFC users can see and click Advance, Cancel, and Flag Exception buttons.
-
-### Changes:
-
-**2a. Guard all action buttons behind `isAfu`**
-
-The existing `isAfu` flag (`const isAfu = accountType === 'AFU'`) is already defined
-in `StatusCard`. Wrap the entire action buttons block:
-
-```tsx
-{/* Action Buttons — AFU only */}
-{isAfu && !isTerminal && (
-  <div className="flex items-center gap-2 flex-wrap">
-    {/* Advance button */}
-    {advanceStatus && ( ... )}
-    {/* Exception flag/clear button */}
-    <button onClick={handleExceptionToggle} ...>...</button>
-    {/* Cancel button */}
-    {canCancel && ( <button onClick={handleCancelClick} ...>...</button> )}
-  </div>
-)}
-```
-
-AFC users see the status timeline (read-only view is fine) but no action buttons.
-
-**2b. Guard the Invoiced toggle behind `isAfu`**
-
-The invoiced toggle section at the bottom of `StatusCard` should also be AFU-only.
-Wrap it:
-
-```tsx
-{/* Invoiced Toggle — AFU only */}
-{isAfu && (
-  <div className="mt-4 pt-4 border-t border-[var(--border)] flex items-center justify-between">
-    ...existing toggle...
-  </div>
-)}
-```
-
-**2c. Status history — keep visible for both AFC and AFU**
-
-The status history accordion should remain visible to AFC users (read-only). No change
-needed there.
-
-**2d. Node click handlers — tighten AFC guard**
-
-`handlePastClick` already has `if (loading || !isAfu) return` — correct.
-`handleFutureNodeClick` has no `isAfu` check — AFC users can click future nodes.
-
-Add an `isAfu` guard at the top of `handleFutureNodeClick`:
-
-```typescript
-function handleFutureNodeClick(...) {
-  if (loading || isTerminal || !isAfu) return;
-  ...
-}
-```
-
-And in the node `onClick` handler, the cursor class already uses `isAfu` for past
-nodes — extend it for future nodes too:
-
-```typescript
-const nodeCursor =
-  state === 'future' && isAfu ? 'cursor-pointer' :
-  state === 'past' && isAfu ? 'cursor-pointer' :
-  currentIncomplete && isAfu ? 'cursor-pointer' :
-  'cursor-default';
-```
-
----
-
-## Fix 3 — Tasks: restrict Mode selector to AFU only
-
-**File:** `af-platform/src/components/shipments/ShipmentTasks.tsx`
-
-`canChangeMode()` currently returns `true` for `AFC-ADMIN` and `AFC-M`. The task
-mode (ASSIGNED / TRACKED / IGNORED) is an internal operations setting — customers
-should not be able to change it.
-
-### Change:
-
-```typescript
-function canChangeMode(accountType: string | null): boolean {
-  return accountType === 'AFU';
-}
-```
-
-Remove the `userRole` parameter entirely from `canChangeMode` — it is no longer
-needed. Update all call sites accordingly (there is one call in `EditTaskModal`
-and the function signature definition).
-
-AFC users with AFC-ADMIN or AFC-M roles can still edit task timing, status, notes,
-and assigned_to — only the Mode selector is hidden from them.
-
-Note: `canEdit()` intentionally keeps AFC-ADMIN and AFC-M as editable — this is
-correct. Only mode-changing is restricted.
+Keep `grid-cols-2 lg:grid-cols-4 gap-4` — same grid for both AFU and AFC.
+The 4th slot for AFC is the custom company card; for AFU it remains the To Invoice KpiCard.
 
 ---
 
 ## Verification checklist
 
-- [ ] AFC user dashboard shows "My Company" card (Universal Zentury Holdings Sdn Bhd) instead of "628 Total Companies"
-- [ ] AFC user dashboard — no error thrown from company stats fetch
-- [ ] AFU user dashboard unchanged — still shows Total Companies count
-- [ ] AFC user on shipment detail — Advance/Cancel/Flag Exception buttons hidden
-- [ ] AFC user on shipment detail — Invoiced toggle hidden
-- [ ] AFC user on shipment detail — Status timeline visible (read-only, no cursor-pointer on nodes)
-- [ ] AFC user on shipment detail — Status History accordion still visible and expandable
-- [ ] AFC user on Tasks tab — Edit modal opens but Mode selector (ASSIGNED/TRACKED/IGNORED) is hidden
-- [ ] AFU user — all existing behaviour unchanged
-- [ ] `npm run lint` passes in `af-platform`
-- [ ] No TypeScript errors
+- [ ] AFC dashboard: 4 cards — Total Shipments, Active, Completed, Company
+- [ ] AFC Company card: shows company name truncated to one line + company ID below
+- [ ] AFC Company card: no "My Company" label anywhere
+- [ ] AFC dashboard: "To Invoice" card not present
+- [ ] AFU dashboard: unchanged — Total Shipments, Active, Total Companies, To Invoice
+- [ ] Loading state renders skeleton correctly for company card
+- [ ] Long company names truncate rather than wrap
+- [ ] `npm run lint` passes
