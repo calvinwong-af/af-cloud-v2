@@ -1,0 +1,1998 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AcceleFreight | Malaysia's Premier 3PL & Freight Forwarding Partner</title>
+  <meta name="description" content="AcceleFreight is a Malaysian freight forwarder and 3PL service provider specialising in sea freight, air freight, distribution, warehousing, cold storage, customs clearance, EOR/IOR, and outsourced logistics services." />
+  <meta name="keywords" content="freight forwarding Malaysia, 3PL Malaysia, sea freight, air freight, customs clearance, cold storage, EOR IOR Malaysia, import export Malaysia, logistics Malaysia, distribution Malaysia, outsourced logistics" />
+  <meta name="robots" content="index, follow" />
+  <meta property="og:title" content="AcceleFreight | Malaysia's Premier 3PL & Freight Forwarding Partner" />
+  <meta property="og:description" content="Simplifying freight logistics for businesses of all sizes. Sea, air, distribution, warehousing, cold storage, customs clearance, EOR/IOR and outsourced logistics." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://www.accelefreight.com" />
+  <link rel="canonical" href="https://www.accelefreight.com" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --slate:        #0f1c2e;
+      --slate-mid:    #1a2f47;
+      --slate-light:  #243b55;
+      --sky:          #3b9eff;
+      --sky-light:    #6cb8ff;
+      --sky-pale:     #e8f4ff;
+      --sky-mist:     #f0f7ff;
+      --white:        #ffffff;
+      --surface:      #f7f9fc;
+      --border:       #dde5ef;
+      --border-light: #edf2f8;
+      --text:         #0f1c2e;
+      --text-mid:     #3d5473;
+      --text-muted:   #7a93b0;
+      --font-display: 'Syne', sans-serif;
+      --font-body:    'Outfit', sans-serif;
+      --font-mono:    'JetBrains Mono', monospace;
+      --radius:       6px;
+      --shadow-sm:    0 1px 3px rgba(15,28,46,0.08), 0 1px 2px rgba(15,28,46,0.04);
+      --shadow-md:    0 4px 16px rgba(15,28,46,0.10), 0 2px 6px rgba(15,28,46,0.06);
+      --shadow-lg:    0 16px 48px rgba(15,28,46,0.14), 0 4px 12px rgba(15,28,46,0.08);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--white);
+      color: var(--text);
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ══════════════════════════════════
+       NAV
+    ══════════════════════════════════ */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+      height: 68px;
+      background: var(--slate);
+      display: flex; align-items: center;
+      padding: 0 5%;
+      gap: 2rem;
+    }
+
+    .nav-logo {
+      display: flex; align-items: center; gap: 10px;
+      text-decoration: none; cursor: pointer; flex-shrink: 0;
+    }
+
+    /* Logo mark — forward arrow in rounded square */
+    .logo-mark {
+      width: 36px; height: 36px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .logo-mark svg { width: 36px; height: 36px; }
+
+    .logo-wordmark {
+      font-family: var(--font-display);
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--white);
+      letter-spacing: -0.01em;
+    }
+
+    .logo-wordmark span { color: var(--sky-light); }
+
+    .nav-spacer { flex: 1; }
+
+    .nav-links {
+      display: flex; align-items: center; gap: 0.25rem;
+      list-style: none;
+    }
+
+    .nav-links li a {
+      display: block;
+      padding: 6px 14px;
+      border-radius: 4px;
+      text-decoration: none;
+      color: rgba(255,255,255,0.65);
+      font-size: 0.875rem;
+      font-weight: 400;
+      letter-spacing: 0.01em;
+      transition: color 0.15s, background 0.15s;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .nav-links li a:hover { color: var(--white); background: rgba(255,255,255,0.07); }
+    .nav-links li a.active { color: var(--white); }
+
+    .nav-dashboard-btn {
+      display: flex; align-items: center; gap: 6px;
+      padding: 7px 16px;
+      background: var(--sky);
+      color: var(--white) !important;
+      border-radius: 5px;
+      font-size: 0.85rem !important;
+      font-weight: 500 !important;
+      transition: background 0.15s !important;
+    }
+
+    .nav-dashboard-btn:hover { background: var(--sky-light) !important; }
+
+    .nav-hamburger {
+      display: none; flex-direction: column; gap: 5px;
+      cursor: pointer; background: none; border: none; padding: 4px; margin-left: auto;
+    }
+
+    .nav-hamburger span { display: block; width: 22px; height: 2px; background: rgba(255,255,255,0.7); border-radius: 2px; transition: all 0.3s; }
+
+    /* ══════════════════════════════════
+       PAGES
+    ══════════════════════════════════ */
+    section { display: none; }
+    section.active { display: block; }
+
+    /* Shared page hero banner */
+    .page-banner {
+      background: var(--slate);
+      padding: 80px 5% 64px;
+      margin-top: 68px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .page-banner::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse 60% 80% at 100% 50%, rgba(59,158,255,0.12) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .page-banner-inner { max-width: 1200px; margin: 0 auto; position: relative; z-index: 1; }
+
+    .page-tag {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px;
+      background: rgba(59,158,255,0.15);
+      border: 1px solid rgba(59,158,255,0.3);
+      border-radius: 100px;
+      color: var(--sky-light);
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+    }
+
+    .page-banner h1 {
+      font-family: var(--font-display);
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 700;
+      color: var(--white);
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 1rem;
+    }
+
+    .page-banner p {
+      color: rgba(255,255,255,0.55);
+      font-size: 1rem;
+      font-weight: 300;
+      line-height: 1.7;
+      max-width: 540px;
+    }
+
+    /* Shared section wrapper */
+    .section-wrap {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 80px 5%;
+    }
+
+    .section-eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--sky);
+      margin-bottom: 0.75rem;
+    }
+
+    .section-eyebrow::before {
+      content: '';
+      display: block; width: 18px; height: 2px;
+      background: var(--sky);
+      border-radius: 2px;
+    }
+
+    .section-heading {
+      font-family: var(--font-display);
+      font-size: clamp(1.6rem, 3vw, 2.4rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+      color: var(--text);
+      margin-bottom: 1rem;
+    }
+
+    .section-sub {
+      color: var(--text-muted);
+      font-size: 1rem;
+      font-weight: 300;
+      line-height: 1.75;
+      max-width: 560px;
+    }
+
+    /* ══════════════════════════════════
+       BUTTONS
+    ══════════════════════════════════ */
+    .btn-primary {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 11px 24px;
+      background: var(--sky);
+      color: var(--white);
+      border: none;
+      border-radius: var(--radius);
+      font-family: var(--font-body);
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
+      box-shadow: 0 2px 8px rgba(59,158,255,0.3);
+    }
+
+    .btn-primary:hover { background: var(--sky-light); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(59,158,255,0.4); }
+
+    .btn-outline {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 11px 24px;
+      background: transparent;
+      color: var(--text);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      font-family: var(--font-body);
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .btn-outline:hover { border-color: var(--sky); color: var(--sky); }
+
+    .btn-white {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 11px 24px;
+      background: var(--white);
+      color: var(--slate);
+      border: none;
+      border-radius: var(--radius);
+      font-family: var(--font-body);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+
+    .btn-white:hover { background: var(--sky-pale); }
+
+    /* ══════════════════════════════════
+       HOME — HERO
+    ══════════════════════════════════ */
+    #home { padding-top: 68px; }
+
+    .hero {
+      background: var(--slate);
+      min-height: calc(100vh - 68px);
+      display: flex; align-items: center;
+      padding: 5% 5%;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Subtle grid texture */
+    .hero::before {
+      content: '';
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(59,158,255,0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(59,158,255,0.06) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+    }
+
+    /* Glow */
+    .hero::after {
+      content: '';
+      position: absolute;
+      width: 600px; height: 600px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(59,158,255,0.12) 0%, transparent 70%);
+      top: -100px; right: -100px;
+      pointer-events: none;
+    }
+
+    .hero-inner {
+      max-width: 1200px; margin: 0 auto; width: 100%;
+      display: flex; align-items: center; gap: 6%;
+      position: relative; z-index: 1;
+    }
+
+    .hero-left { flex: 1; max-width: 560px; }
+
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 5px 14px 5px 8px;
+      background: rgba(59,158,255,0.12);
+      border: 1px solid rgba(59,158,255,0.25);
+      border-radius: 100px;
+      color: var(--sky-light);
+      font-size: 0.78rem;
+      font-weight: 500;
+      margin-bottom: 1.75rem;
+      font-family: var(--font-mono);
+    }
+
+    .hero-badge-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--sky);
+      box-shadow: 0 0 6px var(--sky);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .hero-title {
+      font-family: var(--font-display);
+      font-size: clamp(2.8rem, 5vw, 4.2rem);
+      font-weight: 800;
+      color: var(--white);
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+      margin-bottom: 1.5rem;
+    }
+
+    .hero-title .accent { color: var(--sky); }
+
+    .hero-desc {
+      color: rgba(255,255,255,0.5);
+      font-size: 1.05rem;
+      font-weight: 300;
+      line-height: 1.75;
+      margin-bottom: 2.25rem;
+      max-width: 460px;
+    }
+
+    .hero-ctas { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+
+    .hero-stats {
+      display: flex; gap: 2.5rem;
+      margin-top: 3.5rem;
+      padding-top: 2rem;
+      border-top: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .hero-stat-num {
+      font-family: var(--font-mono);
+      font-size: 1.6rem;
+      font-weight: 500;
+      color: var(--sky-light);
+      letter-spacing: -0.02em;
+    }
+
+    .hero-stat-label {
+      font-size: 0.78rem;
+      color: rgba(255,255,255,0.35);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-top: 3px;
+      font-weight: 400;
+    }
+
+    /* ── Hero right: shipment tracker card ── */
+    .hero-right {
+      flex: 1;
+      display: flex; justify-content: center; align-items: center;
+      position: relative;
+    }
+
+    .tracker-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 12px;
+      width: 100%; max-width: 420px;
+      backdrop-filter: blur(8px);
+      overflow: hidden;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.35);
+      animation: floatCard 5s ease-in-out infinite;
+    }
+
+    @keyframes floatCard {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-10px); }
+    }
+
+    .tracker-header {
+      background: rgba(59,158,255,0.10);
+      border-bottom: 1px solid rgba(59,158,255,0.15);
+      padding: 14px 18px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+
+    .tracker-title {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--sky-light);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      font-weight: 500;
+    }
+
+    .tracker-id {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: rgba(255,255,255,0.35);
+    }
+
+    .tracker-body { padding: 18px; display: grid; gap: 14px; }
+
+    .tracker-row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px;
+    }
+
+    .tracker-key {
+      font-size: 0.72rem;
+      color: rgba(255,255,255,0.3);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-family: var(--font-mono);
+      flex-shrink: 0;
+    }
+
+    .tracker-val {
+      font-size: 0.85rem;
+      color: rgba(255,255,255,0.85);
+      font-weight: 400;
+      text-align: right;
+    }
+
+    .tracker-val.mono { font-family: var(--font-mono); font-size: 0.78rem; }
+
+    .tracker-divider { height: 1px; background: rgba(255,255,255,0.06); }
+
+    /* Status timeline */
+    .tracker-timeline { padding: 4px 0; display: grid; gap: 10px; }
+
+    .timeline-step {
+      display: flex; align-items: flex-start; gap: 12px;
+    }
+
+    .timeline-dot-col {
+      display: flex; flex-direction: column; align-items: center; gap: 0; flex-shrink: 0;
+    }
+
+    .timeline-dot {
+      width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    }
+
+    .timeline-dot.done { background: var(--sky); box-shadow: 0 0 8px rgba(59,158,255,0.5); }
+    .timeline-dot.active { background: var(--sky-light); box-shadow: 0 0 10px rgba(108,184,255,0.7); animation: pulse 1.5s infinite; }
+    .timeline-dot.pending { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); }
+
+    .timeline-line { width: 1px; flex: 1; background: rgba(255,255,255,0.08); min-height: 10px; }
+
+    .timeline-info { padding-top: 0; }
+
+    .timeline-label {
+      font-size: 0.78rem;
+      color: rgba(255,255,255,0.75);
+      font-weight: 400;
+      line-height: 1;
+    }
+
+    .timeline-label.active-label { color: var(--sky-light); font-weight: 500; }
+    .timeline-label.muted-label { color: rgba(255,255,255,0.3); }
+
+    .timeline-sub {
+      font-size: 0.68rem;
+      color: rgba(255,255,255,0.3);
+      font-family: var(--font-mono);
+      margin-top: 2px;
+    }
+
+    .tracker-footer {
+      padding: 12px 18px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+
+    .tracker-status-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 10px;
+      border-radius: 100px;
+      background: rgba(59,158,255,0.15);
+      border: 1px solid rgba(59,158,255,0.25);
+      font-size: 0.68rem;
+      font-family: var(--font-mono);
+      color: var(--sky-light);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .tracker-eta {
+      font-size: 0.7rem;
+      color: rgba(255,255,255,0.3);
+      font-family: var(--font-mono);
+    }
+
+    /* ── Services ticker strip ── */
+    .services-ticker {
+      background: var(--sky);
+      overflow: hidden;
+      padding: 10px 0;
+      position: relative;
+    }
+
+    .ticker-track {
+      display: flex;
+      gap: 0;
+      animation: ticker 30s linear infinite;
+      white-space: nowrap;
+    }
+
+    .ticker-item {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 0 32px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: rgba(255,255,255,0.85);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+
+    .ticker-dot { width: 4px; height: 4px; border-radius: 50%; background: rgba(255,255,255,0.5); flex-shrink: 0; }
+
+    @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+
+    /* ══════════════════════════════════
+       HOME — ABOUT SNIPPET
+    ══════════════════════════════════ */
+    .home-about { background: var(--white); border-bottom: 1px solid var(--border-light); }
+
+    .logistics-network {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--sky-mist);
+    }
+
+    .home-about-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6rem; align-items: center;
+    }
+
+    .home-about-text p {
+      color: var(--text-mid);
+      line-height: 1.8;
+      font-weight: 300;
+      font-size: 0.975rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .home-about-text p strong { color: var(--text); font-weight: 600; }
+
+    /* Stats panel */
+    .about-stats {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .about-stat {
+      background: var(--white);
+      padding: 1.5rem;
+    }
+
+    .about-stat-num {
+      font-family: var(--font-mono);
+      font-size: 1.8rem;
+      font-weight: 500;
+      color: var(--sky);
+      letter-spacing: -0.02em;
+      line-height: 1;
+    }
+
+    .about-stat-label {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-top: 6px;
+      font-weight: 400;
+    }
+
+    /* ══════════════════════════════════
+       HOME — SERVICES PREVIEW
+    ══════════════════════════════════ */
+    .home-services { background: var(--surface); border-top: 1px solid var(--border-light); border-bottom: 1px solid var(--border-light); }
+
+    .services-grid-home {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-top: 2.5rem;
+    }
+
+    .service-tile {
+      background: var(--white);
+      padding: 1.5rem;
+      transition: background 0.15s;
+      cursor: pointer;
+    }
+
+    .service-tile:hover { background: var(--sky-mist); }
+
+    .service-tile-icon {
+      width: 38px; height: 38px;
+      background: var(--sky-pale);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 1rem;
+      color: var(--sky);
+      transition: background 0.15s;
+    }
+
+    .service-tile:hover .service-tile-icon { background: rgba(59,158,255,0.15); }
+
+    .service-tile h4 {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 0.4rem;
+      line-height: 1.3;
+    }
+
+    .service-tile p {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+      font-weight: 300;
+    }
+
+    /* ══════════════════════════════════
+       CTA BAND
+    ══════════════════════════════════ */
+    .cta-band {
+      background: var(--slate);
+      padding: 72px 5%;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cta-band::before {
+      content: '';
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(59,158,255,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(59,158,255,0.04) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+
+    .cta-band-inner { position: relative; z-index: 1; }
+
+    .cta-band h2 {
+      font-family: var(--font-display);
+      font-size: clamp(1.8rem, 3vw, 2.5rem);
+      font-weight: 700;
+      color: var(--white);
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+
+    .cta-band p {
+      color: rgba(255,255,255,0.45);
+      font-size: 1rem;
+      font-weight: 300;
+      margin-bottom: 2rem;
+    }
+
+    /* ══════════════════════════════════
+       FOOTER
+    ══════════════════════════════════ */
+    footer {
+      background: var(--slate);
+      border-top: 1px solid rgba(255,255,255,0.06);
+      padding: 56px 5% 28px;
+    }
+
+    .footer-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap: 4rem;
+      max-width: 1200px; margin: 0 auto 2.5rem;
+    }
+
+    .footer-brand p {
+      color: rgba(255,255,255,0.35);
+      font-size: 0.875rem;
+      font-weight: 300;
+      line-height: 1.7;
+      margin-top: 1rem;
+      max-width: 280px;
+    }
+
+    .footer-col h4 {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.3);
+      margin-bottom: 1.1rem;
+    }
+
+    .footer-col ul { list-style: none; display: grid; gap: 0.6rem; }
+
+    .footer-col ul li a {
+      text-decoration: none;
+      color: rgba(255,255,255,0.5);
+      font-size: 0.875rem;
+      font-weight: 300;
+      transition: color 0.15s;
+      cursor: pointer;
+    }
+
+    .footer-col ul li a:hover { color: var(--white); }
+
+    .footer-bottom {
+      max-width: 1200px; margin: 0 auto;
+      padding-top: 1.75rem;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 0.78rem;
+      color: rgba(255,255,255,0.25);
+    }
+
+    .footer-bottom a { color: var(--sky-light); text-decoration: none; }
+    .footer-bottom a:hover { color: var(--white); }
+
+    /* ══════════════════════════════════
+       ABOUT PAGE
+    ══════════════════════════════════ */
+    .about-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 5rem; align-items: start;
+      margin-top: 3rem;
+    }
+
+    .about-text p {
+      color: var(--text-mid);
+      line-height: 1.85;
+      font-weight: 300;
+      font-size: 0.975rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .about-text p strong { color: var(--text); font-weight: 600; }
+
+    .values-stack { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-top: 0; }
+
+    .value-card {
+      background: var(--white);
+      padding: 1.25rem 1.5rem;
+      display: flex; gap: 1rem; align-items: flex-start;
+      transition: background 0.15s;
+    }
+
+    .value-card:hover { background: var(--sky-mist); }
+
+    .value-icon {
+      width: 34px; height: 34px; flex-shrink: 0;
+      background: var(--sky-pale);
+      border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--sky);
+      margin-top: 2px;
+    }
+
+    .value-card h3 { font-size: 0.9rem; font-weight: 600; color: var(--text); margin-bottom: 0.3rem; }
+    .value-card p { font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; font-weight: 300; }
+
+    /* ══════════════════════════════════
+       SERVICES PAGE
+    ══════════════════════════════════ */
+    .services-full-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-top: 2.5rem;
+    }
+
+    .service-card-full {
+      background: var(--white);
+      padding: 2rem;
+      transition: background 0.15s;
+      position: relative;
+    }
+
+    .service-card-full:hover { background: var(--sky-mist); }
+
+    .service-card-full::after {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--sky);
+      transform: scaleX(0); transition: transform 0.25s;
+      transform-origin: left;
+    }
+
+    .service-card-full:hover::after { transform: scaleX(1); }
+
+    .svc-icon {
+      width: 44px; height: 44px;
+      background: var(--sky-pale);
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--sky);
+      margin-bottom: 1.1rem;
+    }
+
+    .service-card-full h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 0.6rem;
+      letter-spacing: -0.01em;
+    }
+
+    .service-card-full p {
+      font-size: 0.86rem;
+      color: var(--text-mid);
+      line-height: 1.7;
+      font-weight: 300;
+    }
+
+    .svc-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 1rem; }
+
+    .svc-tag {
+      padding: 3px 10px;
+      background: var(--sky-pale);
+      border: 1px solid rgba(59,158,255,0.2);
+      border-radius: 100px;
+      font-size: 0.68rem;
+      font-weight: 500;
+      color: var(--sky);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .services-contact-prompt {
+      margin-top: 2rem;
+      padding: 1.5rem 2rem;
+      background: var(--sky-mist);
+      border: 1px solid rgba(59,158,255,0.2);
+      border-radius: var(--radius);
+      display: flex; align-items: center; justify-content: space-between; gap: 2rem; flex-wrap: wrap;
+    }
+
+    .services-contact-prompt p { color: var(--text-mid); font-size: 0.9rem; font-weight: 300; }
+    .services-contact-prompt p strong { color: var(--text); font-weight: 600; }
+
+    /* ══════════════════════════════════
+       FAQ PAGE
+    ══════════════════════════════════ */
+    .faq-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 2rem; }
+
+    .faq-tab {
+      padding: 10px 22px;
+      background: none; border: none;
+      font-family: var(--font-body);
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .faq-tab.active { color: var(--sky); border-bottom-color: var(--sky); }
+    .faq-panel { display: none; }
+    .faq-panel.active { display: block; }
+
+    .faq-item { border-bottom: 1px solid var(--border-light); }
+
+    .faq-question {
+      width: 100%; background: none; border: none;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1.25rem 0;
+      cursor: pointer; text-align: left;
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 0.95rem;
+      font-weight: 500;
+      gap: 1rem;
+      transition: color 0.15s;
+    }
+
+    .faq-question:hover { color: var(--sky); }
+
+    .faq-chevron { width: 18px; height: 18px; flex-shrink: 0; color: var(--sky); transition: transform 0.3s; }
+    .faq-item.open .faq-chevron { transform: rotate(180deg); }
+
+    .faq-answer { overflow: hidden; max-height: 0; transition: max-height 0.4s ease; }
+    .faq-item.open .faq-answer { max-height: 600px; }
+
+    .faq-answer-inner {
+      padding-bottom: 1.25rem;
+      color: var(--text-mid);
+      font-size: 0.9rem;
+      line-height: 1.8;
+      font-weight: 300;
+    }
+
+    .faq-answer-inner ul { margin: 0.75rem 0 0.75rem 1.2rem; }
+    .faq-answer-inner ul li { margin-bottom: 0.4rem; }
+
+    /* ══════════════════════════════════
+       CONTACT PAGE
+    ══════════════════════════════════ */
+    .contact-layout {
+      display: grid; grid-template-columns: 1fr 1.6fr; gap: 4rem; margin-top: 3rem;
+    }
+
+    .contact-info-panel h2 {
+      font-family: var(--font-display);
+      font-size: 1.3rem; font-weight: 700;
+      letter-spacing: -0.01em;
+      margin-bottom: 2rem;
+      color: var(--text);
+    }
+
+    .contact-detail {
+      display: flex; align-items: flex-start; gap: 0.9rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .contact-icon {
+      width: 36px; height: 36px; flex-shrink: 0;
+      background: var(--sky-pale);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--sky);
+    }
+
+    .contact-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--sky);
+      margin-bottom: 0.2rem;
+    }
+
+    .contact-value {
+      font-size: 0.9rem; color: var(--text-mid); font-weight: 300; line-height: 1.55;
+    }
+
+    .contact-value a { color: var(--text-mid); text-decoration: none; transition: color 0.15s; }
+    .contact-value a:hover { color: var(--sky); }
+
+    /* Form */
+    .contact-form { display: grid; gap: 1.1rem; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; }
+    .form-group { display: flex; flex-direction: column; gap: 0.4rem; }
+
+    .form-group label {
+      font-size: 0.72rem; font-weight: 600;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      background: var(--white);
+      border: 1.5px solid var(--border);
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 0.9rem;
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      width: 100%;
+    }
+
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      border-color: var(--sky);
+      box-shadow: 0 0 0 3px rgba(59,158,255,0.12);
+    }
+
+    .form-group input::placeholder,
+    .form-group textarea::placeholder { color: var(--text-muted); opacity: 0.6; }
+    .form-group textarea { resize: vertical; min-height: 110px; }
+
+    .form-success {
+      display: none;
+      padding: 0.9rem 1.25rem;
+      background: rgba(59,158,255,0.08);
+      border: 1px solid rgba(59,158,255,0.25);
+      border-radius: var(--radius);
+      color: var(--sky);
+      font-size: 0.875rem;
+      margin-top: 0.5rem;
+    }
+
+    /* Map */
+    .map-wrap {
+      margin-top: 2.5rem;
+    }
+
+    .map-frame {
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .map-frame iframe {
+      display: block; width: 100%; height: 360px; border: 0;
+      filter: invert(92%) hue-rotate(180deg) saturate(0.85) brightness(0.95);
+    }
+
+    .map-caption {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+
+    .map-caption span { font-size: 0.82rem; color: var(--text-muted); font-weight: 300; }
+    .map-caption a { font-size: 0.82rem; color: var(--sky); text-decoration: none; font-weight: 500; }
+    .map-caption a:hover { text-decoration: underline; }
+
+    /* ══════════════════════════════════
+       RESPONSIVE
+    ══════════════════════════════════ */
+    @media (max-width: 960px) {
+      .nav-links { display: none; }
+      .nav-links.open {
+        display: flex; flex-direction: column;
+        position: fixed; top: 68px; left: 0; right: 0;
+        background: var(--slate-mid);
+        padding: 1rem 5%;
+        gap: 0.25rem;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        z-index: 199;
+      }
+      .nav-hamburger { display: flex; }
+      .hero { min-height: auto; padding: 10% 5%; }
+      .hero-inner { flex-direction: column; }
+      .hero-right { width: 100%; }
+      .tracker-card { max-width: 100%; }
+      .hero-stats { gap: 1.5rem; flex-wrap: wrap; }
+      .home-about-grid,
+      .about-grid,
+      .contact-layout { grid-template-columns: 1fr; gap: 2.5rem; }
+      .services-grid-home { grid-template-columns: repeat(2, 1fr); }
+      .footer-grid { grid-template-columns: 1fr; gap: 2rem; }
+      .form-row { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 600px) {
+      .services-grid-home { grid-template-columns: 1fr; }
+      .services-full-grid { grid-template-columns: 1fr; }
+      .about-stats { grid-template-columns: 1fr 1fr; }
+      .footer-bottom { flex-direction: column; gap: 0.5rem; text-align: center; }
+    }
+
+    /* ══════════════════════════════════
+       ANIMATIONS
+    ══════════════════════════════════ */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .fade-1 { animation: fadeUp 0.55s ease both; animation-delay: 0.05s; }
+    .fade-2 { animation: fadeUp 0.55s ease both; animation-delay: 0.15s; }
+    .fade-3 { animation: fadeUp 0.55s ease both; animation-delay: 0.25s; }
+    .fade-4 { animation: fadeUp 0.55s ease both; animation-delay: 0.35s; }
+    .fade-5 { animation: fadeUp 0.55s ease both; animation-delay: 0.45s; }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════ NAV ═══════════════════════ -->
+<nav>
+  <div class="nav-logo" onclick="showPage('home')">
+    <div class="logo-mark">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <polygon points="32,6 52.8,18 52.8,42 32,54 11.2,42 11.2,18" fill="#3b9eff"/>
+        <line x1="32" y1="30" x2="32" y2="6"    stroke="rgba(255,255,255,0.45)" stroke-width="3.5" stroke-linecap="round"/>
+        <line x1="32" y1="30" x2="52.8" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="3.5" stroke-linecap="round"/>
+        <line x1="32" y1="30" x2="11.2" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="3.5" stroke-linecap="round"/>
+        <circle cx="32"   cy="6"  r="5"   fill="rgba(255,255,255,0.85)"/>
+        <circle cx="52.8" cy="42" r="5"   fill="rgba(255,255,255,0.85)"/>
+        <circle cx="11.2" cy="42" r="5"   fill="rgba(255,255,255,0.85)"/>
+        <circle cx="32"   cy="30" r="8.5" fill="white"/>
+        <circle cx="32"   cy="30" r="5"   fill="#3b9eff"/>
+      </svg>
+    </div>
+    <span class="logo-wordmark">Accele<span>Freight</span></span>
+  </div>
+  <div class="nav-spacer"></div>
+  <ul class="nav-links" id="navLinks">
+    <li><a onclick="showPage('home')">Home</a></li>
+    <li><a onclick="showPage('about')">About Us</a></li>
+    <li><a onclick="showPage('services')">Services</a></li>
+    <li><a onclick="showPage('faq')">FAQ</a></li>
+    <li><a onclick="showPage('contact')">Contact Us</a></li>
+    <li><a href="https://alfred.accelefreight.com" target="_blank" class="nav-dashboard-btn">
+      Dashboard
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+    </a></li>
+  </ul>
+  <button class="nav-hamburger" id="hamburger" onclick="toggleMenu()">
+    <span></span><span></span><span></span>
+  </button>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════
+     HOME
+═══════════════════════════════════════════════════ -->
+<section id="home" class="active">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-inner">
+      <div class="hero-left">
+        <div class="hero-badge fade-1">
+          <span class="hero-badge-dot"></span>
+          Malaysian Freight Forwarder &amp; 3PL
+        </div>
+        <h1 class="hero-title fade-2">
+          Your complete<br>
+          <span class="accent">logistics solution.</span>
+        </h1>
+        <p class="hero-desc fade-3">
+          AcceleFreight provides end-to-end freight forwarding and third-party logistics services for businesses operating in and out of Malaysia. Sea, air, distribution — we handle it all.
+        </p>
+        <div class="hero-ctas fade-4">
+          <button class="btn-primary" onclick="showPage('contact')">
+            Get In Touch
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </button>
+          <button class="btn-outline" onclick="showPage('services')" style="border-color:rgba(255,255,255,0.15);color:rgba(255,255,255,0.7);">
+            Our Services
+          </button>
+        </div>
+        <div class="hero-stats fade-5">
+          <div>
+            <div class="hero-stat-num">2018</div>
+            <div class="hero-stat-label">Established</div>
+          </div>
+          <div>
+            <div class="hero-stat-num">8+</div>
+            <div class="hero-stat-label">Service Lines</div>
+          </div>
+          <div>
+            <div class="hero-stat-num">2,000+</div>
+            <div class="hero-stat-label">Quotations Processed</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Shipment tracker card -->
+      <div class="hero-right fade-4">
+        <div class="tracker-card">
+          <div class="tracker-header">
+            <span class="tracker-title">Shipment Tracker</span>
+            <span class="tracker-id">AF-2026-08841</span>
+          </div>
+          <div class="tracker-body">
+            <div class="tracker-row">
+              <span class="tracker-key">Mode</span>
+              <span class="tracker-val">Sea Freight · FCL</span>
+            </div>
+            <div class="tracker-row">
+              <span class="tracker-key">Route</span>
+              <span class="tracker-val">Port Klang → Shanghai</span>
+            </div>
+            <div class="tracker-row">
+              <span class="tracker-key">Container</span>
+              <span class="tracker-val mono">MSKU 7724901-3 · 20FT</span>
+            </div>
+            <div class="tracker-divider"></div>
+            <div class="tracker-timeline">
+              <div class="timeline-step">
+                <div class="timeline-dot-col">
+                  <div class="timeline-dot done"></div>
+                  <div class="timeline-line"></div>
+                </div>
+                <div class="timeline-info">
+                  <div class="timeline-label">Booking Confirmed</div>
+                  <div class="timeline-sub">12 Feb 2026 · 09:14</div>
+                </div>
+              </div>
+              <div class="timeline-step">
+                <div class="timeline-dot-col">
+                  <div class="timeline-dot done"></div>
+                  <div class="timeline-line"></div>
+                </div>
+                <div class="timeline-info">
+                  <div class="timeline-label">Customs Cleared</div>
+                  <div class="timeline-sub">18 Feb 2026 · 14:32</div>
+                </div>
+              </div>
+              <div class="timeline-step">
+                <div class="timeline-dot-col">
+                  <div class="timeline-dot active"></div>
+                  <div class="timeline-line"></div>
+                </div>
+                <div class="timeline-info">
+                  <div class="timeline-label active-label">In Transit · On Vessel</div>
+                  <div class="timeline-sub">ETA Shanghai: 04 Mar 2026</div>
+                </div>
+              </div>
+              <div class="timeline-step">
+                <div class="timeline-dot-col">
+                  <div class="timeline-dot pending"></div>
+                </div>
+                <div class="timeline-info">
+                  <div class="timeline-label muted-label">Destination Clearance</div>
+                  <div class="timeline-sub">Pending</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="tracker-footer">
+            <span class="tracker-status-badge">
+              <span style="width:5px;height:5px;border-radius:50%;background:var(--sky);display:inline-block;animation:pulse 1.5s infinite;"></span>
+              In Transit
+            </span>
+            <span class="tracker-eta">ETA 04 Mar 2026</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Services ticker -->
+  <div class="services-ticker">
+    <div class="ticker-track">
+      <!-- duplicate for seamless loop -->
+      <span class="ticker-item"><span class="ticker-dot"></span>Sea Freight FCL &amp; LCL</span>
+      <span class="ticker-item"><span class="ticker-dot"></span>Air Freight</span>
+      <span class="ticker-item"><span class="ticker-dot"></span>Cross-Border Trucking</span>
+      <span class="ticker-item"><span class="ticker-dot"></span>Distribution Services</span>
+      <span class="ticker-item"><span class="ticker-dot"></span>Warehousing</span>
+      <span class="ticker-item"><span class="ticker-dot"></span>Cold Storage</span>
+      <span class="ticker-item"><span class="ticker-dot"></span>Customs Clearance</span>
+      <span class="ticker-item"><span class="ticker-dot"></span>EOR / IOR Services</span>
+      <span class="ticker-item"><span class="ticker-dot"></span>Outsourced Logistics Management</span>
+      <span class="ticker-item"><span class="ticker-dot"></span>Sea Freight FCL &amp; LCL</span>
+      <span class="ticker-item"><span class="ticker-dot"></span>Air Freight</span>
+      <span class="ticker-item"><span class="ticker-dot"></span>Cross-Border Trucking</span>
+      <span class="ticker-item"><span class="ticker-dot"></span>Distribution Services</span>
+      <span class="ticker-item"><span class="ticker-dot"></span>Warehousing</span>
+      <span class="ticker-item"><span class="ticker-dot"></span>Cold Storage</span>
+      <span class="ticker-item"><span class="ticker-dot"></span>Customs Clearance</span>
+      <span class="ticker-item"><span class="ticker-dot"></span>EOR / IOR Services</span>
+      <span class="ticker-item"><span class="ticker-dot"></span>Outsourced Logistics Management</span>
+    </div>
+  </div>
+
+  <!-- About snippet -->
+  <div class="home-about">
+    <div class="section-wrap">
+      <div class="home-about-grid">
+        <div>
+          <div class="section-eyebrow">Who We Are</div>
+          <h2 class="section-heading">A Malaysian 3PL built for growing businesses</h2>
+          <div class="home-about-text" style="margin-top:1.25rem;">
+            <p>Established in <strong>2018</strong>, AcceleFreight is a Malaysian freight forwarder and Multimodal Transport Operator (MTO). We manage the movement of goods across different modes of transport, processes, and stakeholders — so you don't have to.</p>
+            <p>We operate in Malaysia and handle all shipments going in and out of the country in cooperation with our global partners. Our services are available exclusively to <strong>legally registered corporate and business entities.</strong></p>
+            <button class="btn-primary" onclick="showPage('about')" style="margin-top:0.5rem;">
+              Our Story
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="logistics-network">
+          <svg viewBox="0 0 480 340" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block;">
+            <!-- Background -->
+            <rect width="480" height="340" rx="10" fill="#f0f7ff"/>
+
+            <!-- Faint grid -->
+            <line x1="0" y1="85" x2="480" y2="85" stroke="#dde5ef" stroke-width="1"/>
+            <line x1="0" y1="170" x2="480" y2="170" stroke="#dde5ef" stroke-width="1"/>
+            <line x1="0" y1="255" x2="480" y2="255" stroke="#dde5ef" stroke-width="1"/>
+            <line x1="120" y1="0" x2="120" y2="340" stroke="#dde5ef" stroke-width="1"/>
+            <line x1="240" y1="0" x2="240" y2="340" stroke="#dde5ef" stroke-width="1"/>
+            <line x1="360" y1="0" x2="360" y2="340" stroke="#dde5ef" stroke-width="1"/>
+
+            <!-- ── Connection lines (dashed, behind nodes) ── -->
+            <!-- Origin → Hub MY -->
+            <line x1="80" y1="80" x2="200" y2="170" stroke="#3b9eff" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.4"/>
+            <!-- Origin → Hub MY (sea) -->
+            <line x1="80" y1="260" x2="200" y2="170" stroke="#3b9eff" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.4"/>
+            <!-- Hub MY → Dest A -->
+            <line x1="200" y1="170" x2="340" y2="90" stroke="#3b9eff" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.4"/>
+            <!-- Hub MY → Dest B -->
+            <line x1="200" y1="170" x2="340" y2="170" stroke="#3b9eff" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.4"/>
+            <!-- Hub MY → Dest C -->
+            <line x1="200" y1="170" x2="340" y2="250" stroke="#3b9eff" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.4"/>
+            <!-- Dest A → Last mile -->
+            <line x1="340" y1="90" x2="420" y2="65" stroke="#3b9eff" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.25"/>
+            <line x1="340" y1="90" x2="420" y2="115" stroke="#3b9eff" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.25"/>
+            <!-- Dest C → Last mile -->
+            <line x1="340" y1="250" x2="420" y2="225" stroke="#3b9eff" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.25"/>
+            <line x1="340" y1="250" x2="420" y2="275" stroke="#3b9eff" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.25"/>
+
+            <!-- ── Animated travel dots ── -->
+            <!-- Air path: Origin-air → Hub -->
+            <circle r="4" fill="#3b9eff" opacity="0.9">
+              <animateMotion dur="3s" repeatCount="indefinite" begin="0s">
+                <mpath href="#path-air"/>
+              </animateMotion>
+            </circle>
+            <!-- Sea path: Origin-sea → Hub -->
+            <circle r="4" fill="#3b9eff" opacity="0.9">
+              <animateMotion dur="4.5s" repeatCount="indefinite" begin="1s">
+                <mpath href="#path-sea"/>
+              </animateMotion>
+            </circle>
+            <!-- Hub → Dest B -->
+            <circle r="3.5" fill="#6cb8ff" opacity="0.8">
+              <animateMotion dur="2.5s" repeatCount="indefinite" begin="0.5s">
+                <mpath href="#path-hub-b"/>
+              </animateMotion>
+            </circle>
+            <!-- Hub → Dest A -->
+            <circle r="3.5" fill="#6cb8ff" opacity="0.8">
+              <animateMotion dur="2s" repeatCount="indefinite" begin="1.5s">
+                <mpath href="#path-hub-a"/>
+              </animateMotion>
+            </circle>
+            <!-- Hub → Dest C -->
+            <circle r="3.5" fill="#6cb8ff" opacity="0.8">
+              <animateMotion dur="3s" repeatCount="indefinite" begin="2.5s">
+                <mpath href="#path-hub-c"/>
+              </animateMotion>
+            </circle>
+
+            <!-- Hidden motion paths -->
+            <path id="path-air" d="M80,80 L200,170" fill="none" visibility="hidden"/>
+            <path id="path-sea" d="M80,260 L200,170" fill="none" visibility="hidden"/>
+            <path id="path-hub-a" d="M200,170 L340,90" fill="none" visibility="hidden"/>
+            <path id="path-hub-b" d="M200,170 L340,170" fill="none" visibility="hidden"/>
+            <path id="path-hub-c" d="M200,170 L340,250" fill="none" visibility="hidden"/>
+
+            <!-- ── NODES ── -->
+
+            <!-- Origin: Air (plane icon) -->
+            <circle cx="80" cy="80" r="30" fill="white" stroke="#dde5ef" stroke-width="1.5"/>
+            <circle cx="80" cy="80" r="30" fill="white" stroke="#3b9eff" stroke-width="1.5" opacity="0.4"/>
+            <!-- Plane icon -->
+            <g transform="translate(65,65)">
+              <path d="M14 3L2 9l3 2 3-2 2 3-5 2 2 3 6-1 3 4 2-1-1-5 4-3-1-3-5 2-2-4z" fill="#3b9eff" opacity="0.85"/>
+            </g>
+            <text x="80" y="123" text-anchor="middle" font-family="Outfit,sans-serif" font-size="9" font-weight="500" fill="#7a93b0" letter-spacing="0.04em">AIR ORIGIN</text>
+
+            <!-- Origin: Sea (anchor icon) -->
+            <circle cx="80" cy="260" r="30" fill="white" stroke="#dde5ef" stroke-width="1.5"/>
+            <circle cx="80" cy="260" r="30" fill="white" stroke="#3b9eff" stroke-width="1.5" opacity="0.4"/>
+            <!-- Anchor -->
+            <circle cx="80" cy="252" r="5" fill="none" stroke="#3b9eff" stroke-width="1.8"/>
+            <line x1="80" y1="257" x2="80" y2="272" stroke="#3b9eff" stroke-width="1.8"/>
+            <path d="M70,268 Q80,275 90,268" stroke="#3b9eff" stroke-width="1.8" fill="none"/>
+            <line x1="70" y1="253" x2="90" y2="253" stroke="#3b9eff" stroke-width="1.5"/>
+            <text x="80" y="303" text-anchor="middle" font-family="Outfit,sans-serif" font-size="9" font-weight="500" fill="#7a93b0" letter-spacing="0.04em">SEA ORIGIN</text>
+
+            <!-- Hub: Malaysia (AF hexagon) -->
+            <polygon points="200,140 224,154 224,183 200,197 176,183 176,154" fill="#3b9eff"/>
+            <polygon points="200,140 224,154 224,183 200,197 176,183 176,154" fill="white" opacity="0.08"/>
+            <!-- AF arrow in hub -->
+            <path d="M188,169 L195,161 L195,165 L206,165 L206,161 L213,169 L206,177 L206,173 L195,173 L195,177 Z" fill="white"/>
+            <text x="200" y="213" text-anchor="middle" font-family="Outfit,sans-serif" font-size="9.5" font-weight="600" fill="#3d5473" letter-spacing="0.04em">HUB · MY</text>
+
+            <!-- Destination A: Road/truck -->
+            <circle cx="340" cy="90" r="24" fill="white" stroke="#dde5ef" stroke-width="1.5"/>
+            <circle cx="340" cy="90" r="24" fill="white" stroke="#3b9eff" stroke-width="1.5" opacity="0.35"/>
+            <!-- Truck -->
+            <rect x="326" y="84" width="13" height="9" rx="1" fill="none" stroke="#3b9eff" stroke-width="1.5"/>
+            <polygon points="339,84 348,84 351,88 351,93 339,93" fill="none" stroke="#3b9eff" stroke-width="1.5"/>
+            <circle cx="330" cy="94" r="2" fill="#3b9eff"/>
+            <circle cx="347" cy="94" r="2" fill="#3b9eff"/>
+            <text x="340" y="127" text-anchor="middle" font-family="Outfit,sans-serif" font-size="8.5" font-weight="500" fill="#7a93b0" letter-spacing="0.04em">DISTRIBUTION</text>
+
+            <!-- Destination B: Warehouse -->
+            <circle cx="340" cy="170" r="24" fill="white" stroke="#dde5ef" stroke-width="1.5"/>
+            <circle cx="340" cy="170" r="24" fill="white" stroke="#3b9eff" stroke-width="1.5" opacity="0.35"/>
+            <!-- Warehouse -->
+            <path d="M327,163 L340,156 L353,163" stroke="#3b9eff" stroke-width="1.5" fill="none"/>
+            <rect x="328" y="163" width="24" height="12" fill="none" stroke="#3b9eff" stroke-width="1.5"/>
+            <rect x="336" y="163" width="8" height="12" fill="#e8f4ff" stroke="#3b9eff" stroke-width="1"/>
+            <text x="340" y="207" text-anchor="middle" font-family="Outfit,sans-serif" font-size="8.5" font-weight="500" fill="#7a93b0" letter-spacing="0.04em">WAREHOUSING</text>
+
+            <!-- Destination C: Customs/document -->
+            <circle cx="340" cy="250" r="24" fill="white" stroke="#dde5ef" stroke-width="1.5"/>
+            <circle cx="340" cy="250" r="24" fill="white" stroke="#3b9eff" stroke-width="1.5" opacity="0.35"/>
+            <!-- Checkmark doc -->
+            <rect x="330" y="241" width="14" height="18" rx="2" fill="none" stroke="#3b9eff" stroke-width="1.5"/>
+            <path d="M333,252 l3,3 5-6" stroke="#3b9eff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            <line x1="330" y1="241" x2="344" y2="241" stroke="#3b9eff" stroke-width="1"/>
+            <rect x="343" y="244" width="10" height="13" rx="1.5" fill="#e8f4ff" stroke="#3b9eff" stroke-width="1"/>
+            <line x1="345" y1="248" x2="351" y2="248" stroke="#3b9eff" stroke-width="1"/>
+            <line x1="345" y1="251" x2="351" y2="251" stroke="#3b9eff" stroke-width="1"/>
+            <line x1="345" y1="254" x2="349" y2="254" stroke="#3b9eff" stroke-width="1"/>
+            <text x="340" y="287" text-anchor="middle" font-family="Outfit,sans-serif" font-size="8.5" font-weight="500" fill="#7a93b0" letter-spacing="0.04em">CLEARANCE</text>
+
+            <!-- Last-mile endpoints -->
+            <circle cx="420" cy="65" r="10" fill="#e8f4ff" stroke="#3b9eff" stroke-width="1" opacity="0.7"/>
+            <circle cx="420" cy="115" r="10" fill="#e8f4ff" stroke="#3b9eff" stroke-width="1" opacity="0.7"/>
+            <circle cx="420" cy="225" r="10" fill="#e8f4ff" stroke="#3b9eff" stroke-width="1" opacity="0.7"/>
+            <circle cx="420" cy="275" r="10" fill="#e8f4ff" stroke="#3b9eff" stroke-width="1" opacity="0.7"/>
+            <!-- House icons in endpoints -->
+            <path d="M415,67 l5-5 5,5v5h-3v-3h-4v3h-3z" fill="#3b9eff" opacity="0.5"/>
+            <path d="M415,117 l5-5 5,5v5h-3v-3h-4v3h-3z" fill="#3b9eff" opacity="0.5"/>
+            <path d="M415,227 l5-5 5,5v5h-3v-3h-4v3h-3z" fill="#3b9eff" opacity="0.5"/>
+            <path d="M415,277 l5-5 5,5v5h-3v-3h-4v3h-3z" fill="#3b9eff" opacity="0.5"/>
+            <text x="440" y="68" font-family="Outfit,sans-serif" font-size="7.5" fill="#7a93b0">End pt.</text>
+            <text x="440" y="118" font-family="Outfit,sans-serif" font-size="7.5" fill="#7a93b0">End pt.</text>
+            <text x="440" y="228" font-family="Outfit,sans-serif" font-size="7.5" fill="#7a93b0">End pt.</text>
+            <text x="440" y="278" font-family="Outfit,sans-serif" font-size="7.5" fill="#7a93b0">End pt.</text>
+
+            <!-- Legend -->
+            <rect x="10" y="310" width="460" height="24" rx="4" fill="white" opacity="0.6"/>
+            <circle cx="25" cy="322" r="3.5" fill="#3b9eff"/>
+            <text x="34" y="326" font-family="Outfit,sans-serif" font-size="8" fill="#7a93b0">Active routes</text>
+            <line x1="110" y1="322" x2="130" y2="322" stroke="#3b9eff" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.5"/>
+            <text x="136" y="326" font-family="Outfit,sans-serif" font-size="8" fill="#7a93b0">Connection</text>
+            <polygon points="220,318 228,322 220,326 212,322" fill="#3b9eff"/>
+            <text x="234" y="326" font-family="Outfit,sans-serif" font-size="8" fill="#7a93b0">AF Hub (Malaysia)</text>
+            <circle cx="340" cy="322" r="5" fill="white" stroke="#3b9eff" stroke-width="1.2" opacity="0.6"/>
+            <text x="350" y="326" font-family="Outfit,sans-serif" font-size="8" fill="#7a93b0">Service node</text>
+          </svg>
+          <p style="text-align:center;font-size:0.78rem;color:var(--text-muted);margin-top:0.75rem;font-weight:300;">Origin → AcceleFreight Malaysia → Final Destination</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Services preview -->
+  <div class="home-services">
+    <div class="section-wrap">
+      <div class="section-eyebrow">What We Do</div>
+      <h2 class="section-heading">Comprehensive logistics services</h2>
+      <p class="section-sub">From port to door, we cover every leg of your supply chain with precision and transparency.</p>
+      <div class="services-grid-home">
+        <div class="service-tile" onclick="showPage('services')">
+          <div class="service-tile-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg></div>
+          <h4>Sea Freight</h4><p>FCL &amp; LCL across major global routes</p>
+        </div>
+        <div class="service-tile" onclick="showPage('services')">
+          <div class="service-tile-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg></div>
+          <h4>Air Freight</h4><p>Time-critical cargo, handled with care</p>
+        </div>
+        <div class="service-tile" onclick="showPage('services')">
+          <div class="service-tile-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="3" y1="12" x2="21" y2="12"/><polyline points="8 7 3 12 8 17"/><polyline points="16 7 21 12 16 17"/></svg></div>
+          <h4>Cross-Border Trucking</h4><p>Land freight across Malaysia &amp; regional borders</p>
+        </div>
+        <div class="service-tile" onclick="showPage('services')">
+          <div class="service-tile-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div>
+          <h4>Distribution</h4><p>Last-mile &amp; regional delivery in Malaysia</p>
+        </div>
+        <div class="service-tile" onclick="showPage('services')">
+          <div class="service-tile-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+          <h4>Warehousing</h4><p>General cargo storage &amp; inventory management</p>
+        </div>
+        <div class="service-tile" onclick="showPage('services')">
+          <div class="service-tile-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12h20M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12a10 10 0 1020 0 10 10 0 00-20 0z"/></svg></div>
+          <h4>Cold Storage</h4><p>Temperature-controlled storage for pharma &amp; perishables</p>
+        </div>
+        <div class="service-tile" onclick="showPage('services')">
+          <div class="service-tile-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></div>
+          <h4>Customs Clearance</h4><p>Import &amp; export clearance management</p>
+        </div>
+        <div class="service-tile" onclick="showPage('services')">
+          <div class="service-tile-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></div>
+          <h4>EOR / IOR</h4><p>Exporter &amp; Importer of Record services</p>
+        </div>
+        <div class="service-tile" onclick="showPage('services')">
+          <div class="service-tile-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></div>
+          <h4>Outsourced Logistics</h4><p>Management &amp; consultation services</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CTA Band -->
+  <div class="cta-band">
+    <div class="cta-band-inner">
+      <h2>Ready to simplify your logistics?</h2>
+      <p>Get in touch with our team for a consultation on your freight requirements.</p>
+      <button class="btn-white" onclick="showPage('contact')">
+        Contact Us Today
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <div class="nav-logo" style="cursor:default;">
+          <div class="logo-mark"><svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><polygon points="32,6 52.8,18 52.8,42 32,54 11.2,42 11.2,18" fill="#3b9eff"/><line x1="32" y1="30" x2="32" y2="6" stroke="rgba(255,255,255,0.45)" stroke-width="3.5" stroke-linecap="round"/><line x1="32" y1="30" x2="52.8" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="3.5" stroke-linecap="round"/><line x1="32" y1="30" x2="11.2" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="3.5" stroke-linecap="round"/><circle cx="32" cy="6" r="5" fill="rgba(255,255,255,0.85)"/><circle cx="52.8" cy="42" r="5" fill="rgba(255,255,255,0.85)"/><circle cx="11.2" cy="42" r="5" fill="rgba(255,255,255,0.85)"/><circle cx="32" cy="30" r="8.5" fill="white"/><circle cx="32" cy="30" r="5" fill="#3b9eff"/></svg></div>
+          <span class="logo-wordmark">Accele<span>Freight</span></span>
+        </div>
+        <p>A Malaysian freight forwarder and 3PL service provider. Simplifying logistics for businesses of all sizes since 2018.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Navigation</h4>
+        <ul>
+          <li><a onclick="showPage('home')">Home</a></li>
+          <li><a onclick="showPage('about')">About Us</a></li>
+          <li><a onclick="showPage('services')">Services</a></li>
+          <li><a onclick="showPage('faq')">FAQ</a></li>
+          <li><a onclick="showPage('contact')">Contact Us</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Contact</h4>
+        <ul>
+          <li><a href="tel:+60128208565">+60 12 820 8565</a></li>
+          <li><a href="mailto:info@accelefreight.com">info@accelefreight.com</a></li>
+          <li><a>Ara Damansara, Petaling Jaya</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2025 Accele Freight Sdn Bhd (1292343-T). All rights reserved.</span>
+      <a href="https://alfred.accelefreight.com" target="_blank">Dashboard Login →</a>
+    </div>
+  </footer>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     ABOUT
+═══════════════════════════════════════════════════ -->
+<section id="about">
+  <div class="page-banner">
+    <div class="page-banner-inner">
+      <div class="page-tag">Our Company</div>
+      <h1>About AcceleFreight</h1>
+      <p>A Malaysian freight forwarder built on the belief that logistics should be transparent, efficient, and accessible to every business.</p>
+    </div>
+  </div>
+  <div class="section-wrap">
+    <div class="about-grid">
+      <div class="about-text">
+        <div class="section-eyebrow">Our Story</div>
+        <h2 class="section-heading">Established in 2018</h2>
+        <p>AcceleFreight was founded in late <strong>2018</strong> with a clear goal: to improve how shipments in freight forwarding are managed for all parties — both customers and service providers.</p>
+        <p>We set out to bring greater <strong>visibility, faster response times, and reduced human error</strong> to the freight forwarding process — for customers of all sizes, with no additional cost.</p>
+        <p>AcceleFreight is a <strong>Malaysian incorporated freight forwarder</strong> and Multimodal Transport Operator (MTO). We provide services comparable to any established freight forwarder, with the added advantage of a dedicated team managing all your shipment transactions — so you only need to deal with us.</p>
+        <p>We currently <strong>operate in Malaysia</strong> and accept all shipments going in and out of the country, in cooperation with our trusted global partners. Our services are available exclusively to legally registered corporate and business entities.</p>
+      </div>
+      <div>
+        <div class="section-eyebrow">Our Values</div>
+        <div class="values-stack" style="margin-top:0.75rem;">
+          <div class="value-card">
+            <div class="value-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div>
+            <div><h3>Transparency</h3><p>Customers deserve to know exactly what they are paying for and why. No hidden costs, no surprises.</p></div>
+          </div>
+          <div class="value-card">
+            <div class="value-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+            <div><h3>Efficiency</h3><p>Reducing lead times and eliminating unnecessary back-and-forth is at the core of how we operate every day.</p></div>
+          </div>
+          <div class="value-card">
+            <div class="value-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+            <div><h3>Reliability</h3><p>Your cargo is your business. We treat every shipment with the care and accountability it deserves.</p></div>
+          </div>
+          <div class="value-card">
+            <div class="value-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></div>
+            <div><h3>Accessibility</h3><p>Quality freight forwarding should not be reserved for large corporations. We serve businesses of all sizes.</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="cta-band">
+    <div class="cta-band-inner">
+      <h2>Want to know more?</h2>
+      <p>Reach out to our team — we are happy to discuss your freight requirements.</p>
+      <button class="btn-white" onclick="showPage('contact')">Get In Touch</button>
+    </div>
+  </div>
+  <footer>
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <div class="nav-logo" style="cursor:default;"><div class="logo-mark"><svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><polygon points="32,6 52.8,18 52.8,42 32,54 11.2,42 11.2,18" fill="#3b9eff"/><line x1="32" y1="30" x2="32" y2="6" stroke="rgba(255,255,255,0.45)" stroke-width="3.5" stroke-linecap="round"/><line x1="32" y1="30" x2="52.8" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="3.5" stroke-linecap="round"/><line x1="32" y1="30" x2="11.2" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="3.5" stroke-linecap="round"/><circle cx="32" cy="6" r="5" fill="rgba(255,255,255,0.85)"/><circle cx="52.8" cy="42" r="5" fill="rgba(255,255,255,0.85)"/><circle cx="11.2" cy="42" r="5" fill="rgba(255,255,255,0.85)"/><circle cx="32" cy="30" r="8.5" fill="white"/><circle cx="32" cy="30" r="5" fill="#3b9eff"/></svg></div><span class="logo-wordmark">Accele<span>Freight</span></span></div>
+        <p>A Malaysian freight forwarder and 3PL service provider. Simplifying logistics for businesses of all sizes since 2018.</p>
+      </div>
+      <div class="footer-col"><h4>Navigation</h4><ul><li><a onclick="showPage('home')">Home</a></li><li><a onclick="showPage('about')">About Us</a></li><li><a onclick="showPage('services')">Services</a></li><li><a onclick="showPage('faq')">FAQ</a></li><li><a onclick="showPage('contact')">Contact Us</a></li></ul></div>
+      <div class="footer-col"><h4>Contact</h4><ul><li><a href="tel:+60128208565">+60 12 820 8565</a></li><li><a href="mailto:info@accelefreight.com">info@accelefreight.com</a></li><li><a>Ara Damansara, Petaling Jaya</a></li></ul></div>
+    </div>
+    <div class="footer-bottom"><span>© 2025 Accele Freight Sdn Bhd (1292343-T). All rights reserved.</span><a href="https://alfred.accelefreight.com" target="_blank">Dashboard Login →</a></div>
+  </footer>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     SERVICES
+═══════════════════════════════════════════════════ -->
+<section id="services">
+  <div class="page-banner">
+    <div class="page-banner-inner">
+      <div class="page-tag">What We Offer</div>
+      <h1>Our Services</h1>
+      <p>End-to-end freight and logistics solutions tailored for businesses operating in and out of Malaysia.</p>
+    </div>
+  </div>
+  <div class="section-wrap">
+    <div class="services-full-grid">
+
+      <div class="service-card-full">
+        <div class="svc-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg></div>
+        <h3>Sea Freight</h3>
+        <p>Sea freight is the process of transporting cargo across the ocean on large cargo ships. We handle both Full Container Load (FCL) and Less Than Container Load (LCL) shipments, covering port-of-origin to port-of-destination and all logistics in between.</p>
+        <div class="svc-tags"><span class="svc-tag">FCL</span><span class="svc-tag">LCL</span><span class="svc-tag">Import</span><span class="svc-tag">Export</span></div>
+      </div>
+
+      <div class="service-card-full">
+        <div class="svc-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg></div>
+        <h3>Air Freight</h3>
+        <p>For time-sensitive cargo, air freight offers the fastest transit times. Cargo is packaged in boxes, pallets, or standard containers and consolidated with other shipments to fill the aircraft. We handle port-to-port air shipments with full coordination from origin to destination.</p>
+        <div class="svc-tags"><span class="svc-tag">Import</span><span class="svc-tag">Export</span><span class="svc-tag">Express</span></div>
+      </div>
+
+      <div class="service-card-full">
+        <div class="svc-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="3" y1="12" x2="21" y2="12"/><polyline points="8 7 3 12 8 17"/><polyline points="16 7 21 12 16 17"/></svg></div>
+        <h3>Cross-Border Trucking</h3>
+        <p>Land freight transportation across international borders, including Malaysia–Singapore, Malaysia–Thailand, and other regional corridors. We handle all customs documentation, border clearance coordination, and final-mile handoff to ensure seamless cross-border cargo movement by road.</p>
+        <div class="svc-tags"><span class="svc-tag">Malaysia–Singapore</span><span class="svc-tag">Malaysia–Thailand</span><span class="svc-tag">Regional</span></div>
+      </div>
+
+      <div class="service-card-full">
+        <div class="svc-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div>
+        <h3>Distribution Services</h3>
+        <p>We provide last-mile and regional distribution services across Malaysia. This includes truck-load transportation on general trucks available in 1, 3, 5, and 10 ton sizes, and haulage services for moving containers to and from specified locations to ports or warehouses.</p>
+        <div class="svc-tags"><span class="svc-tag">Last-mile</span><span class="svc-tag">Haulage</span><span class="svc-tag">Truck-load</span></div>
+      </div>
+
+      <div class="service-card-full">
+        <div class="svc-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+        <h3>Warehousing</h3>
+        <p>We provide conventional warehousing for general goods storage and inventory management. Our facilities support a range of storage needs for businesses requiring reliable, secure holding of cargo before onward distribution or delivery.</p>
+        <div class="svc-tags"><span class="svc-tag">General Cargo</span><span class="svc-tag">Storage</span><span class="svc-tag">Inventory</span></div>
+      </div>
+
+      <div class="service-card-full">
+        <div class="svc-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2h8l4 10H4L8 2z"/><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><line x1="12" y1="12" x2="12" y2="22"/><path d="M8 7h2m4 0h2"/><circle cx="12" cy="17" r="1"/><path d="M9 15q1.5-2 3-2t3 2"/></svg></div>
+        <h3>Cold Storage</h3>
+        <p>For cargo with strict temperature requirements, our cold storage facilities maintain precise, monitored temperature control throughout the storage and handling process. Suitable for pharmaceuticals, perishable food products, and other temperature-sensitive goods.</p>
+        <div class="svc-tags"><span class="svc-tag">Cold Chain</span><span class="svc-tag">Pharma</span><span class="svc-tag">Perishables</span><span class="svc-tag">Temperature-Controlled</span></div>
+      </div>
+
+      <div class="service-card-full">
+        <div class="svc-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></div>
+        <h3>Customs Clearance</h3>
+        <p>All cargo exported or imported across borders requires customs clearance. We handle all documentation preparation and submission, represent your company during customs examination, manage duty assessment and payment, and deliver cargo after clearance.</p>
+        <div class="svc-tags"><span class="svc-tag">Import</span><span class="svc-tag">Export</span></div>
+      </div>
+
+      <div class="service-card-full">
+        <div class="svc-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></div>
+        <h3>EOR / IOR Services</h3>
+        <p>Exporter of Record (EOR) and Importer of Record (IOR) services allow businesses without a local legal entity in Malaysia to import or export goods compliantly. We act as the responsible party for all regulatory, tax, and customs obligations on your behalf.</p>
+        <div class="svc-tags"><span class="svc-tag">EOR</span><span class="svc-tag">IOR</span><span class="svc-tag">Cross-border</span></div>
+      </div>
+
+      <div class="service-card-full">
+        <div class="svc-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></div>
+        <h3>Outsourced Logistics Management &amp; Consultation</h3>
+        <p>For businesses looking to optimise their supply chain without building an in-house logistics team, we offer fully outsourced logistics management and expert consultation. We assess your operations, identify inefficiencies, and design tailored logistics solutions that reduce cost and improve reliability.</p>
+        <div class="svc-tags"><span class="svc-tag">Management</span><span class="svc-tag">Consultation</span><span class="svc-tag">Supply Chain</span></div>
+      </div>
+
+    </div>
+
+    <div class="services-contact-prompt">
+      <div>
+        <p><strong>Not sure which service you need?</strong></p>
+        <p>Our team is happy to assess your requirements and recommend the right solution.</p>
+      </div>
+      <button class="btn-primary" onclick="showPage('contact')">Contact Our Team</button>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-grid">
+      <div class="footer-brand"><div class="nav-logo" style="cursor:default;"><div class="logo-mark"><svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><polygon points="32,6 52.8,18 52.8,42 32,54 11.2,42 11.2,18" fill="#3b9eff"/><line x1="32" y1="30" x2="32" y2="6" stroke="rgba(255,255,255,0.45)" stroke-width="3.5" stroke-linecap="round"/><line x1="32" y1="30" x2="52.8" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="3.5" stroke-linecap="round"/><line x1="32" y1="30" x2="11.2" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="3.5" stroke-linecap="round"/><circle cx="32" cy="6" r="5" fill="rgba(255,255,255,0.85)"/><circle cx="52.8" cy="42" r="5" fill="rgba(255,255,255,0.85)"/><circle cx="11.2" cy="42" r="5" fill="rgba(255,255,255,0.85)"/><circle cx="32" cy="30" r="8.5" fill="white"/><circle cx="32" cy="30" r="5" fill="#3b9eff"/></svg></div><span class="logo-wordmark">Accele<span>Freight</span></span></div><p>A Malaysian freight forwarder and 3PL service provider. Simplifying logistics for businesses of all sizes since 2018.</p></div>
+      <div class="footer-col"><h4>Navigation</h4><ul><li><a onclick="showPage('home')">Home</a></li><li><a onclick="showPage('about')">About Us</a></li><li><a onclick="showPage('services')">Services</a></li><li><a onclick="showPage('faq')">FAQ</a></li><li><a onclick="showPage('contact')">Contact Us</a></li></ul></div>
+      <div class="footer-col"><h4>Contact</h4><ul><li><a href="tel:+60128208565">+60 12 820 8565</a></li><li><a href="mailto:info@accelefreight.com">info@accelefreight.com</a></li><li><a>Ara Damansara, Petaling Jaya</a></li></ul></div>
+    </div>
+    <div class="footer-bottom"><span>© 2025 Accele Freight Sdn Bhd (1292343-T). All rights reserved.</span><a href="https://alfred.accelefreight.com" target="_blank">Dashboard Login →</a></div>
+  </footer>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     FAQ
+═══════════════════════════════════════════════════ -->
+<section id="faq">
+  <div class="page-banner">
+    <div class="page-banner-inner">
+      <div class="page-tag">Got Questions?</div>
+      <h1>Frequently Asked Questions</h1>
+    </div>
+  </div>
+  <div class="section-wrap">
+    <div class="faq-tabs">
+      <button class="faq-tab active" onclick="switchTab('company')">Company</button>
+      <button class="faq-tab" onclick="switchTab('services-faq')">Services</button>
+    </div>
+
+    <div class="faq-panel active" id="tab-company">
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">What type of company is AcceleFreight?<svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>
+        <div class="faq-answer"><div class="faq-answer-inner">AcceleFreight is generally identified as a Multimodal Transport Operator (MTO) — an entity that manages the movement of goods across different modes of transport, processes, and stakeholders. We are currently focused on providing freight forwarding and warehousing services, along with supporting services such as distribution and customs clearance.</div></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">Where does AcceleFreight operate?<svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>
+        <div class="faq-answer"><div class="faq-answer-inner">We are a Malaysian incorporated company and currently operate in Malaysia. We accept all shipments going in and out of Malaysia in cooperation with our global partners. Our services are available exclusively to legally registered corporate and business entities.</div></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">How do I get started with AcceleFreight?<svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>
+        <div class="faq-answer"><div class="faq-answer-inner">Simply reach out to us via our Contact Us page or email us at <a href="mailto:info@accelefreight.com">info@accelefreight.com</a>. Our team will get in touch to understand your requirements and guide you through the onboarding process.</div></div>
+      </div>
+    </div>
+
+    <div class="faq-panel" id="tab-services-faq">
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">How do we appoint AcceleFreight as our freight forwarder?<svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>
+        <div class="faq-answer"><div class="faq-answer-inner">
+          <p>Generally, an appointment letter and supporting documents are required. Requirements may differ across countries. The general requirements in Malaysia are as follows:</p>
+          <ul>
+            <li>An appointment letter on company letterhead, signed by a director with company stamp. We are happy to assist you prepare this.</li>
+            <li>Company incorporation/registration document (Form 9, Form D)</li>
+            <li>List of registered company directors (Form 49, Form A)</li>
+            <li>Proof of registered address (utility bill). If your registered address differs from your operating address, a tenancy agreement copy will be required.</li>
+            <li>Coloured photocopy of signed director's identification card</li>
+          </ul>
+          <p style="margin-top:0.75rem">Some requirements may differ depending on your company's registration details. Contact us for more information — we are happy to help.</p>
+        </div></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">Do you handle shipment of personal items?<svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>
+        <div class="faq-answer"><div class="faq-answer-inner">Unfortunately, we do not handle the shipment of personal items. Our services are only available to legally registered corporate and business entities.</div></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">What is EOR / IOR and do I need it?<svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>
+        <div class="faq-answer"><div class="faq-answer-inner">EOR (Exporter of Record) and IOR (Importer of Record) services are designed for businesses that do not have a registered legal entity in Malaysia but need to import or export goods here. We act as the responsible party for all regulatory, customs, and tax obligations on your behalf. If your company needs to move goods through Malaysia without a local entity, EOR/IOR may be the right solution. Contact us to find out more.</div></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">What does outsourced logistics management involve?<svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>
+        <div class="faq-answer"><div class="faq-answer-inner">Our outsourced logistics management service is designed for businesses that want to optimise their supply chain without building a dedicated in-house logistics team. We assess your current operations, identify inefficiencies, and design and manage a tailored logistics solution on your behalf. This can include freight coordination, carrier management, documentation, customs, and distribution — all handled by our team. We also offer standalone consultation engagements for businesses looking for expert advice on their logistics strategy.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-grid">
+      <div class="footer-brand"><div class="nav-logo" style="cursor:default;"><div class="logo-mark"><svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><polygon points="32,6 52.8,18 52.8,42 32,54 11.2,42 11.2,18" fill="#3b9eff"/><line x1="32" y1="30" x2="32" y2="6" stroke="rgba(255,255,255,0.45)" stroke-width="3.5" stroke-linecap="round"/><line x1="32" y1="30" x2="52.8" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="3.5" stroke-linecap="round"/><line x1="32" y1="30" x2="11.2" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="3.5" stroke-linecap="round"/><circle cx="32" cy="6" r="5" fill="rgba(255,255,255,0.85)"/><circle cx="52.8" cy="42" r="5" fill="rgba(255,255,255,0.85)"/><circle cx="11.2" cy="42" r="5" fill="rgba(255,255,255,0.85)"/><circle cx="32" cy="30" r="8.5" fill="white"/><circle cx="32" cy="30" r="5" fill="#3b9eff"/></svg></div><span class="logo-wordmark">Accele<span>Freight</span></span></div><p>A Malaysian freight forwarder and 3PL service provider. Simplifying logistics for businesses of all sizes since 2018.</p></div>
+      <div class="footer-col"><h4>Navigation</h4><ul><li><a onclick="showPage('home')">Home</a></li><li><a onclick="showPage('about')">About Us</a></li><li><a onclick="showPage('services')">Services</a></li><li><a onclick="showPage('faq')">FAQ</a></li><li><a onclick="showPage('contact')">Contact Us</a></li></ul></div>
+      <div class="footer-col"><h4>Contact</h4><ul><li><a href="tel:+60128208565">+60 12 820 8565</a></li><li><a href="mailto:info@accelefreight.com">info@accelefreight.com</a></li><li><a>Ara Damansara, Petaling Jaya</a></li></ul></div>
+    </div>
+    <div class="footer-bottom"><span>© 2025 Accele Freight Sdn Bhd (1292343-T). All rights reserved.</span><a href="https://alfred.accelefreight.com" target="_blank">Dashboard Login →</a></div>
+  </footer>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     CONTACT
+═══════════════════════════════════════════════════ -->
+<section id="contact">
+  <div class="page-banner">
+    <div class="page-banner-inner">
+      <div class="page-tag">Reach Out</div>
+      <h1>Contact Us</h1>
+      <p>Have a shipment requirement or a general enquiry? Our team is ready to help.</p>
+    </div>
+  </div>
+  <div class="section-wrap">
+    <div class="contact-layout">
+      <div class="contact-info-panel">
+        <h2>Get In Touch</h2>
+        <div class="contact-detail">
+          <div class="contact-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
+          <div>
+            <div class="contact-label">Address</div>
+            <div class="contact-value">3, Jalan PJU 1A/8, Taman Perindustrian Jaya,<br>Ara Damansara, 47301 Petaling Jaya, Selangor, Malaysia.</div>
+          </div>
+        </div>
+        <div class="contact-detail">
+          <div class="contact-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013 6.82a2 2 0 011.98-2.18h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L9.91 12a16 16 0 006 6z"/></svg></div>
+          <div>
+            <div class="contact-label">Phone</div>
+            <div class="contact-value"><a href="tel:+60128208565">+60 12 820 8565</a></div>
+          </div>
+        </div>
+        <div class="contact-detail">
+          <div class="contact-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div>
+          <div>
+            <div class="contact-label">Email</div>
+            <div class="contact-value"><a href="mailto:info@accelefreight.com">info@accelefreight.com</a></div>
+          </div>
+        </div>
+        <div class="contact-detail">
+          <div class="contact-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+          <div>
+            <div class="contact-label">Business Hours</div>
+            <div class="contact-value">Monday – Friday: 9:00 AM – 6:00 PM<br>Saturday – Sunday: Closed</div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-eyebrow" style="margin-bottom:1.25rem;">Send a Message</div>
+        <form class="contact-form" onsubmit="submitForm(event)">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Full Name *</label>
+              <input type="text" placeholder="Your full name" required />
+            </div>
+            <div class="form-group">
+              <label>Company Name *</label>
+              <input type="text" placeholder="Your company name" required />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Email Address *</label>
+              <input type="email" placeholder="your@email.com" required />
+            </div>
+            <div class="form-group">
+              <label>Phone Number</label>
+              <input type="tel" placeholder="+60 12 345 6789" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Service Enquiry</label>
+            <select>
+              <option value="">Select a service (optional)</option>
+              <option>Sea Freight (FCL)</option>
+              <option>Sea Freight (LCL)</option>
+              <option>Air Freight</option>
+              <option>Cross-Border Trucking</option>
+              <option>Distribution Services</option>
+              <option>Warehousing</option>
+              <option>Cold Storage</option>
+              <option>Customs Clearance</option>
+              <option>EOR / IOR Services</option>
+              <option>Outsourced Logistics Management &amp; Consultation</option>
+              <option>General Enquiry</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Message *</label>
+            <textarea placeholder="Tell us about your shipment or enquiry..." required></textarea>
+          </div>
+          <button type="submit" class="btn-primary">
+            Send Message
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+          <div class="form-success" id="formSuccess">
+            ✓ Thank you for your message. Our team will be in touch within 1–2 business days.
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Google Map -->
+    <div class="map-wrap">
+      <div class="section-eyebrow" style="margin-bottom:1rem;">Find Us</div>
+      <div class="map-frame">
+        <iframe
+          src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3984.0681035596867!2d101.5879405!3d3.0764888999999997!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x31cc4db2c8b4d46f%3A0xdc661123e9b850d!2sAcceleFreight%20Sdn%20Bhd!5e0!3m2!1sen!2smy!4v1771937021248!5m2!1sen!2smy"
+          allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"
+          title="AcceleFreight Office – Ara Damansara, Petaling Jaya">
+        </iframe>
+      </div>
+      <div class="map-caption">
+        <span>3, Jalan PJU 1A/8, Taman Perindustrian Jaya, Ara Damansara, 47301 Petaling Jaya, Selangor, Malaysia.</span>
+        <a href="https://maps.google.com/?q=3+Jalan+PJU+1A/8+Taman+Perindustrian+Jaya+Ara+Damansara+47301+Petaling+Jaya+Selangor" target="_blank">Open in Google Maps →</a>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-grid">
+      <div class="footer-brand"><div class="nav-logo" style="cursor:default;"><div class="logo-mark"><svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><polygon points="32,6 52.8,18 52.8,42 32,54 11.2,42 11.2,18" fill="#3b9eff"/><line x1="32" y1="30" x2="32" y2="6" stroke="rgba(255,255,255,0.45)" stroke-width="3.5" stroke-linecap="round"/><line x1="32" y1="30" x2="52.8" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="3.5" stroke-linecap="round"/><line x1="32" y1="30" x2="11.2" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="3.5" stroke-linecap="round"/><circle cx="32" cy="6" r="5" fill="rgba(255,255,255,0.85)"/><circle cx="52.8" cy="42" r="5" fill="rgba(255,255,255,0.85)"/><circle cx="11.2" cy="42" r="5" fill="rgba(255,255,255,0.85)"/><circle cx="32" cy="30" r="8.5" fill="white"/><circle cx="32" cy="30" r="5" fill="#3b9eff"/></svg></div><span class="logo-wordmark">Accele<span>Freight</span></span></div><p>A Malaysian freight forwarder and 3PL service provider. Simplifying logistics for businesses of all sizes since 2018.</p></div>
+      <div class="footer-col"><h4>Navigation</h4><ul><li><a onclick="showPage('home')">Home</a></li><li><a onclick="showPage('about')">About Us</a></li><li><a onclick="showPage('services')">Services</a></li><li><a onclick="showPage('faq')">FAQ</a></li><li><a onclick="showPage('contact')">Contact Us</a></li></ul></div>
+      <div class="footer-col"><h4>Contact</h4><ul><li><a href="tel:+60128208565">+60 12 820 8565</a></li><li><a href="mailto:info@accelefreight.com">info@accelefreight.com</a></li><li><a>Ara Damansara, Petaling Jaya</a></li></ul></div>
+    </div>
+    <div class="footer-bottom"><span>© 2025 Accele Freight Sdn Bhd (1292343-T). All rights reserved.</span><a href="https://alfred.accelefreight.com" target="_blank">Dashboard Login →</a></div>
+  </footer>
+</section>
+
+<script>
+  function showPage(id) {
+    // Switch page sections
+    document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+
+    // Update nav active state
+    document.querySelectorAll('.nav-links li a:not(.nav-dashboard-btn)').forEach(a => {
+      a.classList.remove('active');
+    });
+    const pageToNav = { home: 0, about: 1, services: 2, faq: 3, contact: 4 };
+    const idx = pageToNav[id];
+    if (idx !== undefined) {
+      const navItems = document.querySelectorAll('.nav-links li a:not(.nav-dashboard-btn)');
+      if (navItems[idx]) navItems[idx].classList.add('active');
+    }
+
+    // Close mobile menu if open
+    document.getElementById('navLinks').classList.remove('open');
+
+    // Scroll to top
+    window.scrollTo(0, 0);
+  }
+
+  function toggleMenu() {
+    document.getElementById('navLinks').classList.toggle('open');
+  }
+
+  function toggleFaq(btn) {
+    const item = btn.closest('.faq-item');
+    const isOpen = item.classList.contains('open');
+    // Close all open items in the same panel
+    item.closest('.faq-panel').querySelectorAll('.faq-item.open').forEach(el => el.classList.remove('open'));
+    if (!isOpen) item.classList.add('open');
+  }
+
+  function switchTab(tab) {
+    document.querySelectorAll('.faq-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.faq-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    event.currentTarget.classList.add('active');
+  }
+
+  function submitForm(e) {
+    e.preventDefault();
+    document.getElementById('formSuccess').style.display = 'block';
+    e.target.reset();
+  }
+
+  // Set Home as active on load
+  showPage('home');
+</script>
+</body>
+</html>

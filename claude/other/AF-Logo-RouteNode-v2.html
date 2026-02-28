@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AcceleFreight — Route Node Logo System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --slate:      #0f1c2e;
+      --slate-mid:  #1a2f47;
+      --sky:        #3b9eff;
+      --sky-light:  #6cb8ff;
+      --sky-pale:   #e8f4ff;
+      --white:      #ffffff;
+      --surface:    #f0f4f8;
+      --border:     #dde5ef;
+      --text:       #0f1c2e;
+      --text-mid:   #3d5473;
+      --text-muted: #7a93b0;
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: var(--surface);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Page header ── */
+    .page-header {
+      background: var(--slate);
+      padding: 2.5rem 5%;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .page-header::before {
+      content: '';
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(59,158,255,0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(59,158,255,0.05) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+
+    .page-header-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+
+    .page-header h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--white);
+      letter-spacing: -0.02em;
+      margin-bottom: 0.3rem;
+    }
+
+    .page-header p {
+      color: rgba(255,255,255,0.4);
+      font-size: 0.85rem;
+      font-weight: 300;
+    }
+
+    /* ── Layout ── */
+    .page-body {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2.5rem 5% 4rem;
+      display: grid;
+      gap: 1.5rem;
+    }
+
+    /* ── Section cards ── */
+    .section-card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .section-card-header {
+      padding: 0.75rem 1.5rem;
+      background: var(--slate-mid);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .section-card-header h2 {
+      font-family: 'Syne', sans-serif;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--white);
+      letter-spacing: -0.01em;
+    }
+
+    .section-card-header span {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      color: rgba(255,255,255,0.3);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    /* ── Dark stage ── */
+    .stage-dark {
+      background: var(--slate);
+      padding: 3rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5rem;
+      flex-wrap: wrap;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stage-dark::before {
+      content: '';
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(59,158,255,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(59,158,255,0.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+
+    /* ── Light stage ── */
+    .stage-light {
+      background: var(--white);
+      padding: 2.5rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5rem;
+      flex-wrap: wrap;
+      border-top: 1px solid var(--border);
+    }
+
+    .stage-surface {
+      background: var(--surface);
+      padding: 2rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5rem;
+      flex-wrap: wrap;
+      border-top: 1px solid var(--border);
+    }
+
+    /* ── Logo lockup ── */
+    .lockup {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .lockup-stacked {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ── Wordmark ── */
+    .wm {
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      letter-spacing: -0.015em;
+      line-height: 1;
+    }
+
+    /* ── Size labels ── */
+    .size-block {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .size-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.62rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .size-label-dark { color: rgba(255,255,255,0.25); }
+    .size-label-light { color: var(--text-muted); }
+
+    /* ── Notes panel ── */
+    .notes-panel {
+      padding: 1.5rem;
+      border-top: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      background: var(--border);
+    }
+
+    .note {
+      background: var(--white);
+      padding: 1.1rem 1.25rem;
+    }
+
+    .note-label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--sky);
+      margin-bottom: 0.4rem;
+    }
+
+    .note-text {
+      font-size: 0.82rem;
+      color: var(--text-mid);
+      line-height: 1.6;
+      font-weight: 300;
+    }
+
+    /* ── Construction diagram ── */
+    .construction-stage {
+      padding: 2.5rem 2rem;
+      background: #fafbfc;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 4rem;
+      flex-wrap: wrap;
+    }
+
+    .construct-block {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .construct-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      text-align: center;
+    }
+
+    /* ── Comparison row ── */
+    .comparison-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--border);
+      border-top: 1px solid var(--border);
+    }
+
+    .comparison-col {
+      background: var(--white);
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .comparison-col.dark-bg {
+      background: var(--slate);
+    }
+
+    .comp-label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .comp-label-light { color: var(--text-muted); }
+    .comp-label-dark  { color: rgba(255,255,255,0.25); }
+
+    /* ── Usage grid ── */
+    .usage-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border-top: 1px solid var(--border);
+    }
+
+    .usage-cell {
+      background: var(--white);
+      padding: 1.5rem 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .usage-cell-dark { background: var(--slate); }
+    .usage-cell-surface { background: var(--surface); }
+
+    .usage-title {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      text-align: center;
+    }
+
+    .usage-title-light { color: var(--text-muted); }
+    .usage-title-dark  { color: rgba(255,255,255,0.3); }
+
+    .usage-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-align: center;
+      font-weight: 300;
+      line-height: 1.5;
+    }
+
+    .usage-desc-dark {
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.3);
+      text-align: center;
+      font-weight: 300;
+      line-height: 1.5;
+    }
+
+  </style>
+</head>
+<body>
+
+<div class="page-header">
+  <div class="page-header-inner">
+    <h1>Route Node — Logo System</h1>
+    <p>Refined mark with full size integrity · Full lockup · Compact · Favicon · Context variants</p>
+  </div>
+</div>
+
+<div class="page-body">
+
+  <!-- ══════════════════════════════════════
+       SECTION 1: THE MARK — CONSTRUCTION
+  ══════════════════════════════════════ -->
+  <div class="section-card">
+    <div class="section-card-header">
+      <h2>Mark Construction</h2>
+      <span>Design rationale</span>
+    </div>
+    <div class="construction-stage">
+
+      <!-- Step 1: Hexagon -->
+      <div class="construct-block">
+        <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+          <!-- Pointy-top hex: top vertex at (40,5), hub at (40,42) -->
+          <polygon points="40,5 66,20 66,52 40,67 14,52 14,20"
+            fill="none" stroke="var(--sky)" stroke-width="2" stroke-dasharray="5 3"/>
+        </svg>
+        <div class="construct-label">1. Hexagon container<br/>6 equal sides, pointy-top</div>
+      </div>
+
+      <div style="color:var(--text-muted);font-size:1.2rem;padding-top:1.5rem;">+</div>
+
+      <!-- Step 2: Hub dot -->
+      <div class="construct-block">
+        <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+          <circle cx="40" cy="42" r="9" fill="var(--sky)"/>
+          <circle cx="40" cy="42" r="5" fill="white"/>
+        </svg>
+        <div class="construct-label">2. Hub node<br/>Filled ring = centre point</div>
+      </div>
+
+      <div style="color:var(--text-muted);font-size:1.2rem;padding-top:1.5rem;">+</div>
+
+      <!-- Step 3: 3 routes — one top, two bottom -->
+      <div class="construct-block">
+        <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+          <!-- One route up to top vertex -->
+          <line x1="40" y1="42" x2="40" y2="10" stroke="var(--sky)" stroke-width="3" stroke-linecap="round"/>
+          <!-- Two routes down to bottom-left and bottom-right vertices -->
+          <line x1="40" y1="42" x2="66" y2="56" stroke="var(--sky)" stroke-width="3" stroke-linecap="round"/>
+          <line x1="40" y1="42" x2="14" y2="56" stroke="var(--sky)" stroke-width="3" stroke-linecap="round"/>
+          <!-- Endpoint dots -->
+          <circle cx="40" cy="10" r="5" fill="var(--sky)"/>
+          <circle cx="66" cy="56" r="5" fill="var(--sky)"/>
+          <circle cx="14" cy="56" r="5" fill="var(--sky)"/>
+        </svg>
+        <div class="construct-label">3. Three routes<br/>One top · Two bottom</div>
+      </div>
+
+      <div style="color:var(--text-muted);font-size:1.2rem;padding-top:1.5rem;">=</div>
+
+      <!-- Result: Full mark -->
+      <div class="construct-block">
+        <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+          <!-- Pointy-top hex fill -->
+          <polygon points="40,5 66,20 66,52 40,67 14,52 14,20" fill="var(--sky)"/>
+          <!-- Route lines -->
+          <line x1="40" y1="42" x2="40" y2="10" stroke="rgba(255,255,255,0.45)" stroke-width="3" stroke-linecap="round"/>
+          <line x1="40" y1="42" x2="63" y2="55" stroke="rgba(255,255,255,0.45)" stroke-width="3" stroke-linecap="round"/>
+          <line x1="40" y1="42" x2="17" y2="55" stroke="rgba(255,255,255,0.45)" stroke-width="3" stroke-linecap="round"/>
+          <!-- Endpoint dots -->
+          <circle cx="40" cy="10" r="4.5" fill="rgba(255,255,255,0.75)"/>
+          <circle cx="63" cy="55" r="4.5" fill="rgba(255,255,255,0.75)"/>
+          <circle cx="17" cy="55" r="4.5" fill="rgba(255,255,255,0.75)"/>
+          <!-- Hub ring -->
+          <circle cx="40" cy="42" r="8"   fill="white"/>
+          <circle cx="40" cy="42" r="4.5" fill="var(--sky)"/>
+        </svg>
+        <div class="construct-label" style="color:var(--sky);font-weight:600;">Full mark</div>
+      </div>
+
+    </div>
+
+    <div class="notes-panel">
+      <div class="note">
+        <div class="note-label">Hexagon rationale</div>
+        <div class="note-text">Pointy-top hexagon places a vertex directly above the hub, giving the mark a natural upward orientation. The top node reads as the origin or inbound route; the two lower nodes as outbound destinations — mirroring how a freight hub actually works.</div>
+      </div>
+      <div class="note">
+        <div class="note-label">Three routes, not six</div>
+        <div class="note-text">Using only 3 of the 6 possible vertices keeps the mark asymmetric and readable. A full 6-spoke wheel looks like a snowflake at small sizes — 3 routes are bold enough to survive at 16px.</div>
+      </div>
+      <div class="note">
+        <div class="note-label">Hub ring design</div>
+        <div class="note-text">A white outer ring with a sky-blue filled centre creates a clear "node" metaphor. The ring also adds separation from the route lines at all sizes, preventing the centre from becoming a blob.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       SECTION 2: SIZE TIERS
+  ══════════════════════════════════════ -->
+  <div class="section-card">
+    <div class="section-card-header">
+      <h2>Size Tiers — Mark Only</h2>
+      <span>Integrity at every scale</span>
+    </div>
+
+    <div class="stage-dark">
+
+      <!-- Tier 1: Large (64px) — full detail -->
+      <div class="size-block">
+        <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+          <polygon points="32,6 52.8,18 52.8,42 32,54 11.2,42 11.2,18" fill="var(--sky)"/>
+          <line x1="32" y1="30" x2="32" y2="6" stroke="rgba(255,255,255,0.45)" stroke-width="2.8" stroke-linecap="round"/>
+          <line x1="32" y1="30" x2="52.8" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="2.8" stroke-linecap="round"/>
+          <line x1="32" y1="30" x2="11.2" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="2.8" stroke-linecap="round"/>
+          <circle cx="32" cy="6" r="4" fill="rgba(255,255,255,0.8)"/>
+          <circle cx="52.8" cy="42" r="4" fill="rgba(255,255,255,0.8)"/>
+          <circle cx="11.2" cy="42" r="4" fill="rgba(255,255,255,0.8)"/>
+          <circle cx="32" cy="30" r="7" fill="white"/>
+          <circle cx="32" cy="30" r="3.8" fill="var(--sky)"/>
+        </svg>
+        <span class="size-label size-label-dark">64px · Large</span>
+        <span class="size-label size-label-dark" style="opacity:0.5;font-size:0.55rem;">Nav, headers</span>
+      </div>
+
+      <!-- Tier 2: Standard (40px) — full detail, tighter -->
+      <div class="size-block">
+        <svg width="40" height="40" viewBox="0 0 64 64" fill="none">
+          <polygon points="32,6 52.8,18 52.8,42 32,54 11.2,42 11.2,18" fill="var(--sky)"/>
+          <line x1="32" y1="30" x2="32" y2="6" stroke="rgba(255,255,255,0.45)" stroke-width="2.8" stroke-linecap="round"/>
+          <line x1="32" y1="30" x2="52.8" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="2.8" stroke-linecap="round"/>
+          <line x1="32" y1="30" x2="11.2" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="2.8" stroke-linecap="round"/>
+          <circle cx="32" cy="6" r="4" fill="rgba(255,255,255,0.8)"/>
+          <circle cx="52.8" cy="42" r="4" fill="rgba(255,255,255,0.8)"/>
+          <circle cx="11.2" cy="42" r="4" fill="rgba(255,255,255,0.8)"/>
+          <circle cx="32" cy="30" r="7" fill="white"/>
+          <circle cx="32" cy="30" r="3.8" fill="var(--sky)"/>
+        </svg>
+        <span class="size-label size-label-dark">40px · Standard</span>
+        <span class="size-label size-label-dark" style="opacity:0.5;font-size:0.55rem;">Nav actual size</span>
+      </div>
+
+      <!-- Tier 3: Compact (28px) — routes thicker, dots bigger -->
+      <div class="size-block">
+        <svg width="28" height="28" viewBox="0 0 64 64" fill="none">
+          <polygon points="32,6 52.8,18 52.8,42 32,54 11.2,42 11.2,18" fill="var(--sky)"/>
+          <!-- Thicker strokes at this size -->
+          <line x1="32" y1="30" x2="32" y2="6" stroke="rgba(255,255,255,0.5)" stroke-width="4" stroke-linecap="round"/>
+          <line x1="32" y1="30" x2="52.8" y2="42" stroke="rgba(255,255,255,0.5)" stroke-width="4" stroke-linecap="round"/>
+          <line x1="32" y1="30" x2="11.2" y2="42" stroke="rgba(255,255,255,0.5)" stroke-width="4" stroke-linecap="round"/>
+          <!-- Bigger endpoint dots -->
+          <circle cx="32" cy="6" r="5.5" fill="rgba(255,255,255,0.85)"/>
+          <circle cx="52.8" cy="42" r="5.5" fill="rgba(255,255,255,0.85)"/>
+          <circle cx="11.2" cy="42" r="5.5" fill="rgba(255,255,255,0.85)"/>
+          <!-- Bigger hub -->
+          <circle cx="32" cy="30" r="8.5" fill="white"/>
+          <circle cx="32" cy="30" r="4.8" fill="var(--sky)"/>
+        </svg>
+        <span class="size-label size-label-dark">28px · Compact</span>
+        <span class="size-label size-label-dark" style="opacity:0.5;font-size:0.55rem;">Mobile, thumbnails</span>
+      </div>
+
+      <!-- Tier 4: Favicon (20px) — stripped back, hub + 3 bold dots only -->
+      <div class="size-block">
+        <svg width="20" height="20" viewBox="0 0 64 64" fill="none">
+          <polygon points="32,6 52.8,18 52.8,42 32,54 11.2,42 11.2,18" fill="var(--sky)"/>
+          <!-- Very thick lines — at 20px these become bold -->
+          <line x1="32" y1="29" x2="49" y2="19" stroke="rgba(255,255,255,0.5)" stroke-width="5.5" stroke-linecap="round"/>
+          <line x1="32" y1="30" x2="52.8" y2="42" stroke="rgba(255,255,255,0.5)" stroke-width="5.5" stroke-linecap="round"/>
+          <line x1="32" y1="30" x2="11.2" y2="42" stroke="rgba(255,255,255,0.5)" stroke-width="5.5" stroke-linecap="round"/>
+          <!-- Large dots -->
+          <circle cx="49" cy="19" r="7"   fill="rgba(255,255,255,0.9)"/>
+          <circle cx="52.8" cy="42" r="7"   fill="rgba(255,255,255,0.9)"/>
+          <circle cx="11.2" cy="42" r="7"   fill="rgba(255,255,255,0.9)"/>
+          <!-- Solid hub — no ring at this size -->
+          <circle cx="32" cy="30" r="10"  fill="white"/>
+          <circle cx="32" cy="30" r="6"   fill="var(--sky)"/>
+        </svg>
+        <span class="size-label size-label-dark">20px · Favicon</span>
+        <span class="size-label size-label-dark" style="opacity:0.5;font-size:0.55rem;">Browser tab, app icon</span>
+      </div>
+
+      <!-- Tier 5: 16px minimum — hub only, simplified -->
+      <div class="size-block">
+        <svg width="16" height="16" viewBox="0 0 64 64" fill="none">
+          <polygon points="32,6 52.8,18 52.8,42 32,54 11.2,42 11.2,18" fill="var(--sky)"/>
+          <line x1="32" y1="30" x2="32" y2="6" stroke="rgba(255,255,255,0.55)" stroke-width="7" stroke-linecap="round"/>
+          <line x1="32" y1="30" x2="52.8" y2="42" stroke="rgba(255,255,255,0.55)" stroke-width="7" stroke-linecap="round"/>
+          <line x1="32" y1="30" x2="11.2" y2="42" stroke="rgba(255,255,255,0.55)" stroke-width="7" stroke-linecap="round"/>
+          <circle cx="32" cy="6" r="8"   fill="rgba(255,255,255,0.95)"/>
+          <circle cx="52.8" cy="42" r="8"   fill="rgba(255,255,255,0.95)"/>
+          <circle cx="11.2" cy="42" r="8"   fill="rgba(255,255,255,0.95)"/>
+          <circle cx="32" cy="30" r="11"  fill="white"/>
+          <circle cx="32" cy="30" r="7"   fill="var(--sky)"/>
+        </svg>
+        <span class="size-label size-label-dark">16px · Minimum</span>
+        <span class="size-label size-label-dark" style="opacity:0.5;font-size:0.55rem;">Floor — do not go smaller</span>
+      </div>
+
+    </div>
+
+    <div class="notes-panel" style="grid-template-columns:1fr 1fr;">
+      <div class="note">
+        <div class="note-label">How integrity is maintained</div>
+        <div class="note-text">The mark uses three distinct stroke-weight tiers. At 64–40px, detail is full. At 28px, stroke widths increase proportionally so lines don't disappear. At 20px and below, the endpoint dots and hub are oversized relative to the SVG viewBox — deliberately so, to ensure they punch through at screen resolution.</div>
+      </div>
+      <div class="note">
+        <div class="note-label">The 16px rule</div>
+        <div class="note-text">16px is the hard minimum. Below this, the hub and route nodes merge into an unreadable blob regardless of stroke weight. In practice the mark is never used below 20px in UI — the 16px version exists only as a last-resort favicon fallback.</div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════
+       SECTION 3: FULL LOCKUP — DARK
+  ══════════════════════════════════════ -->
+  <div class="section-card">
+    <div class="section-card-header">
+      <h2>Full Lockup — Dark Backgrounds</h2>
+      <span>Nav · Hero · Footer · Documents</span>
+    </div>
+
+    <div class="stage-dark">
+      <!-- Large lockup -->
+      <div class="lockup" style="z-index:1;">
+        <svg width="44" height="44" viewBox="0 0 64 64" fill="none">
+          <polygon points="32,6 52.8,18 52.8,42 32,54 11.2,42 11.2,18" fill="var(--sky)"/>
+          <line x1="32" y1="30" x2="32" y2="6" stroke="rgba(255,255,255,0.45)" stroke-width="2.8" stroke-linecap="round"/>
+          <line x1="32" y1="30" x2="52.8" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="2.8" stroke-linecap="round"/>
+          <line x1="32" y1="30" x2="11.2" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="2.8" stroke-linecap="round"/>
+          <circle cx="32" cy="6" r="4"   fill="rgba(255,255,255,0.8)"/>
+          <circle cx="52.8" cy="42" r="4"   fill="rgba(255,255,255,0.8)"/>
+          <circle cx="11.2" cy="42" r="4"   fill="rgba(255,255,255,0.8)"/>
+          <circle cx="32" cy="30" r="7"   fill="white"/>
+          <circle cx="32" cy="30" r="3.8" fill="var(--sky)"/>
+        </svg>
+        <span class="wm" style="font-size:1.3rem;color:white;">Accele<span style="color:var(--sky-light);">Freight</span></span>
+      </div>
+    </div>
+
+    <!-- Nav-size preview -->
+    <div style="background:#0f1c2e;padding:0 0;border-top:1px solid rgba(255,255,255,0.06);">
+      <div style="height:68px;display:flex;align-items:center;padding:0 5%;background:var(--slate);gap:2rem;max-width:100%;">
+        <!-- Nav simulation -->
+        <div class="lockup" style="z-index:1;">
+          <svg width="36" height="36" viewBox="0 0 64 64" fill="none">
+            <polygon points="32,6 52.8,18 52.8,42 32,54 11.2,42 11.2,18" fill="var(--sky)"/>
+            <line x1="32" y1="30" x2="32" y2="6" stroke="rgba(255,255,255,0.45)" stroke-width="3" stroke-linecap="round"/>
+            <line x1="32" y1="30" x2="52.8" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="3" stroke-linecap="round"/>
+            <line x1="32" y1="30" x2="11.2" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="3" stroke-linecap="round"/>
+            <circle cx="32" cy="6" r="4.5" fill="rgba(255,255,255,0.8)"/>
+            <circle cx="52.8" cy="42" r="4.5" fill="rgba(255,255,255,0.8)"/>
+            <circle cx="11.2" cy="42" r="4.5" fill="rgba(255,255,255,0.8)"/>
+            <circle cx="32" cy="30" r="7.5" fill="white"/>
+            <circle cx="32" cy="30" r="4"   fill="var(--sky)"/>
+          </svg>
+          <span class="wm" style="font-size:1.15rem;color:white;letter-spacing:-0.01em;">Accele<span style="color:var(--sky-light);">Freight</span></span>
+        </div>
+        <div style="flex:1;"></div>
+        <div style="display:flex;gap:0.25rem;align-items:center;">
+          <span style="padding:6px 14px;color:rgba(255,255,255,0.5);font-size:0.875rem;">Home</span>
+          <span style="padding:6px 14px;color:rgba(255,255,255,0.5);font-size:0.875rem;">About Us</span>
+          <span style="padding:6px 14px;color:rgba(255,255,255,0.5);font-size:0.875rem;">Services</span>
+          <span style="padding:6px 14px;color:rgba(255,255,255,0.5);font-size:0.875rem;">FAQ</span>
+          <span style="padding:6px 14px;color:rgba(255,255,255,0.5);font-size:0.875rem;">Contact Us</span>
+          <span style="padding:7px 16px;background:var(--sky);color:white;border-radius:5px;font-size:0.85rem;margin-left:0.5rem;">Dashboard ↗</span>
+        </div>
+      </div>
+      <div style="text-align:center;padding:0.4rem;background:rgba(255,255,255,0.02);border-top:1px solid rgba(255,255,255,0.04);">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:rgba(255,255,255,0.15);letter-spacing:0.1em;text-transform:uppercase;">Nav bar simulation · 68px height</span>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════
+       SECTION 4: FULL LOCKUP — LIGHT
+  ══════════════════════════════════════ -->
+  <div class="section-card">
+    <div class="section-card-header">
+      <h2>Full Lockup — Light Backgrounds</h2>
+      <span>Documents · Email · Print</span>
+    </div>
+
+    <div class="stage-light">
+      <div class="lockup">
+        <svg width="44" height="44" viewBox="0 0 64 64" fill="none">
+          <polygon points="32,6 52.8,18 52.8,42 32,54 11.2,42 11.2,18" fill="var(--sky)"/>
+          <line x1="32" y1="30" x2="32" y2="6" stroke="rgba(255,255,255,0.45)" stroke-width="2.8" stroke-linecap="round"/>
+          <line x1="32" y1="30" x2="52.8" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="2.8" stroke-linecap="round"/>
+          <line x1="32" y1="30" x2="11.2" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="2.8" stroke-linecap="round"/>
+          <circle cx="32" cy="6" r="4"   fill="rgba(255,255,255,0.8)"/>
+          <circle cx="52.8" cy="42" r="4"   fill="rgba(255,255,255,0.8)"/>
+          <circle cx="11.2" cy="42" r="4"   fill="rgba(255,255,255,0.8)"/>
+          <circle cx="32" cy="30" r="7"   fill="white"/>
+          <circle cx="32" cy="30" r="3.8" fill="var(--sky)"/>
+        </svg>
+        <span class="wm" style="font-size:1.3rem;color:var(--slate);">Accele<span style="color:var(--sky);">Freight</span></span>
+      </div>
+    </div>
+
+    <div class="stage-surface">
+      <div class="lockup">
+        <svg width="36" height="36" viewBox="0 0 64 64" fill="none">
+          <polygon points="32,6 52.8,18 52.8,42 32,54 11.2,42 11.2,18" fill="var(--sky)"/>
+          <line x1="32" y1="30" x2="32" y2="6" stroke="rgba(255,255,255,0.45)" stroke-width="3" stroke-linecap="round"/>
+          <line x1="32" y1="30" x2="52.8" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="3" stroke-linecap="round"/>
+          <line x1="32" y1="30" x2="11.2" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="32" cy="6" r="4.5" fill="rgba(255,255,255,0.8)"/>
+          <circle cx="52.8" cy="42" r="4.5" fill="rgba(255,255,255,0.8)"/>
+          <circle cx="11.2" cy="42" r="4.5" fill="rgba(255,255,255,0.8)"/>
+          <circle cx="32" cy="30" r="7.5" fill="white"/>
+          <circle cx="32" cy="30" r="4"   fill="var(--sky)"/>
+        </svg>
+        <span class="wm" style="font-size:1.15rem;color:var(--slate);letter-spacing:-0.01em;">Accele<span style="color:var(--sky);">Freight</span></span>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════
+       SECTION 5: USAGE CONTEXTS
+  ══════════════════════════════════════ -->
+  <div class="section-card">
+    <div class="section-card-header">
+      <h2>Usage Across Contexts</h2>
+      <span>Platform · Document · Social · Favicon</span>
+    </div>
+    <div class="usage-grid">
+
+      <!-- Nav / website -->
+      <div class="usage-cell usage-cell-dark">
+        <svg width="36" height="36" viewBox="0 0 64 64" fill="none">
+          <polygon points="32,6 52.8,18 52.8,42 32,54 11.2,42 11.2,18" fill="var(--sky)"/>
+          <line x1="32" y1="30" x2="32" y2="6" stroke="rgba(255,255,255,0.45)" stroke-width="3" stroke-linecap="round"/>
+          <line x1="32" y1="30" x2="52.8" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="3" stroke-linecap="round"/>
+          <line x1="32" y1="30" x2="11.2" y2="42" stroke="rgba(255,255,255,0.45)" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="32" cy="6" r="4.5" fill="rgba(255,255,255,0.8)"/>
+          <circle cx="52.8" cy="42" r="4.5" fill="rgba(255,255,255,0.8)"/>
+          <circle cx="11.2" cy="42" r="4.5" fill="rgba(255,255,255,0.8)"/>
+          <circle cx="32" cy="30" r="7.5" fill="white"/>
+          <circle cx="32" cy="30" r="4"   fill="var(--sky)"/>
+        </svg>
+        <span class="wm" style="font-size:1rem;color:white;">Accele<span style="color:var(--sky-light);">Freight</span></span>
+        <span class="usage-title usage-title-dark">Website Nav</span>
+        <span class="usage-desc-dark">36px mark + full wordmark</span>
+      </div>
+
+      <!-- Document header -->
+      <div class="usage-cell">
+        <div style="background:white;border:1px solid var(--border);border-radius:6px;padding:1rem 1.25rem;width:100%;display:flex;align-items:center;gap:8px;">
+          <svg width="28" height="28" viewBox="0 0 64 64" fill="none">
+            <polygon points="32,6 52.8,18 52.8,42 32,54 11.2,42 11.2,18" fill="var(--sky)"/>
+            <line x1="32" y1="30" x2="32" y2="6" stroke="rgba(255,255,255,0.5)" stroke-width="4" stroke-linecap="round"/>
+            <line x1="32" y1="30" x2="52.8" y2="42" stroke="rgba(255,255,255,0.5)" stroke-width="4" stroke-linecap="round"/>
+            <line x1="32" y1="30" x2="11.2" y2="42" stroke="rgba(255,255,255,0.5)" stroke-width="4" stroke-linecap="round"/>
+            <circle cx="32" cy="6" r="5.5" fill="rgba(255,255,255,0.85)"/>
+            <circle cx="52.8" cy="42" r="5.5" fill="rgba(255,255,255,0.85)"/>
+            <circle cx="11.2" cy="42" r="5.5" fill="rgba(255,255,255,0.85)"/>
+            <circle cx="32" cy="30" r="8.5" fill="white"/>
+            <circle cx="32" cy="30" r="4.8" fill="var(--sky)"/>
+          </svg>
+          <span class="wm" style="font-size:0.95rem;color:var(--slate);">Accele<span style="color:var(--sky);">Freight</span></span>
+        </div>
+        <span class="usage-title usage-title-light">Invoice / Quote Header</span>
+        <span class="usage-desc">28px mark + wordmark on white</span>
+      </div>
+
+      <!-- App icon / social avatar -->
+      <div class="usage-cell usage-cell-surface">
+        <!-- Simulated app icon -->
+        <div style="width:60px;height:60px;background:var(--sky);border-radius:14px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(59,158,255,0.3);">
+          <svg width="36" height="36" viewBox="0 0 64 64" fill="none">
+            <!-- No hex bg — just mark elements on sky -->
+            <line x1="32" y1="30" x2="32" y2="8" stroke="rgba(255,255,255,0.5)" stroke-width="5" stroke-linecap="round"/>
+            <line x1="32" y1="30" x2="51" y2="44" stroke="rgba(255,255,255,0.5)" stroke-width="5" stroke-linecap="round"/>
+            <line x1="32" y1="30" x2="13" y2="44" stroke="rgba(255,255,255,0.5)" stroke-width="5" stroke-linecap="round"/>
+            <circle cx="32" cy="6" r="6.5" fill="rgba(255,255,255,0.9)"/>
+            <circle cx="52.8" cy="42" r="6.5" fill="rgba(255,255,255,0.9)"/>
+            <circle cx="11.2" cy="42" r="6.5" fill="rgba(255,255,255,0.9)"/>
+            <circle cx="32" cy="30" r="10" fill="white"/>
+            <circle cx="32" cy="30" r="6"  fill="var(--sky)"/>
+          </svg>
+        </div>
+        <span class="usage-title usage-title-light">App Icon / Avatar</span>
+        <span class="usage-desc">Mark only, no hex border — rounded square container used instead</span>
+      </div>
+
+      <!-- Favicon -->
+      <div class="usage-cell">
+        <div style="display:flex;align-items:center;gap:0.75rem;background:#f0f0f0;border-radius:6px;padding:0.5rem 0.75rem;font-size:0.75rem;color:#666;font-family:'Outfit',sans-serif;">
+          <svg width="16" height="16" viewBox="0 0 64 64" fill="none">
+            <polygon points="32,6 52.8,18 52.8,42 32,54 11.2,42 11.2,18" fill="var(--sky)"/>
+            <line x1="32" y1="30" x2="32" y2="6" stroke="rgba(255,255,255,0.55)" stroke-width="7" stroke-linecap="round"/>
+            <line x1="32" y1="30" x2="52.8" y2="42" stroke="rgba(255,255,255,0.55)" stroke-width="7" stroke-linecap="round"/>
+            <line x1="32" y1="30" x2="11.2" y2="42" stroke="rgba(255,255,255,0.55)" stroke-width="7" stroke-linecap="round"/>
+            <circle cx="32" cy="6" r="8"  fill="rgba(255,255,255,0.95)"/>
+            <circle cx="52.8" cy="42" r="8"  fill="rgba(255,255,255,0.95)"/>
+            <circle cx="11.2" cy="42" r="8"  fill="rgba(255,255,255,0.95)"/>
+            <circle cx="32" cy="30" r="11" fill="white"/>
+            <circle cx="32" cy="30" r="7"  fill="var(--sky)"/>
+          </svg>
+          AcceleFreight | Freight Forwarding...
+        </div>
+        <span class="usage-title usage-title-light">Browser Favicon</span>
+        <span class="usage-desc">16px — hub and 3 bold nodes remain legible</span>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
