@@ -45,11 +45,11 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen h-screen flex flex-row overflow-hidden">
+    <div className="min-h-screen h-screen flex flex-col md:flex-row overflow-hidden">
       {/* ── LEFT PANEL ── */}
       <div
-        className="h-screen flex flex-col relative overflow-hidden shrink-0"
-        style={{ background: "var(--slate-mid)", width: "52%" }}
+        className="hidden md:flex md:w-[52%] h-screen flex-col relative overflow-hidden shrink-0"
+        style={{ background: "var(--slate-mid)" }}
       >
         {/* Grid texture overlay */}
         <div className="grid-texture pointer-events-none absolute inset-0" />
@@ -104,10 +104,18 @@ export default function LoginPage() {
 
       {/* ── RIGHT PANEL ── */}
       <div
-        className="flex-1 h-screen flex flex-col items-center justify-center overflow-hidden px-8 py-12 lg:px-16 xl:px-24"
+        className="flex-1 w-full h-screen flex flex-col items-center justify-center overflow-y-auto px-6 py-10 md:px-8 md:py-12 lg:px-16 xl:px-24"
         style={{ background: "var(--slate)" }}
       >
         <div className="w-full max-w-[400px]">
+          {/* Mobile-only logo */}
+          <div className="flex items-center gap-3 mb-8 md:hidden">
+            <LogoMark size={32} />
+            <span className="font-display text-[1.2rem] font-bold leading-none tracking-tight text-white">
+              Accele<span style={{ color: "var(--sky-light)" }}>Freight</span>
+            </span>
+          </div>
+
           {/* Heading */}
           <h1 className="font-display text-3xl font-bold text-white">
             Sign in

@@ -141,3 +141,14 @@ Entries are appended chronologically — never overwrite.
   - `af-platform/src/components/shared/PortPair.tsx`
 - **Notes:** All 3 scripts are idempotent with --dry-run support. Build passes clean.
 
+### [2026-02-28 18:00 UTC] — Login Page Mobile Responsiveness
+- **Status:** Completed
+- **Tasks:**
+  - Outer wrapper: `flex-col md:flex-row` for mobile stacking
+  - Left brand panel: `hidden md:flex md:w-[52%]` — hidden on mobile, visible on desktop
+  - Right panel: `w-full overflow-y-auto` with responsive padding
+  - Mobile-only logo + wordmark added at top of form panel (`md:hidden`)
+- **Files Modified:**
+  - `af-platform/src/app/login/page.tsx`
+- **Notes:** Single file change. LogoMark already imported. Build passes clean.
+
