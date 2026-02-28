@@ -288,7 +288,7 @@ export function ShipmentOrderTable({ orders, loading, accountType, onRefresh }: 
   return (
     <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-max text-sm">
           <thead>
             <tr className="bg-[var(--surface)] border-b border-[var(--border)]">
               <Th>Order ID</Th>
@@ -429,7 +429,7 @@ function ShipmentTableSkeleton() {
   return (
     <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-max text-sm">
           <thead>
             <tr className="bg-[var(--surface)] border-b border-[var(--border)]">
               {['Order ID', 'Status', 'Type', 'Route', 'Company', 'Incoterm', 'Cargo Ready', 'Updated', ''].map((h) => (

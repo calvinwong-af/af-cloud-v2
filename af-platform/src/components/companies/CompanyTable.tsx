@@ -103,7 +103,7 @@ export function CompanyTable({ companies, loading, onRefresh, onEdit }: CompanyT
   return (
     <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-max text-sm">
           <thead>
             <tr className="bg-[var(--surface)] border-b border-[var(--border)]">
               <Th onClick={() => handleSort('name')} className="w-[45%]">
@@ -254,7 +254,7 @@ function CompanyTableSkeleton() {
   return (
     <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-max text-sm">
           <thead>
             <tr className="bg-[var(--surface)] border-b border-[var(--border)]">
               {['Company', 'Currency', 'Approved', 'Portal', 'Xero', 'Updated', ''].map(

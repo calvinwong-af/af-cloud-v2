@@ -13,7 +13,7 @@ export function PlatformShell({ currentUser, children }: PlatformShellProps) {
   return (
     <div className="h-screen flex flex-row overflow-hidden">
       <Sidebar currentUser={currentUser} />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0">
         <Topbar currentUser={currentUser} />
         <main className="flex-1 overflow-y-auto" style={{ padding: "1.75rem" }}>
           {children}
