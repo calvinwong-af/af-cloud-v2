@@ -101,6 +101,15 @@ V2_ACTIVE_STATUSES = [
     STATUS_ARRIVED,
 ]
 
+# Operationally active — excludes STATUS_CONFIRMED (2001) which represents
+# unbooked historical quotations post-migration.
+V2_OPERATIONAL_STATUSES = [
+    STATUS_BOOKING_PENDING,   # 3001
+    STATUS_BOOKING_CONFIRMED, # 3002
+    STATUS_DEPARTED,          # 4001
+    STATUS_ARRIVED,           # 4002
+]
+
 STATUS_LABELS = {
     STATUS_DRAFT:              "Draft",
     STATUS_DRAFT_REVIEW:       "Pending Review",
@@ -131,17 +140,19 @@ OLD_TO_NEW_STATUS = {
 }
 
 # ---------------------------------------------------------------------------
-# V1 ShipmentOrder status codes
+# V1 ShipmentOrder status codes  # DEPRECATED post-migration
 # (ShipmentOrder Kind, prefix AFCQ- shipment_order_id)
 # Used only when reading / mapping V1 records — never written by V2
+# These constants are used by the migration script and legacy read paths.
+# They can be deleted in the post-migration cleanup.
 # ---------------------------------------------------------------------------
-V1_STATUS_CREATED            = 1
-V1_STATUS_BOOKING_STARTED    = 100
-V1_STATUS_BOOKING_CONFIRMED  = 110    # equivalent to V2 STATUS_BOOKED (3001)
-V1_STATUS_IN_TRANSIT         = 4110   # equivalent to V2 STATUS_IN_TRANSIT (3002)
-V1_STATUS_COMPLETED          = 10000  # equivalent to V2 STATUS_COMPLETED (5001)
+V1_STATUS_CREATED            = 1              # DEPRECATED post-migration
+V1_STATUS_BOOKING_STARTED    = 100            # DEPRECATED post-migration
+V1_STATUS_BOOKING_CONFIRMED  = 110            # DEPRECATED post-migration
+V1_STATUS_IN_TRANSIT         = 4110           # DEPRECATED post-migration
+V1_STATUS_COMPLETED          = 10000          # DEPRECATED post-migration
 
-# Mapping V1 ShipmentOrder.status → V2 status code (new codes)
+# Mapping V1 ShipmentOrder.status → V2 status code  # DEPRECATED post-migration
 V1_TO_V2_STATUS = {
     V1_STATUS_CREATED:           STATUS_CONFIRMED,
     V1_STATUS_BOOKING_STARTED:   STATUS_BOOKING_PENDING,
@@ -150,22 +161,22 @@ V1_TO_V2_STATUS = {
     V1_STATUS_COMPLETED:         STATUS_COMPLETED,
 }
 
-# V1 records are "active" when status >= 110 and < 10000
-V1_ACTIVE_MIN = V1_STATUS_BOOKING_CONFIRMED
-V1_ACTIVE_MAX = V1_STATUS_COMPLETED
+# V1 records are "active" when status >= 110 and < 10000  # DEPRECATED post-migration
+V1_ACTIVE_MIN = V1_STATUS_BOOKING_CONFIRMED   # DEPRECATED post-migration
+V1_ACTIVE_MAX = V1_STATUS_COMPLETED           # DEPRECATED post-migration
 
 # ---------------------------------------------------------------------------
-# V1 Quotation status codes
+# V1 Quotation status codes  # DEPRECATED post-migration
 # (Quotation Kind, prefix AFCQ-)
-# Used only for reading V1 records
+# Used only for reading V1 records. Can be deleted in post-migration cleanup.
 # ---------------------------------------------------------------------------
-V1_Q_EXPIRED   = -1
-V1_Q_DRAFT     = 1001
-V1_Q_REQUEST   = 1002
-V1_Q_PROPOSED  = 2001
-V1_Q_CONFIRMED = 3001
-V1_Q_ACTIVE    = 4001
-V1_Q_COMPLETED = 5001
+V1_Q_EXPIRED   = -1      # DEPRECATED post-migration
+V1_Q_DRAFT     = 1001    # DEPRECATED post-migration
+V1_Q_REQUEST   = 1002    # DEPRECATED post-migration
+V1_Q_PROPOSED  = 2001    # DEPRECATED post-migration
+V1_Q_CONFIRMED = 3001    # DEPRECATED post-migration
+V1_Q_ACTIVE    = 4001    # DEPRECATED post-migration
+V1_Q_COMPLETED = 5001    # DEPRECATED post-migration
 
 # ---------------------------------------------------------------------------
 # CommercialQuotation status  (V2 only)
@@ -252,5 +263,5 @@ AIR_CUBIC_CONVERSION_FACTOR = 167   # kg per cbm for air chargeable weight
 # ID prefixes
 # ---------------------------------------------------------------------------
 PREFIX_V2_SHIPMENT = "AF-"
-PREFIX_V1_SHIPMENT = "AFCQ-"
+PREFIX_V1_SHIPMENT = "AFCQ-"    # DEPRECATED post-migration
 PREFIX_COMPANY     = "AFC-"

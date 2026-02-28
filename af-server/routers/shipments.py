@@ -51,6 +51,7 @@ from core.constants import (
     STATUS_DEPARTED,
     STATUS_ARRIVED,
     V2_ACTIVE_STATUSES,
+    V2_OPERATIONAL_STATUSES,
     STATUS_LABELS,
     OLD_TO_NEW_STATUS,
     PREFIX_V2_SHIPMENT,
@@ -139,11 +140,11 @@ async def get_shipment_stats(
 
     for entity in v2_query.fetch():
         s = entity.get("status", 0)
-        if s in V2_ACTIVE_STATUSES:
+        if s in V2_OPERATIONAL_STATUSES:
             stats["active"] += 1
-        elif s == STATUS_COMPLETED:
+        elif s == STATUS_COMPLETED or s == STATUS_CONFIRMED:
             stats["completed"] += 1
-            # to_invoice: completed but invoice not yet issued
+            # to_invoice: completed/confirmed but invoice not yet issued
             if not bool(entity.get("issued_invoice", False)):
                 stats["to_invoice"] += 1
         elif s == STATUS_CANCELLED:
@@ -219,9 +220,9 @@ async def get_shipment_stats(
     migrated_completed_ids: list[str] = []
     for entity in migrated_query.fetch():
         s = entity.get("status", 0)
-        if s in V2_ACTIVE_STATUSES:
+        if s in V2_OPERATIONAL_STATUSES:
             stats["active"] += 1
-        elif s == STATUS_COMPLETED:
+        elif s == STATUS_COMPLETED or s == STATUS_CONFIRMED:
             stats["completed"] += 1
             migrated_completed_ids.append(entity.key.name or str(entity.key.id))
         elif s == STATUS_CANCELLED:
@@ -489,11 +490,11 @@ def _v2_tab_match(tab: str, entity) -> bool:
     if tab == "all":
         return True
     if tab == "active":
-        return s in V2_ACTIVE_STATUSES
+        return s in V2_OPERATIONAL_STATUSES
     if tab == "completed":
-        return s == STATUS_COMPLETED
+        return s == STATUS_COMPLETED or s == STATUS_CONFIRMED
     if tab == "to_invoice":
-        return s == STATUS_COMPLETED and not bool(entity.get("issued_invoice", False))
+        return (s == STATUS_COMPLETED or s == STATUS_CONFIRMED) and not bool(entity.get("issued_invoice", False))
     if tab == "draft":
         return s in _DRAFT_STATUSES
     if tab == "cancelled":
@@ -554,12 +555,12 @@ def _migrated_tab_match(tab: str, entity) -> bool:
     if tab == "all":
         return True
     if tab == "active":
-        return s in V2_ACTIVE_STATUSES
+        return s in V2_OPERATIONAL_STATUSES
     if tab == "completed":
-        return s == STATUS_COMPLETED
+        return s == STATUS_COMPLETED or s == STATUS_CONFIRMED
     if tab == "to_invoice":
         issued = entity.get("issued_invoice")
-        return s == STATUS_COMPLETED and not issued
+        return (s == STATUS_COMPLETED or s == STATUS_CONFIRMED) and not issued
     if tab == "draft":
         return s in _DRAFT_STATUSES
     if tab == "cancelled":
@@ -1010,8 +1011,19 @@ async def get_shipment(
         return {"status": "OK", "data": data, "msg": "Shipment fetched"}
 
     elif shipment_id.startswith(PREFIX_V1_SHIPMENT):
-        # Check ShipmentOrder Kind first — may be migrated (data_version=2)
-        # or V1 legacy (data_version=1 or absent)
+        # Post-migration: AFCQ- request may correspond to a migrated AF- record.
+        # Try AF- Quotation first; fall back to legacy ShipmentOrder path.
+        af_id = f"AF-{shipment_id[5:]}"
+        af_entity = client.get(client.key("Quotation", af_id))
+        if af_entity and af_entity.get("data_version") == 2 and af_entity.get("migrated_from_v1"):
+            # Migrated record — return the AF- version
+            data = entity_to_dict(af_entity)
+            if claims.is_afc() and data.get("company_id") != claims.company_id:
+                raise NotFoundError(f"Shipment {shipment_id} not found")
+            data["workflow_tasks"] = _lazy_init_tasks(client, af_id, data)
+            return {"status": "OK", "data": data, "msg": "Shipment fetched (migrated)"}
+
+        # Legacy V1 path — ShipmentOrder + Quotation join
         so_entity = client.get(client.key("ShipmentOrder", shipment_id))
         if not so_entity:
             raise NotFoundError(f"Shipment {shipment_id} not found")
@@ -1019,7 +1031,7 @@ async def get_shipment(
         data_version = so_entity.get("data_version") or 1
 
         if data_version == 2:
-            # Migrated record — return directly, same as V2
+            # Migrated record on ShipmentOrder Kind — return directly
             data = entity_to_dict(so_entity)
             if claims.is_afc() and data.get("company_id") != claims.company_id:
                 raise NotFoundError(f"Shipment {shipment_id} not found")
@@ -1116,9 +1128,9 @@ async def update_shipment_status(
     if not q_entity:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
-    # --- b. Determine V1 vs V2 ---
+    # --- b. Determine V1 vs V2 (use data_version, not prefix) ---
     data_version = q_entity.get("data_version") or 1
-    is_v1 = shipment_id.startswith(PREFIX_V1_SHIPMENT) or data_version < 2
+    is_v1 = data_version < 2
 
     # --- c. Resolve current V2 status ---
     so_entity = None
@@ -1205,15 +1217,12 @@ async def update_shipment_status(
     q_entity.exclude_from_indexes = set(q_entity.exclude_from_indexes or set()) | {"status_history"}
     client.put(q_entity)
 
-    # --- h. V1: also write to ShipmentOrder ---
-    if is_v1 and so_entity:
+    # --- h. V1: also write to ShipmentOrder (only for genuinely un-migrated records) ---
+    if is_v1 and so_entity and (so_entity.get("data_version") or 1) < 2:
         v1_new_status = _V2_TO_V1.get(new_status, new_status)
         so_entity["status"] = v1_new_status
         so_entity["last_status_updated"] = now
         so_entity["updated"] = now
-        # GUARD: never tag a V1 ShipmentOrder as data_version=2
-        if so_entity.get("data_version") == 2:
-            so_entity["data_version"] = None
         client.put(so_entity)
 
     # --- i. Append to ShipmentWorkFlow.status_history ---
@@ -1361,40 +1370,29 @@ async def assign_company(
         or body.company_id
     )
 
-    if shipment_id.startswith(PREFIX_V2_SHIPMENT) or shipment_id.startswith("AF2-"):
-        # V2 — update Quotation only
-        q_key = client.key("Quotation", shipment_id)
-        q_entity = client.get(q_key)
-        if not q_entity:
-            raise NotFoundError(f"Shipment {shipment_id} not found")
+    # Load Quotation entity — works for all prefixes (AF-, AF2-, AFCQ-)
+    q_key = client.key("Quotation", shipment_id)
+    q_entity = client.get(q_key)
+    if not q_entity:
+        raise NotFoundError(f"Shipment {shipment_id} not found")
 
-        q_entity["company_id"] = body.company_id
-        q_entity["updated"] = now
-        client.put(q_entity)
+    is_v1 = (q_entity.get("data_version") or 1) < 2
 
-    elif shipment_id.startswith(PREFIX_V1_SHIPMENT):
-        # V1 — update both ShipmentOrder and Quotation to keep in sync
-        so_key = client.key("ShipmentOrder", shipment_id)
-        so_entity = client.get(so_key)
-        if not so_entity:
-            raise NotFoundError(f"Shipment {shipment_id} not found")
+    q_entity["company_id"] = body.company_id
+    q_entity["updated"] = now
 
-        so_entity["company_id"] = body.company_id
-        so_entity["updated"] = now
-
-        q_key = client.key("Quotation", shipment_id)
-        q_entity = client.get(q_key)
-
-        entities_to_put = [so_entity]
-        if q_entity:
-            q_entity["company_id"] = body.company_id
-            q_entity["updated"] = now
-            entities_to_put.append(q_entity)
-
+    if is_v1:
+        # V1 — also update ShipmentOrder to keep in sync
+        so_entity = client.get(client.key("ShipmentOrder", shipment_id))
+        entities_to_put = [q_entity]
+        if so_entity and (so_entity.get("data_version") or 1) < 2:
+            so_entity["company_id"] = body.company_id
+            so_entity["updated"] = now
+            entities_to_put.append(so_entity)
         client.put_multi(entities_to_put)
-
     else:
-        raise NotFoundError(f"Invalid shipment ID format: {shipment_id}")
+        # V2 — Quotation only
+        client.put(q_entity)
 
     logger.info("Reassigned %s to company %s by %s", shipment_id, body.company_id, claims.uid)
 
@@ -2552,12 +2550,6 @@ async def update_from_bl(
     client = get_client()
     now = datetime.now(timezone.utc).isoformat()
 
-    # V1 detection
-    is_v1 = shipment_id.startswith(PREFIX_V1_SHIPMENT)
-    so_entity = None
-    if is_v1:
-        so_entity = client.get(client.key("ShipmentOrder", shipment_id))
-
     # Load Quotation entity
     q_key = client.key("Quotation", shipment_id)
     q_entity = client.get(q_key)
@@ -2565,6 +2557,12 @@ async def update_from_bl(
         raise NotFoundError(f"Shipment {shipment_id} not found")
     if q_entity.get("trash"):
         raise HTTPException(status_code=410, detail=f"Shipment {shipment_id} has been deleted")
+
+    # V1 detection (use data_version, not prefix)
+    is_v1 = (q_entity.get("data_version") or 1) < 2
+    so_entity = None
+    if is_v1:
+        so_entity = client.get(client.key("ShipmentOrder", shipment_id))
 
     # Merge booking fields (don't replace whole dict)
     booking = q_entity.get("booking") or {}
@@ -2693,8 +2691,8 @@ async def update_from_bl(
         logger.error("[bl_update] Failed to write Quotation %s: %s", shipment_id, str(e))
         raise HTTPException(status_code=500, detail=f"Failed to save shipment: {str(e)}")
 
-    # For V1, also write flat fields to ShipmentOrder so detail endpoint returns them
-    if is_v1 and so_entity:
+    # For V1, also write flat fields to ShipmentOrder (only genuinely un-migrated)
+    if is_v1 and so_entity and (so_entity.get("data_version") or 1) < 2:
         so_changed = False
         if waybill_number:
             so_entity["booking_reference"] = waybill_number
@@ -2707,9 +2705,6 @@ async def update_from_bl(
             so_changed = True
         if so_changed:
             so_entity["updated"] = now
-            # GUARD: never tag a V1 ShipmentOrder as data_version=2
-            if so_entity.get("data_version") == 2:
-                so_entity["data_version"] = None
             try:
                 client.put(so_entity)
             except Exception as e:
@@ -2848,16 +2843,13 @@ async def update_parties(
 
     client.put(q_entity)
 
-    # V1: also write to ShipmentOrder if it exists
-    is_v1 = shipment_id.startswith(PREFIX_V1_SHIPMENT)
+    # V1: also write to ShipmentOrder if genuinely un-migrated
+    is_v1 = (q_entity.get("data_version") or 1) < 2
     if is_v1:
         so_entity = client.get(client.key("ShipmentOrder", shipment_id))
-        if so_entity:
+        if so_entity and (so_entity.get("data_version") or 1) < 2:
             so_entity["parties"] = parties
             so_entity["updated"] = now
-            # GUARD: never tag a V1 ShipmentOrder as data_version=2
-            if so_entity.get("data_version") == 2:
-                so_entity["data_version"] = None
             try:
                 client.put(so_entity)
             except Exception as e:
@@ -3108,13 +3100,13 @@ async def save_route_nodes(
         if claims.role not in ("AFC-ADMIN", "AFC-M"):
             raise HTTPException(status_code=403, detail="Only admin/manager can update route nodes")
 
-    # V1 shipments are read-only for route nodes
-    if shipment_id.startswith(PREFIX_V1_SHIPMENT):
-        raise HTTPException(status_code=400, detail="Cannot write route nodes to V1 shipments")
-
     q_entity = client.get(client.key("Quotation", shipment_id))
     if not q_entity:
         raise NotFoundError(f"Shipment {shipment_id} not found")
+
+    # V1 shipments are read-only for route nodes (use data_version, not prefix)
+    if (q_entity.get("data_version") or 1) < 2:
+        raise HTTPException(status_code=400, detail="Cannot write route nodes to V1 shipments")
 
     # Validate roles
     roles = [n.role for n in nodes]
@@ -3182,12 +3174,12 @@ async def update_route_node_timing(
         if claims.role not in ("AFC-ADMIN", "AFC-M"):
             raise HTTPException(status_code=403, detail="Only admin/manager can update route nodes")
 
-    if shipment_id.startswith(PREFIX_V1_SHIPMENT):
-        raise HTTPException(status_code=400, detail="Cannot write route nodes to V1 shipments")
-
     q_entity = client.get(client.key("Quotation", shipment_id))
     if not q_entity:
         raise NotFoundError(f"Shipment {shipment_id} not found")
+
+    if (q_entity.get("data_version") or 1) < 2:
+        raise HTTPException(status_code=400, detail="Cannot write route nodes to V1 shipments")
 
     nodes = q_entity.get("route_nodes") or []
     if not nodes:
