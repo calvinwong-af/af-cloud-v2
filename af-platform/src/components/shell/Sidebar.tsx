@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   LogOut,
   X,
+  UserCircle,
 } from "lucide-react";
 import { LogoMark } from "@/components/shared/Logo";
 import { signOut } from "@/lib/auth";
@@ -45,35 +46,45 @@ interface NavSection {
   items: NavItem[];
 }
 
-const navSections: NavSection[] = [
-  {
-    title: "OVERVIEW",
-    items: [
-      { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-    ],
-  },
-  {
-    title: "OPERATIONS",
-    items: [
-      { label: "Shipments", icon: Truck, href: "/shipments" },
-    ],
-  },
-  {
-    title: "ADMINISTRATION",
-    items: [
-      { label: "Users", icon: Users, href: "/users" },
-      { label: "Companies", icon: Building2, href: "/companies" },
-    ],
-  },
-  {
-    title: "SYSTEM",
-    items: [
-      { label: "Pricing Tables", icon: Grid3X3, href: "/pricing" },
-      { label: "Geography", icon: Globe, href: "/geography" },
-      { label: "System Logs", icon: ScrollText, href: "/logs" },
-    ],
-  },
-];
+function getNavSections(accountType: string | null): NavSection[] {
+  const isAfu = accountType === 'AFU';
+  const sections: NavSection[] = [
+    {
+      title: 'OVERVIEW',
+      items: [{ label: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' }],
+    },
+    {
+      title: 'OPERATIONS',
+      items: [{ label: 'Shipments', icon: Truck, href: '/shipments' }],
+    },
+  ];
+
+  if (isAfu) {
+    sections.push({
+      title: 'ADMINISTRATION',
+      items: [
+        { label: 'Users', icon: Users, href: '/users' },
+        { label: 'Companies', icon: Building2, href: '/companies' },
+      ],
+    });
+    sections.push({
+      title: 'SYSTEM',
+      items: [
+        { label: 'Pricing Tables', icon: Grid3X3, href: '/pricing' },
+        { label: 'Geography', icon: Globe, href: '/geography' },
+        { label: 'System Logs', icon: ScrollText, href: '/logs' },
+      ],
+    });
+  }
+
+  // Profile — shown to all users
+  sections.push({
+    title: 'ACCOUNT',
+    items: [{ label: 'Profile', icon: UserCircle, href: '/profile' }],
+  });
+
+  return sections;
+}
 
 function getInitials(displayName: string | null): string {
   if (!displayName) return "U";
@@ -95,6 +106,7 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [roleLabel, setRoleLabel] = useState("Staff");
+  const [accountType, setAccountType] = useState<string | null>(null);
 
   // Hydrate collapse state from localStorage
   useEffect(() => {
@@ -102,10 +114,11 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
     if (stored === "true") setCollapsed(true);
   }, []);
 
-  // Fetch current user's role for sidebar display
+  // Fetch current user's role + account type for sidebar display + nav gating
   useEffect(() => {
     getCurrentUserProfileAction().then(({ role, account_type }) => {
       setRoleLabel(resolveRoleLabel(account_type, role));
+      setAccountType(account_type);
     });
   }, []);
 
@@ -190,7 +203,7 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
 
       {/* ── Nav sections ── */}
       <nav className="relative z-10 flex-1 overflow-y-auto overflow-x-hidden px-2 py-2 space-y-4">
-        {navSections.map((section) => (
+        {getNavSections(accountType).map((section) => (
           <div key={section.title}>
             {/* Section label */}
             <div

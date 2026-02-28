@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Users, ShieldCheck, Building2, AlertTriangle, Plus, Search, RefreshCw } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Users, ShieldCheck, Building2, AlertTriangle, Plus, Search, RefreshCw, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { fetchUsersAction } from "@/app/actions/users";
+import { fetchUsersAction, getCurrentUserProfileAction } from "@/app/actions/users";
 import type { UserRecord } from "@/lib/users";
 import { UserTable } from "@/components/users/UserTable";
 import { CreateUserModal } from '@/components/users/CreateUserModal';
@@ -53,6 +54,8 @@ function SkeletonCards() {
 }
 
 export default function UsersPage() {
+  const router = useRouter();
+  const [authorized, setAuthorized] = useState(false);
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +78,15 @@ export default function UsersPage() {
   }
 
   useEffect(() => {
-    fetchUsers();
+    getCurrentUserProfileAction().then((profile) => {
+      if (profile.account_type === 'AFC') {
+        router.replace('/dashboard');
+        return;
+      }
+      setAuthorized(true);
+      fetchUsers();
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const stats = useMemo(() => {
@@ -110,6 +121,14 @@ export default function UsersPage() {
     { key: "afc", label: "AF Staff" },
     { key: "afu", label: "Customers" },
   ];
+
+  if (!authorized) {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[60vh]">
+        <Loader2 className="w-6 h-6 animate-spin text-[var(--sky)]" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

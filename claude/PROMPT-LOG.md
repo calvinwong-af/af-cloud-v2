@@ -181,3 +181,19 @@ Entries are appended chronologically — never overwrite.
   - `af-platform/src/lib/v1-assembly.ts`
 - **Notes:** Fixed function-in-block strict mode error by converting to arrow function. Build passes clean.
 
+### [2026-03-01 12:00 UTC] — AFC Role Gating + Profile Page
+- **Status:** Completed
+- **Tasks:**
+  - Part 1: Sidebar nav gating — replaced static `navSections` with `getNavSections(accountType)` that filters ADMINISTRATION and SYSTEM sections for AFC users; added ACCOUNT section with Profile link for all users; added `UserCircle` import and `accountType` state
+  - Part 2: Route guards — added AFC redirect guards to `/users` and `/companies` pages using `getCurrentUserProfileAction` check with `router.replace('/dashboard')` and loading spinner
+  - Part 3: Extended `getCurrentUserProfileAction` to return full profile (uid, name, email, phone, company_id from CompanyUserAccount, company_name from Company Kind, valid_access, last_login, created_at); created new `/profile` page with avatar, account card, access card, company card (AFC only)
+  - Part 4: Fixed `_build_claims` in `auth.py` — added `CompanyUserAccount` lookup as primary source for `company_id`, with `UserIAM` and `UserAccount` as fallbacks
+- **Files Modified:**
+  - `af-platform/src/components/shell/Sidebar.tsx` — role-gated nav, UserCircle import, accountType state
+  - `af-platform/src/app/(platform)/users/page.tsx` — AFC route guard
+  - `af-platform/src/app/(platform)/companies/page.tsx` — AFC route guard
+  - `af-platform/src/app/actions/users.ts` — extended `getCurrentUserProfileAction` with full profile data
+  - `af-platform/src/app/(platform)/profile/page.tsx` — new file
+  - `af-server/core/auth.py` — CompanyUserAccount lookup in `_build_claims`
+- **Notes:** Lint passes. Server compiles clean. Critical security fix: AFC users with missing company_id in UserIAM now correctly resolved from CompanyUserAccount.
+

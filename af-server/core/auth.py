@@ -167,7 +167,16 @@ async def _build_claims(decoded_token: dict) -> Claims:
     )
 
     role = iam.get("role", "")
-    company_id = iam.get("company_id") or (account.get("company_id") if account else None)
+
+    # CompanyUserAccount is the primary source of company_id for AFC users
+    cua_key = client.key("CompanyUserAccount", uid)
+    cua = client.get(cua_key)
+    company_id = (
+        (cua.get("company_id") if cua else None)
+        or iam.get("company_id")
+        or (account.get("company_id") if account else None)
+    )
+
     name = (
         (account.get("name") if account else None)
         or iam.get("name")

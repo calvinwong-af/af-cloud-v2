@@ -8,8 +8,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Building2, CheckCircle2, Globe, Link2, Plus, RefreshCw, Search } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Building2, CheckCircle2, Globe, Link2, Loader2, Plus, RefreshCw, Search } from 'lucide-react';
 import { fetchCompaniesAction, fetchCompanyStatsAction } from '@/app/actions/companies';
+import { getCurrentUserProfileAction } from '@/app/actions/users';
 import type { Company } from '@/lib/types';
 import { CompanyTable } from '@/components/companies/CompanyTable';
 import { CreateCompanyModal } from '@/components/companies/CreateCompanyModal';
@@ -21,6 +23,8 @@ import { KpiCard } from '@/components/shared/KpiCard';
 // ---------------------------------------------------------------------------
 
 export default function CompaniesPage() {
+  const router = useRouter();
+  const [authorized, setAuthorized] = useState(false);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [stats, setStats] = useState<{
     total: number;
@@ -55,7 +59,14 @@ export default function CompaniesPage() {
   }, [stats]);
 
   useEffect(() => {
-    load();
+    getCurrentUserProfileAction().then((profile) => {
+      if (profile.account_type === 'AFC') {
+        router.replace('/dashboard');
+        return;
+      }
+      setAuthorized(true);
+      load();
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -69,6 +80,14 @@ export default function CompaniesPage() {
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
+
+  if (!authorized) {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[60vh]">
+        <Loader2 className="w-6 h-6 animate-spin text-[var(--sky)]" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">

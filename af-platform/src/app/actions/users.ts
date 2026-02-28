@@ -9,32 +9,71 @@ import { getFirebaseAdmin } from '@/lib/firebase-admin';
 // Lightweight current-user profile (for display — no role gate)
 // ---------------------------------------------------------------------------
 
-export async function getCurrentUserProfileAction(): Promise<{
+export interface UserProfile {
   role: string | null;
   account_type: string | null;
-}> {
+  uid: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  phone_number: string | null;
+  company_id: string | null;
+  company_name: string | null;
+  valid_access: boolean;
+  last_login: string | null;
+  created_at: string | null;
+}
+
+const emptyProfile: UserProfile = {
+  role: null, account_type: null, uid: null,
+  first_name: null, last_name: null, email: null, phone_number: null,
+  company_id: null, company_name: null,
+  valid_access: false, last_login: null, created_at: null,
+};
+
+export async function getCurrentUserProfileAction(): Promise<UserProfile> {
   try {
     const { cookies } = await import('next/headers');
     const cookieStore = cookies();
     const idToken = cookieStore.get('af-session')?.value;
-    if (!idToken) return { role: null, account_type: null };
+    if (!idToken) return emptyProfile;
 
     const admin = getFirebaseAdmin();
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     const uid = decodedToken.uid;
 
     const datastore = getDatastore();
-    const [[iamEntity], [userAccountEntity]] = await Promise.all([
+    const [[iamEntity], [userAccountEntity], [cuaEntity]] = await Promise.all([
       datastore.get(datastore.key(['UserIAM', uid])),
       datastore.get(datastore.key(['UserAccount', uid])),
+      datastore.get(datastore.key(['CompanyUserAccount', uid])),
     ]);
 
+    const companyId = (cuaEntity?.company_id as string) ?? null;
+
+    // Resolve company name if company_id exists
+    let companyName: string | null = null;
+    if (companyId) {
+      const [companyEntity] = await datastore.get(datastore.key(['Company', companyId]));
+      companyName = (companyEntity?.name as string) ?? (companyEntity?.short_name as string) ?? null;
+    }
+
     return {
+      uid,
       role: (iamEntity?.role as string) ?? null,
       account_type: (userAccountEntity?.account_type as string) ?? (iamEntity?.account_type as string) ?? null,
+      first_name: (userAccountEntity?.first_name as string) ?? null,
+      last_name: (userAccountEntity?.last_name as string) ?? null,
+      email: (userAccountEntity?.email as string) ?? decodedToken.email ?? null,
+      phone_number: (userAccountEntity?.phone_number as string) ?? null,
+      company_id: companyId,
+      company_name: companyName,
+      valid_access: Boolean(iamEntity?.valid_access),
+      last_login: (iamEntity?.last_login as string) ?? null,
+      created_at: (userAccountEntity?.created as string) ?? null,
     };
   } catch {
-    return { role: null, account_type: null };
+    return emptyProfile;
   }
 }
 
