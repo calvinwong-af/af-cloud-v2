@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import type { User } from "firebase/auth";
-import { Bell, Settings } from "lucide-react";
+import { Bell, Settings, Menu } from "lucide-react";
 import { QuickSearch } from "./QuickSearch";
 
 function getInitials(displayName: string | null): string {
@@ -22,22 +22,32 @@ function getSectionName(pathname: string): string {
 
 interface TopbarProps {
   currentUser: User;
+  onMobileMenuOpen?: () => void;
 }
 
-export function Topbar({ currentUser }: TopbarProps) {
+export function Topbar({ currentUser, onMobileMenuOpen }: TopbarProps) {
   const pathname = usePathname();
   const sectionName = getSectionName(pathname);
 
   return (
     <header
-      className="shrink-0 flex items-center justify-between px-6 h-[56px]"
+      className="shrink-0 flex items-center justify-between px-4 sm:px-6 h-[56px]"
       style={{
         background: "white",
         borderBottom: "1px solid var(--border)",
       }}
     >
-      {/* Left — Breadcrumb */}
+      {/* Left — Hamburger (mobile) + Breadcrumb */}
       <div className="flex items-center gap-2 text-sm">
+        {/* Hamburger — mobile only */}
+        <button
+          onClick={onMobileMenuOpen}
+          className="flex lg:hidden items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-[var(--surface)] -ml-1 mr-1"
+          aria-label="Open menu"
+        >
+          <Menu size={18} style={{ color: "var(--text-mid)" }} />
+        </button>
+
         <span style={{ color: "var(--text-muted)" }}>Platform</span>
         <span style={{ color: "var(--text-muted)" }}>/</span>
         <span className="font-semibold" style={{ color: "var(--text)" }}>
@@ -47,8 +57,10 @@ export function Topbar({ currentUser }: TopbarProps) {
 
       {/* Right — Actions */}
       <div className="flex items-center gap-3">
-        {/* Search bar */}
-        <QuickSearch />
+        {/* Search bar — hidden on mobile */}
+        <div className="hidden sm:block">
+          <QuickSearch />
+        </div>
 
         {/* Notifications */}
         <button

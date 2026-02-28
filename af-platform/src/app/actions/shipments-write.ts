@@ -677,3 +677,58 @@ export async function updateShipmentFromBLAction(
     return { success: false, error: 'Failed to update shipment from BL' };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Update Parties (shipper + consignee)
+// ---------------------------------------------------------------------------
+
+export async function updatePartiesAction(
+  shipmentId: string,
+  parties: {
+    shipper_name: string | null;
+    shipper_address: string | null;
+    consignee_name: string | null;
+    consignee_address: string | null;
+    notify_party_name: string | null;
+    notify_party_address: string | null;
+  }
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) return { success: false, error: 'No session token' };
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) return { success: false, error: 'Server URL not configured' };
+
+    const url = new URL(
+      `/api/v2/shipments/${encodeURIComponent(shipmentId)}/parties`,
+      serverUrl,
+    );
+
+    const res = await fetch(url.toString(), {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(parties),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const msg = json?.detail ?? `Server responded ${res.status}`;
+      return { success: false, error: msg };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error('[updatePartiesAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to update parties' };
+  }
+}

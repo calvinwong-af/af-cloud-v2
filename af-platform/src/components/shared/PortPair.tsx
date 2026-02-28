@@ -74,8 +74,8 @@ export default function PortPair({
         <div className="flex-1 min-w-0">
           <div className={labelCls}>{originLabel}</div>
           <div
-            className={`${codeCls} ${origin.port_name ? 'cursor-help' : ''}`}
-            title={origin.port_name ?? undefined}
+            className={`${codeCls} ${origin.port_name && origin.port_name !== originCode ? 'cursor-help' : ''}`}
+            title={origin.port_name && origin.port_name !== originCode ? origin.port_name : undefined}
           >
             {originCode}
           </div>
@@ -108,8 +108,8 @@ export default function PortPair({
         <div className="flex-1 min-w-0 text-right">
           <div className={labelCls}>{destLabel}</div>
           <div
-            className={`${codeCls} ${destination.port_name ? 'cursor-help' : ''}`}
-            title={destination.port_name ?? undefined}
+            className={`${codeCls} ${destination.port_name && destination.port_name !== destCode ? 'cursor-help' : ''}`}
+            title={destination.port_name && destination.port_name !== destCode ? destination.port_name : undefined}
           >
             {destCode}
           </div>

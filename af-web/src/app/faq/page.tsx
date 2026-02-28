@@ -189,6 +189,7 @@ export default function FAQPage() {
                   marginBottom: "-2px",
                   transition: "color 0.15s, border-color 0.15s",
                   textTransform: "capitalize",
+                  minHeight: "44px",
                 }}
               >
                 {tab === "company" ? "Company" : "Services"}

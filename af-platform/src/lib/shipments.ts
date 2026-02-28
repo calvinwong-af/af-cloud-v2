@@ -200,6 +200,7 @@ export async function getShipmentOrders(
         booking:                  null,
         parties:                  null,   // Not assembled for list view
         customs_clearance:        [],
+        bl_document:              null,
         exception:                null,
         tracking_id:              null,
         files:                    raw.files as string[] ?? [],
@@ -309,11 +310,36 @@ export async function getShipmentOrderDetail(
   const [[freightEntity], [typeEntity], [oldShipmentEntity]] =
     await Promise.all(fetchPromises);
 
+  // Look up human-readable port names for tooltip display
+  const originCode = raw.origin_port_un_code as string | null ?? null;
+  const destCode = raw.destination_port_un_code as string | null ?? null;
+  const portCodes = [originCode, destCode].filter((c): c is string => !!c);
+  const portLabelMap = new Map<string, string>();
+  if (portCodes.length > 0) {
+    try {
+      const portKeys = portCodes.map(code => datastore.key(['Port', code]));
+      const [portEntities] = await datastore.get(portKeys);
+      const entities = Array.isArray(portEntities) ? portEntities : [portEntities];
+      for (const pe of entities) {
+        if (!pe) continue;
+        const unCode = pe.un_code as string | undefined;
+        const name = pe.name as string | undefined;
+        const country = pe.country as string | undefined;
+        if (unCode && name) {
+          portLabelMap.set(unCode, country ? `${name}, ${country}` : name);
+        }
+      }
+    } catch {
+      // Non-critical — fall back to showing port codes
+    }
+  }
+
   const assembled = assembleV1ShipmentOrder({
     quotation: raw,
     quotationFreight: freightEntity as Record<string, unknown> | null,
     typeKind: typeEntity as Record<string, unknown> | null,
     oldShipmentOrder: oldShipmentEntity as Record<string, unknown> | null,
+    portLabelMap,
   });
   // Resolve company name for display
   if (assembled.company_id) {

@@ -15,6 +15,7 @@ import {
   ScrollText,
   ChevronLeft,
   LogOut,
+  X,
 } from "lucide-react";
 import { LogoMark } from "@/components/shared/Logo";
 import { signOut } from "@/lib/auth";
@@ -86,9 +87,11 @@ function getInitials(displayName: string | null): string {
 
 interface SidebarProps {
   currentUser: User;
+  isMobileDrawer?: boolean;
+  onMobileClose?: () => void;
 }
 
-export function Sidebar({ currentUser }: SidebarProps) {
+export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [roleLabel, setRoleLabel] = useState("Staff");
@@ -114,11 +117,20 @@ export function Sidebar({ currentUser }: SidebarProps) {
     });
   }
 
+  // On mobile drawer, always expanded
+  const isCollapsed = isMobileDrawer ? false : collapsed;
+
+  function handleNavClick() {
+    if (isMobileDrawer && onMobileClose) {
+      onMobileClose();
+    }
+  }
+
   return (
     <aside
       className="relative flex flex-col shrink-0 h-full overflow-hidden"
       style={{
-        width: collapsed ? 64 : 240,
+        width: isCollapsed ? 64 : 240,
         background: "var(--slate)",
         borderRight: "1px solid rgba(255,255,255,0.05)",
         transition: "width 0.25s cubic-bezier(0.4,0,0.2,1)",
@@ -136,7 +148,7 @@ export function Sidebar({ currentUser }: SidebarProps) {
           <span
             className="font-display text-[0.95rem] font-bold leading-none tracking-tight whitespace-nowrap"
             style={{
-              opacity: collapsed ? 0 : 1,
+              opacity: isCollapsed ? 0 : 1,
               transition: "opacity 0.2s",
             }}
           >
@@ -144,24 +156,36 @@ export function Sidebar({ currentUser }: SidebarProps) {
             <span style={{ color: "var(--sky-light)" }}>Freight</span>
           </span>
         </div>
-        <button
-          onClick={toggleCollapsed}
-          className="relative z-10 shrink-0 flex items-center justify-center w-7 h-7 rounded-md transition-colors hover:bg-white/10"
-          style={{
-            opacity: collapsed ? 0 : 1,
-            pointerEvents: collapsed ? "none" : "auto",
-            transition: "opacity 0.2s",
-          }}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          <ChevronLeft
-            size={16}
-            className="text-white/50 transition-transform"
+
+        {/* Desktop: collapse toggle; Mobile: close button */}
+        {isMobileDrawer ? (
+          <button
+            onClick={onMobileClose}
+            className="relative z-10 shrink-0 flex items-center justify-center w-7 h-7 rounded-md transition-colors hover:bg-white/10"
+            aria-label="Close menu"
+          >
+            <X size={16} className="text-white/50" />
+          </button>
+        ) : (
+          <button
+            onClick={toggleCollapsed}
+            className="relative z-10 shrink-0 items-center justify-center w-7 h-7 rounded-md transition-colors hover:bg-white/10 hidden lg:flex"
             style={{
-              transform: collapsed ? "rotate(180deg)" : "rotate(0deg)",
+              opacity: isCollapsed ? 0 : 1,
+              pointerEvents: isCollapsed ? "none" : "auto",
+              transition: "opacity 0.2s",
             }}
-          />
-        </button>
+            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            <ChevronLeft
+              size={16}
+              className="text-white/50 transition-transform"
+              style={{
+                transform: isCollapsed ? "rotate(180deg)" : "rotate(0deg)",
+              }}
+            />
+          </button>
+        )}
       </div>
 
       {/* ── Nav sections ── */}
@@ -174,9 +198,9 @@ export function Sidebar({ currentUser }: SidebarProps) {
               style={{
                 fontSize: "0.6rem",
                 color: "var(--text-muted)",
-                opacity: collapsed ? 0 : 1,
-                height: collapsed ? 0 : "1.25rem",
-                marginBottom: collapsed ? 0 : 6,
+                opacity: isCollapsed ? 0 : 1,
+                height: isCollapsed ? 0 : "1.25rem",
+                marginBottom: isCollapsed ? 0 : 6,
                 transition: "opacity 0.2s, height 0.2s, margin 0.2s",
               }}
             >
@@ -193,10 +217,11 @@ export function Sidebar({ currentUser }: SidebarProps) {
                   <Link
                     key={item.href}
                     href={item.href}
-                    title={collapsed ? item.label : undefined}
+                    title={isCollapsed ? item.label : undefined}
+                    onClick={handleNavClick}
                     className={cn(
                       "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-                      collapsed && "justify-center px-0",
+                      isCollapsed && "justify-center px-0",
                       active
                         ? "text-white"
                         : "text-white/50 hover:bg-white/[0.055]"
@@ -226,7 +251,7 @@ export function Sidebar({ currentUser }: SidebarProps) {
                       )}
                     />
 
-                    {!collapsed && (
+                    {!isCollapsed && (
                       <>
                         <span className="flex-1 truncate">{item.label}</span>
                         {item.badge && (
@@ -255,8 +280,8 @@ export function Sidebar({ currentUser }: SidebarProps) {
         className="relative z-10 shrink-0 border-t px-3 py-3"
         style={{ borderColor: "rgba(255,255,255,0.05)" }}
       >
-        {/* Expand button when collapsed */}
-        {collapsed && (
+        {/* Expand button when collapsed (desktop only) */}
+        {isCollapsed && !isMobileDrawer && (
           <button
             onClick={toggleCollapsed}
             className="flex items-center justify-center w-full h-8 rounded-md transition-colors hover:bg-white/10 mb-2"
@@ -287,7 +312,7 @@ export function Sidebar({ currentUser }: SidebarProps) {
           <div
             className="flex-1 min-w-0 overflow-hidden"
             style={{
-              opacity: collapsed ? 0 : 1,
+              opacity: isCollapsed ? 0 : 1,
               transition: "opacity 0.2s",
             }}
           >
@@ -305,8 +330,8 @@ export function Sidebar({ currentUser }: SidebarProps) {
             title="Sign out"
             className="shrink-0 flex items-center justify-center w-7 h-7 rounded-md transition-colors hover:bg-white/10"
             style={{
-              opacity: collapsed ? 0 : 1,
-              pointerEvents: collapsed ? "none" : "auto",
+              opacity: isCollapsed ? 0 : 1,
+              pointerEvents: isCollapsed ? "none" : "auto",
               transition: "opacity 0.2s",
             }}
           >

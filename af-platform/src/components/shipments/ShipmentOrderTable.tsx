@@ -29,7 +29,7 @@ import {
 import { formatDate } from '@/lib/utils';
 import { deleteShipmentOrderAction } from '@/app/actions/shipments-write';
 import type { ShipmentOrder } from '@/lib/types';
-import { SHIPMENT_STATUS_LABELS, ORDER_TYPE_LABELS } from '@/lib/types';
+import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS } from '@/lib/types';
 
 interface ShipmentOrderTableProps {
   orders: ShipmentOrder[];
@@ -289,12 +289,95 @@ function ShipmentActionsMenu({
 }
 
 // ---------------------------------------------------------------------------
+// Status badge (mobile card)
+// ---------------------------------------------------------------------------
+
+const STATUS_BADGE_COLORS: Record<string, { bg: string; text: string }> = {
+  gray:   { bg: '#f3f4f6', text: '#6b7280' },
+  yellow: { bg: '#fef9c3', text: '#a16207' },
+  blue:   { bg: '#dbeafe', text: '#2563eb' },
+  orange: { bg: '#ffedd5', text: '#ea580c' },
+  teal:   { bg: '#ccfbf1', text: '#0d9488' },
+  sky:    { bg: '#e0f2fe', text: '#0284c7' },
+  indigo: { bg: '#e0e7ff', text: '#4f46e5' },
+  green:  { bg: '#dcfce7', text: '#16a34a' },
+};
+
+function StatusBadge({ status }: { status: number }) {
+  const label = SHIPMENT_STATUS_LABELS[status] ?? `${status}`;
+  const colorKey = SHIPMENT_STATUS_COLOR[status] ?? 'gray';
+  const colors = STATUS_BADGE_COLORS[colorKey] ?? STATUS_BADGE_COLORS.gray;
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+      style={{ background: colors.bg, color: colors.text }}
+    >
+      {label}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Mobile card
+// ---------------------------------------------------------------------------
+
+function ShipmentCard({ order, href }: { order: ShipmentOrder; href: string }) {
+  const router = useRouter();
+  const originCode = order.origin?.port_un_code ?? order.origin?.label ?? '—';
+  const destCode = order.destination?.port_un_code ?? order.destination?.label ?? '—';
+  const typeLabel = ORDER_TYPE_LABELS[order.order_type] ?? order.order_type;
+
+  return (
+    <div
+      className="bg-white border border-[var(--border)] rounded-lg p-4 cursor-pointer transition-colors active:bg-[var(--sky-mist)]"
+      style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
+      onClick={(e) => {
+        if (e.ctrlKey || e.metaKey) {
+          window.open(href, '_blank', 'noopener,noreferrer');
+        } else {
+          router.push(href);
+        }
+      }}
+    >
+      {/* Top row: status badge + exception flag */}
+      <div className="flex items-center justify-between mb-2">
+        <StatusBadge status={order.status} />
+        {order.exception?.flagged && (
+          <AlertTriangle className="w-4 h-4 text-amber-500" />
+        )}
+      </div>
+
+      {/* Shipment ID */}
+      <div className="font-mono text-sm font-medium mb-1" style={{ color: 'var(--sky)' }}>
+        {order.quotation_id}
+      </div>
+
+      {/* Route */}
+      <div className="flex items-center gap-1.5 text-sm mb-1" style={{ color: 'var(--text-mid)' }}>
+        <span className="font-mono">{originCode}</span>
+        <ArrowRight className="w-3 h-3 text-[var(--text-muted)] flex-shrink-0" />
+        <span className="font-mono">{destCode}</span>
+      </div>
+
+      {/* Mode + date */}
+      <div className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>
+        {typeLabel}
+        {order.cargo_ready_date ? ` · ${formatDate(order.cargo_ready_date)}` : ''}
+      </div>
+
+      {/* Company */}
+      <div className="text-xs truncate" style={{ color: 'var(--text-mid)' }}>
+        {order._company_name ?? order.company_id}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Table
 // ---------------------------------------------------------------------------
 
 export function ShipmentOrderTable({ orders, loading, accountType, onRefresh }: ShipmentOrderTableProps) {
-  const router = useRouter();
-
   if (loading) return <ShipmentTableSkeleton />;
 
   if (!orders.length) {
@@ -306,39 +389,56 @@ export function ShipmentOrderTable({ orders, loading, accountType, onRefresh }: 
   }
 
   return (
-    <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-max text-sm">
-          <thead>
-            <tr className="bg-[var(--surface)] border-b border-[var(--border)]">
-              <Th>Order ID</Th>
-              <Th>Status</Th>
-              <Th>Type</Th>
-              <Th>Route</Th>
-              <Th>Company</Th>
-              <Th>Incoterm</Th>
-              <Th>Cargo Ready</Th>
-              <Th>Updated</Th>
-              <Th><span className="sr-only">Actions</span></Th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--border)]">
-            {orders.map((order) => (
-              <ShipmentRow
-                key={order.quotation_id}
-                order={order}
-                accountType={accountType}
-                onRowClick={() => router.push(`/shipments/${order.quotation_id}`)}
-                onDeleted={onRefresh}
-              />
-            ))}
-          </tbody>
-        </table>
+    <>
+      {/* Mobile: card view */}
+      <div className="md:hidden space-y-3">
+        {orders.map((order) => (
+          <ShipmentCard
+            key={order.quotation_id}
+            order={order}
+            href={`/shipments/${order.quotation_id}`}
+          />
+        ))}
+        <div className="text-center text-xs text-[var(--text-muted)] py-1">
+          {orders.length} orders shown
+        </div>
       </div>
-      <div className="px-4 py-2.5 text-xs text-[var(--text-muted)] border-t border-[var(--border)]">
-        {orders.length} orders shown
+
+      {/* Desktop: table view */}
+      <div className="hidden md:block bg-white border border-[var(--border)] rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-max text-sm">
+            <thead>
+              <tr className="bg-[var(--surface)] border-b border-[var(--border)]">
+                <Th>Order ID</Th>
+                <Th>Status</Th>
+                <Th>Type</Th>
+                <Th>Route</Th>
+                <Th>Company</Th>
+                <Th>Incoterm</Th>
+                <Th>Cargo Ready</Th>
+                <Th>Updated</Th>
+                <Th><span className="sr-only">Actions</span></Th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--border)]">
+              {orders.map((order) => (
+                <ShipmentRow
+                  key={order.quotation_id}
+                  order={order}
+                  accountType={accountType}
+                  href={`/shipments/${order.quotation_id}`}
+                  onDeleted={onRefresh}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="px-4 py-2.5 text-xs text-[var(--text-muted)] border-t border-[var(--border)]">
+          {orders.length} orders shown
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -353,21 +453,28 @@ function Th({ children }: { children: React.ReactNode }) {
 function ShipmentRow({
   order,
   accountType,
-  onRowClick,
+  href,
   onDeleted,
 }: {
   order: ShipmentOrder;
   accountType: string | null;
-  onRowClick: () => void;
+  href: string;
   onDeleted: () => void;
 }) {
+  const router = useRouter();
   const originCode = order.origin?.port_un_code ?? order.origin?.label ?? '—';
   const destCode = order.destination?.port_un_code ?? order.destination?.label ?? '—';
 
   return (
     <tr
       className="hover:bg-[var(--surface)] transition-colors cursor-pointer"
-      onClick={onRowClick}
+      onClick={(e) => {
+        if (e.ctrlKey || e.metaKey) {
+          window.open(href, '_blank', 'noopener,noreferrer');
+        } else {
+          router.push(href);
+        }
+      }}
     >
       {/* Order ID */}
       <td className="px-4 py-3">

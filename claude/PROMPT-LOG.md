@@ -47,3 +47,52 @@ Entries are appended chronologically — never overwrite.
   - `af-platform/src/components/shipments/BLPartyDiffModal.tsx` — new file
 - **Notes:** Lint passes. Server action unchanged since it already passes FormData through directly.
 
+### [2026-02-28 18:00 UTC] — Vessel Fix + Parties Edit
+- **Status:** Completed
+- **Tasks:**
+  - Prompt 1: Fixed vessel extraction for V2 shipments — replaced fragile inline `||` expressions with clean `??`-based helper variables using `bk` dict; simplified Transport section to reuse outer variables
+  - Prompt 2: Added Parties edit functionality — EditPartiesModal component, Pencil edit button on PartiesCard (AFU only, not on Completed/Cancelled), `updatePartiesAction` server action, `PATCH /api/v2/shipments/{id}/parties` endpoint with V1 dual-write support
+- **Files Modified:**
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — vessel helper variables, EditPartiesModal, PartiesCard edit button, SectionCard `action` prop
+  - `af-platform/src/app/actions/shipments-write.ts` — `updatePartiesAction`
+  - `af-server/routers/shipments.py` — `PATCH /{shipment_id}/parties` endpoint
+- **Notes:** Lint passes.
+
+### [2026-02-28 19:00 UTC] — BL Button Threshold + Ctrl+Click + Notify Party
+- **Status:** Completed
+- **Tasks:**
+  - Prompt 1: Fixed BL Upload button threshold — changed `order.status >= 3001` to `>= 2001` so Path B incoterms (CNF IMPORT) can upload BL from Confirmed status
+  - Prompt 2: Ctrl+Click / Cmd+Click on shipment table row opens new tab — replaced `onRowClick` callback with `href` prop on `ShipmentRow`, added Ctrl/Cmd+click → `window.open` and normal click → `router.push`, removed unused `useRouter` from `ShipmentOrderTable` parent
+  - Prompt 3: Added Notify Party to Edit Parties modal — new `notifyPartyName`/`notifyPartyAddress` state and form fields in `EditPartiesModal`, extended `updatePartiesAction` payload, extended `UpdatePartiesRequest` model and merge logic on server
+- **Files Modified:**
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — BL button threshold, EditPartiesModal notify party fields + submit payload
+  - `af-platform/src/components/shipments/ShipmentOrderTable.tsx` — `href` prop replaces `onRowClick`, Ctrl/Cmd+click support, removed `useRouter` from parent
+  - `af-platform/src/app/actions/shipments-write.ts` — `updatePartiesAction` extended with `notify_party_name`/`notify_party_address`
+  - `af-server/routers/shipments.py` — `UpdatePartiesRequest` + notify_party merge logic in `update_parties`
+- **Notes:** Lint passes. Server compiles clean.
+
+### [2026-02-28 19:30 UTC] — Dynamic Browser Tab Title
+- **Status:** Completed
+- **Tasks:**
+  - Prompt 1: Set `document.title` to `{shipmentId} | AcceleFreight` when order loads, reset to `AcceleFreight` on unmount
+- **Files Modified:**
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — added `useEffect` for `document.title` before loading guard (hooks-before-returns rule)
+- **Notes:** Lint passes. Placed useEffect before early returns to satisfy react-hooks/rules-of-hooks.
+
+### [2026-02-28 20:00 UTC] — Port Name Tooltip Fix
+- **Status:** Completed
+- **Tasks:**
+  - Prompt 1: Fixed port name tooltip in PortPair — only show tooltip when `port_name` differs from the displayed `port_un_code`, suppress misleading cursor-help when tooltip would just repeat the code
+- **Files Modified:**
+  - `af-platform/src/components/shared/PortPair.tsx` — updated `title` and `cursor-help` conditions on both origin and destination divs
+- **Notes:** Lint passes.
+
+### [2026-02-28 20:30 UTC] — Port Name Lookup on V1 Shipment Detail
+- **Status:** Completed
+- **Tasks:**
+  - Prompt 1: Added server-side `_get_port_label()` helper that looks up Port Kind by un_code and returns `"Name, Country"` format; enriched V1 detail endpoint response with `origin_port_label`/`destination_port_label`; added platform-side port lookups in `getShipmentOrderDetail` using batch `datastore.get` and passed `portLabelMap` to `assembleV1ShipmentOrder`
+- **Files Modified:**
+  - `af-server/routers/shipments.py` — `_get_port_label()` helper, V1 detail path enrichment with port labels
+  - `af-platform/src/lib/shipments.ts` — batch Port Kind lookup, `portLabelMap` passed to `assembleV1ShipmentOrder`
+- **Notes:** Lint passes. Server compiles clean. Fixed both server-side (for API consumers) and platform-side (for direct Datastore reads) paths.
+

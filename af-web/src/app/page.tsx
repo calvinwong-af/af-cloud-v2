@@ -80,7 +80,7 @@ export default function HomePage() {
               </a>
             </div>
 
-            <div className="fade-up fade-5" style={{ display: "flex", gap: "40px", flexWrap: "wrap" }}>
+            <div className="fade-up fade-5 hero-stats" style={{ display: "flex", gap: "40px", flexWrap: "wrap" }}>
               {[
                 { num: "2018", label: "Established" },
                 { num: "9+", label: "Service Lines" },
@@ -96,16 +96,12 @@ export default function HomePage() {
 
           {/* Shipment Tracker Card — horizontal strip */}
           <div
-            className="fade-up fade-5"
+            className="fade-up fade-5 tracker-card"
             style={{
               background: "rgba(255,255,255,0.04)",
               border: "1px solid rgba(59,158,255,0.25)",
               borderRadius: "10px",
               padding: "20px 24px",
-              display: "flex",
-              alignItems: "center",
-              gap: "32px",
-              flexWrap: "wrap",
             }}
           >
             {/* Label + ID */}
@@ -114,7 +110,7 @@ export default function HomePage() {
               <div style={{ fontFamily: "var(--font-jetbrains)", fontSize: "0.85rem", color: "var(--sky)" }}>AF-2026-08841</div>
             </div>
 
-            <div style={{ width: "1px", height: "36px", background: "rgba(255,255,255,0.1)", flexShrink: 0 }} />
+            <div className="tracker-divider" style={{ width: "1px", height: "36px", background: "rgba(255,255,255,0.1)", flexShrink: 0 }} />
 
             {/* Route */}
             <div style={{ flexShrink: 0 }}>
@@ -122,7 +118,7 @@ export default function HomePage() {
               <div style={{ fontFamily: "var(--font-outfit)", fontSize: "0.85rem", color: "rgba(255,255,255,0.85)", fontWeight: 500 }}>Port Klang → Shanghai</div>
             </div>
 
-            <div style={{ width: "1px", height: "36px", background: "rgba(255,255,255,0.1)", flexShrink: 0 }} />
+            <div className="tracker-divider" style={{ width: "1px", height: "36px", background: "rgba(255,255,255,0.1)", flexShrink: 0 }} />
 
             {/* Mode */}
             <div style={{ flexShrink: 0 }}>
@@ -130,10 +126,10 @@ export default function HomePage() {
               <div style={{ fontFamily: "var(--font-outfit)", fontSize: "0.85rem", color: "rgba(255,255,255,0.85)", fontWeight: 500 }}>Sea Freight · FCL</div>
             </div>
 
-            <div style={{ width: "1px", height: "36px", background: "rgba(255,255,255,0.1)", flexShrink: 0 }} />
+            <div className="tracker-divider" style={{ width: "1px", height: "36px", background: "rgba(255,255,255,0.1)", flexShrink: 0 }} />
 
             {/* Timeline dots */}
-            <div style={{ flex: 1, minWidth: "200px" }}>
+            <div className="tracker-timeline" style={{ flex: 1, minWidth: "200px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "0" }}>
                 {[
                   { label: "Booked", done: true },
@@ -159,7 +155,7 @@ export default function HomePage() {
             </div>
 
             {/* Status badge */}
-            <div style={{ flexShrink: 0, marginLeft: "auto" }}>
+            <div className="tracker-badge" style={{ flexShrink: 0, marginLeft: "auto" }}>
               <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "5px 12px", background: "rgba(59,158,255,0.15)", borderRadius: "100px", fontFamily: "var(--font-outfit)", fontSize: "0.75rem", fontWeight: 600, color: "var(--sky)" }}>
                 <span className="status-dot" style={{ width: "5px", height: "5px" }} />
                 In Transit · ETA 04 Mar
@@ -215,6 +211,7 @@ export default function HomePage() {
         }}
       >
         <div
+          className="about-grid"
           style={{
             maxWidth: "1200px",
             margin: "0 auto",
@@ -373,16 +370,18 @@ export default function HomePage() {
                 <circle key={y} cx="420" cy={y} r="10" fill="var(--sky-pale)" stroke="var(--sky)" strokeWidth="1" opacity="0.7" />
               ))}
 
-              {/* Legend */}
-              <rect x="10" y="310" width="460" height="24" rx="4" fill="white" opacity="0.7" />
-              <circle cx="25" cy="322" r="3.5" fill="var(--sky)" />
-              <text x="34" y="326" fontFamily="Outfit,sans-serif" fontSize="8" fill="var(--text-muted)">Active routes</text>
-              <line x1="110" y1="322" x2="130" y2="322" stroke="var(--sky)" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.5" />
-              <text x="136" y="326" fontFamily="Outfit,sans-serif" fontSize="8" fill="var(--text-muted)">Connection</text>
-              <polygon points="220,318 228,322 220,326 212,322" fill="var(--sky)" />
-              <text x="234" y="326" fontFamily="Outfit,sans-serif" fontSize="8" fill="var(--text-muted)">AF Hub (Malaysia)</text>
-              <circle cx="340" cy="322" r="5" fill="white" stroke="var(--sky)" strokeWidth="1.2" opacity="0.6" />
-              <text x="350" y="326" fontFamily="Outfit,sans-serif" fontSize="8" fill="var(--text-muted)">Service node</text>
+              {/* Legend — hidden on mobile */}
+              <g className="svg-legend">
+                <rect x="10" y="310" width="460" height="24" rx="4" fill="white" opacity="0.7" />
+                <circle cx="25" cy="322" r="3.5" fill="var(--sky)" />
+                <text x="34" y="326" fontFamily="Outfit,sans-serif" fontSize="8" fill="var(--text-muted)">Active routes</text>
+                <line x1="110" y1="322" x2="130" y2="322" stroke="var(--sky)" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.5" />
+                <text x="136" y="326" fontFamily="Outfit,sans-serif" fontSize="8" fill="var(--text-muted)">Connection</text>
+                <polygon points="220,318 228,322 220,326 212,322" fill="var(--sky)" />
+                <text x="234" y="326" fontFamily="Outfit,sans-serif" fontSize="8" fill="var(--text-muted)">AF Hub (Malaysia)</text>
+                <circle cx="340" cy="322" r="5" fill="white" stroke="var(--sky)" strokeWidth="1.2" opacity="0.6" />
+                <text x="350" y="326" fontFamily="Outfit,sans-serif" fontSize="8" fill="var(--text-muted)">Service node</text>
+              </g>
             </svg>
             <p
               style={{

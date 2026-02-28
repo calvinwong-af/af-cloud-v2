@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { LogoLockup } from "@/components/shared/Logo";
 
 const NAV_LINKS = [
@@ -16,17 +16,27 @@ const NAV_LINKS = [
 export default function Navbar() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
-    check();
-    window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
-  }, []);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const hamburgerRef = useRef<HTMLButtonElement>(null);
 
   const isActive = (href: string) =>
     pathname === href || pathname === href + "/";
+
+  // Close on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handleClick(e: MouseEvent) {
+      const target = e.target as Node;
+      if (
+        menuRef.current && !menuRef.current.contains(target) &&
+        hamburgerRef.current && !hamburgerRef.current.contains(target)
+      ) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [menuOpen]);
 
   return (
     <nav
@@ -50,177 +60,175 @@ export default function Navbar() {
         <LogoLockup variant="dark" size="md" />
       </Link>
 
-      {/* Desktop nav links */}
-      {!isMobile && (
-        <div style={{ display: "flex", alignItems: "center", gap: "32px" }}>
-          {NAV_LINKS.map(({ href, label }) => (
-            <Link
-              key={href}
-              href={href}
-              style={{
-                fontFamily: "var(--font-outfit), sans-serif",
-                fontSize: "0.88rem",
-                fontWeight: 500,
-                color: isActive(href) ? "#6cb8ff" : "rgba(255,255,255,0.75)",
-                textDecoration: "none",
-                transition: "color 0.15s ease",
-                borderBottom: isActive(href)
-                  ? "1.5px solid rgba(107,184,255,0.6)"
-                  : "1.5px solid transparent",
-                paddingBottom: "2px",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {label}
-            </Link>
-          ))}
-        </div>
-      )}
+      {/* Desktop nav links — CSS-only visibility */}
+      <div className="hidden md:flex" style={{ alignItems: "center", gap: "32px" }}>
+        {NAV_LINKS.map(({ href, label }) => (
+          <Link
+            key={href}
+            href={href}
+            style={{
+              fontFamily: "var(--font-outfit), sans-serif",
+              fontSize: "0.88rem",
+              fontWeight: 500,
+              color: isActive(href) ? "#6cb8ff" : "rgba(255,255,255,0.75)",
+              textDecoration: "none",
+              transition: "color 0.15s ease",
+              borderBottom: isActive(href)
+                ? "1.5px solid rgba(107,184,255,0.6)"
+                : "1.5px solid transparent",
+              paddingBottom: "2px",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {label}
+          </Link>
+        ))}
+      </div>
 
       {/* Right side */}
       <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
         {/* Portal buttons — desktop only */}
-        {!isMobile && (
-          <>
-            <a
-              href="https://appv2.accelefreight.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-primary"
-              style={{ padding: "8px 20px", fontSize: "0.85rem" }}
-            >
-              Dashboard
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <path d="M7 17L17 7M17 7H7M17 7v10" />
-              </svg>
-            </a>
-            <a
-              href="https://alfred.accelefreight.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                fontFamily: "var(--font-jetbrains), monospace",
-                fontSize: "0.8rem",
-                color: "rgba(255,255,255,0.4)",
-                border: "1px solid rgba(255,255,255,0.12)",
-                padding: "7px 12px",
-                borderRadius: "6px",
-                textDecoration: "none",
-                transition: "color 0.15s ease, border-color 0.15s ease",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = "rgba(255,255,255,0.65)";
-                e.currentTarget.style.borderColor = "rgba(255,255,255,0.28)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = "rgba(255,255,255,0.4)";
-                e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
-              }}
-            >
-              legacy
-            </a>
-          </>
-        )}
-
-        {/* Hamburger — mobile only */}
-        {isMobile && (
-          <button
-            onClick={() => setMenuOpen(!menuOpen)}
+        <div className="hidden md:flex" style={{ alignItems: "center", gap: "12px" }}>
+          <a
+            href="https://appv2.accelefreight.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-primary"
+            style={{ padding: "8px 20px", fontSize: "0.85rem" }}
+          >
+            Dashboard
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M7 17L17 7M17 7H7M17 7v10" />
+            </svg>
+          </a>
+          <a
+            href="https://alfred.accelefreight.com"
+            target="_blank"
+            rel="noopener noreferrer"
             style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: "4px",
-              color: "white",
+              fontFamily: "var(--font-jetbrains), monospace",
+              fontSize: "0.8rem",
+              color: "rgba(255,255,255,0.4)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              padding: "7px 12px",
+              borderRadius: "6px",
+              textDecoration: "none",
+              transition: "color 0.15s ease, border-color 0.15s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = "rgba(255,255,255,0.65)";
+              e.currentTarget.style.borderColor = "rgba(255,255,255,0.28)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "rgba(255,255,255,0.4)";
+              e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+            }}
+          >
+            legacy
+          </a>
+        </div>
+
+        {/* Hamburger — mobile only, CSS-driven visibility */}
+        <button
+          ref={hamburgerRef}
+          onClick={() => setMenuOpen(!menuOpen)}
+          className="flex md:hidden"
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: "4px",
+            color: "white",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+          aria-label="Toggle menu"
+        >
+          {menuOpen ? (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          ) : (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 12h18M3 6h18M3 18h18" />
+            </svg>
+          )}
+        </button>
+      </div>
+
+      {/* Mobile dropdown menu — CSS animated slide-down */}
+      <div
+        ref={menuRef}
+        className="md:hidden"
+        style={{
+          position: "absolute",
+          top: "68px",
+          left: 0,
+          right: 0,
+          background: "var(--slate)",
+          borderBottom: menuOpen ? "1px solid rgba(255,255,255,0.08)" : "none",
+          display: "flex",
+          flexDirection: "column",
+          gap: "2px",
+          boxShadow: menuOpen ? "0 8px 24px rgba(0,0,0,0.4)" : "none",
+          maxHeight: menuOpen ? "500px" : "0",
+          overflow: "hidden",
+          transition: "max-height 0.35s ease",
+          padding: menuOpen ? "12px 5% 20px" : "0 5%",
+        }}
+      >
+        {NAV_LINKS.map(({ href, label }) => (
+          <Link
+            key={href}
+            href={href}
+            onClick={() => setMenuOpen(false)}
+            style={{
+              fontFamily: "var(--font-outfit), sans-serif",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              color: isActive(href) ? "#6cb8ff" : "rgba(255,255,255,0.8)",
+              textDecoration: "none",
+              padding: "12px 0",
+              borderBottom: "1px solid rgba(255,255,255,0.05)",
+            }}
+          >
+            {label}
+          </Link>
+        ))}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "16px" }}>
+          <a
+            href="https://appv2.accelefreight.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-primary"
+            style={{ flex: 1, justifyContent: "center" }}
+          >
+            Dashboard
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M7 17L17 7M17 7H7M17 7v10" />
+            </svg>
+          </a>
+          <a
+            href="https://alfred.accelefreight.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              fontFamily: "var(--font-jetbrains), monospace",
+              fontSize: "0.8rem",
+              color: "rgba(255,255,255,0.4)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              padding: "7px 12px",
+              borderRadius: "6px",
+              textDecoration: "none",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
             }}
-            aria-label="Toggle menu"
           >
-            {menuOpen ? (
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
-            ) : (
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M3 12h18M3 6h18M3 18h18" />
-              </svg>
-            )}
-          </button>
-        )}
-      </div>
-
-      {/* Mobile dropdown menu */}
-      {isMobile && menuOpen && (
-        <div
-          style={{
-            position: "absolute",
-            top: "68px",
-            left: 0,
-            right: 0,
-            background: "var(--slate)",
-            borderBottom: "1px solid rgba(255,255,255,0.08)",
-            padding: "12px 5% 20px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "2px",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
-          }}
-        >
-          {NAV_LINKS.map(({ href, label }) => (
-            <Link
-              key={href}
-              href={href}
-              onClick={() => setMenuOpen(false)}
-              style={{
-                fontFamily: "var(--font-outfit), sans-serif",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                color: isActive(href) ? "#6cb8ff" : "rgba(255,255,255,0.8)",
-                textDecoration: "none",
-                padding: "12px 0",
-                borderBottom: "1px solid rgba(255,255,255,0.05)",
-              }}
-            >
-              {label}
-            </Link>
-          ))}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "16px" }}>
-            <a
-              href="https://appv2.accelefreight.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-primary"
-              style={{ flex: 1, justifyContent: "center" }}
-            >
-              Dashboard
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <path d="M7 17L17 7M17 7H7M17 7v10" />
-              </svg>
-            </a>
-            <a
-              href="https://alfred.accelefreight.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                fontFamily: "var(--font-jetbrains), monospace",
-                fontSize: "0.8rem",
-                color: "rgba(255,255,255,0.4)",
-                border: "1px solid rgba(255,255,255,0.12)",
-                padding: "7px 12px",
-                borderRadius: "6px",
-                textDecoration: "none",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              legacy
-            </a>
-          </div>
+            legacy
+          </a>
         </div>
-      )}
+      </div>
     </nav>
   );
 }

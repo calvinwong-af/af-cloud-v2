@@ -327,3 +327,88 @@ code,
   text-transform: uppercase;
   color: var(--sky);
 }
+
+/* ─────────────────────────────────────────
+   RESPONSIVE — Mobile (< 640px)
+───────────────────────────────────────── */
+
+/* Tracker card — desktop layout */
+.tracker-card {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+/* Hero stats gap */
+.hero-stats {
+  gap: 40px;
+}
+
+/* About/Network grid */
+.about-grid {
+  gap: 64px;
+}
+
+/* Contact grid */
+.contact-grid {
+  grid-template-columns: 1fr 1.6fr;
+}
+
+/* Form pair fields */
+.form-pair {
+  grid-template-columns: 1fr 1fr;
+}
+
+@media (max-width: 640px) {
+  /* Section padding reduction */
+  .section-pad { padding-top: 60px; padding-bottom: 60px; }
+  .page-banner { padding: 56px 5% 44px; }
+
+  /* Tracker card: stack vertically on mobile */
+  .tracker-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+  .tracker-divider {
+    display: none !important;
+  }
+  .tracker-timeline {
+    min-width: 0 !important;
+  }
+  .tracker-badge {
+    margin-left: 0 !important;
+  }
+
+  /* Stats row: tighter gap on mobile */
+  .hero-stats {
+    gap: 24px !important;
+  }
+
+  /* About/Network grid: reduce gap */
+  .about-grid {
+    gap: 40px !important;
+  }
+
+  /* SVG legend: hide on mobile */
+  .svg-legend {
+    display: none;
+  }
+
+  /* Contact grid: stack on mobile */
+  .contact-grid {
+    grid-template-columns: 1fr !important;
+    gap: 40px !important;
+  }
+
+  /* Form field pairs: stack on mobile */
+  .form-pair {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Map iframe: shorter on mobile */
+  .contact-map {
+    height: 220px !important;
+  }
+}

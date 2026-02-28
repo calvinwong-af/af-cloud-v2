@@ -72,6 +72,7 @@ function toShipmentOrder(item: ShipmentListItem): ShipmentOrder {
     booking: null,
     parties: null,
     customs_clearance: [],
+    bl_document: null,
     exception: null,
     tracking_id: null,
     files: [],
@@ -229,11 +230,11 @@ export default function ShipmentsPage() {
   const isSearchActive = searchQuery.trim().length >= 3;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 sm:p-6 space-y-5 sm:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-[var(--text)]">Shipment Orders</h1>
+          <h1 className="text-xl sm:text-2xl font-semibold text-[var(--text)]">Shipment Orders</h1>
           <p className="text-sm text-[var(--text-muted)] mt-0.5">
             All active and historical shipments
           </p>
@@ -310,7 +311,7 @@ export default function ShipmentsPage() {
         </div>
       ) : (
         <div className="border-b border-[var(--border)]">
-          <nav className="flex gap-1">
+          <nav className="flex gap-1 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
             {FILTER_TABS.map((tab) => (
               <button
                 key={tab.key}

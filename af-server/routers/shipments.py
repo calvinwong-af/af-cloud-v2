@@ -946,6 +946,16 @@ async def get_shipment(
                         if not data.get(field):
                             if q_data.get(field):
                                 data[field] = q_data[field]
+            # Look up human-readable port names for tooltip display
+            origin_code = data.get("origin_port_un_code")
+            dest_code = data.get("destination_port_un_code")
+            origin_label = _get_port_label(client, origin_code)
+            dest_label = _get_port_label(client, dest_code)
+            if origin_label:
+                data["origin_port_label"] = origin_label
+            if dest_label:
+                data["destination_port_label"] = dest_label
+
             if claims.is_afc() and data.get("company_id") != claims.company_id:
                 raise NotFoundError(f"Shipment {shipment_id} not found")
             return {"status": "OK", "data": data, "msg": "V1 Shipment fetched"}
@@ -2631,6 +2641,106 @@ async def update_from_bl(
     }
 
 
+# ---------------------------------------------------------------------------
+# PATCH /shipments/{shipment_id}/parties
+# ---------------------------------------------------------------------------
+
+class UpdatePartiesRequest(BaseModel):
+    shipper_name: Optional[str] = None
+    shipper_address: Optional[str] = None
+    consignee_name: Optional[str] = None
+    consignee_address: Optional[str] = None
+    notify_party_name: Optional[str] = None
+    notify_party_address: Optional[str] = None
+
+
+@router.patch("/{shipment_id}/parties")
+async def update_parties(
+    shipment_id: str,
+    body: UpdatePartiesRequest,
+    claims: Claims = Depends(require_afu),
+):
+    """
+    Update shipper/consignee on a shipment. AFU only.
+    Merges into existing parties dict — preserves notify_party and other fields.
+    Does NOT touch bl_document.
+    """
+    client = get_client()
+    now = datetime.now(timezone.utc).isoformat()
+
+    q_key = client.key("Quotation", shipment_id)
+    q_entity = client.get(q_key)
+    if not q_entity:
+        raise NotFoundError(f"Shipment {shipment_id} not found")
+
+    parties = q_entity.get("parties") or {}
+    if not isinstance(parties, dict):
+        parties = {}
+
+    # Merge shipper
+    if body.shipper_name is not None or body.shipper_address is not None:
+        shipper = parties.get("shipper") or {}
+        if not isinstance(shipper, dict):
+            shipper = {}
+        if body.shipper_name is not None:
+            shipper["name"] = body.shipper_name
+        if body.shipper_address is not None:
+            shipper["address"] = body.shipper_address
+        parties["shipper"] = shipper
+
+    # Merge consignee
+    if body.consignee_name is not None or body.consignee_address is not None:
+        consignee = parties.get("consignee") or {}
+        if not isinstance(consignee, dict):
+            consignee = {}
+        if body.consignee_name is not None:
+            consignee["name"] = body.consignee_name
+        if body.consignee_address is not None:
+            consignee["address"] = body.consignee_address
+        parties["consignee"] = consignee
+
+    # Merge notify_party
+    if body.notify_party_name is not None or body.notify_party_address is not None:
+        notify_party = parties.get("notify_party") or {}
+        if not isinstance(notify_party, dict):
+            notify_party = {}
+        if body.notify_party_name is not None:
+            notify_party["name"] = body.notify_party_name
+        if body.notify_party_address is not None:
+            notify_party["address"] = body.notify_party_address
+        parties["notify_party"] = notify_party
+
+    q_entity["parties"] = parties
+    q_entity["updated"] = now
+
+    try:
+        existing = set(q_entity.exclude_from_indexes or set())
+        q_entity.exclude_from_indexes = existing | {"parties"}
+    except (TypeError, AttributeError):
+        pass
+
+    client.put(q_entity)
+
+    # V1: also write to ShipmentOrder if it exists
+    is_v1 = shipment_id.startswith(PREFIX_V1_SHIPMENT)
+    if is_v1:
+        so_entity = client.get(client.key("ShipmentOrder", shipment_id))
+        if so_entity:
+            so_entity["parties"] = parties
+            so_entity["updated"] = now
+            try:
+                client.put(so_entity)
+            except Exception as e:
+                logger.error("[update_parties] Failed to write ShipmentOrder %s: %s", shipment_id, str(e))
+
+    _log_system_action(client, "PARTIES_UPDATED", shipment_id, claims.uid, claims.email)
+
+    return {
+        "status": "OK",
+        "data": {"parties": parties},
+    }
+
+
 def _maybe_unblock_export_clearance(client, shipment_id: str, user_id: str):
     """Unblock EXPORT_CLEARANCE if FREIGHT_BOOKING is completed and waybill is set."""
     wf_key = client.key("ShipmentWorkFlow", shipment_id)
@@ -2667,6 +2777,28 @@ def _maybe_unblock_export_clearance(client, shipment_id: str, user_id: str):
         wf_entity.exclude_from_indexes = set(wf_entity.exclude_from_indexes or set()) | {"workflow_tasks"}
         client.put(wf_entity)
         logger.info("EXPORT_CLEARANCE unblocked for %s", shipment_id)
+
+
+def _get_port_label(client, un_code: str | None) -> str | None:
+    """
+    Look up a port's human-readable label from the Port Kind.
+    Returns "<name>, <country>" if found, or None if not found / un_code is None.
+    Port Kind uses un_code as the entity key.
+    """
+    if not un_code:
+        return None
+    try:
+        entity = client.get(client.key("Port", un_code))
+        if entity:
+            name = entity.get("name")
+            country = entity.get("country")
+            if name and country:
+                return f"{name}, {country}"
+            elif name:
+                return name
+    except Exception:
+        pass
+    return None
 
 
 def _log_system_action(client, action: str, entity_id: str, uid: str, email: str):

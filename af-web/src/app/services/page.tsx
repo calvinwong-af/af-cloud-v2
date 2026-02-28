@@ -106,7 +106,7 @@ export default function ServicesPage() {
             maxWidth: "1200px",
             margin: "0 auto",
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fill, minmax(min(330px, 100%), 1fr))",
             gap: "24px",
           }}
         >

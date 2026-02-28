@@ -68,6 +68,7 @@ export default function AboutPage() {
       {/* Story + Values */}
       <div style={{ padding: "80px 5%", background: "var(--white)" }}>
         <div
+          className="about-grid"
           style={{
             maxWidth: "1200px",
             margin: "0 auto",

@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { fetchShipmentOrderDetailAction, fetchStatusHistoryAction, fetchCompaniesForShipmentAction, reassignShipmentCompanyAction } from '@/app/actions/shipments';
 import type { StatusHistoryEntry } from '@/app/actions/shipments';
-import { updateShipmentStatusAction, updateInvoicedStatusAction } from '@/app/actions/shipments-write';
+import { updateShipmentStatusAction, updateInvoicedStatusAction, updatePartiesAction } from '@/app/actions/shipments-write';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
 import { formatDate } from '@/lib/utils';
 import type { ShipmentOrder, ShipmentOrderStatus } from '@/lib/types';
@@ -40,16 +40,18 @@ const STATUS_STYLES: Record<string, string> = {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function SectionCard({ title, icon, children }: {
+function SectionCard({ title, icon, children, action }: {
   title: string;
   icon: React.ReactNode;
   children: React.ReactNode;
+  action?: React.ReactNode;
 }) {
   return (
     <div className="bg-white border border-[var(--border)] rounded-xl p-5">
       <div className="flex items-center gap-2 mb-4">
         <span className="text-[var(--text-muted)]">{icon}</span>
-        <h2 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">{title}</h2>
+        <h2 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide flex-1">{title}</h2>
+        {action}
       </div>
       {children}
     </div>
@@ -209,6 +211,136 @@ function TypeDetailsCard({ order }: { order: ShipmentOrder }) {
 
 // ─── Parties card ─────────────────────────────────────────────────────────────
 
+// ─── Edit Parties modal ─────────────────────────────────────────────────────
+
+function EditPartiesModal({
+  order,
+  onClose,
+  onSaved,
+}: {
+  order: ShipmentOrder;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const parties = order.parties;
+  const [shipperName, setShipperName] = useState(parties?.shipper?.name ?? '');
+  const [shipperAddress, setShipperAddress] = useState(parties?.shipper?.address ?? '');
+  const [consigneeName, setConsigneeName] = useState(parties?.consignee?.name ?? '');
+  const [consigneeAddress, setConsigneeAddress] = useState(parties?.consignee?.address ?? '');
+  const [notifyPartyName, setNotifyPartyName] = useState(parties?.notify_party?.name ?? '');
+  const [notifyPartyAddress, setNotifyPartyAddress] = useState(parties?.notify_party?.address ?? '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const inputCls = 'w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)]';
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await updatePartiesAction(order.quotation_id, {
+        shipper_name: shipperName || null,
+        shipper_address: shipperAddress || null,
+        consignee_name: consigneeName || null,
+        consignee_address: consigneeAddress || null,
+        notify_party_name: notifyPartyName || null,
+        notify_party_address: notifyPartyAddress || null,
+      });
+      if (!result.success) {
+        setError(result.error);
+        setSaving(false);
+        return;
+      }
+      onSaved();
+    } catch {
+      setError('Failed to update parties');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-md mx-4 max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
+          <h3 className="text-sm font-semibold text-[var(--text)]">Edit Parties</h3>
+          <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text)]">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 p-4 space-y-4">
+          {/* Shipper */}
+          <div>
+            <label className="text-xs font-semibold text-[var(--text-muted)] uppercase block mb-2">Shipper</label>
+            <div className="space-y-2">
+              <div>
+                <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Name</label>
+                <input type="text" value={shipperName} onChange={e => setShipperName(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Address</label>
+                <textarea value={shipperAddress} onChange={e => setShipperAddress(e.target.value)} rows={3} className={`${inputCls} resize-none`} />
+              </div>
+            </div>
+          </div>
+
+          {/* Consignee */}
+          <div>
+            <label className="text-xs font-semibold text-[var(--text-muted)] uppercase block mb-2">Consignee</label>
+            <div className="space-y-2">
+              <div>
+                <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Name</label>
+                <input type="text" value={consigneeName} onChange={e => setConsigneeName(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Address</label>
+                <textarea value={consigneeAddress} onChange={e => setConsigneeAddress(e.target.value)} rows={3} className={`${inputCls} resize-none`} />
+              </div>
+            </div>
+          </div>
+
+          {/* Notify Party */}
+          <div>
+            <label className="text-xs font-semibold text-[var(--text-muted)] uppercase block mb-2">Notify Party</label>
+            <div className="space-y-2">
+              <div>
+                <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Name</label>
+                <input type="text" value={notifyPartyName} onChange={e => setNotifyPartyName(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Address</label>
+                <textarea value={notifyPartyAddress} onChange={e => setNotifyPartyAddress(e.target.value)} rows={3} className={`${inputCls} resize-none`} />
+              </div>
+            </div>
+          </div>
+
+          {error && (
+            <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 p-4 border-t border-[var(--border)] flex-shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text)] transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-2 text-sm font-medium text-white bg-[var(--sky)] rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2"
+          >
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Parties card ───────────────────────────────────────────────────────────
+
 function hasPartyDiff(
   blParty: { name: string | null; address: string | null } | null | undefined,
   orderParty: { name: string; address: string | null } | null | undefined,
@@ -222,9 +354,11 @@ function truncate(s: string | null | undefined, max: number): string {
   return s.length > max ? s.slice(0, max) + '...' : s;
 }
 
-function PartiesCard({ order, onOpenDiff }: {
+function PartiesCard({ order, onOpenDiff, accountType, onEdit }: {
   order: ShipmentOrder;
   onOpenDiff?: (party: 'shipper' | 'consignee') => void;
+  accountType?: string | null;
+  onEdit?: () => void;
 }) {
   const parties = order.parties;
   const bl = order.bl_document;
@@ -233,8 +367,22 @@ function PartiesCard({ order, onOpenDiff }: {
   const shipperDiff = hasPartyDiff(bl?.shipper, parties?.shipper);
   const consigneeDiff = hasPartyDiff(bl?.consignee, parties?.consignee);
 
+  const canEditParties = accountType === 'AFU' && order.status !== 5001 && order.status !== -1;
+
   return (
-    <SectionCard title="Parties" icon={<Users className="w-4 h-4" />}>
+    <SectionCard
+      title="Parties"
+      icon={<Users className="w-4 h-4" />}
+      action={canEditParties ? (
+        <button
+          onClick={onEdit}
+          className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
+          title="Edit parties"
+        >
+          <Pencil className="w-3.5 h-3.5" />
+        </button>
+      ) : undefined}
+    >
       {!hasParties
         ? <EmptyState message="Parties not yet assigned" />
         : (
@@ -1045,6 +1193,7 @@ export default function ShipmentOrderDetailPage() {
   const [showCompanyModal, setShowCompanyModal] = useState(false);
   const [showBLModal, setShowBLModal] = useState(false);
   const [diffParty, setDiffParty] = useState<'shipper' | 'consignee' | null>(null);
+  const [showEditParties, setShowEditParties] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'files'>('overview');
   const [routeEtd, setRouteEtd] = useState<string | null>(null);
   const [routeEta, setRouteEta] = useState<string | null>(null);
@@ -1085,6 +1234,15 @@ export default function ShipmentOrderDetailPage() {
     load();
   }, [loadOrder, loadRouteTimings]);
 
+  useEffect(() => {
+    if (order) {
+      document.title = `${order.quotation_id} | AcceleFreight`;
+    }
+    return () => {
+      document.title = 'AcceleFreight';
+    };
+  }, [order]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1108,6 +1266,13 @@ export default function ShipmentOrderDetailPage() {
   const statusLabel = SHIPMENT_STATUS_LABELS[order.status] ?? `${order.status}`;
   const statusColor = SHIPMENT_STATUS_COLOR[order.status] ?? 'gray';
   const statusStyle = STATUS_STYLES[statusColor] ?? STATUS_STYLES.gray;
+
+  // Extract vessel info — may live on flat fields (V1) or inside booking dict (V2)
+  const bk = (order.booking ?? {}) as Record<string, unknown>;
+  const vesselName: string | null =
+    ((order as unknown as Record<string, unknown>).vessel_name as string) ?? (bk.vessel_name as string) ?? null;
+  const voyageNumber: string | null =
+    ((order as unknown as Record<string, unknown>).voyage_number as string) ?? (bk.voyage_number as string) ?? null;
 
   return (
     <div className="p-6 space-y-5 max-w-4xl">
@@ -1185,12 +1350,12 @@ export default function ShipmentOrderDetailPage() {
         accountType={accountType}
         etd={routeEtd}
         eta={routeEta}
-        vesselName={(order as unknown as Record<string, unknown>).vessel_name as string || ((order.booking ?? {}) as Record<string, unknown>).vessel_name as string || null}
-        voyageNumber={(order as unknown as Record<string, unknown>).voyage_number as string || ((order.booking ?? {}) as Record<string, unknown>).voyage_number as string || null}
+        vesselName={vesselName}
+        voyageNumber={voyageNumber}
       />
 
-      {/* BL Upload button — AFU, status >= 3001, sea shipments */}
-      {accountType === 'AFU' && order.status >= 3001 && ['SEA_FCL', 'SEA_LCL'].includes(order.order_type) && (
+      {/* BL Upload button — AFU, status >= 2001 (Confirmed+), sea shipments */}
+      {accountType === 'AFU' && order.status >= 2001 && ['SEA_FCL', 'SEA_LCL'].includes(order.order_type) && (
         <div className="flex justify-end">
           <button
             onClick={() => setShowBLModal(true)}
@@ -1254,8 +1419,8 @@ export default function ShipmentOrderDetailPage() {
             orderType={order.order_type}
             accountType={accountType}
             userRole={userRole}
-            vesselName={(order as unknown as Record<string, unknown>).vessel_name as string || ((order.booking ?? {}) as Record<string, unknown>).vessel_name as string || null}
-            voyageNumber={(order as unknown as Record<string, unknown>).voyage_number as string || ((order.booking ?? {}) as Record<string, unknown>).voyage_number as string || null}
+            vesselName={vesselName}
+            voyageNumber={voyageNumber}
           />
         </div>
       ) : activeTab === 'files' ? (
@@ -1295,11 +1460,6 @@ export default function ShipmentOrderDetailPage() {
 
         {/* Transport — vessel/voyage from booking dict or flat fields */}
         {(() => {
-          const bk = (order.booking ?? {}) as Record<string, unknown>;
-          const vesselName = (order as unknown as Record<string, unknown>).vessel_name as string
-            || bk.vessel_name as string || null;
-          const voyageNumber = (order as unknown as Record<string, unknown>).voyage_number as string
-            || bk.voyage_number as string || null;
           const bookingRef = bk.booking_reference as string || null;
           const carrierAgent = bk.carrier_agent as string || null;
           const etd = (order as unknown as Record<string, unknown>).etd as string || null;
@@ -1326,7 +1486,12 @@ export default function ShipmentOrderDetailPage() {
         <TypeDetailsCard order={order} />
 
         {/* Parties */}
-        <PartiesCard order={order} onOpenDiff={setDiffParty} />
+        <PartiesCard
+          order={order}
+          onOpenDiff={setDiffParty}
+          accountType={accountType}
+          onEdit={() => setShowEditParties(true)}
+        />
 
         {/* Customs — only if there are events */}
         {order.customs_clearance.length > 0 && (
@@ -1384,6 +1549,18 @@ export default function ShipmentOrderDetailPage() {
           onClose={() => setShowBLModal(false)}
           onSuccess={() => {
             setShowBLModal(false);
+            loadOrder();
+          }}
+        />
+      )}
+
+      {/* Edit Parties modal */}
+      {showEditParties && (
+        <EditPartiesModal
+          order={order}
+          onClose={() => setShowEditParties(false)}
+          onSaved={() => {
+            setShowEditParties(false);
             loadOrder();
           }}
         />

@@ -62,6 +62,7 @@ export default function ContactPage() {
       {/* Content */}
       <div style={{ padding: "80px 5%", background: "var(--white)" }}>
         <div
+          className="contact-grid"
           style={{
             maxWidth: "1200px",
             margin: "0 auto",
@@ -166,7 +167,7 @@ export default function ContactPage() {
           {/* Form */}
           <div>
             <form onSubmit={handleSubmit} style={{ display: "grid", gap: "18px" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "18px" }}>
+              <div className="form-pair" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "18px" }}>
                 <div>
                   <label
                     style={{
@@ -203,7 +204,7 @@ export default function ContactPage() {
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "18px" }}>
+              <div className="form-pair" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "18px" }}>
                 <div>
                   <label
                     style={{
@@ -325,6 +326,7 @@ export default function ContactPage() {
           >
             <iframe
               src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3984.0681035596867!2d101.5879405!3d3.0764888999999997!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x31cc4db2c8b4d46f%3A0xdc661123e9b850d!2sAcceleFreight%20Sdn%20Bhd!5e0!3m2!1sen!2smy!4v1771937021248!5m2!1sen!2smy"
+              className="contact-map"
               style={{
                 display: "block",
                 width: "100%",
