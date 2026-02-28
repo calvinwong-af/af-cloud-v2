@@ -36,7 +36,8 @@ export function UserTable({ users, loading, onRefresh, onEdit }: UserTableProps)
   }
 
   return (
-    <div className="bg-white rounded-xl border border-[var(--border)] overflow-x-auto overflow-y-visible">
+    <div className="bg-white rounded-xl border border-[var(--border)] overflow-hidden">
+      <div className="overflow-x-auto">
       <table className="w-full min-w-max text-sm">
         <thead>
           <tr className="border-b border-[var(--border)]">
@@ -150,6 +151,7 @@ export function UserTable({ users, loading, onRefresh, onEdit }: UserTableProps)
               ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
