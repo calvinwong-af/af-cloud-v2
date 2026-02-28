@@ -263,43 +263,117 @@ export function assembleTypeDetails(
 // ---------------------------------------------------------------------------
 
 /**
- * Assembles Parties from V1 ShipmentOrder Kind.
- * The old ShipmentOrder stored shipper/consignee as object refs with company_id.
- * We snapshot the name from the Company Kind if available.
+ * Assembles Parties from V1 data using priority-based resolution:
+ * 1. quotation.parties — structured dict written by modern endpoints (BL upload, parties edit)
+ * 2. oldShipmentOrder.shipper/.consignee/.notify_party — structured objects from legacy system
+ * 3. oldShipmentOrder.shipper_name/.consignee_name — flat string fields on older V1 records
+ * 4. quotation.shipper_name/.consignee_name — flat string fields on Quotation entity
  */
 export function assembleParties(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   oldShipmentOrder: Record<string, any> | null | undefined,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  companyMap?: Map<string, Record<string, any>>
+  companyMap?: Map<string, Record<string, any>>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  quotation?: Record<string, any> | null,
 ): Parties | null {
-  if (!oldShipmentOrder) return null;
 
-  function buildParty(
+  // ── Source 1: quotation.parties (most reliable — written by modern endpoints) ──
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const qParties = quotation?.parties as Record<string, any> | null ?? null;
+  if (qParties && (qParties.shipper || qParties.consignee || qParties.notify_party)) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ref: Record<string, any> | null | undefined
-  ): Party | null {
-    if (!ref) return null;
-
-    const companyId = ref.company_id as string | null ?? null;
-    const companyRecord = companyId && companyMap ? companyMap.get(companyId) : null;
-
+    const toParty = (p: Record<string, any> | null | undefined): Party | null => {
+      if (!p) return null;
+      return {
+        name: p.name as string ?? '',
+        address: p.address as string | null ?? null,
+        contact_person: p.contact_person as string | null ?? null,
+        phone: p.phone as string | null ?? null,
+        email: p.email as string | null ?? null,
+        company_id: p.company_id as string | null ?? null,
+        company_contact_id: p.company_contact_id as string | null ?? null,
+      };
+    };
     return {
-      name: companyRecord?.name ?? ref.name ?? ref.tag ?? 'Unknown',
-      address: companyRecord?.address?.line1 ?? null,
-      contact_person: ref.contact_person ?? null,
-      phone: ref.phone ?? null,
-      email: ref.email ?? null,
-      company_id: companyId,
-      company_contact_id: ref.company_contact_id ?? null,
+      shipper: toParty(qParties.shipper),
+      consignee: toParty(qParties.consignee),
+      notify_party: toParty(qParties.notify_party),
     };
   }
 
-  return {
-    shipper: buildParty(oldShipmentOrder.shipper),
-    consignee: buildParty(oldShipmentOrder.consignee),
-    notify_party: buildParty(oldShipmentOrder.notify_party),
-  };
+  // ── Source 2: oldShipmentOrder structured objects (legacy system) ──
+  if (oldShipmentOrder) {
+    const hasStructured =
+      oldShipmentOrder.shipper || oldShipmentOrder.consignee || oldShipmentOrder.notify_party;
+
+    if (hasStructured) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const buildParty = (ref: Record<string, any> | null | undefined): Party | null => {
+        if (!ref) return null;
+        const companyId = ref.company_id as string | null ?? null;
+        const companyRecord = companyId && companyMap ? companyMap.get(companyId) : null;
+        return {
+          name: companyRecord?.name ?? ref.name ?? ref.tag ?? 'Unknown',
+          address: companyRecord?.address?.line1 ?? null,
+          contact_person: ref.contact_person ?? null,
+          phone: ref.phone ?? null,
+          email: ref.email ?? null,
+          company_id: companyId,
+          company_contact_id: ref.company_contact_id ?? null,
+        };
+      };
+      return {
+        shipper: buildParty(oldShipmentOrder.shipper),
+        consignee: buildParty(oldShipmentOrder.consignee),
+        notify_party: buildParty(oldShipmentOrder.notify_party),
+      };
+    }
+
+    // ── Source 3: flat string fields on oldShipmentOrder ──
+    const soShipperName = oldShipmentOrder.shipper_name as string | null ?? null;
+    const soConsigneeName = oldShipmentOrder.consignee_name as string | null ?? null;
+    if (soShipperName || soConsigneeName) {
+      return {
+        shipper: soShipperName ? {
+          name: soShipperName,
+          address: oldShipmentOrder.shipper_address as string | null ?? null,
+          contact_person: null, phone: null, email: null,
+          company_id: null, company_contact_id: null,
+        } : null,
+        consignee: soConsigneeName ? {
+          name: soConsigneeName,
+          address: oldShipmentOrder.consignee_address as string | null ?? null,
+          contact_person: null, phone: null, email: null,
+          company_id: null, company_contact_id: null,
+        } : null,
+        notify_party: null,
+      };
+    }
+  }
+
+  // ── Source 4: flat string fields on quotation ──
+  const qShipperName = quotation?.shipper_name as string | null ?? null;
+  const qConsigneeName = quotation?.consignee_name as string | null ?? null;
+  if (qShipperName || qConsigneeName) {
+    return {
+      shipper: qShipperName ? {
+        name: qShipperName,
+        address: quotation?.shipper_address as string | null ?? null,
+        contact_person: null, phone: null, email: null,
+        company_id: null, company_contact_id: null,
+      } : null,
+      consignee: qConsigneeName ? {
+        name: qConsigneeName,
+        address: quotation?.consignee_address as string | null ?? null,
+        contact_person: null, phone: null, email: null,
+        company_id: null, company_contact_id: null,
+      } : null,
+      notify_party: null,
+    };
+  }
+
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -421,7 +495,7 @@ export function assembleV1ShipmentOrder(params: {
   const typeDetails = assembleTypeDetails(orderType, typeKind);
 
   // Parties
-  const parties = assembleParties(oldShipmentOrder, companyMap);
+  const parties = assembleParties(oldShipmentOrder, companyMap, q);
 
   // Customs clearance (structural)
   const customsClearance = assembleCustomsClearance(

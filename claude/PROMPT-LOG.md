@@ -171,3 +171,13 @@ Entries are appended chronologically — never overwrite.
   - `af-platform/src/app/(platform)/shipments/page.tsx`
 - **Notes:** Removed unused `getDatastore` import from shipments actions. Fixed missing `ports` dep in BLUploadTab useCallback. Build passes clean.
 
+### [2026-03-01 11:00 UTC] — V1 Cleanup: Parties Assembly Fix
+- **Status:** Completed
+- **Tasks:**
+  - Updated `assembleParties()` to check 4 priority sources: quotation.parties, SO structured objects, SO flat strings, quotation flat strings
+  - Added `quotation` parameter to function signature
+  - Updated call site to pass quotation record
+- **Files Modified:**
+  - `af-platform/src/lib/v1-assembly.ts`
+- **Notes:** Fixed function-in-block strict mode error by converting to arrow function. Build passes clean.
+
