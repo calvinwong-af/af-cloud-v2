@@ -7,7 +7,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Truck, Building2, PackageCheck, FileEdit, RefreshCw } from 'lucide-react';
+import { Truck, Building2, PackageCheck, CheckCircle2, FileEdit, RefreshCw } from 'lucide-react';
 import { fetchShipmentOrderStatsAction, fetchShipmentOrdersAction } from '@/app/actions/shipments';
 import { fetchCompanyStatsAction } from '@/app/actions/companies';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
@@ -114,26 +114,64 @@ export default function DashboardPage() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard
-          icon={<Truck className="w-5 h-5" />}
-          label="Total Shipments"
-          value={shipmentStats?.total ?? '—'}
-          loading={statsLoading}
-        />
-        <KpiCard
-          icon={<PackageCheck className="w-5 h-5" />}
-          label="Active Shipments"
-          value={shipmentStats?.active ?? '—'}
-          loading={statsLoading}
-          color="sky"
-        />
+        {/* Slot 1: Company card (AFC) | Total Shipments (AFU) */}
+        {isAfc ? (
+          <div className="bg-white rounded-xl border border-[var(--border)] p-4">
+            {statsLoading ? (
+              <div className="animate-pulse">
+                <div className="w-9 h-9 rounded-lg bg-[var(--surface)]" />
+                <div className="mt-3 h-5 w-3/4 rounded bg-[var(--surface)]" />
+                <div className="mt-1.5 h-3 w-1/2 rounded bg-[var(--surface)]" />
+              </div>
+            ) : (
+              <>
+                <div className="w-9 h-9 rounded-lg bg-purple-50 flex items-center justify-center">
+                  <Building2 className="w-5 h-5 text-purple-600" />
+                </div>
+                <div className="mt-3">
+                  <p className="text-base font-semibold text-[var(--text)] leading-tight truncate">
+                    {companyName || companyId || '—'}
+                  </p>
+                  {companyId && (
+                    <p className="text-xs font-mono text-[var(--text-muted)] mt-0.5">{companyId}</p>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <KpiCard
+            icon={<Truck className="w-5 h-5" />}
+            label="Total Shipments"
+            value={shipmentStats?.total ?? '—'}
+            loading={statsLoading}
+          />
+        )}
+        {/* Slot 2: Total Shipments (AFC) | Active Shipments (AFU) */}
         {isAfc ? (
           <KpiCard
-            icon={<Building2 className="w-5 h-5" />}
-            label="My Company"
-            value={companyName || companyId || '—'}
+            icon={<Truck className="w-5 h-5" />}
+            label="Total Shipments"
+            value={shipmentStats?.total ?? '—'}
             loading={statsLoading}
-            color="purple"
+          />
+        ) : (
+          <KpiCard
+            icon={<PackageCheck className="w-5 h-5" />}
+            label="Active Shipments"
+            value={shipmentStats?.active ?? '—'}
+            loading={statsLoading}
+            color="sky"
+          />
+        )}
+        {/* Slot 3: Active Shipments (AFC) | Total Companies (AFU) */}
+        {isAfc ? (
+          <KpiCard
+            icon={<PackageCheck className="w-5 h-5" />}
+            label="Active Shipments"
+            value={shipmentStats?.active ?? '—'}
+            loading={statsLoading}
+            color="sky"
           />
         ) : (
           <KpiCard
@@ -144,13 +182,24 @@ export default function DashboardPage() {
             color="purple"
           />
         )}
-        <KpiCard
-          icon={<FileEdit className="w-5 h-5" />}
-          label="To Invoice"
-          value={shipmentStats?.to_invoice ?? '—'}
-          loading={statsLoading}
-          color="amber"
-        />
+        {/* Slot 4: Completed (AFC) | To Invoice (AFU) */}
+        {isAfc ? (
+          <KpiCard
+            icon={<CheckCircle2 className="w-5 h-5" />}
+            label="Completed"
+            value={shipmentStats?.completed ?? '—'}
+            loading={statsLoading}
+            color="green"
+          />
+        ) : (
+          <KpiCard
+            icon={<FileEdit className="w-5 h-5" />}
+            label="To Invoice"
+            value={shipmentStats?.to_invoice ?? '—'}
+            loading={statsLoading}
+            color="amber"
+          />
+        )}
       </div>
 
       {/* Error state */}

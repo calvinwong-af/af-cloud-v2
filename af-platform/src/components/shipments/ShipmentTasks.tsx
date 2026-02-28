@@ -139,10 +139,8 @@ function getTimingLabels(task: WorkflowTask): {
   return { scheduledStartLabel: 'Sched. Start', scheduledEndLabel: 'Sched. End', startedLabel: 'Started', completedLabel: 'Completed' };
 }
 
-function canEdit(accountType: string | null, userRole: string | null): boolean {
-  if (accountType === 'AFU') return true;
-  if (accountType === 'AFC' && (userRole === 'AFC-ADMIN' || userRole === 'AFC-M')) return true;
-  return false;
+function canEdit(accountType: string | null): boolean {
+  return accountType === 'AFU';
 }
 
 function canToggleVisibility(accountType: string | null): boolean {
@@ -187,7 +185,7 @@ function TaskCard({
   const isHidden = task.visibility === 'HIDDEN';
   const isIgnored = task.mode === 'IGNORED';
   const isSaving = saving === task.task_id;
-  const editable = canEdit(accountType, userRole);
+  const editable = canEdit(accountType);
   const showComplete = editable && !isIgnored && (task.status === 'PENDING' || task.status === 'IN_PROGRESS');
   const showUndo = editable && task.status === 'COMPLETED';
   const label = getTaskLabel(task, orderType);

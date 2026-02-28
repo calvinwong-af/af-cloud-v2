@@ -209,3 +209,14 @@ Entries are appended chronologically — never overwrite.
   - `af-platform/src/components/shipments/ShipmentTasks.tsx` — `canChangeMode` simplified, `EditTaskModal` userRole removed
 - **Notes:** Lint passes. Status history accordion remains visible to AFC users (read-only).
 
+### [2026-03-01 14:00 UTC] — Dashboard AFC KPI Cards Redesign
+- **Status:** Completed
+- **Tasks:**
+  - Replaced "My Company" KpiCard with custom company identity card (name + company ID in monospace)
+  - Replaced "To Invoice" with "Completed" (CheckCircle2, green) for AFC users
+  - Custom company card: icon + truncated name + ID subline, with skeleton loading state
+  - AFU dashboard unchanged (Total Shipments, Active, Total Companies, To Invoice)
+- **Files Modified:**
+  - `af-platform/src/app/(platform)/dashboard/page.tsx` — AFC KPI grid redesign, CheckCircle2 import
+- **Notes:** Lint passes. Single file change.
+
