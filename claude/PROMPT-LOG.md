@@ -96,3 +96,28 @@ Entries are appended chronologically — never overwrite.
   - `af-platform/src/lib/shipments.ts` — batch Port Kind lookup, `portLabelMap` passed to `assembleV1ShipmentOrder`
 - **Notes:** Lint passes. Server compiles clean. Fixed both server-side (for API consumers) and platform-side (for direct Datastore reads) paths.
 
+### [2026-02-28 22:00 UTC] — Mobile Responsiveness: af-web + af-platform
+- **Status:** Completed
+- **Tasks:**
+  - Navbar: CSS-only mobile/desktop visibility, outside-click close, smooth slide-down animation
+  - Home page: tracker card mobile stack, SVG legend hidden, stats gap reduced
+  - Services page: grid minmax fix for 375px screens
+  - Contact page: grid stacks vertically, form pairs stack, map height reduced
+  - FAQ page: 44px min-height on tab buttons
+  - About page: grid gap reduced on mobile
+  - PlatformShell: mobile drawer with backdrop overlay
+  - Sidebar: mobile drawer mode with close button, nav link tap closes drawer
+  - Topbar: hamburger button on mobile, QuickSearch hidden
+  - ShipmentOrderTable: mobile card view with status badges
+  - Shipments page: scrollable tabs, responsive header
+  - Fixed bl_document missing in ShipmentOrder assembly (pre-existing type mismatch)
+- **Files Modified:**
+  - `af-web/src/components/layout/Navbar.tsx`
+  - `af-web/src/app/page.tsx`, `about/page.tsx`, `services/page.tsx`, `faq/page.tsx`, `contact/page.tsx`
+  - `af-web/src/styles/globals.css`
+  - `af-platform/src/components/shell/PlatformShell.tsx`, `Sidebar.tsx`, `Topbar.tsx`
+  - `af-platform/src/components/shipments/ShipmentOrderTable.tsx`
+  - `af-platform/src/app/(platform)/shipments/page.tsx`
+  - `af-platform/src/lib/shipments.ts`
+- **Notes:** Both af-web and af-platform builds pass. Pre-existing bl_document type error fixed.
+
