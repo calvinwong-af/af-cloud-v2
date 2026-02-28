@@ -216,6 +216,7 @@ export async function createShipmentOrder(
       origin: {
         type: 'PORT',
         port_un_code: input.origin_port_un_code,
+        terminal_id: null,
         city_id: null,
         address: null,
         country_code: null,
@@ -224,6 +225,7 @@ export async function createShipmentOrder(
       destination: {
         type: 'PORT',
         port_un_code: input.destination_port_un_code,
+        terminal_id: null,
         city_id: null,
         address: null,
         country_code: null,

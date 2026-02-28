@@ -26,6 +26,7 @@ export type Incoterm = 'EXW' | 'FCA' | 'FAS' | 'FOB' | 'CFR' | 'CIF' | 'CPT' | '
 export interface Location {
   type: 'PORT' | 'ADDRESS' | 'CITY';
   port_un_code: string | null;   // PORT type — e.g. 'CNSHA', 'MYPKG'
+  terminal_id: string | null;    // Terminal sub-code — e.g. 'MYPKG_N' for Northport
   city_id: string | null;        // CITY type — references City Kind
   address: string | null;        // ADDRESS type — free text
   country_code: string | null;   // ISO-2 — 'MY', 'CN', 'TH'

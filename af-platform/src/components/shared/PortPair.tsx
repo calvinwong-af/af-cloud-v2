@@ -8,11 +8,15 @@ import { formatDate } from '@/lib/utils';
 interface PortPairProps {
   origin: {
     port_un_code: string | null;
+    terminal_id?: string | null;
+    terminal_name?: string | null;
     port_name?: string | null;
     country_code?: string | null;
   };
   destination: {
     port_un_code: string | null;
+    terminal_id?: string | null;
+    terminal_name?: string | null;
     port_name?: string | null;
     country_code?: string | null;
   };
@@ -79,6 +83,11 @@ export default function PortPair({
           >
             {originCode}
           </div>
+          {origin.terminal_id && (
+            <div className={isLg ? 'text-[10px] text-[var(--text-muted)]' : 'text-[9px] text-[var(--text-muted)]'}>
+              {origin.terminal_name ?? origin.terminal_id}
+            </div>
+          )}
           {etd && (
             <div className={`mt-1`}>
               <span className={dateLabelCls}>ETD </span>
@@ -113,6 +122,11 @@ export default function PortPair({
           >
             {destCode}
           </div>
+          {destination.terminal_id && (
+            <div className={isLg ? 'text-[10px] text-[var(--text-muted)]' : 'text-[9px] text-[var(--text-muted)]'}>
+              {destination.terminal_name ?? destination.terminal_id}
+            </div>
+          )}
           {eta && (
             <div className={`mt-1`}>
               <span className={dateLabelCls}>ETA </span>

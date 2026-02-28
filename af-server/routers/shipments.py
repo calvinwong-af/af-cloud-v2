@@ -949,8 +949,10 @@ async def get_shipment(
             # Look up human-readable port names for tooltip display
             origin_code = data.get("origin_port_un_code")
             dest_code = data.get("destination_port_un_code")
-            origin_label = _get_port_label(client, origin_code)
-            dest_label = _get_port_label(client, dest_code)
+            origin_terminal = data.get("origin_terminal_id")
+            dest_terminal = data.get("destination_terminal_id")
+            origin_label = _get_port_label(client, origin_code, origin_terminal)
+            dest_label = _get_port_label(client, dest_code, dest_terminal)
             if origin_label:
                 data["origin_port_label"] = origin_label
             if dest_label:
@@ -2779,10 +2781,12 @@ def _maybe_unblock_export_clearance(client, shipment_id: str, user_id: str):
         logger.info("EXPORT_CLEARANCE unblocked for %s", shipment_id)
 
 
-def _get_port_label(client, un_code: str | None) -> str | None:
+def _get_port_label(client, un_code: str | None, terminal_id: str | None = None) -> str | None:
     """
     Look up a port's human-readable label from the Port Kind.
     Returns "<name>, <country>" if found, or None if not found / un_code is None.
+    If terminal_id is provided, looks up the terminal name from the port's terminals array
+    and returns "<name> (<terminal_name>), <country>".
     Port Kind uses un_code as the entity key.
     """
     if not un_code:
@@ -2792,6 +2796,17 @@ def _get_port_label(client, un_code: str | None) -> str | None:
         if entity:
             name = entity.get("name")
             country = entity.get("country")
+            # Check for terminal-specific label
+            if terminal_id:
+                terminals = entity.get("terminals", [])
+                for t in terminals:
+                    if t.get("terminal_id") == terminal_id:
+                        terminal_name = t.get("name")
+                        if terminal_name and name and country:
+                            return f"{name} ({terminal_name}), {country}"
+                        elif terminal_name and name:
+                            return f"{name} ({terminal_name})"
+                        break
             if name and country:
                 return f"{name}, {country}"
             elif name:

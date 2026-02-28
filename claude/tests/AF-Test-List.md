@@ -15,6 +15,7 @@
 | 1.7 | 28 Feb 2026 | Testing session — VD/TL series confirmed; design changes applied live. TL series revised. VD-05 by design. DT-06/07 updated to DateTimeInput. |
 | 1.8 | 28 Feb 2026 | TL-07/08 confirmed ✅. POD Mark Complete writes ATA. ATD hidden from POD. BL-11/13/14/15 confirmed. Parties card deferred on V1. |
 | 1.9 | 28 Feb 2026 | BL-01/02/03/05/06/08/09/18–24 confirmed ✅. VD-01/02 confirmed. PP-02/04/07/10 confirmed. GS-02 confirmed. Port name tooltips live. |
+| 2.0 | 28 Feb 2026 | Port terminal layer scoped. MYPKG_N moved from deferred to active prompt. PT series added. |
 
 ## How to Use
 - ✅ = Confirmed working
@@ -163,5 +164,24 @@
 | PP-06 — ETA sync from task scheduled_start to route node | Requires server-side co-write on task update. Deferred until V2 focus. |
 | Parties card on V1 shipments | v1-assembly.ts not mapping new shipper/consignee fields. V1 cleanup pass. |
 | DT series (most) | Testing as encountered during normal use |
-| MYPKG_N port code suffix | V1 records store port codes with _N suffix — data issue, deferred cleanup |
+| MYPKG_N port code suffix | Scoped and prompted in v2.25 — see PT series below. Opus prompt prepared covering audit, schema upgrade, V1 migration, display layer. |
 | AWB upload for AIR shipments | Same architecture as BL. Deferred to AIR build-out. |
+
+---
+
+## Port Terminal Layer (PT series)
+| # | Test | Status | Notes |
+|---|---|---|---|
+| PT-01 | Audit script runs without error and outputs port code frequency table | ⏳ | Run before migration |
+| PT-02 | Audit script correctly flags MYPKG_N as NON-STANDARD | ⏳ | |
+| PT-03 | Audit script infers base code MYPKG from MYPKG_N | ⏳ | |
+| PT-04 | MYPKG Port entity has terminals array with Westports + Northport entries | ⏳ | After seed script |
+| PT-05 | seed_port_terminals.py is idempotent — safe to run twice | ⏳ | |
+| PT-06 | migrate_v1_port_codes.py --dry-run shows expected records without writing | ⏳ | |
+| PT-07 | migrate_v1_port_codes.py updates MYPKG_N records to port_un_code=MYPKG + terminal_id=MYPKG_N | ⏳ | |
+| PT-08 | Migration is idempotent — already-migrated records skipped | ⏳ | |
+| PT-09 | V1 Northport shipment displays MYPKG with Northport terminal line in PortPair | ⏳ | |
+| PT-10 | V1 Westports shipment displays MYPKG with no terminal line (default) | ⏳ | |
+| PT-11 | Port name tooltip reads Port Klang (Northport), Malaysia for MYPKG_N shipment | ⏳ | |
+| PT-12 | Port name tooltip reads Port Klang, Malaysia for MYPKG shipment (no terminal) | ⏳ | |
+| PT-13 | Port label lookup works for all other standard port codes unchanged | ⏳ | Regression |

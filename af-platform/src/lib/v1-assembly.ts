@@ -107,12 +107,14 @@ export function deriveOrderType(
 
 export function assembleLocation(
   portUnCode: string | null | undefined,
+  terminalId?: string | null,
   portLabel?: string | null
 ): Location | null {
   if (!portUnCode) return null;
   return {
     type: 'PORT',
     port_un_code: portUnCode,
+    terminal_id: terminalId ?? null,
     city_id: null,
     address: null,
     country_code: null,
@@ -400,11 +402,17 @@ export function assembleV1ShipmentOrder(params: {
   // Build locations
   const originCode = q.origin_port_un_code as string | null ?? null;
   const destCode = q.destination_port_un_code as string | null ?? null;
-  const originLabel = portLabelMap?.get(originCode ?? '') ?? originCode ?? '';
-  const destLabel = portLabelMap?.get(destCode ?? '') ?? destCode ?? '';
+  const originTerminal = q.origin_terminal_id as string | null ?? null;
+  const destTerminal = q.destination_terminal_id as string | null ?? null;
 
-  const origin = assembleLocation(originCode, originLabel);
-  const destination = assembleLocation(destCode, destLabel);
+  // Try terminal-specific label first, then base code label
+  const originLabel = (originTerminal ? portLabelMap?.get(originTerminal) : null)
+    ?? portLabelMap?.get(originCode ?? '') ?? originCode ?? '';
+  const destLabel = (destTerminal ? portLabelMap?.get(destTerminal) : null)
+    ?? portLabelMap?.get(destCode ?? '') ?? destCode ?? '';
+
+  const origin = assembleLocation(originCode, originTerminal, originLabel);
+  const destination = assembleLocation(destCode, destTerminal, destLabel);
 
   // Cargo
   const cargo = assembleCargo(quotationFreight);

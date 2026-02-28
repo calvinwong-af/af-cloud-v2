@@ -62,10 +62,10 @@ function toShipmentOrder(item: ShipmentListItem): ShipmentOrder {
     related_orders: [],
     commercial_quotation_ids: [],
     origin: item.origin_port
-      ? { type: 'PORT', port_un_code: item.origin_port, city_id: null, address: null, country_code: null, label: item.origin_port }
+      ? { type: 'PORT', port_un_code: item.origin_port, terminal_id: null, city_id: null, address: null, country_code: null, label: item.origin_port }
       : null,
     destination: item.destination_port
-      ? { type: 'PORT', port_un_code: item.destination_port, city_id: null, address: null, country_code: null, label: item.destination_port }
+      ? { type: 'PORT', port_un_code: item.destination_port, terminal_id: null, city_id: null, address: null, country_code: null, label: item.destination_port }
       : null,
     cargo: null,
     type_details: null,

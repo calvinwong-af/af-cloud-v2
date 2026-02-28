@@ -326,7 +326,17 @@ export async function getShipmentOrderDetail(
         const name = pe.name as string | undefined;
         const country = pe.country as string | undefined;
         if (unCode && name) {
-          portLabelMap.set(unCode, country ? `${name}, ${country}` : name);
+          const baseLabel = country ? `${name}, ${country}` : name;
+          portLabelMap.set(unCode, baseLabel);
+          // Add terminal-specific labels: "Port Name (Terminal Name), Country"
+          const terminals = pe.terminals as Array<{ terminal_id?: string; name?: string }> | undefined;
+          if (Array.isArray(terminals)) {
+            for (const t of terminals) {
+              if (t.terminal_id && t.name) {
+                portLabelMap.set(t.terminal_id, country ? `${name} (${t.name}), ${country}` : `${name} (${t.name})`);
+              }
+            }
+          }
         }
       }
     } catch {

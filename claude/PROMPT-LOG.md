@@ -121,3 +121,23 @@ Entries are appended chronologically — never overwrite.
   - `af-platform/src/lib/shipments.ts`
 - **Notes:** Both af-web and af-platform builds pass. Pre-existing bl_document type error fixed.
 
+### [2026-02-28 17:30 UTC] — Port Data Model: Audit + Terminal Layer + V1 Migration
+- **Status:** Completed
+- **Tasks:**
+  - Phase 1: Created `audit_port_codes.py` — read-only Datastore audit of port codes across Quotation + ShipmentOrder
+  - Phase 2: Created `seed_port_terminals.py` — seeds MYPKG terminals, backfills `has_terminals`/`terminals` on all ports; updated `_get_port_label()` with terminal_id support
+  - Phase 3: Created `migrate_v1_port_codes.py` — migrates non-standard port suffixes to `origin_terminal_id`/`destination_terminal_id`; added `terminal_id` to Location type; updated `assembleLocation()` and `assembleV1ShipmentOrder()` for terminal awareness; added terminal display to PortPair.tsx
+  - Phase 4: Updated V1 detail endpoint to pass terminal_id to `_get_port_label()`; updated platform `portLabelMap` to include terminal-specific labels from Port entity terminals array
+- **Files Modified:**
+  - `af-server/scripts/audit_port_codes.py` (new)
+  - `af-server/scripts/seed_port_terminals.py` (new)
+  - `af-server/scripts/migrate_v1_port_codes.py` (new)
+  - `af-server/routers/shipments.py`
+  - `af-platform/src/lib/types.ts`
+  - `af-platform/src/lib/v1-assembly.ts`
+  - `af-platform/src/lib/shipments.ts`
+  - `af-platform/src/lib/shipments-write.ts`
+  - `af-platform/src/app/(platform)/shipments/page.tsx`
+  - `af-platform/src/components/shared/PortPair.tsx`
+- **Notes:** All 3 scripts are idempotent with --dry-run support. Build passes clean.
+
