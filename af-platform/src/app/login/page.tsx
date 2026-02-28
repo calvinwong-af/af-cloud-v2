@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff, ArrowRight, Loader2 } from "lucide-react";
+import { sendPasswordResetEmail } from "firebase/auth";
 import { signIn } from "@/lib/auth";
 import { LogoMark } from "@/components/shared/Logo";
 import { RouteMapSVG } from "@/components/login/RouteMapSVG";
@@ -15,6 +16,11 @@ export default function LoginPage() {
   const [keepSignedIn, setKeepSignedIn] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [forgotMode, setForgotMode] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetSending, setResetSending] = useState(false);
+  const [resetError, setResetError] = useState("");
+  const [resetSent, setResetSent] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -190,6 +196,7 @@ export default function LoginPage() {
               </label>
               <a
                 href="#"
+                onClick={(e) => { e.preventDefault(); setResetEmail(email); setForgotMode(true); setResetError(""); setResetSent(false); }}
                 className="text-xs transition-colors hover:text-white"
                 style={{ color: "var(--sky-light)" }}
               >
@@ -204,22 +211,96 @@ export default function LoginPage() {
               </div>
             )}
 
+            {/* Forgot password inline panel */}
+            {forgotMode && (
+              <div className="rounded-lg border px-4 py-4 space-y-3" style={{ background: "var(--slate-mid)", borderColor: "var(--slate-light)" }}>
+                {resetSent ? (
+                  <div className="space-y-2">
+                    <p className="text-sm text-emerald-400">Password reset email sent. Check your inbox.</p>
+                    <button
+                      type="button"
+                      onClick={() => setForgotMode(false)}
+                      className="text-xs transition-colors hover:text-white"
+                      style={{ color: "var(--sky-light)" }}
+                    >
+                      &larr; Back to sign in
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-xs" style={{ color: "var(--text-muted)" }}>Enter your email to receive a reset link.</p>
+                    <div className="flex items-center gap-3 rounded-lg border px-4 py-3 focus-within:border-[var(--sky)]" style={{ borderColor: "var(--slate-light)" }}>
+                      <Mail size={16} style={{ color: "var(--text-muted)" }} className="shrink-0" />
+                      <input
+                        type="email"
+                        placeholder="Email address"
+                        value={resetEmail}
+                        onChange={(e) => setResetEmail(e.target.value)}
+                        className="w-full bg-transparent text-sm text-white placeholder:text-[var(--text-muted)] outline-none"
+                      />
+                    </div>
+                    {resetError && <p className="text-xs text-red-400">{resetError}</p>}
+                    <div className="flex items-center justify-between gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setForgotMode(false)}
+                        className="text-xs transition-colors hover:text-white"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        &larr; Back
+                      </button>
+                      <button
+                        type="button"
+                        disabled={resetSending}
+                        onClick={async () => {
+                          if (!resetEmail.trim()) { setResetError("Enter your email address"); return; }
+                          setResetSending(true);
+                          setResetError("");
+                          try {
+                            const { getFirebaseAuth } = await import("@/lib/firebase");
+                            await sendPasswordResetEmail(getFirebaseAuth(), resetEmail.trim());
+                            setResetSent(true);
+                          } catch (err: unknown) {
+                            const code = (err as { code?: string })?.code ?? "";
+                            if (code === "auth/user-not-found" || code === "auth/invalid-email") {
+                              setResetError("No account found with this email.");
+                            } else {
+                              setResetError("Failed to send reset email. Please try again.");
+                            }
+                          } finally {
+                            setResetSending(false);
+                          }
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-lg hover:brightness-110 disabled:opacity-60 transition-all"
+                        style={{ background: "var(--sky)" }}
+                      >
+                        {resetSending && <Loader2 size={14} className="animate-spin" />}
+                        Send Reset Email
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {/* Submit button */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex w-full items-center justify-center gap-2 rounded-lg px-6 py-3 text-sm font-semibold text-white transition-all hover:brightness-110 disabled:opacity-60"
-              style={{ background: "var(--sky)" }}
-            >
-              {loading ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <>
-                  Sign in to Platform
-                  <ArrowRight size={16} />
-                </>
-              )}
-            </button>
+            {!forgotMode && (
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex w-full items-center justify-center gap-2 rounded-lg px-6 py-3 text-sm font-semibold text-white transition-all hover:brightness-110 disabled:opacity-60"
+                style={{ background: "var(--sky)" }}
+              >
+                {loading ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <>
+                    Sign in to Platform
+                    <ArrowRight size={16} />
+                  </>
+                )}
+              </button>
+            )}
           </form>
 
           {/* Footer note */}

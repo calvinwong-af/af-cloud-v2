@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { MoreVertical, Pencil, UserX, Trash2, Loader2, AlertTriangle } from 'lucide-react';
-import { deactivateUserAction, deleteUserAction } from '@/app/actions/users';
+import { MoreVertical, Pencil, UserX, Trash2, Loader2, AlertTriangle, Mail, CheckCircle } from 'lucide-react';
+import { deactivateUserAction, deleteUserAction, sendPasswordResetEmailAction } from '@/app/actions/users';
 import type { UserRecord } from '@/lib/users';
 
 interface UserActionsMenuProps {
@@ -17,12 +17,13 @@ export function UserActionsMenu({ user, onRefresh, onEdit }: UserActionsMenuProp
   const [open, setOpen] = useState(false);
   const [confirmMode, setConfirmMode] = useState<ConfirmMode>(null);
   const [loading, setLoading] = useState(false);
+  const [sendingReset, setSendingReset] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resetFeedback, setResetFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
-  // Close menu on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -53,6 +54,20 @@ export function UserActionsMenu({ user, onRefresh, onEdit }: UserActionsMenuProp
     }
   }
 
+  async function handleSendResetEmail() {
+    setSendingReset(true);
+    setOpen(false);
+    setResetFeedback(null);
+    const result = await sendPasswordResetEmailAction(user.uid);
+    setSendingReset(false);
+    if (result.success) {
+      setResetFeedback({ type: 'success', message: `Reset email sent to ${user.email}` });
+    } else {
+      setResetFeedback({ type: 'error', message: result.error ?? 'Failed to send reset email' });
+    }
+    setTimeout(() => setResetFeedback(null), 4000);
+  }
+
   function handleAction(mode: ConfirmMode) {
     setConfirmMode(mode);
     setError(null);
@@ -61,7 +76,20 @@ export function UserActionsMenu({ user, onRefresh, onEdit }: UserActionsMenuProp
 
   return (
     <>
-      {/* Dropdown menu */}
+      {/* Reset email feedback toast (inline, below the row trigger) */}
+      {resetFeedback && (
+        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-xl px-4 py-3 text-sm shadow-lg border
+          ${resetFeedback.type === 'success'
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+            : 'bg-red-50 border-red-200 text-red-700'}`}>
+          {resetFeedback.type === 'success'
+            ? <CheckCircle className="w-4 h-4 shrink-0" />
+            : <AlertTriangle className="w-4 h-4 shrink-0" />}
+          {resetFeedback.message}
+        </div>
+      )}
+
+      {/* Spinner shown on the menu button while sending reset */}
       <div className="relative" ref={menuRef}>
         <button
           ref={buttonRef}
@@ -77,12 +105,14 @@ export function UserActionsMenu({ user, onRefresh, onEdit }: UserActionsMenuProp
           }}
           className="p-1.5 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
         >
-          <MoreVertical className="w-4 h-4" />
+          {sendingReset
+            ? <Loader2 className="w-4 h-4 animate-spin" />
+            : <MoreVertical className="w-4 h-4" />}
         </button>
 
         {open && menuPos && (
           <div
-            className="fixed z-50 w-44 bg-white rounded-xl border border-[var(--border)] shadow-lg py-1 text-sm"
+            className="fixed z-50 w-48 bg-white rounded-xl border border-[var(--border)] shadow-lg py-1 text-sm"
             style={{ top: menuPos.top, right: menuPos.right }}
           >
             {onEdit && (
@@ -94,9 +124,17 @@ export function UserActionsMenu({ user, onRefresh, onEdit }: UserActionsMenuProp
                   <Pencil className="w-4 h-4" />
                   Edit
                 </button>
-                <div className="my-1 border-t border-[var(--border)]" />
               </>
             )}
+            <button
+              onClick={handleSendResetEmail}
+              disabled={sendingReset}
+              className="w-full flex items-center gap-2.5 px-4 py-2 text-left text-[var(--text-mid)] hover:bg-[var(--surface)] transition-colors disabled:opacity-50"
+            >
+              <Mail className="w-4 h-4" />
+              Send Reset Email
+            </button>
+            <div className="my-1 border-t border-[var(--border)]" />
             <button
               onClick={() => handleAction('deactivate')}
               disabled={!user.valid_access}
@@ -164,7 +202,7 @@ export function UserActionsMenu({ user, onRefresh, onEdit }: UserActionsMenuProp
                   ${confirmMode === 'delete' ? 'bg-red-600 hover:opacity-90' : 'bg-amber-500 hover:opacity-90'}`}
               >
                 {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                {loading ? 'Processing…' : confirmMode === 'delete' ? 'Delete' : 'Deactivate'}
+                {loading ? 'Processing...' : confirmMode === 'delete' ? 'Delete' : 'Deactivate'}
               </button>
             </div>
           </div>

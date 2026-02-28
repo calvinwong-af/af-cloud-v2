@@ -37,7 +37,7 @@ export function UserTable({ users, loading, onRefresh, onEdit }: UserTableProps)
 
   return (
     <div className="bg-white rounded-xl border border-[var(--border)] overflow-x-auto overflow-y-visible">
-      <table className="w-full text-sm">
+      <table className="w-full min-w-max text-sm">
         <thead>
           <tr className="border-b border-[var(--border)]">
             {COLUMNS.map((col) => (

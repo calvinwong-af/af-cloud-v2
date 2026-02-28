@@ -406,6 +406,63 @@ export async function reactivateUserAction(
   return updateUserAction(targetUid, { valid_access: true });
 }
 
+export async function sendPasswordResetEmailAction(
+  targetUid: string
+): Promise<ActionResult<void>> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+    if (!targetUid) return { success: false, error: 'Invalid user ID' };
+
+    const admin = getFirebaseAdmin();
+
+    // Fetch email from Firebase Auth
+    const userRecord = await admin.auth().getUser(targetUid);
+    if (!userRecord.email) return { success: false, error: 'User has no email address' };
+
+    const apiKey = process.env.FIREBASE_API_KEY ?? process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+
+    if (!apiKey) {
+      return { success: false, error: 'Server configuration error: missing API key' };
+    }
+
+    const res = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestType: 'PASSWORD_RESET',
+          email: userRecord.email,
+        }),
+      }
+    );
+
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      console.error('[sendPasswordResetEmailAction] Firebase error:', errBody);
+      return { success: false, error: 'Failed to send reset email. Please try again.' };
+    }
+
+    await logAction({
+      uid: session.uid,
+      email: session.email,
+      account_type: session.account_type,
+      action: 'USER_SEND_RESET_EMAIL',
+      entity_kind: 'UserAccount',
+      entity_id: targetUid,
+      after: { target_email: userRecord.email },
+      success: true,
+    });
+
+    return { success: true, data: undefined };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[sendPasswordResetEmailAction]', message);
+    return { success: false, error: 'Failed to send reset email. Please try again.' };
+  }
+}
+
 export async function resetPasswordAction(
   targetUid: string,
   newPassword: string
