@@ -5,7 +5,14 @@ import CreateShipmentModal from './CreateShipmentModal';
 
 interface Props {
   companies: { company_id: string; name: string }[];
-  ports: { un_code: string; name: string; country: string; port_type: string }[];
+  ports: {
+    un_code: string;
+    name: string;
+    country: string;
+    port_type: string;
+    has_terminals: boolean;
+    terminals: Array<{ terminal_id: string; name: string; is_default: boolean }>;
+  }[];
 }
 
 export default function NewShipmentButton({ companies, ports }: Props) {

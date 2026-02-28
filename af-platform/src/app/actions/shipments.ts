@@ -8,7 +8,6 @@
 
 import { getShipmentOrders, getShipmentOrderDetail } from '@/lib/shipments';
 import { verifySessionAndRole, logAction } from '@/lib/auth-server';
-import { getDatastore } from '@/lib/datastore-query';
 import { getCompanies } from '@/lib/companies';
 import type { ShipmentOrder, OrderType, ShipmentOrderStatus } from '@/lib/types';
 
@@ -331,27 +330,38 @@ export async function fetchCompaniesForShipmentAction(): Promise<{ company_id: s
 // Fetch all ports from Datastore for the shipment creation form
 // ---------------------------------------------------------------------------
 
-export async function fetchPortsAction(): Promise<{ un_code: string; name: string; country: string; port_type: string }[]> {
+export interface PortWithTerminals {
+  un_code: string;
+  name: string;
+  country: string;
+  port_type: string;
+  has_terminals: boolean;
+  terminals: Array<{ terminal_id: string; name: string; is_default: boolean }>;
+}
+
+export async function fetchPortsAction(): Promise<PortWithTerminals[]> {
   const session = await verifySessionAndRole(['AFU-ADMIN']);
   if (!session.valid) return [];
 
   try {
-    const datastore = getDatastore();
-    const query = datastore.createQuery('Port');
-    const [entities] = await datastore.runQuery(query);
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) return [];
 
-    type PortRow = { un_code: string; name: string; country: string; port_type: string };
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) return [];
 
-    return (entities as Record<string, unknown>[])
-      .map((e): PortRow => ({
-        un_code: (e.un_code ?? '').toString().trim(),
-        // Port Kind may use 'name' or 'port_name' — check both
-        name: (e.name ?? e.port_name ?? e.un_code ?? '').toString().trim(),
-        country: (e.country ?? '').toString().trim(),
-        port_type: (e.port_type ?? '').toString().trim(),
-      }))
-      .filter((p) => p.un_code.length > 0)
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const url = new URL('/api/v2/geography/ports', serverUrl);
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${idToken}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) return [];
+
+    const json = await res.json();
+    return (json.data ?? []) as PortWithTerminals[];
   } catch {
     return [];
   }

@@ -44,8 +44,10 @@ export interface CreateShipmentOrderInput {
 
   // Route
   origin_port_un_code: string;
+  origin_terminal_id: string | null;
   origin_label: string;
   destination_port_un_code: string;
+  destination_terminal_id: string | null;
   destination_label: string;
   incoterm_code: string;
 
@@ -216,7 +218,7 @@ export async function createShipmentOrder(
       origin: {
         type: 'PORT',
         port_un_code: input.origin_port_un_code,
-        terminal_id: null,
+        terminal_id: input.origin_terminal_id ?? null,
         city_id: null,
         address: null,
         country_code: null,
@@ -225,14 +227,16 @@ export async function createShipmentOrder(
       destination: {
         type: 'PORT',
         port_un_code: input.destination_port_un_code,
-        terminal_id: null,
+        terminal_id: input.destination_terminal_id ?? null,
         city_id: null,
         address: null,
         country_code: null,
         label: input.destination_label,
       },
       origin_port_un_code: input.origin_port_un_code,
+      origin_terminal_id: input.origin_terminal_id ?? null,
       destination_port_un_code: input.destination_port_un_code,
+      destination_terminal_id: input.destination_terminal_id ?? null,
       incoterm_code: input.incoterm_code,
       transaction_type: input.transaction_type,
 

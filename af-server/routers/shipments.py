@@ -1671,8 +1671,10 @@ class CreateFromBLRequest(BaseModel):
     incoterm_code: str = "CNF"
     company_id: str | None = None
     origin_port_un_code: str | None = None
+    origin_terminal_id: str | None = None
     origin_label: str | None = None
     destination_port_un_code: str | None = None
+    destination_terminal_id: str | None = None
     destination_label: str | None = None
     cargo_description: str | None = None
     cargo_weight_kg: float | None = None
@@ -1780,6 +1782,7 @@ async def create_from_bl(
         "origin": {
             "type": "PORT",
             "port_un_code": body.origin_port_un_code,
+            "terminal_id": body.origin_terminal_id,
             "city_id": None,
             "address": None,
             "country_code": None,
@@ -1788,13 +1791,16 @@ async def create_from_bl(
         "destination": {
             "type": "PORT",
             "port_un_code": body.destination_port_un_code,
+            "terminal_id": body.destination_terminal_id,
             "city_id": None,
             "address": None,
             "country_code": None,
             "label": body.destination_label or body.destination_port_un_code or "",
         } if body.destination_port_un_code else None,
         "origin_port_un_code": body.origin_port_un_code or "",
+        "origin_terminal_id": body.origin_terminal_id or None,
         "destination_port_un_code": body.destination_port_un_code or "",
+        "destination_terminal_id": body.destination_terminal_id or None,
         "cargo": {
             "description": body.cargo_description or "",
             "hs_code": None,

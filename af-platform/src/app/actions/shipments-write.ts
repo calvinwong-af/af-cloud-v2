@@ -19,8 +19,10 @@ export interface CreateShipmentOrderPayload {
   transaction_type: 'IMPORT' | 'EXPORT' | 'DOMESTIC';
   company_id: string;
   origin_port_un_code: string;
+  origin_terminal_id: string | null;
   origin_label: string;
   destination_port_un_code: string;
+  destination_terminal_id: string | null;
   destination_label: string;
   incoterm_code: string | null;
   cargo_description: string;
@@ -109,8 +111,10 @@ export async function createShipmentOrderAction(
     company_id: payload.company_id,
     company_key_path: [{ kind: 'Company', name: payload.company_id }],
     origin_port_un_code: payload.origin_port_un_code,
+    origin_terminal_id: payload.origin_terminal_id ?? null,
     origin_label: payload.origin_label,
     destination_port_un_code: payload.destination_port_un_code,
+    destination_terminal_id: payload.destination_terminal_id ?? null,
     destination_label: payload.destination_label,
     incoterm_code: payload.incoterm_code ?? '',
     cargo: {
@@ -523,8 +527,10 @@ export interface CreateFromBLPayload {
   incoterm_code: string;
   company_id: string | null;
   origin_port_un_code: string | null;
+  origin_terminal_id: string | null;
   origin_label: string | null;
   destination_port_un_code: string | null;
+  destination_terminal_id: string | null;
   destination_label: string | null;
   cargo_description: string | null;
   cargo_weight_kg: number | null;

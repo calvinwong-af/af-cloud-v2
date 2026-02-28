@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { Upload, CheckCircle, AlertTriangle, Link2, X, Loader2 } from 'lucide-react';
 import { DateTimeInput } from '@/components/shared/DateInput';
+import TerminalSelector from '@/components/shared/TerminalSelector';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -11,6 +12,8 @@ interface Port {
   name: string;
   country: string;
   port_type: string;
+  has_terminals: boolean;
+  terminals: Array<{ terminal_id: string; name: string; is_default: boolean }>;
 }
 
 interface CompanyMatch {
@@ -72,7 +75,9 @@ interface Props {
 
 export interface BLFormState {
   originCode: string;
+  originTerminalId: string;
   destCode: string;
+  destTerminalId: string;
   etd: string;
   carrier: string;
   waybillNumber: string;
@@ -91,7 +96,9 @@ export interface BLFormState {
 export function getDefaultBLFormState(): BLFormState {
   return {
     originCode: '',
+    originTerminalId: '',
     destCode: '',
+    destTerminalId: '',
     etd: '',
     carrier: '',
     waybillNumber: '',
@@ -163,9 +170,13 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
       onParsed(data);
 
       // Pre-fill form state
+      const originPort = ports.find(p => p.un_code === data.origin_un_code);
+      const destPort = ports.find(p => p.un_code === data.destination_un_code);
       const newState: BLFormState = {
         originCode: data.origin_un_code ?? '',
+        originTerminalId: originPort?.terminals?.find(t => t.is_default)?.terminal_id ?? '',
         destCode: data.destination_un_code ?? '',
+        destTerminalId: destPort?.terminals?.find(t => t.is_default)?.terminal_id ?? '',
         etd: data.parsed.on_board_date ?? '',
         carrier: data.parsed.carrier_agent ?? data.parsed.carrier ?? '',
         waybillNumber: data.parsed.waybill_number ?? '',
@@ -188,7 +199,7 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
       setError('Failed to parse BL');
       setPhase('upload');
     }
-  }, [onParsed, onFormChange, checkReady]);
+  }, [onParsed, onFormChange, checkReady, ports]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -323,6 +334,16 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
                 <p className="text-[11px] text-amber-600 italic mt-0.5">Parsed from BL: &ldquo;{formState.originParsedLabel}&rdquo; — not matched, please select manually</p>
               )
             )}
+            {(() => {
+              const port = ports.find(p => p.un_code === formState.originCode);
+              return port?.has_terminals ? (
+                <TerminalSelector
+                  terminals={port.terminals}
+                  value={formState.originTerminalId}
+                  onChange={v => update({ originTerminalId: v })}
+                />
+              ) : null;
+            })()}
           </div>
           <div>
             <FieldLabel>Destination Port</FieldLabel>
@@ -345,6 +366,16 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
                 <p className="text-[11px] text-amber-600 italic mt-0.5">Parsed from BL: &ldquo;{formState.destParsedLabel}&rdquo; — not matched, please select manually</p>
               )
             )}
+            {(() => {
+              const port = ports.find(p => p.un_code === formState.destCode);
+              return port?.has_terminals ? (
+                <TerminalSelector
+                  terminals={port.terminals}
+                  value={formState.destTerminalId}
+                  onChange={v => update({ destTerminalId: v })}
+                />
+              ) : null;
+            })()}
           </div>
         </div>
         <div className="mt-3">

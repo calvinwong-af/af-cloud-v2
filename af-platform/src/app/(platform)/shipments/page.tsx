@@ -101,7 +101,7 @@ export default function ShipmentsPage() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [companies, setCompanies] = useState<{ company_id: string; name: string }[]>([]);
-  const [ports, setPorts] = useState<{ un_code: string; name: string; country: string; port_type: string }[]>([]);
+  const [ports, setPorts] = useState<{ un_code: string; name: string; country: string; port_type: string; has_terminals: boolean; terminals: Array<{ terminal_id: string; name: string; is_default: boolean }> }[]>([]);
   const [accountType, setAccountType] = useState<string | null>(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createShipmentOrderAction, CreateShipmentOrderPayload, createShipmentFromBLAction, type CreateFromBLPayload } from '@/app/actions/shipments-write';
 import BLUploadTab, { type BLFormState, getDefaultBLFormState } from './BLUploadTab';
+import TerminalSelector from '@/components/shared/TerminalSelector';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -61,6 +62,8 @@ interface Port {
   name: string;
   country: string;
   port_type: string;
+  has_terminals: boolean;
+  terminals: Array<{ terminal_id: string; name: string; is_default: boolean }>;
 }
 
 interface Props {
@@ -354,8 +357,10 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
         incoterm_code: 'CNF',
         company_id: blFormState.linkedCompanyId,
         origin_port_un_code: blFormState.originCode || null,
+        origin_terminal_id: blFormState.originTerminalId || null,
         origin_label: originPort?.name ?? (blFormState.originCode || null),
         destination_port_un_code: blFormState.destCode || null,
+        destination_terminal_id: blFormState.destTerminalId || null,
         destination_label: destPort?.name ?? (blFormState.destCode || null),
         cargo_description: blFormState.cargoDescription || null,
         cargo_weight_kg: blFormState.cargoWeight ? parseFloat(blFormState.cargoWeight) : null,
@@ -411,6 +416,8 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
   // Step 2: Route
   const [originCode, setOriginCode] = useState('');
   const [destCode, setDestCode] = useState('');
+  const [originTerminalId, setOriginTerminalId] = useState('');
+  const [destTerminalId, setDestTerminalId] = useState('');
   const [incoterm, setIncoterm] = useState('');
 
   // Step 3: Cargo
@@ -476,9 +483,32 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
   useEffect(() => {
     setOriginCode('');
     setDestCode('');
+    setOriginTerminalId('');
+    setDestTerminalId('');
     setContainers([{ container_size: '20GP', container_type: 'DRY', quantity: 1 }]);
     setPackages([{ packaging_type: 'CARTON', quantity: 1, gross_weight_kg: null, volume_cbm: null }]);
   }, [orderType]);
+
+  // Auto-select default terminal when port changes
+  useEffect(() => {
+    const port = activePorts.find(p => p.un_code === originCode);
+    if (port?.has_terminals) {
+      const def = port.terminals.find(t => t.is_default);
+      setOriginTerminalId(def?.terminal_id ?? '');
+    } else {
+      setOriginTerminalId('');
+    }
+  }, [originCode, activePorts]);
+
+  useEffect(() => {
+    const port = activePorts.find(p => p.un_code === destCode);
+    if (port?.has_terminals) {
+      const def = port.terminals.find(t => t.is_default);
+      setDestTerminalId(def?.terminal_id ?? '');
+    } else {
+      setDestTerminalId('');
+    }
+  }, [destCode, activePorts]);
 
   // ── Validation ──
   function validateStep(): string | null {
@@ -526,8 +556,10 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
       transaction_type: transactionType,
       company_id: companyId,
       origin_port_un_code: originCode,
+      origin_terminal_id: originTerminalId || null,
       origin_label: originPort?.name || originCode,
       destination_port_un_code: destCode,
+      destination_terminal_id: destTerminalId || null,
       destination_label: destPort?.name || destCode,
       incoterm_code: incoterm || null,
       cargo_description: cargoDesc.trim() || '',
@@ -640,6 +672,13 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
               {originPort && (
                 <p className="text-xs text-[var(--text-muted)] mt-1">{originPort.un_code} · {originPort.country}</p>
               )}
+              {originPort?.has_terminals && (
+                <TerminalSelector
+                  terminals={originPort.terminals}
+                  value={originTerminalId}
+                  onChange={setOriginTerminalId}
+                />
+              )}
             </div>
             <div>
               <FieldLabel required>Destination Port</FieldLabel>
@@ -651,6 +690,13 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
               />
               {destPort && (
                 <p className="text-xs text-[var(--text-muted)] mt-1">{destPort.un_code} · {destPort.country}</p>
+              )}
+              {destPort?.has_terminals && (
+                <TerminalSelector
+                  terminals={destPort.terminals}
+                  value={destTerminalId}
+                  onChange={setDestTerminalId}
+                />
               )}
             </div>
             <div>
@@ -800,8 +846,8 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
               )}
             </div>
             <div className="bg-[var(--surface)] rounded-lg p-4 space-y-3">
-              <ReviewRow label="Origin" value={originPort ? `${originPort.name} (${originPort.un_code})` : originCode} />
-              <ReviewRow label="Destination" value={destPort ? `${destPort.name} (${destPort.un_code})` : destCode} />
+              <ReviewRow label="Origin" value={`${originPort ? `${originPort.name} (${originPort.un_code})` : originCode}${originTerminalId ? ' · ' + (originPort?.terminals.find(t => t.terminal_id === originTerminalId)?.name ?? originTerminalId) : ''}`} />
+              <ReviewRow label="Destination" value={`${destPort ? `${destPort.name} (${destPort.un_code})` : destCode}${destTerminalId ? ' · ' + (destPort?.terminals.find(t => t.terminal_id === destTerminalId)?.name ?? destTerminalId) : ''}`} />
               {incoterm && <ReviewRow label="Incoterm" value={incoterm} />}
             </div>
             {(cargoDesc || cargoHsCode || cargoDg) && (

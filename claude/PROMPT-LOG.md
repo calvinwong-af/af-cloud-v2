@@ -152,3 +152,22 @@ Entries are appended chronologically — never overwrite.
   - `af-platform/src/app/login/page.tsx`
 - **Notes:** Single file change. LogoMark already imported. Build passes clean.
 
+### [2026-03-01 10:00 UTC] — Terminal Selection: Geography Endpoint + Platform Data Pipeline + UI
+- **Status:** Completed
+- **Tasks:**
+  - Batch 1: Implemented `GET /api/v2/geography/ports` with terminal data + 10min in-memory cache
+  - Batch 2: `fetchPortsAction` now calls af-server instead of Datastore; Port interfaces extended with `has_terminals` and `terminals` across NewShipmentButton, CreateShipmentModal, BLUploadTab
+  - Batch 3: Created shared `TerminalSelector` component; added terminal state + auto-select default in CreateShipmentModal Step 2; terminal names shown in Review step; terminal IDs wired into both manual and BL create payloads; BLUploadTab extended with terminal fields + auto-select after parse
+- **Files Modified:**
+  - `af-server/routers/geography.py`
+  - `af-server/routers/shipments.py`
+  - `af-platform/src/components/shared/TerminalSelector.tsx` (new)
+  - `af-platform/src/app/actions/shipments.ts`
+  - `af-platform/src/app/actions/shipments-write.ts`
+  - `af-platform/src/lib/shipments-write.ts`
+  - `af-platform/src/components/shipments/CreateShipmentModal.tsx`
+  - `af-platform/src/components/shipments/BLUploadTab.tsx`
+  - `af-platform/src/components/shipments/NewShipmentButton.tsx`
+  - `af-platform/src/app/(platform)/shipments/page.tsx`
+- **Notes:** Removed unused `getDatastore` import from shipments actions. Fixed missing `ports` dep in BLUploadTab useCallback. Build passes clean.
+
