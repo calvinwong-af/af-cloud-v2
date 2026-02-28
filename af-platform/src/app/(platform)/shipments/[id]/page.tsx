@@ -1420,7 +1420,6 @@ export default function ShipmentOrderDetailPage() {
             shipmentId={order.quotation_id}
             orderType={order.order_type}
             accountType={accountType}
-            userRole={userRole}
             vesselName={vesselName}
             voyageNumber={voyageNumber}
           />

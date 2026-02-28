@@ -38,6 +38,7 @@ from core.constants import (
     FILES_BUCKET_NAME,
     V1_ACTIVE_MIN,
     V1_ACTIVE_MAX,
+    V1_STATUS_BOOKING_STARTED,
     V1_STATUS_COMPLETED,
     V1_TO_V2_STATUS,
     STATUS_CONFIRMED,
@@ -65,6 +66,27 @@ from core.exceptions import NotFoundError, ForbiddenError
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Helper — normalise mixed V1/V2 status codes on ShipmentOrder records
+# ---------------------------------------------------------------------------
+
+_V1_NATIVE_CODES = frozenset({100, 110, 4110, 10000, -1})
+
+
+def _resolve_so_status_to_v2(raw_status: int) -> int:
+    """
+    Normalise a ShipmentOrder status field to a V2 status code.
+
+    V1 ShipmentOrders should have native V1 codes (110, 4110, 10000) but
+    write endpoints have historically stored V2 codes (3001, 5001, etc.)
+    on these records. This function handles both cases.
+    """
+    if raw_status in _V1_NATIVE_CODES:
+        return V1_TO_V2_STATUS.get(raw_status, STATUS_CONFIRMED)
+    # Already a V2 code (3001, 3002, 4001, 5001, etc.) — return as-is
+    return raw_status
 
 
 # ---------------------------------------------------------------------------
@@ -143,20 +165,20 @@ async def get_shipment_stats(
         # Skip migrated records — they are counted in the migrated block below
         if entity.get("data_version") == 2:
             continue
-        v1_status = entity.get("status", 0)
-        if v1_status == V1_STATUS_COMPLETED:
+        raw_status = entity.get("status", 0)
+        v2_status = _resolve_so_status_to_v2(raw_status)
+
+        if v2_status == STATUS_COMPLETED:
             stats["completed"] += 1
-            # to_invoice: completed + invoice not issued
-            # issued_invoice may be bool, int 0/1, or missing — coerce safely
             issued = entity.get("issued_invoice")
             if not bool(issued):
                 stats["to_invoice"] += 1
-        elif v1_status == -1:  # V1 cancellation (rare — most V1 cancels are soft-deleted)
+        elif v2_status == STATUS_CANCELLED:
             stats["cancelled"] += 1
-        else:
-            # anything >= 110 and < 10000 is active
-            if V1_ACTIVE_MIN <= v1_status < V1_STATUS_COMPLETED:
-                stats["active"] += 1
+        elif v2_status in V2_ACTIVE_STATUSES:
+            stats["active"] += 1
+        elif v2_status in (STATUS_DRAFT, STATUS_DRAFT_REVIEW):
+            stats["draft"] += 1
 
     # -----------------------------------------------------------------------
     # Migrated records — ShipmentOrder Kind, data_version=2
@@ -251,10 +273,10 @@ async def search_shipments(
                 seen_ids.add(sid)
 
     # -------------------------------------------------------------------
-    # V1 records — ShipmentOrder Kind (status >= 110 = confirmed shipments)
+    # V1 records — ShipmentOrder Kind (status >= 100 = booking started+)
     # -------------------------------------------------------------------
     v1_query = client.query(kind="ShipmentOrder")
-    v1_query.add_filter(filter=PropertyFilter("status", ">=", V1_ACTIVE_MIN))
+    v1_query.add_filter(filter=PropertyFilter("status", ">=", V1_STATUS_BOOKING_STARTED))
     if effective_company_id:
         v1_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
 
@@ -310,6 +332,31 @@ async def search_shipments(
             if (origin and q_upper in origin.upper()) or (dest and q_upper in dest.upper()):
                 items.append(_make_v2_summary(entity))
                 seen_ids.add(sid)
+
+    # -------------------------------------------------------------------
+    # V1 fallback — Quotation Kind with has_shipment=true
+    # Catches V1 shipments where ShipmentOrder is below threshold or missing
+    # -------------------------------------------------------------------
+    q_fallback_query = client.query(kind="Quotation")
+    q_fallback_query.add_filter(filter=PropertyFilter("has_shipment", "=", True))
+    if effective_company_id:
+        q_fallback_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
+
+    for q_entity in q_fallback_query.fetch():
+        if q_entity.get("data_version") == 2:
+            continue
+        sid = q_entity.key.name or str(q_entity.key.id)
+        if sid in seen_ids:
+            continue
+        if _id_matches(sid, q_lower, q_upper, q_digits):
+            v2_status = V1_TO_V2_STATUS.get(q_entity.get("status", 0), STATUS_CONFIRMED)
+            # Use Quotation as both so_entity and q_entity since ShipmentOrder may be missing
+            so_entity = q_map.get(sid)
+            if so_entity:
+                items.append(_make_v1_summary(so_entity, q_entity, v2_status))
+            else:
+                items.append(_make_v1_summary(q_entity, q_entity, v2_status))
+            seen_ids.add(sid)
 
     # -------------------------------------------------------------------
     # Company name matching (search_fields=all only)
@@ -678,15 +725,11 @@ async def list_shipments(
     if tab not in ("draft", "cancelled"):
         v1_query = client.query(kind="ShipmentOrder")
 
-        # Apply tab-specific status filters at the Datastore level
-        if tab == "active":
-            v1_query.add_filter(filter=PropertyFilter("status", ">=", V1_ACTIVE_MIN))
-            v1_query.add_filter(filter=PropertyFilter("status", "<", V1_STATUS_COMPLETED))
-        elif tab in ("completed", "to_invoice"):
-            v1_query.add_filter(filter=PropertyFilter("status", "=", V1_STATUS_COMPLETED))
-        else:
-            # tab == "all": all shipments that reached booking confirmation
-            v1_query.add_filter(filter=PropertyFilter("status", ">=", V1_ACTIVE_MIN))
+        # Fetch all V1 records that have been confirmed (status >= 100).
+        # Tab filtering is done in-memory after resolving mixed V1/V2 status codes.
+        # Cannot use tight Datastore-level status filters because write endpoints
+        # have stored V2 codes (3001, 5001 etc.) on some V1 ShipmentOrder records.
+        v1_query.add_filter(filter=PropertyFilter("status", ">=", V1_STATUS_BOOKING_STARTED))
 
         if effective_company_id:
             v1_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
@@ -720,17 +763,22 @@ async def list_shipments(
                 # Skip migrated records — already included in migrated block above
                 if so_entity.get("data_version") == 2:
                     continue
-                v1_status = so_entity.get("status", 0)
+                raw_status = so_entity.get("status", 0)
+                v2_status = _resolve_so_status_to_v2(raw_status)
 
-                # to_invoice: further filter — completed but invoice not issued.
+                # In-memory tab filter (needed because Datastore query is broad)
+                if tab == "active" and v2_status not in V2_ACTIVE_STATUSES:
+                    continue
+                if tab == "completed" and v2_status != STATUS_COMPLETED:
+                    continue
                 if tab == "to_invoice":
+                    if v2_status != STATUS_COMPLETED:
+                        continue
                     so_issued = so_entity.get("issued_invoice")
                     if bool(so_issued):
                         continue
                     v1_to_invoice_count += 1
 
-                # Map V1 status → V2; unmapped codes default to Confirmed (2001)
-                v2_status = V1_TO_V2_STATUS.get(v1_status, STATUS_CONFIRMED)
                 items.append(_make_v1_summary(so_entity, None, v2_status))
 
             if tab == "to_invoice":
@@ -1117,6 +1165,9 @@ async def update_shipment_status(
         so_entity["status"] = v1_new_status
         so_entity["last_status_updated"] = now
         so_entity["updated"] = now
+        # GUARD: never tag a V1 ShipmentOrder as data_version=2
+        if so_entity.get("data_version") == 2:
+            so_entity["data_version"] = None
         client.put(so_entity)
 
     # --- i. Append to ShipmentWorkFlow.status_history ---
@@ -2432,6 +2483,7 @@ async def update_from_bl(
     shipper_address: Optional[str] = Form(None),
     consignee_name: Optional[str] = Form(None),
     consignee_address: Optional[str] = Form(None),
+    notify_party_name: Optional[str] = Form(None),
     bl_shipper_name: Optional[str] = Form(None),
     bl_shipper_address: Optional[str] = Form(None),
     bl_consignee_name: Optional[str] = Form(None),
@@ -2522,6 +2574,14 @@ async def update_from_bl(
             consignee["address"] = consignee_address
         parties["consignee"] = consignee
 
+    if notify_party_name is not None:
+        notify_party = parties.get("notify_party") or {}
+        if not isinstance(notify_party, dict):
+            notify_party = {}
+        if is_force or not notify_party.get("name"):
+            notify_party["name"] = notify_party_name
+        parties["notify_party"] = notify_party
+
     q_entity["parties"] = parties
 
     # Write raw parsed BL values to bl_document (always overwrite — audit record)
@@ -2601,6 +2661,9 @@ async def update_from_bl(
             so_changed = True
         if so_changed:
             so_entity["updated"] = now
+            # GUARD: never tag a V1 ShipmentOrder as data_version=2
+            if so_entity.get("data_version") == 2:
+                so_entity["data_version"] = None
             try:
                 client.put(so_entity)
             except Exception as e:
@@ -2736,6 +2799,9 @@ async def update_parties(
         if so_entity:
             so_entity["parties"] = parties
             so_entity["updated"] = now
+            # GUARD: never tag a V1 ShipmentOrder as data_version=2
+            if so_entity.get("data_version") == 2:
+                so_entity["data_version"] = None
             try:
                 client.put(so_entity)
             except Exception as e:

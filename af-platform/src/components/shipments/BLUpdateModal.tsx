@@ -24,7 +24,7 @@ interface BLCargoItem {
   measurement: string | null;
 }
 
-interface ParsedBL {
+export interface ParsedBL {
   waybill_number: string | null;
   booking_number: string | null;
   carrier_agent: string | null;
@@ -52,6 +52,8 @@ interface Props {
   shipmentId: string;
   onClose: () => void;
   onSuccess: () => void;
+  initialParsed?: ParsedBL | null;
+  skipFileSave?: boolean;
 }
 
 type Phase = 'upload' | 'parsing' | 'preview' | 'updating';
@@ -102,28 +104,30 @@ const prefilled = 'bg-[#f0f7ff] border-[#93c5fd] font-medium';
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props) {
-  const [phase, setPhase] = useState<Phase>('upload');
+export default function BLUpdateModal({ shipmentId, onClose, onSuccess, initialParsed, skipFileSave }: Props) {
+  const hasInitial = !!initialParsed;
+  const [phase, setPhase] = useState<Phase>(hasInitial ? 'preview' : 'upload');
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Parsed data
-  const [parsed, setParsed] = useState<ParsedBL | null>(null);
+  const [parsed, setParsed] = useState<ParsedBL | null>(initialParsed ?? null);
   const [blFile, setBlFile] = useState<File | null>(null);
 
-  // Editable form state
-  const [waybillNumber, setWaybillNumber] = useState('');
-  const [carrierAgent, setCarrierAgent] = useState('');
-  const [vesselName, setVesselName] = useState('');
-  const [voyageNumber, setVoyageNumber] = useState('');
-  const [etd, setEtd] = useState('');
-  const [shipperName, setShipperName] = useState('');
-  const [shipperAddress, setShipperAddress] = useState('');
-  const [consigneeName, setConsigneeName] = useState('');
-  const [consigneeAddress, setConsigneeAddress] = useState('');
-  const [containers, setContainers] = useState<BLContainer[]>([]);
-  const [cargoItems, setCargoItems] = useState<BLCargoItem[]>([]);
+  // Editable form state — pre-fill from initialParsed if provided
+  const [waybillNumber, setWaybillNumber] = useState(initialParsed?.waybill_number ?? '');
+  const [carrierAgent, setCarrierAgent] = useState(initialParsed?.carrier_agent ?? initialParsed?.carrier ?? '');
+  const [vesselName, setVesselName] = useState(initialParsed?.vessel_name ?? '');
+  const [voyageNumber, setVoyageNumber] = useState(initialParsed?.voyage_number ?? '');
+  const [etd, setEtd] = useState(initialParsed ? normaliseDateToISO(initialParsed.on_board_date) : '');
+  const [shipperName, setShipperName] = useState(initialParsed?.shipper_name ?? '');
+  const [shipperAddress, setShipperAddress] = useState(initialParsed?.shipper_address ?? '');
+  const [consigneeName, setConsigneeName] = useState(initialParsed?.consignee_name ?? '');
+  const [consigneeAddress, setConsigneeAddress] = useState(initialParsed?.consignee_address ?? '');
+  const [notifyPartyName, setNotifyPartyName] = useState(initialParsed?.notify_party_name ?? '');
+  const [containers, setContainers] = useState<BLContainer[]>(initialParsed?.containers ?? []);
+  const [cargoItems, setCargoItems] = useState<BLCargoItem[]>(initialParsed?.cargo_items ?? []);
 
   const handleFile = useCallback(async (file: File) => {
     setPhase('parsing');
@@ -160,6 +164,7 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
       setShipperAddress(p.shipper_address ?? '');
       setConsigneeName(p.consignee_name ?? '');
       setConsigneeAddress(p.consignee_address ?? '');
+      setNotifyPartyName(p.notify_party_name ?? '');
       setContainers(p.containers ?? []);
       setCargoItems(p.cargo_items ?? []);
 
@@ -186,6 +191,7 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
       if (shipperAddress)    formData.append('shipper_address',   shipperAddress);
       if (consigneeName)     formData.append('consignee_name',    consigneeName);
       if (consigneeAddress)  formData.append('consignee_address', consigneeAddress);
+      if (notifyPartyName)   formData.append('notify_party_name', notifyPartyName);
       // Raw parsed BL values (for bl_document storage — never edited)
       if (parsed?.shipper_name)      formData.append('bl_shipper_name',      parsed.shipper_name);
       if (parsed?.shipper_address)   formData.append('bl_shipper_address',   parsed.shipper_address);
@@ -210,7 +216,7 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
           }))
         ));
       }
-      if (blFile) formData.append('file', blFile);
+      if (blFile && !skipFileSave) formData.append('file', blFile);
 
       const result = await updateShipmentFromBLAction(shipmentId, formData);
 
@@ -227,8 +233,8 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
       setPhase('preview');
     }
   }, [shipmentId, waybillNumber, carrierAgent, vesselName, voyageNumber, etd,
-    shipperName, shipperAddress, consigneeName, consigneeAddress,
-    containers, cargoItems, blFile, parsed, onSuccess]);
+    shipperName, shipperAddress, consigneeName, consigneeAddress, notifyPartyName,
+    containers, cargoItems, blFile, parsed, onSuccess, skipFileSave]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
@@ -373,6 +379,22 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess }: Props)
                 </div>
               </div>
             </div>
+
+            {/* Notify Party */}
+            {(notifyPartyName || parsed?.notify_party_name) && (
+              <div>
+                <SectionLabel>Notify Party</SectionLabel>
+                <div>
+                  <FieldLabel>Name</FieldLabel>
+                  <input
+                    type="text"
+                    value={notifyPartyName}
+                    onChange={e => setNotifyPartyName(e.target.value)}
+                    className={`${inputBase} ${notifyPartyName ? prefilled : ''}`}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Containers — editable (FCL) */}
             {containers.length > 0 && (

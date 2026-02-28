@@ -44,7 +44,6 @@ interface ShipmentTasksProps {
   shipmentId: string;
   orderType?: string;
   accountType: string | null;
-  userRole: string | null;
   vesselName?: string | null;
   voyageNumber?: string | null;
 }
@@ -159,7 +158,6 @@ function TaskCard({
   task,
   orderType,
   accountType,
-  userRole,
   onMarkComplete,
   onUndo,
   onEdit,
@@ -171,7 +169,6 @@ function TaskCard({
   task: WorkflowTask;
   orderType?: string;
   accountType: string | null;
-  userRole: string | null;
   onMarkComplete: (taskId: string) => void;
   onUndo: (taskId: string) => void;
   onEdit: (task: WorkflowTask) => void;
@@ -602,7 +599,7 @@ function EditTaskModal({
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function ShipmentTasks({ shipmentId, orderType, accountType, userRole, vesselName, voyageNumber }: ShipmentTasksProps) {
+export default function ShipmentTasks({ shipmentId, orderType, accountType, vesselName, voyageNumber }: ShipmentTasksProps) {
   const [tasks, setTasks] = useState<WorkflowTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -813,7 +810,6 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, user
           task={task}
           orderType={orderType}
           accountType={accountType}
-          userRole={userRole}
           onMarkComplete={handleMarkComplete}
           onUndo={handleUndo}
           onEdit={setEditingTask}

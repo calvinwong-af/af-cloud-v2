@@ -220,3 +220,38 @@ Entries are appended chronologically — never overwrite.
   - `af-platform/src/app/(platform)/dashboard/page.tsx` — AFC KPI grid redesign, CheckCircle2 import
 - **Notes:** Lint passes. Single file change.
 
+### [2026-03-01 18:00 UTC] — Search Fix + Re-parse BL Feature
+- **Status:** Completed
+- **Tasks:**
+  - Item 1: Search threshold fix — lowered V1 ShipmentOrder filter from V1_ACTIVE_MIN (110) to V1_STATUS_BOOKING_STARTED (100) in search endpoint only; added Quotation Kind fallback scan for V1 shipments with `has_shipment=true`
+  - Item 2: Re-parse BL feature — added "Read file again" button on bl-tagged files (AFU only) in ShipmentFilesTab; BLUpdateModal extended with `initialParsed` and `skipFileSave` props to support re-parse flow without re-uploading file
+  - Fixed lint: removed unused `userRole` prop from ShipmentTasks TaskCard + main component + call site
+  - Fixed lint: added `skipFileSave` to BLUpdateModal useCallback dependency array
+- **Files Modified:**
+  - `af-server/routers/shipments.py` — search endpoint: V1_STATUS_BOOKING_STARTED filter + Quotation Kind fallback
+  - `af-platform/src/components/shipments/BLUpdateModal.tsx` — exported ParsedBL, added initialParsed/skipFileSave props
+  - `af-platform/src/components/shipments/ShipmentFilesTab.tsx` — "Read file again" button, handleReparse callback, BLUpdateModal rendering
+  - `af-platform/src/components/shipments/ShipmentTasks.tsx` — removed unused userRole prop
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — removed userRole prop from ShipmentTasks call
+- **Notes:** Lint passes. Server compiles.
+
+### [2026-03-01 19:00 UTC] — Read File Again CORS Fix + 003829 Data Fix
+- **Status:** Completed
+- **Tasks:**
+  - Item 1: CORS fix — replaced client-side GCS fetch+parse chain with single `reparseBlFileAction` server action that does download+parse server-side; removed `parseBLAction` import from ShipmentFilesTab
+  - Item 2: Created `af-server/scripts/fix_003829_status.py` one-time migration script to advance AFCQ-003829 ShipmentOrder status from 100 → 4110 (idempotent, supports --dry-run)
+- **Files Modified:**
+  - `af-platform/src/app/actions/shipments-files.ts` — added `reparseBlFileAction`
+  - `af-platform/src/components/shipments/ShipmentFilesTab.tsx` — replaced handleReparse with server action call, removed parseBLAction import
+  - `af-server/scripts/fix_003829_status.py` — new migration script
+- **Notes:** Lint passes. Script compiles. Script must be run manually against Datastore.
+
+### [2026-03-01 19:30 UTC] — BLUpdateModal: Add Notify Party Field
+- **Status:** Completed
+- **Tasks:**
+  - Added `notifyPartyName` state, pre-fill in handleFile, FormData append in handleUpdate, useCallback dep
+  - Added conditional Notify Party section in preview UI (only shown when parser returns a notify party)
+- **Files Modified:**
+  - `af-platform/src/components/shipments/BLUpdateModal.tsx` — notify party state, form field, FormData append
+- **Notes:** Lint passes. No server changes needed — PATCH endpoint already accepts notify_party_name.
+

@@ -279,6 +279,79 @@ export async function deleteShipmentFileAction(
 }
 
 // ---------------------------------------------------------------------------
+// Re-parse BL — full server-side chain (no CORS issues)
+// ---------------------------------------------------------------------------
+
+export async function reparseBlFileAction(
+  shipmentId: string,
+  fileId: number,
+): Promise<{ success: true; data: Record<string, unknown> } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) {
+      return { success: false, error: 'Unauthorised' };
+    }
+
+    const idToken = await getIdToken();
+    if (!idToken) {
+      return { success: false, error: 'No session token' };
+    }
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) {
+      return { success: false, error: 'Server URL not configured' };
+    }
+
+    // 1. Get signed download URL from af-server
+    const downloadUrl = new URL(
+      `/api/v2/shipments/${encodeURIComponent(shipmentId)}/files/${fileId}/download`,
+      serverUrl,
+    );
+    const downloadRes = await fetch(downloadUrl.toString(), {
+      headers: { Authorization: `Bearer ${idToken}` },
+      cache: 'no-store',
+    });
+    if (!downloadRes.ok) {
+      const json = await downloadRes.json().catch(() => null);
+      return { success: false, error: json?.detail ?? 'Failed to get file URL' };
+    }
+    const { download_url } = await downloadRes.json();
+
+    // 2. Fetch file bytes from signed URL (server-side — no CORS)
+    const fileRes = await fetch(download_url);
+    if (!fileRes.ok) {
+      return { success: false, error: 'Failed to download file from storage' };
+    }
+    const fileBuffer = await fileRes.arrayBuffer();
+    const contentType = fileRes.headers.get('content-type') || 'application/pdf';
+
+    // 3. Forward to parse-bl endpoint
+    const blob = new Blob([fileBuffer], { type: contentType });
+    const formData = new FormData();
+    formData.append('file', blob, 'bl.pdf');
+
+    const parseUrl = new URL('/api/v2/shipments/parse-bl', serverUrl);
+    const parseRes = await fetch(parseUrl.toString(), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${idToken}` },
+      body: formData,
+      cache: 'no-store',
+    });
+
+    if (!parseRes.ok) {
+      const json = await parseRes.json().catch(() => null);
+      return { success: false, error: json?.detail ?? 'Failed to parse BL' };
+    }
+
+    const parseJson = await parseRes.json();
+    return { success: true, data: parseJson };
+  } catch (err) {
+    console.error('[reparseBlFileAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to re-parse BL' };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // GET /api/v2/shipments/{shipmentId}/files/{fileId}/download
 // ---------------------------------------------------------------------------
 

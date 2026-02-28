@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Upload, FileText, Image as ImageIcon, File as FileIcon, Eye, EyeOff,
-  Pencil, Trash2, Download, X, Loader2, AlertTriangle, Check,
+  Pencil, Trash2, Download, X, Loader2, AlertTriangle, Check, RefreshCw,
 } from 'lucide-react';
 import {
   getShipmentFilesAction,
@@ -12,8 +12,10 @@ import {
   updateShipmentFileAction,
   deleteShipmentFileAction,
   getFileDownloadUrlAction,
+  reparseBlFileAction,
 } from '@/app/actions/shipments-files';
 import type { ShipmentFile, FileTag } from '@/app/actions/shipments-files';
+import BLUpdateModal, { type ParsedBL } from '@/components/shipments/BLUpdateModal';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -75,6 +77,10 @@ export default function ShipmentFilesTab({ shipmentId, userRole }: ShipmentFiles
   const [error, setError] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [editingFileId, setEditingFileId] = useState<number | null>(null);
+  const [reparsingFileId, setReparsingFileId] = useState<number | null>(null);
+  const [reparseError, setReparseError] = useState<string | null>(null);
+  const [blParsedData, setBlParsedData] = useState<ParsedBL | null>(null);
+  const [showBLModal, setShowBLModal] = useState(false);
 
   const loadFiles = useCallback(async () => {
     const result = await getShipmentFilesAction(shipmentId);
@@ -125,6 +131,32 @@ export default function ShipmentFilesTab({ shipmentId, userRole }: ShipmentFiles
     if (!result) return;
     if (result.success) {
       setFiles(prev => prev.map(f => f.file_id === file.file_id ? result.data : f));
+    }
+  }, [shipmentId]);
+
+  const handleReparse = useCallback(async (fileId: number) => {
+    setReparsingFileId(fileId);
+    setReparseError(null);
+    try {
+      const result = await reparseBlFileAction(shipmentId, fileId);
+      if (!result) {
+        setReparseError('No response from server');
+        setReparsingFileId(null);
+        return;
+      }
+      if (!result.success) {
+        setReparseError(result.error);
+        setReparsingFileId(null);
+        return;
+      }
+
+      const data = result.data as { parsed: ParsedBL };
+      setBlParsedData(data.parsed);
+      setShowBLModal(true);
+      setReparsingFileId(null);
+    } catch {
+      setReparseError('Failed to re-parse BL');
+      setReparsingFileId(null);
     }
   }, [shipmentId]);
 
@@ -206,8 +238,28 @@ export default function ShipmentFilesTab({ shipmentId, userRole }: ShipmentFiles
                 ))}
               </div>
 
+              {/* Reparse error */}
+              {reparseError && reparsingFileId === null && (
+                <div className="text-[10px] text-red-500 flex-shrink-0">{reparseError}</div>
+              )}
+
               {/* Actions */}
               <div className="flex items-center gap-1 flex-shrink-0">
+                {isAFU(userRole) && (file.file_tags ?? []).includes('bl') && (
+                  <button
+                    onClick={() => handleReparse(file.file_id)}
+                    disabled={reparsingFileId !== null}
+                    className="flex items-center gap-1 px-1.5 py-1 rounded text-xs text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors disabled:opacity-50"
+                    title="Read file again"
+                  >
+                    {reparsingFileId === file.file_id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    )}
+                    <span className="text-xs">Read file again</span>
+                  </button>
+                )}
                 {canToggleVisibility(userRole) && (
                   <button
                     onClick={() => handleVisibilityToggle(file)}
@@ -273,6 +325,23 @@ export default function ShipmentFilesTab({ shipmentId, userRole }: ShipmentFiles
             setFiles(prev => prev.map(f => f.file_id === updated.file_id ? updated : f));
             setEditingFileId(null);
           }}
+        />
+      )}
+
+      {/* BL re-parse modal */}
+      {showBLModal && blParsedData && (
+        <BLUpdateModal
+          shipmentId={shipmentId}
+          onClose={() => {
+            setShowBLModal(false);
+            setBlParsedData(null);
+          }}
+          onSuccess={() => {
+            setShowBLModal(false);
+            setBlParsedData(null);
+          }}
+          initialParsed={blParsedData}
+          skipFileSave
         />
       )}
     </div>
