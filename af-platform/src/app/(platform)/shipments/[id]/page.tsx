@@ -239,12 +239,12 @@ function EditPartiesModal({
     setError(null);
     try {
       const result = await updatePartiesAction(order.quotation_id, {
-        shipper_name: shipperName || null,
-        shipper_address: shipperAddress || null,
-        consignee_name: consigneeName || null,
-        consignee_address: consigneeAddress || null,
-        notify_party_name: notifyPartyName || null,
-        notify_party_address: notifyPartyAddress || null,
+        shipper_name: shipperName,
+        shipper_address: shipperAddress,
+        consignee_name: consigneeName,
+        consignee_address: consigneeAddress,
+        notify_party_name: notifyPartyName,
+        notify_party_address: notifyPartyAddress,
       });
       if (!result.success) {
         setError(result.error);
@@ -1428,6 +1428,7 @@ export default function ShipmentOrderDetailPage() {
         <ShipmentFilesTab
           shipmentId={order.quotation_id}
           userRole={accountType === 'AFU' ? 'AFU' : (userRole ?? 'AFC_USER')}
+          onBLUpdated={loadOrder}
         />
       ) : (
 

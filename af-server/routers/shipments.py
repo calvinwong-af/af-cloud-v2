@@ -161,24 +161,49 @@ async def get_shipment_stats(
     if effective_company_id:
         v1_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
 
+    # First pass: collect all V1 entities
+    v1_entities_list = []
     for entity in v1_query.fetch():
-        # Skip migrated records — they are counted in the migrated block below
         if entity.get("data_version") == 2:
             continue
+        v1_entities_list.append(entity)
+
+    # Bucket by resolved status
+    v1_completed_ids = []
+    for entity in v1_entities_list:
         raw_status = entity.get("status", 0)
         v2_status = _resolve_so_status_to_v2(raw_status)
 
         if v2_status == STATUS_COMPLETED:
             stats["completed"] += 1
-            issued = entity.get("issued_invoice")
-            if not bool(issued):
-                stats["to_invoice"] += 1
+            # Check issued_invoice on ShipmentOrder first
+            issued_so = entity.get("issued_invoice")
+            if bool(issued_so):
+                pass  # already invoiced — don't add to to_invoice
+            else:
+                # May be missing on SO — queue for Quotation lookup
+                v1_completed_ids.append(entity.key.name or str(entity.key.id))
         elif v2_status == STATUS_CANCELLED:
             stats["cancelled"] += 1
         elif v2_status in V2_ACTIVE_STATUSES:
             stats["active"] += 1
         elif v2_status in (STATUS_DRAFT, STATUS_DRAFT_REVIEW):
             stats["draft"] += 1
+
+    # Batch-fetch Quotation records to resolve issued_invoice for completed V1 shipments
+    if v1_completed_ids:
+        q_keys = [client.key("Quotation", sid) for sid in v1_completed_ids]
+        q_entities = get_multi_chunked(client, q_keys)
+        q_invoice_map = {
+            (e.key.name or str(e.key.id)): e.get("issued_invoice")
+            for e in q_entities
+        }
+        for sid in v1_completed_ids:
+            issued_q = q_invoice_map.get(sid)
+            # Only count as to_invoice if Quotation exists AND issued_invoice is falsy
+            # If Quotation is missing entirely, skip — we cannot verify
+            if sid in q_invoice_map and not bool(issued_q):
+                stats["to_invoice"] += 1
 
     # -----------------------------------------------------------------------
     # Migrated records — ShipmentOrder Kind, data_version=2
@@ -214,8 +239,9 @@ async def get_shipment_stats(
             for e in q_entities
         }
         for mid in migrated_completed_ids:
-            issued = q_invoice_map.get(mid)
-            if not issued:
+            # Only count as to_invoice if Quotation record exists AND issued_invoice is falsy
+            # If the Quotation entity is missing, we cannot verify — skip rather than over-count
+            if mid in q_invoice_map and not bool(q_invoice_map[mid]):
                 stats["to_invoice"] += 1
 
     stats["total"] = stats["active"] + stats["completed"] + stats["cancelled"] + stats["draft"]
@@ -758,31 +784,51 @@ async def list_shipments(
             if tab == "to_invoice":
                 logger.info("[to_invoice] Processing %d ShipmentOrders (no Quotation join)", len(v1_shipment_orders))
 
-            v1_to_invoice_count = 0
-            for so_entity in v1_shipment_orders:
-                # Skip migrated records — already included in migrated block above
-                if so_entity.get("data_version") == 2:
-                    continue
-                raw_status = so_entity.get("status", 0)
-                v2_status = _resolve_so_status_to_v2(raw_status)
-
-                # In-memory tab filter (needed because Datastore query is broad)
-                if tab == "active" and v2_status not in V2_ACTIVE_STATUSES:
-                    continue
-                if tab == "completed" and v2_status != STATUS_COMPLETED:
-                    continue
-                if tab == "to_invoice":
+            if tab == "to_invoice":
+                # Two-pass: collect completed V1 records where SO doesn't have issued=True,
+                # then batch-fetch Quotation records to verify issued_invoice
+                completed_candidates = []
+                for so_entity in v1_shipment_orders:
+                    if so_entity.get("data_version") == 2:
+                        continue
+                    raw_status = so_entity.get("status", 0)
+                    v2_status = _resolve_so_status_to_v2(raw_status)
                     if v2_status != STATUS_COMPLETED:
                         continue
-                    so_issued = so_entity.get("issued_invoice")
-                    if bool(so_issued):
+                    so_issued = bool(so_entity.get("issued_invoice", False))
+                    if so_issued:
+                        continue  # definitely invoiced
+                    completed_candidates.append((so_entity, v2_status))
+
+                if completed_candidates:
+                    candidate_ids = [e.key.name or str(e.key.id) for e, _ in completed_candidates]
+                    q_keys = [client.key("Quotation", sid) for sid in candidate_ids]
+                    q_entities = get_multi_chunked(client, q_keys)
+                    q_inv_map = {
+                        (e.key.name or str(e.key.id)): bool(e.get("issued_invoice", False))
+                        for e in q_entities
+                    }
+                    for so_entity, v2_status in completed_candidates:
+                        sid = so_entity.key.name or str(so_entity.key.id)
+                        # OR logic: invoiced if either SO or Quotation says so
+                        if q_inv_map.get(sid, False):
+                            continue  # Quotation says invoiced — skip
+                        items.append(_make_v1_summary(so_entity, None, v2_status))
+
+                logger.info("[to_invoice] V1 records after two-source filter: %d",
+                            sum(1 for s in items if s.get("data_version") == 1))
+            else:
+                # All other tabs — single-pass
+                for so_entity in v1_shipment_orders:
+                    if so_entity.get("data_version") == 2:
                         continue
-                    v1_to_invoice_count += 1
-
-                items.append(_make_v1_summary(so_entity, None, v2_status))
-
-            if tab == "to_invoice":
-                logger.info("[to_invoice] After issued_invoice filter: %d records", v1_to_invoice_count)
+                    raw_status = so_entity.get("status", 0)
+                    v2_status = _resolve_so_status_to_v2(raw_status)
+                    if tab == "active" and v2_status not in V2_ACTIVE_STATUSES:
+                        continue
+                    if tab == "completed" and v2_status != STATUS_COMPLETED:
+                        continue
+                    items.append(_make_v1_summary(so_entity, None, v2_status))
 
     # -------------------------------------------------------------------
     # Batch-fetch company names
@@ -2749,6 +2795,7 @@ async def update_parties(
         parties = {}
 
     # Merge shipper
+    # "" clears a field, non-empty string sets it, None (absent) = don't touch
     if body.shipper_name is not None or body.shipper_address is not None:
         shipper = parties.get("shipper") or {}
         if not isinstance(shipper, dict):
@@ -2757,7 +2804,10 @@ async def update_parties(
             shipper["name"] = body.shipper_name
         if body.shipper_address is not None:
             shipper["address"] = body.shipper_address
-        parties["shipper"] = shipper
+        if not shipper.get("name") and not shipper.get("address"):
+            parties.pop("shipper", None)
+        else:
+            parties["shipper"] = shipper
 
     # Merge consignee
     if body.consignee_name is not None or body.consignee_address is not None:
@@ -2768,7 +2818,10 @@ async def update_parties(
             consignee["name"] = body.consignee_name
         if body.consignee_address is not None:
             consignee["address"] = body.consignee_address
-        parties["consignee"] = consignee
+        if not consignee.get("name") and not consignee.get("address"):
+            parties.pop("consignee", None)
+        else:
+            parties["consignee"] = consignee
 
     # Merge notify_party
     if body.notify_party_name is not None or body.notify_party_address is not None:
@@ -2779,7 +2832,10 @@ async def update_parties(
             notify_party["name"] = body.notify_party_name
         if body.notify_party_address is not None:
             notify_party["address"] = body.notify_party_address
-        parties["notify_party"] = notify_party
+        if not notify_party.get("name") and not notify_party.get("address"):
+            parties.pop("notify_party", None)
+        else:
+            parties["notify_party"] = notify_party
 
     q_entity["parties"] = parties
     q_entity["updated"] = now

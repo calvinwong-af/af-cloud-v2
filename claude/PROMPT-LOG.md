@@ -3,6 +3,12 @@
 All prompt executions are logged here with timestamps and status reports.
 Entries are appended chronologically — never overwrite.
 
+### [2026-03-01 21:30 UTC] — PROMPT PREPARED: Fix "To Invoice" Over-Count
+- **Status:** Prompt written — awaiting Opus execution
+- **Tasks:** Fix stats endpoint Loop 2 (V1 Quotation fallback) + Loop 3 (missing key guard); fix list endpoint to_invoice two-source check; new backfill_issued_invoice.py migration script
+- **Files Modified:** `claude/prompts/PROMPT-CURRENT.md`
+- **Notes:** Pending Invoice showing ~2,007 vs expected far lower. Root cause: issued_invoice absent on V1 ShipmentOrder records, treated as falsy = uninvoiced.
+
 ---
 
 ### [2026-02-28 16:00 UTC] — Task Card Labels + Vessel Display
@@ -254,4 +260,26 @@ Entries are appended chronologically — never overwrite.
 - **Files Modified:**
   - `af-platform/src/components/shipments/BLUpdateModal.tsx` — notify party state, form field, FormData append
 - **Notes:** Lint passes. No server changes needed — PATCH endpoint already accepts notify_party_name.
+
+### [2026-03-01 20:00 UTC] — Fix V1 stats/list mixed status codes + notify party server + data_version guard
+- **Status:** Completed
+- **Tasks:**
+  - Added `_resolve_so_status_to_v2` helper with `_V1_NATIVE_CODES` frozenset
+  - Stats endpoint: V1 loop uses resolved V2 status for all tab bucketing
+  - List endpoint: broadened V1 query to `status >= 100`, in-memory tab filter using resolved V2 status
+  - Fix A: data_version guard on 3 write endpoints (status, bl, parties) — prevents future contamination
+  - Fix B: added `notify_party_name` form param to `update_from_bl`, merge into `parties.notify_party`
+- **Files Modified:**
+  - `af-server/routers/shipments.py` — _resolve_so_status_to_v2, stats fix, list fix, data_version guards, notify_party_name
+- **Notes:** Lint passes. Build passes. Pushed as 46df5a8.
+
+### [2026-03-01 21:00 UTC] — Fix parties update: clear/null semantics bug
+- **Status:** Completed
+- **Tasks:**
+  - Frontend: changed EditPartiesModal to send `""` instead of `null` for cleared fields (removes `|| null` coercion)
+  - Server: added cleanup logic to `update_parties` — if both name and address of a party are empty after merge, remove the party sub-object entirely (shipper, consignee, notify_party)
+- **Files Modified:**
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — EditPartiesModal sends "" instead of null
+  - `af-server/routers/shipments.py` — update_parties cleanup for empty party sub-objects
+- **Notes:** Lint passes. Server compiles.
 
