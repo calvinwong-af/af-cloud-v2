@@ -51,11 +51,11 @@ function StatusIcon({ order }: { order: ShipmentOrder }) {
     2001: { icon: <CircleCheck className="w-4 h-4" />,   color: '#2563eb' },
     2002: { icon: <BookmarkCheck className="w-4 h-4" />, color: '#ea580c' },
     3001: { icon: <Bookmark className="w-4 h-4" />,      color: '#0d9488' },
-    3002: { icon: order.order_type === 'AIR'
-              ? <Plane className="w-4 h-4" />
-              : <Ship className="w-4 h-4" />,            color: '#0284c7' },
+    3002: { icon: <Stamp className="w-4 h-4" />,         color: '#0284c7' },
     3003: { icon: <Anchor className="w-4 h-4" />,        color: '#4f46e5' },
-    4001: { icon: <Stamp className="w-4 h-4" />,         color: '#7c3aed' },
+    4001: { icon: order.order_type === 'AIR'
+              ? <Plane className="w-4 h-4" />
+              : <Ship className="w-4 h-4" />,            color: '#0369a1' },
     4002: { icon: <AlertTriangle className="w-4 h-4" />, color: '#dc2626' },
     5001: { icon: <PackageCheck className="w-4 h-4" />,  color: '#16a34a' },
     [-1]: { icon: <Ban className="w-4 h-4" />,           color: '#6b7280' },

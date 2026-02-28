@@ -22,6 +22,7 @@ import BLUpdateModal, { type ParsedBL } from '@/components/shipments/BLUpdateMod
 interface ShipmentFilesTabProps {
   shipmentId: string;
   userRole: string; // AFU | AFC_ADMIN | AFC_MANAGER | AFC_USER
+  onBLUpdated?: () => void; // called after a BL re-parse update is confirmed
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -70,7 +71,7 @@ const canToggleVisibility = (role: string) => isAFU(role);
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function ShipmentFilesTab({ shipmentId, userRole }: ShipmentFilesTabProps) {
+export default function ShipmentFilesTab({ shipmentId, userRole, onBLUpdated }: ShipmentFilesTabProps) {
   const [files, setFiles] = useState<ShipmentFile[]>([]);
   const [tags, setTags] = useState<FileTag[]>([]);
   const [loading, setLoading] = useState(true);
@@ -339,6 +340,7 @@ export default function ShipmentFilesTab({ shipmentId, userRole }: ShipmentFiles
           onSuccess={() => {
             setShowBLModal(false);
             setBlParsedData(null);
+            onBLUpdated?.();
           }}
           initialParsed={blParsedData}
           skipFileSave

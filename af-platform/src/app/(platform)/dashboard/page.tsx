@@ -65,7 +65,16 @@ export default function DashboardPage() {
       if (!ordersResult.success) throw new Error(ordersResult.error);
 
       setShipmentStats(shipmentStatsResult.data);
-      setRecentOrders(ordersResult.data.orders);
+
+      // Sort dashboard orders: active first (status 2001–4002), then completed/other
+      // Within each group, keep updated DESC (server order preserved)
+      const ACTIVE_STATUSES = new Set([2001, 3001, 3002, 4001, 4002]);
+      const sorted = [...ordersResult.data.orders].sort((a, b) => {
+        const aActive = ACTIVE_STATUSES.has(a.status) ? 0 : 1;
+        const bActive = ACTIVE_STATUSES.has(b.status) ? 0 : 1;
+        return aActive - bActive;
+      });
+      setRecentOrders(sorted);
       setAccountType(profile.account_type);
       setCompanyName(profile.company_name);
       setCompanyId(profile.company_id);
