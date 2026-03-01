@@ -64,6 +64,33 @@ AF Platform — AcceleFreight
 - **Files Modified:** None (changes reverted)
 - **Notes:** Prompt withdrawn — the inflated stats (Total=2,043) are correct. The ~2,000 V1 ShipmentOrder records are genuine historical orders. No double counting occurs because migrated_from_v1 guard in v2.35 already excludes migrated Quotation records, and the V1 ShipmentOrder query counts them once as completed.
 
+### [2026-03-01 17:00 UTC] — v2.41: Migrate AFCQ-003862 + remove diagnostic logging
+- **Status:** Completed
+- **Tasks:**
+  - Task 1: Created `af-server/scripts/migrate_003862.py` — one-time script migrating AFCQ-003862 to AF-003862. Writes Quotation, ShipmentOrderV2CountId, ShipmentWorkFlow. Idempotent. Script ran successfully: AF-003862 written with status=3001 (Booking Pending), company=AFC-0637, order_type=SEA_FCL.
+  - Task 2: Removed all diagnostic logging from `get_shipment_stats()` — v2.39 stats_active logs (3 statements) and v2.40 diag_003862 block (entity inspection).
+- **Files Modified:**
+  - `af-server/scripts/migrate_003862.py` (new)
+  - `af-server/routers/shipments.py` — removed diagnostic logging
+- **Notes:** Quotation AFCQ-003862 does not exist in Datastore (only ShipmentOrder). AF-003862 was built from ShipmentOrder fields only. Active count should now be 24.
+
+### [2026-03-01 16:00 UTC] — v2.40: Diagnostic — AF-003862 entity inspection
+- **Status:** Completed
+- **Tasks:**
+  - Added diagnostic block at start of `get_shipment_stats()` — direct Datastore fetch of `Quotation AF-003862` and `ShipmentOrder AFCQ-003862`, logging key fields (status, migrated_from_v1, trash, superseded, data_version)
+  - v2.39 active count logging retained
+- **Files Modified:**
+  - `af-server/routers/shipments.py` — diagnostic block added
+- **Notes:** Temporary logging — will be removed once data is captured.
+
+### [2026-03-01 15:00 UTC] — v2.39: Diagnostic — active count logging
+- **Status:** Completed
+- **Tasks:**
+  - Added 3 logger.info calls to `get_shipment_stats()`: V2 Quotation active entries, V1 ShipmentOrder active entries, total active count
+- **Files Modified:**
+  - `af-server/routers/shipments.py` — 3 logger.info statements
+- **Notes:** Temporary logging — will be removed once data is captured.
+
 ### [2026-03-01 14:00 UTC] — v2.38: Active badge off by 1 + Incoterm direction indicator
 - **Status:** Completed
 - **Tasks:**
