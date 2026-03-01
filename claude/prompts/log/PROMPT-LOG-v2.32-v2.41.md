@@ -31,3 +31,14 @@ AF Platform — AcceleFreight
   - `af-platform/src/app/(platform)/shipments/page.tsx` — added `migrated_from_v1` to toShipmentOrder mapping
   - `af-platform/src/components/shipments/ShipmentOrderTable.tsx` — updated V1 badge condition in ShipmentRow and ShipmentCard
 - **Notes:** Lint passes. Server compiles. V1 badge now covers un-migrated AFCQ-, migrated AF- with migrated_from_v1, and AFCQ- prefix fallback.
+
+### [2026-03-02 09:00 UTC] — Shipment List: Missing V2 Orders + AFCQ Dedup + V1 Badge
+- **Status:** Completed
+- **Tasks:**
+  - Problem 1: Replaced Datastore-level `trash=False` filter with in-memory `if entity.get("trash") is True: continue` on 4 queries: stats V2 Quotation, stats migrated SO, list V2 Quotation, list migrated SO. Fixes missing native V2 AF- records where `trash` property is None/missing.
+  - Problem 2: Created `af-server/scripts/fix_afcq_003862_superseded.py` one-time script to mark AFCQ-003862 as superseded
+  - Problem 3: V1 badge — no code change needed; resolves once Problem 1 fix surfaces migrated records with `migrated_from_v1=true`
+- **Files Modified:**
+  - `af-server/routers/shipments.py` — removed 4 Datastore-level trash filters, added 4 in-memory guards
+  - `af-server/scripts/fix_afcq_003862_superseded.py` (new)
+- **Notes:** Server compiles. Build passes. Script must be run manually against Datastore.

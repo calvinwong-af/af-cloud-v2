@@ -134,7 +134,6 @@ async def get_shipment_stats(
     # -----------------------------------------------------------------------
     v2_query = client.query(kind="Quotation")
     v2_query.add_filter(filter=PropertyFilter("data_version", "=", 2))
-    v2_query.add_filter(filter=PropertyFilter("trash", "=", False))
     if effective_company_id:
         v2_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
 
@@ -142,6 +141,8 @@ async def get_shipment_stats(
     migrated_numerics: set[str] = set()
 
     for entity in v2_query.fetch():
+        if entity.get("trash") is True:
+            continue
         s = entity.get("status", 0)
         if s in V2_OPERATIONAL_STATUSES:
             stats["active"] += 1
@@ -231,12 +232,13 @@ async def get_shipment_stats(
     # -----------------------------------------------------------------------
     migrated_query = client.query(kind="ShipmentOrder")
     migrated_query.add_filter(filter=PropertyFilter("data_version", "=", 2))
-    migrated_query.add_filter(filter=PropertyFilter("trash", "=", False))
     if effective_company_id:
         migrated_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
 
     migrated_completed_ids: list[str] = []
     for entity in migrated_query.fetch():
+        if entity.get("trash") is True:
+            continue
         s = entity.get("status", 0)
         if s in V2_OPERATIONAL_STATUSES:
             stats["active"] += 1
@@ -731,10 +733,11 @@ async def list_shipments(
     if not cursor:
         v2_query = client.query(kind="Quotation")
         v2_query.add_filter(filter=PropertyFilter("data_version", "=", 2))
-        v2_query.add_filter(filter=PropertyFilter("trash", "=", False))
         if effective_company_id:
             v2_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
         for entity in v2_query.fetch():
+            if entity.get("trash") is True:
+                continue
             sid = entity.key.name or str(entity.key.id)
             if sid.startswith(PREFIX_V2_SHIPMENT):
                 try:
@@ -754,13 +757,14 @@ async def list_shipments(
     if not cursor:  # Only on first page — migrated records included with V2
         migrated_query = client.query(kind="ShipmentOrder")
         migrated_query.add_filter(filter=PropertyFilter("data_version", "=", 2))
-        migrated_query.add_filter(filter=PropertyFilter("trash", "=", False))
         if effective_company_id:
             migrated_query.add_filter(
                 filter=PropertyFilter("company_id", "=", effective_company_id)
             )
         migrated_items: list[dict] = []
         for entity in migrated_query.fetch():
+            if entity.get("trash") is True:
+                continue
             if _migrated_tab_match(tab, entity):
                 migrated_items.append(_make_migrated_summary(entity))
 
