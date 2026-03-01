@@ -1,13 +1,10 @@
 """
 routers/shipments.py
 
-Shipment endpoints — V2 primary + V1 read-only.
+Shipment endpoints — V2 only (post-migration).
 
-Priority S1:  GET /api/v2/shipments/stats
-              Accurate counts by querying ShipmentOrder Kind directly
-              and joining with Quotation. Fixes the ~1,960 vs ~23 bug.
-
-All other endpoints are stubs — add implementations as each is needed.
+All shipments are served from Quotation Kind with data_version=2.
+V1 ShipmentOrder Kind is no longer a data source.
 """
 
 import base64
@@ -36,11 +33,6 @@ from core.constants import (
     AFC_M,
     AFC_ROLES,
     FILES_BUCKET_NAME,
-    V1_ACTIVE_MIN,
-    V1_ACTIVE_MAX,
-    V1_STATUS_BOOKING_STARTED,
-    V1_STATUS_COMPLETED,
-    V1_TO_V2_STATUS,
     STATUS_CONFIRMED,
     STATUS_COMPLETED,
     STATUS_CANCELLED,
@@ -52,7 +44,6 @@ from core.constants import (
     STATUS_ARRIVED,
     V2_OPERATIONAL_STATUSES,
     STATUS_LABELS,
-    OLD_TO_NEW_STATUS,
     PREFIX_V2_SHIPMENT,
     PREFIX_V1_SHIPMENT,
     get_status_path,
@@ -69,28 +60,7 @@ router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
-# Helper — normalise mixed V1/V2 status codes on ShipmentOrder records
-# ---------------------------------------------------------------------------
-
-_V1_NATIVE_CODES = frozenset({100, 110, 4110, 10000, -1})
-
-
-def _resolve_so_status_to_v2(raw_status: int) -> int:
-    """
-    Normalise a ShipmentOrder status field to a V2 status code.
-
-    V1 ShipmentOrders should have native V1 codes (110, 4110, 10000) but
-    write endpoints have historically stored V2 codes (3001, 5001, etc.)
-    on these records. This function handles both cases.
-    """
-    if raw_status in _V1_NATIVE_CODES:
-        return V1_TO_V2_STATUS.get(raw_status, STATUS_CONFIRMED)
-    # Already a V2 code (3001, 3002, 4001, 5001, etc.) — return as-is
-    return raw_status
-
-
-# ---------------------------------------------------------------------------
-# S1 — Shipment stats  (HIGH PRIORITY — fixes broken dashboard counts)
+# S1 — Shipment stats
 # ---------------------------------------------------------------------------
 
 @router.get("/stats")
@@ -99,16 +69,8 @@ async def get_shipment_stats(
     claims: Claims = Depends(require_auth),
 ):
     """
-    Return accurate shipment counts for the dashboard KPI cards and tab badges.
-
-    Strategy:
-      - V2 records: query Quotation Kind where data_version=2, read status directly
-      - V1 records: query ShipmentOrder Kind (the operational source of truth),
-                    map V1 status codes to V2 buckets
-
-    This fixes the bug where the Next.js layer was counting ~1,960 active
-    shipments because it read Quotation.status which includes all V1 quotations,
-    not just those that became shipments.
+    Return shipment counts for the dashboard KPI cards and tab badges.
+    All counts from V2 Quotation entities (data_version=2).
     """
     client = get_client()
 
@@ -117,7 +79,7 @@ async def get_shipment_stats(
     if claims.is_afc():
         effective_company_id = claims.company_id
     elif company_id:
-        effective_company_id = company_id  # AFU filtering by a specific company
+        effective_company_id = company_id
 
     stats = {
         "active":     0,
@@ -128,16 +90,10 @@ async def get_shipment_stats(
         "total":      0,
     }
 
-    # -----------------------------------------------------------------------
-    # V2 records — Quotation Kind, data_version=2
-    # -----------------------------------------------------------------------
     v2_query = client.query(kind="Quotation")
     v2_query.add_filter(filter=PropertyFilter("data_version", "=", 2))
     if effective_company_id:
         v2_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
-
-    # Track migrated numeric suffixes to deduplicate against V1 ShipmentOrder
-    migrated_numerics: set[str] = set()
 
     for entity in v2_query.fetch():
         if entity.get("trash") is True:
@@ -154,75 +110,6 @@ async def get_shipment_stats(
             stats["cancelled"] += 1
         elif s in (STATUS_DRAFT, STATUS_DRAFT_REVIEW):
             stats["draft"] += 1
-
-        # Build dedup set from AF- keys
-        sid = entity.key.name or str(entity.key.id)
-        if sid.startswith(PREFIX_V2_SHIPMENT):
-            try:
-                migrated_numerics.add(str(int(sid[3:])))
-            except ValueError:
-                pass
-
-    # -----------------------------------------------------------------------
-    # V1 records — ShipmentOrder Kind (operational status source of truth)
-    # Only records that reached at least booking confirmation are shipments.
-    # -----------------------------------------------------------------------
-    v1_query = client.query(kind="ShipmentOrder")
-    # status >= 110 means booking was confirmed — this is what makes it a shipment
-    v1_query.add_filter(filter=PropertyFilter("status", ">=", V1_ACTIVE_MIN))
-    if effective_company_id:
-        v1_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
-
-    # First pass: collect all V1 entities (skip superseded by migration)
-    v1_entities_list = []
-    for entity in v1_query.fetch():
-        if entity.get("data_version") == 2:
-            continue
-        if entity.get("superseded"):
-            continue
-        sid = entity.key.name or str(entity.key.id)
-        if sid.startswith(PREFIX_V1_SHIPMENT):
-            numeric = sid[5:].lstrip("0") or "0"
-            if numeric in migrated_numerics:
-                continue
-        v1_entities_list.append(entity)
-
-    # Bucket by resolved status
-    v1_completed_ids = []
-    for entity in v1_entities_list:
-        raw_status = entity.get("status", 0)
-        v2_status = _resolve_so_status_to_v2(raw_status)
-
-        if v2_status == STATUS_COMPLETED:
-            stats["completed"] += 1
-            # Check issued_invoice on ShipmentOrder first
-            issued_so = entity.get("issued_invoice")
-            if bool(issued_so):
-                pass  # already invoiced — don't add to to_invoice
-            else:
-                # May be missing on SO — queue for Quotation lookup
-                v1_completed_ids.append(entity.key.name or str(entity.key.id))
-        elif v2_status == STATUS_CANCELLED:
-            stats["cancelled"] += 1
-        elif v2_status in V2_OPERATIONAL_STATUSES:
-            stats["active"] += 1
-        elif v2_status in (STATUS_DRAFT, STATUS_DRAFT_REVIEW):
-            stats["draft"] += 1
-
-    # Batch-fetch Quotation records to resolve issued_invoice for completed V1 shipments
-    if v1_completed_ids:
-        q_keys = [client.key("Quotation", sid) for sid in v1_completed_ids]
-        q_entities = get_multi_chunked(client, q_keys)
-        q_invoice_map = {
-            (e.key.name or str(e.key.id)): e.get("issued_invoice")
-            for e in q_entities
-        }
-        for sid in v1_completed_ids:
-            issued_q = q_invoice_map.get(sid)
-            # Only count as to_invoice if Quotation exists AND issued_invoice is falsy
-            # If Quotation is missing entirely, skip — we cannot verify
-            if sid in q_invoice_map and not bool(issued_q):
-                stats["to_invoice"] += 1
 
     stats["total"] = stats["active"] + stats["completed"] + stats["cancelled"] + stats["draft"]
 
@@ -242,9 +129,7 @@ async def search_shipments(
 ):
     """
     Search shipments by partial ID, company name, or route port codes.
-
-    search_fields="id"  — match shipment ID only (quick search)
-    search_fields="all" — match ID + company name + origin/destination ports
+    V2 Quotation only (data_version=2).
     """
     client = get_client()
     q_lower = q.strip().lower()
@@ -278,72 +163,6 @@ async def search_shipments(
                 items.append(_make_v2_summary(entity))
                 seen_ids.add(sid)
 
-    # Build dedup set from V2 items already found
-    search_migrated_numerics: set[str] = set()
-    for item in items:
-        sid = item.get("shipment_id", "")
-        if sid.startswith(PREFIX_V2_SHIPMENT):
-            try:
-                search_migrated_numerics.add(str(int(sid[3:])))
-            except ValueError:
-                pass
-
-    # -------------------------------------------------------------------
-    # V1 records — ShipmentOrder Kind (status >= 100 = booking started+)
-    # -------------------------------------------------------------------
-    v1_query = client.query(kind="ShipmentOrder")
-    v1_query.add_filter(filter=PropertyFilter("status", ">=", V1_STATUS_BOOKING_STARTED))
-    if effective_company_id:
-        v1_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
-
-    v1_shipment_orders = list(v1_query.fetch())
-
-    # Batch-fetch Quotation records for display fields
-    q_keys = [
-        client.key("Quotation", e.key.name or str(e.key.id))
-        for e in v1_shipment_orders
-    ]
-    q_entities = get_multi_chunked(client, q_keys) if q_keys else []
-    q_map = {(e.key.name or str(e.key.id)): e for e in q_entities}
-
-    for so_entity in v1_shipment_orders:
-        # Skip migrated records — they have V2 structure, not V1
-        if so_entity.get("data_version") == 2:
-            continue
-        if so_entity.get("superseded"):
-            continue
-        sid = so_entity.key.name or str(so_entity.key.id)
-        if sid in seen_ids:
-            continue
-        # Dedup: skip AFCQ- records whose AF- equivalent was already found
-        if sid.startswith(PREFIX_V1_SHIPMENT):
-            numeric = sid[5:].lstrip("0") or "0"
-            if numeric in search_migrated_numerics:
-                continue
-        v1_status = so_entity.get("status", 0)
-        v2_status = V1_TO_V2_STATUS.get(v1_status, STATUS_CONFIRMED)
-        q_entity = q_map.get(sid)
-
-        if _id_matches(sid, q_lower, q_upper, q_digits):
-            items.append(_make_v1_summary(so_entity, q_entity, v2_status))
-            seen_ids.add(sid)
-        elif search_fields == "all":
-            # Check port codes
-            src = q_entity if q_entity else so_entity
-            origin = (
-                so_entity.get("origin_port_un_code", "")
-                or src.get("origin_port", "")
-                or src.get("port_of_loading", "")
-            )
-            dest = (
-                so_entity.get("destination_port_un_code", "")
-                or src.get("destination_port", "")
-                or src.get("port_of_discharge", "")
-            )
-            if (origin and q_upper in origin.upper()) or (dest and q_upper in dest.upper()):
-                items.append(_make_v1_summary(so_entity, q_entity, v2_status))
-                seen_ids.add(sid)
-
     # Also check V2 port codes if search_fields=all
     if search_fields == "all":
         for entity in v2_entities:
@@ -357,47 +176,19 @@ async def search_shipments(
                 seen_ids.add(sid)
 
     # -------------------------------------------------------------------
-    # V1 fallback — Quotation Kind with has_shipment=true
-    # Catches V1 shipments where ShipmentOrder is below threshold or missing
-    # -------------------------------------------------------------------
-    q_fallback_query = client.query(kind="Quotation")
-    q_fallback_query.add_filter(filter=PropertyFilter("has_shipment", "=", True))
-    if effective_company_id:
-        q_fallback_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
-
-    for q_entity in q_fallback_query.fetch():
-        if q_entity.get("data_version") == 2:
-            continue
-        sid = q_entity.key.name or str(q_entity.key.id)
-        if sid in seen_ids:
-            continue
-        if _id_matches(sid, q_lower, q_upper, q_digits):
-            v2_status = V1_TO_V2_STATUS.get(q_entity.get("status", 0), STATUS_CONFIRMED)
-            # Use Quotation as both so_entity and q_entity since ShipmentOrder may be missing
-            so_entity = q_map.get(sid)
-            if so_entity:
-                items.append(_make_v1_summary(so_entity, q_entity, v2_status))
-            else:
-                items.append(_make_v1_summary(q_entity, q_entity, v2_status))
-            seen_ids.add(sid)
-
-    # -------------------------------------------------------------------
     # Company name matching (search_fields=all only)
     # -------------------------------------------------------------------
     if search_fields == "all":
         all_company_ids = list({
             s["company_id"] for s in items if s.get("company_id")
         })
-        # Also collect company IDs from entities NOT yet matched
         unmatched_v2 = [e for e in v2_entities if (e.key.name or str(e.key.id)) not in seen_ids]
-        unmatched_v1 = [e for e in v1_shipment_orders if (e.key.name or str(e.key.id)) not in seen_ids]
         unmatched_company_ids = list({
-            e.get("company_id", "") for e in unmatched_v2 + unmatched_v1 if e.get("company_id")
+            e.get("company_id", "") for e in unmatched_v2 if e.get("company_id")
         })
         all_company_ids_set = set(all_company_ids) | set(unmatched_company_ids)
         names = _batch_company_names(client, list(all_company_ids_set))
 
-        # Match unmatched entities by company name
         for entity in unmatched_v2:
             sid = entity.key.name or str(entity.key.id)
             cname = names.get(entity.get("company_id", ""), "")
@@ -407,26 +198,10 @@ async def search_shipments(
                 items.append(summary)
                 seen_ids.add(sid)
 
-        for so_entity in unmatched_v1:
-            sid = so_entity.key.name or str(so_entity.key.id)
-            if sid in seen_ids:
-                continue
-            cname = names.get(so_entity.get("company_id", ""), "")
-            if cname and q_lower in cname.lower():
-                v1_status = so_entity.get("status", 0)
-                v2_status = V1_TO_V2_STATUS.get(v1_status, STATUS_CONFIRMED)
-                q_entity = q_map.get(sid)
-                summary = _make_v1_summary(so_entity, q_entity, v2_status)
-                summary["company_name"] = cname
-                items.append(summary)
-                seen_ids.add(sid)
-
-        # Fill company names for items matched by ID/port
         for s in items:
             if not s["company_name"] and s.get("company_id"):
                 s["company_name"] = names.get(s["company_id"], "")
     else:
-        # ID-only search: still batch-fill company names for display
         company_ids = list({s["company_id"] for s in items if s.get("company_id")})
         names = _batch_company_names(client, company_ids)
         for s in items:
@@ -569,36 +344,6 @@ def _make_v2_summary(entity) -> dict:
     }
 
 
-def _make_v1_summary(so_entity, q_entity, v2_status: int) -> dict:
-    """
-    Build summary dict for a V1 shipment.
-
-    so_entity:  ShipmentOrder entity (primary — has operational status + port codes + display fields)
-    q_entity:   Quotation entity (optional fallback — only used if ShipmentOrder is missing a field)
-    v2_status:  V1 status mapped to V2 status code
-    """
-    updated = (
-        so_entity.get("updated")
-        or so_entity.get("modified")
-        or so_entity.get("created")
-        or ""
-    )
-    return {
-        "shipment_id": so_entity.key.name or str(so_entity.key.id),
-        "data_version": 1,
-        "status": v2_status,
-        "order_type": so_entity.get("order_type", "") or so_entity.get("quotation_type", "") or (q_entity.get("quotation_type", "") if q_entity else ""),
-        "transaction_type": so_entity.get("transaction_type", "") or (q_entity.get("transaction_type", "") if q_entity else ""),
-        "incoterm": so_entity.get("incoterm_code", "") or so_entity.get("incoterm", "") or (q_entity.get("incoterm_code", "") if q_entity else ""),
-        "origin_port": so_entity.get("origin_port_un_code", "") or so_entity.get("origin_port", "") or so_entity.get("port_of_loading", ""),
-        "destination_port": so_entity.get("destination_port_un_code", "") or so_entity.get("destination_port", "") or so_entity.get("port_of_discharge", ""),
-        "company_id": so_entity.get("company_id", ""),
-        "company_name": "",  # batch-filled after merge
-        "cargo_ready_date": _fmt_date(so_entity.get("cargo_ready_date") or (q_entity.get("cargo_ready_date") if q_entity else None)),
-        "updated": _fmt_date(updated),
-    }
-
-
 @router.get("")
 async def list_shipments(
     tab: str = Query("active", description="active | completed | to_invoice | draft | cancelled | all"),
@@ -609,18 +354,7 @@ async def list_shipments(
 ):
     """
     List shipments with tab-based filtering.
-
-    Returns a merged list of V1 and V2 shipments normalised to a common
-    summary shape, sorted by updated descending.
-
-    Strategy:
-      - V2 records (few): fetched in full on page 1 from Quotation Kind
-        (data_version=2), filtered by tab in-memory.
-      - V1 records: query ShipmentOrder Kind directly with tab-appropriate
-        status filters. Batch-fetch corresponding Quotation records for
-        display fields. Paginated via Datastore cursor.
-      - to_invoice: fetches ALL completed V1 records (no Datastore-level
-        limit) because issued_invoice is filtered in-memory after fetch.
+    V2 Quotation only (data_version=2).
     """
     logger.info(f"[list] tab received: '{tab}' repr: {repr(tab)}")
 
@@ -637,128 +371,17 @@ async def list_shipments(
         effective_company_id = company_id
 
     items: list[dict] = []
-    v1_next_cursor: str | None = None
 
-    # -------------------------------------------------------------------
-    # V2 records — Quotation Kind, data_version=2 (few, fetch all)
-    # Only included on page 1 (no cursor). On subsequent pages the cursor
-    # drives V1 pagination only; V2 records are already displayed.
-    # -------------------------------------------------------------------
-    # Track migrated numeric suffixes to deduplicate V1 ShipmentOrder records
-    migrated_numerics: set[str] = set()
+    v2_query = client.query(kind="Quotation")
+    v2_query.add_filter(filter=PropertyFilter("data_version", "=", 2))
+    if effective_company_id:
+        v2_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
 
-    if not cursor:
-        v2_query = client.query(kind="Quotation")
-        v2_query.add_filter(filter=PropertyFilter("data_version", "=", 2))
-        if effective_company_id:
-            v2_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
-        for entity in v2_query.fetch():
-            if entity.get("trash") is True:
-                continue
-            sid = entity.key.name or str(entity.key.id)
-            if sid.startswith(PREFIX_V2_SHIPMENT):
-                try:
-                    migrated_numerics.add(str(int(sid[3:])))
-                except ValueError:
-                    pass
-            if _v2_tab_match(tab, entity):
-                items.append(_make_v2_summary(entity))
-
-    # -------------------------------------------------------------------
-    # V1 records — query ShipmentOrder Kind directly with status filters.
-    # This mirrors the stats endpoint strategy and avoids the unreliable
-    # has_shipment flag on Quotation Kind.
-    # -------------------------------------------------------------------
-
-    # draft and cancelled tabs have no V1 results
-    if tab not in ("draft", "cancelled"):
-        v1_query = client.query(kind="ShipmentOrder")
-
-        # Fetch all V1 records that have been confirmed (status >= 100).
-        # Tab filtering is done in-memory after resolving mixed V1/V2 status codes.
-        # Cannot use tight Datastore-level status filters because write endpoints
-        # have stored V2 codes (3001, 5001 etc.) on some V1 ShipmentOrder records.
-        v1_query.add_filter(filter=PropertyFilter("status", ">=", V1_STATUS_BOOKING_STARTED))
-
-        if effective_company_id:
-            v1_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
-
-        # to_invoice: fetch ALL completed V1 records because issued_invoice
-        # is filtered in-memory after fetch. Using a Datastore limit here
-        # would return only N completed records, most of which may already
-        # be invoiced — resulting in an empty page even when uninvoiced
-        # records exist further in the dataset.
-        if tab == "to_invoice":
-            v1_shipment_orders = list(v1_query.fetch())
-            v1_next_cursor = None  # no cursor pagination for to_invoice
-        else:
-            start_cursor = base64.urlsafe_b64decode(cursor) if cursor else None
-            v1_iter = v1_query.fetch(limit=limit, start_cursor=start_cursor)
-            page = next(v1_iter.pages)
-            v1_shipment_orders = list(page)
-            token = v1_iter.next_page_token
-            v1_next_cursor = base64.urlsafe_b64encode(token).decode() if token else None
-
-        if v1_shipment_orders:
-            if tab == "to_invoice":
-                # Two-pass: collect completed V1 records where SO doesn't have issued=True,
-                # then batch-fetch Quotation records to verify issued_invoice
-                completed_candidates = []
-                for so_entity in v1_shipment_orders:
-                    if so_entity.get("data_version") == 2:
-                        continue
-                    if so_entity.get("superseded"):
-                        continue
-                    sid = so_entity.key.name or str(so_entity.key.id)
-                    if sid.startswith(PREFIX_V1_SHIPMENT):
-                        numeric = sid[5:].lstrip("0") or "0"
-                        if numeric in migrated_numerics:
-                            continue
-                    raw_status = so_entity.get("status", 0)
-                    v2_status = _resolve_so_status_to_v2(raw_status)
-                    if v2_status == STATUS_CANCELLED:
-                        continue
-                    if v2_status != STATUS_COMPLETED:
-                        continue
-                    so_issued = bool(so_entity.get("issued_invoice", False))
-                    if so_issued:
-                        continue  # definitely invoiced
-                    completed_candidates.append((so_entity, v2_status))
-
-                if completed_candidates:
-                    candidate_ids = [e.key.name or str(e.key.id) for e, _ in completed_candidates]
-                    q_keys = [client.key("Quotation", sid) for sid in candidate_ids]
-                    q_entities = get_multi_chunked(client, q_keys)
-                    q_inv_map = {
-                        (e.key.name or str(e.key.id)): bool(e.get("issued_invoice", False))
-                        for e in q_entities
-                    }
-                    for so_entity, v2_status in completed_candidates:
-                        sid = so_entity.key.name or str(so_entity.key.id)
-                        # OR logic: invoiced if either SO or Quotation says so
-                        if q_inv_map.get(sid, False):
-                            continue  # Quotation says invoiced — skip
-                        items.append(_make_v1_summary(so_entity, None, v2_status))
-
-            else:
-                # All other tabs — single-pass
-                for so_entity in v1_shipment_orders:
-                    if so_entity.get("data_version") == 2:
-                        continue
-                    if so_entity.get("superseded"):
-                        continue
-                    sid = so_entity.key.name or str(so_entity.key.id)
-                    if sid.startswith(PREFIX_V1_SHIPMENT):
-                        numeric = sid[5:].lstrip("0") or "0"
-                        if numeric in migrated_numerics:
-                            continue
-                    raw_status = so_entity.get("status", 0)
-                    v2_status = _resolve_so_status_to_v2(raw_status)
-                    if tab == "active" and v2_status not in V2_OPERATIONAL_STATUSES:
-                        continue
-                    if tab == "completed" and v2_status != STATUS_COMPLETED:
-                        continue
-                    items.append(_make_v1_summary(so_entity, None, v2_status))
+    for entity in v2_query.fetch():
+        if entity.get("trash") is True:
+            continue
+        if _v2_tab_match(tab, entity):
+            items.append(_make_v2_summary(entity))
 
     # -------------------------------------------------------------------
     # Batch-fetch company names
@@ -768,7 +391,7 @@ async def list_shipments(
     for s in items:
         s["company_name"] = names.get(s.get("company_id", ""), "")
 
-    # Sort by shipment ID numeric suffix descending (e.g. AFCQ-003864 → 3864)
+    # Sort by shipment ID numeric suffix descending
     def _id_sort_key(x):
         sid = x.get("shipment_id", "")
         parts = sid.rsplit("-", 1)
@@ -782,7 +405,7 @@ async def list_shipments(
 
     return {
         "shipments": result,
-        "next_cursor": v1_next_cursor,
+        "next_cursor": None,
         "total_shown": len(result),
     }
 
@@ -912,10 +535,9 @@ async def get_shipment(
     """
     Get a single shipment by ID.
 
-    Detects V1 vs V2 by prefix:
-      AF-XXXXX   → V2 record (Quotation Kind, data_version=2)
-      AF2-XXXXX  → V2 record (legacy prefix, same as AF-)
-      AFCQ-XXXXX → V1 record (Quotation + ShipmentOrder join)
+    AF-XXXXX   → V2 record (Quotation Kind, data_version=2)
+    AF2-XXXXX  → V2 record (legacy prefix, same as AF-)
+    AFCQ-XXXXX → resolves to migrated AF- record
     """
     client = get_client()
 
@@ -927,72 +549,25 @@ async def get_shipment(
 
         data = entity_to_dict(entity)
 
-        # AFC users can only access their own company's shipments
         if claims.is_afc() and data.get("company_id") != claims.company_id:
             raise NotFoundError(f"Shipment {shipment_id} not found")
 
-        # Lazy-init workflow_tasks
         data["workflow_tasks"] = _lazy_init_tasks(client, shipment_id, data)
 
         return {"status": "OK", "data": data, "msg": "Shipment fetched"}
 
     elif shipment_id.startswith(PREFIX_V1_SHIPMENT):
-        # Post-migration: AFCQ- request may correspond to a migrated AF- record.
-        # Try AF- Quotation first; fall back to legacy ShipmentOrder path.
+        # AFCQ- request → resolve to migrated AF- record
         af_id = f"AF-{shipment_id[5:]}"
         af_entity = client.get(client.key("Quotation", af_id))
-        if af_entity and af_entity.get("data_version") == 2 and af_entity.get("migrated_from_v1"):
-            # Migrated record — return the AF- version
+        if af_entity and af_entity.get("data_version") == 2:
             data = entity_to_dict(af_entity)
             if claims.is_afc() and data.get("company_id") != claims.company_id:
                 raise NotFoundError(f"Shipment {shipment_id} not found")
             data["workflow_tasks"] = _lazy_init_tasks(client, af_id, data)
             return {"status": "OK", "data": data, "msg": "Shipment fetched (migrated)"}
 
-        # Legacy V1 path — ShipmentOrder + Quotation join
-        so_entity = client.get(client.key("ShipmentOrder", shipment_id))
-        if not so_entity:
-            raise NotFoundError(f"Shipment {shipment_id} not found")
-
-        data_version = so_entity.get("data_version") or 1
-
-        if data_version == 2:
-            # Migrated record on ShipmentOrder Kind — return directly
-            data = entity_to_dict(so_entity)
-            if claims.is_afc() and data.get("company_id") != claims.company_id:
-                raise NotFoundError(f"Shipment {shipment_id} not found")
-            return {"status": "OK", "data": data, "msg": "Shipment fetched"}
-        else:
-            # V1 legacy — join with Quotation for display fields
-            data = entity_to_dict(so_entity)
-            quotation_id = data.get("quotation_id") or data.get("shipment_order_id")
-            if quotation_id:
-                q_entity = client.get(client.key("Quotation", quotation_id))
-                if q_entity:
-                    q_data = entity_to_dict(q_entity)
-                    data["quotation"] = q_data
-                    # Merge key display fields from Quotation into top-level
-                    # so platform reads them without needing to check data.quotation
-                    for field in ("vessel_name", "voyage_number", "booking", "parties", "etd"):
-                        # Use falsy check (not just None) — V1 SO fields may be empty string ""
-                        if not data.get(field):
-                            if q_data.get(field):
-                                data[field] = q_data[field]
-            # Look up human-readable port names for tooltip display
-            origin_code = data.get("origin_port_un_code")
-            dest_code = data.get("destination_port_un_code")
-            origin_terminal = data.get("origin_terminal_id")
-            dest_terminal = data.get("destination_terminal_id")
-            origin_label = _get_port_label(client, origin_code, origin_terminal)
-            dest_label = _get_port_label(client, dest_code, dest_terminal)
-            if origin_label:
-                data["origin_port_label"] = origin_label
-            if dest_label:
-                data["destination_port_label"] = dest_label
-
-            if claims.is_afc() and data.get("company_id") != claims.company_id:
-                raise NotFoundError(f"Shipment {shipment_id} not found")
-            return {"status": "OK", "data": data, "msg": "V1 Shipment fetched"}
+        raise NotFoundError(f"Shipment {shipment_id} not found")
 
     else:
         raise NotFoundError(f"Invalid shipment ID format: {shipment_id}")
@@ -1001,26 +576,6 @@ async def get_shipment(
 # ---------------------------------------------------------------------------
 # Update shipment status  (V1 + V2, atomic status + history write)
 # ---------------------------------------------------------------------------
-
-# V1 ↔ V2 status mapping (new codes — v2.18)
-_V1_TO_V2: dict[int, int] = {
-    100:   2001,   # Created → Confirmed
-    110:   3002,   # Booking Confirmed → Booking Confirmed
-    4110:  4001,   # In Transit → Departed
-    10000: 5001,   # Completed → Completed
-}
-# V2 → V1: maps V2 codes that have exact V1 equivalents.
-_V2_TO_V1: dict[int, int] = {
-    2001:  100,    # Confirmed → Created
-    3002:  110,    # Booking Confirmed → Booking Confirmed
-    4001:  4110,   # Departed → In Transit
-    5001:  10000,  # Completed → Completed
-    -1:    -1,     # Cancelled → Cancelled
-}
-
-# Minimum V2 status code allowed for V1 reversion (pre-booking states not allowed)
-_V1_REVERT_MIN_STATUS = 2001
-
 
 class UpdateStatusRequest(BaseModel):
     status: int
@@ -1039,8 +594,6 @@ async def update_shipment_status(
 
     Incoterm-aware: determines Path A (booking) or Path B (no booking)
     and validates the requested status is the correct next step on that path.
-
-    Handles both V1 (AFCQ-) and V2 (AF- / AF2-) records.
     Appends to ShipmentWorkFlow.status_history in the same request.
     """
     logger.info(f"[status write] shipment: {shipment_id} new_status: {body.status} reverted: {body.reverted}")
@@ -1054,24 +607,8 @@ async def update_shipment_status(
     if not q_entity:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
-    # --- b. Determine V1 vs V2 (use data_version, not prefix) ---
-    data_version = q_entity.get("data_version") or 1
-    is_v1 = data_version < 2
-
-    # --- c. Resolve current V2 status ---
-    so_entity = None
-    if is_v1:
-        so_key = client.key("ShipmentOrder", shipment_id)
-        so_entity = client.get(so_key)
-        if not so_entity:
-            raise NotFoundError(f"V1 ShipmentOrder record {shipment_id} not found")
-        v1_status = so_entity.get("status", 0)
-        if v1_status == -1:
-            current_status = -1
-        else:
-            current_status = _V1_TO_V2.get(v1_status, v1_status if v1_status in _V2_TO_V1 else STATUS_CONFIRMED)
-    else:
-        current_status = q_entity.get("status", 0)
+    # --- b. Current status ---
+    current_status = q_entity.get("status", 0)
 
     # --- c2. Determine incoterm-aware status path ---
     incoterm = q_entity.get("incoterm_code") or q_entity.get("incoterm") or ""
@@ -1084,11 +621,7 @@ async def update_shipment_status(
         if current_status == STATUS_COMPLETED or current_status == STATUS_CANCELLED:
             return {"status": "ERROR", "msg": "Cannot change status of a completed or cancelled shipment"}
 
-    # --- d2. V1 reversion guard: cannot revert to pre-booking states ---
-    if body.reverted and is_v1 and new_status < _V1_REVERT_MIN_STATUS:
-        return {"status": "ERROR", "msg": "Cannot revert V1 record to pre-booking status"}
-
-    # --- d3. Path B guard: reject booking statuses for non-booking paths ---
+    # --- d2. Path B guard: reject booking statuses for non-booking paths ---
     if path == "B" and new_status in (STATUS_BOOKING_PENDING, STATUS_BOOKING_CONFIRMED):
         return {"status": "ERROR", "msg": f"Booking statuses not applicable for {incoterm} {txn_type} (Path B)"}
 
@@ -1143,15 +676,7 @@ async def update_shipment_status(
     q_entity.exclude_from_indexes = set(q_entity.exclude_from_indexes or set()) | {"status_history"}
     client.put(q_entity)
 
-    # --- h. V1: also write to ShipmentOrder (only for genuinely un-migrated records) ---
-    if is_v1 and so_entity and (so_entity.get("data_version") or 1) < 2:
-        v1_new_status = _V2_TO_V1.get(new_status, new_status)
-        so_entity["status"] = v1_new_status
-        so_entity["last_status_updated"] = now
-        so_entity["updated"] = now
-        client.put(so_entity)
-
-    # --- i. Append to ShipmentWorkFlow.status_history ---
+    # --- h. Append to ShipmentWorkFlow.status_history ---
     wf_key = client.key("ShipmentWorkFlow", shipment_id)
     wf_entity = client.get(wf_key)
     if wf_entity:
@@ -1218,10 +743,6 @@ async def update_exception_flag(
     # Read the shipment record
     q_key = client.key("Quotation", shipment_id)
     q_entity = client.get(q_key)
-    if not q_entity:
-        # Try ShipmentOrder for migrated V1
-        q_key = client.key("ShipmentOrder", shipment_id)
-        q_entity = client.get(q_key)
     if not q_entity:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
@@ -1302,23 +823,9 @@ async def assign_company(
     if not q_entity:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
-    is_v1 = (q_entity.get("data_version") or 1) < 2
-
     q_entity["company_id"] = body.company_id
     q_entity["updated"] = now
-
-    if is_v1:
-        # V1 — also update ShipmentOrder to keep in sync
-        so_entity = client.get(client.key("ShipmentOrder", shipment_id))
-        entities_to_put = [q_entity]
-        if so_entity and (so_entity.get("data_version") or 1) < 2:
-            so_entity["company_id"] = body.company_id
-            so_entity["updated"] = now
-            entities_to_put.append(so_entity)
-        client.put_multi(entities_to_put)
-    else:
-        # V2 — Quotation only
-        client.put(q_entity)
+    client.put(q_entity)
 
     logger.info("Reassigned %s to company %s by %s", shipment_id, body.company_id, claims.uid)
 
@@ -1943,9 +1450,6 @@ async def get_shipment_tasks(
     # Fetch shipment data for AFC company check and lazy init
     q_entity = client.get(client.key("Quotation", shipment_id))
     if not q_entity:
-        # Try ShipmentOrder for V1
-        q_entity = client.get(client.key("ShipmentOrder", shipment_id))
-    if not q_entity:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
     shipment_data = entity_to_dict(q_entity)
@@ -2484,12 +1988,6 @@ async def update_from_bl(
     if q_entity.get("trash"):
         raise HTTPException(status_code=410, detail=f"Shipment {shipment_id} has been deleted")
 
-    # V1 detection (use data_version, not prefix)
-    is_v1 = (q_entity.get("data_version") or 1) < 2
-    so_entity = None
-    if is_v1:
-        so_entity = client.get(client.key("ShipmentOrder", shipment_id))
-
     # Merge booking fields (don't replace whole dict)
     booking = q_entity.get("booking") or {}
     if not isinstance(booking, dict):
@@ -2610,31 +2108,12 @@ async def update_from_bl(
     if waybill_number:
         _maybe_unblock_export_clearance(client, shipment_id, claims.uid)
 
-    logger.info("[bl_update] Writing to Quotation %s, is_v1=%s", shipment_id, is_v1)
+    logger.info("[bl_update] Writing to Quotation %s", shipment_id)
     try:
         client.put(q_entity)
     except Exception as e:
         logger.error("[bl_update] Failed to write Quotation %s: %s", shipment_id, str(e))
         raise HTTPException(status_code=500, detail=f"Failed to save shipment: {str(e)}")
-
-    # For V1, also write flat fields to ShipmentOrder (only genuinely un-migrated)
-    if is_v1 and so_entity and (so_entity.get("data_version") or 1) < 2:
-        so_changed = False
-        if waybill_number:
-            so_entity["booking_reference"] = waybill_number
-            so_changed = True
-        if vessel_name is not None:
-            so_entity["vessel_name"] = vessel_name
-            so_changed = True
-        if voyage_number is not None:
-            so_entity["voyage_number"] = voyage_number
-            so_changed = True
-        if so_changed:
-            so_entity["updated"] = now
-            try:
-                client.put(so_entity)
-            except Exception as e:
-                logger.error("[bl_update] Failed to write ShipmentOrder %s: %s", shipment_id, str(e))
 
     # Log to AFSystemLogs
     _log_system_action(client, "BL_UPDATED", shipment_id, claims.uid, claims.email)
@@ -2769,18 +2248,6 @@ async def update_parties(
 
     client.put(q_entity)
 
-    # V1: also write to ShipmentOrder if genuinely un-migrated
-    is_v1 = (q_entity.get("data_version") or 1) < 2
-    if is_v1:
-        so_entity = client.get(client.key("ShipmentOrder", shipment_id))
-        if so_entity and (so_entity.get("data_version") or 1) < 2:
-            so_entity["parties"] = parties
-            so_entity["updated"] = now
-            try:
-                client.put(so_entity)
-            except Exception as e:
-                logger.error("[update_parties] Failed to write ShipmentOrder %s: %s", shipment_id, str(e))
-
     _log_system_action(client, "PARTIES_UPDATED", shipment_id, claims.uid, claims.email)
 
     return {
@@ -2825,41 +2292,6 @@ def _maybe_unblock_export_clearance(client, shipment_id: str, user_id: str):
         wf_entity.exclude_from_indexes = set(wf_entity.exclude_from_indexes or set()) | {"workflow_tasks"}
         client.put(wf_entity)
         logger.info("EXPORT_CLEARANCE unblocked for %s", shipment_id)
-
-
-def _get_port_label(client, un_code: str | None, terminal_id: str | None = None) -> str | None:
-    """
-    Look up a port's human-readable label from the Port Kind.
-    Returns "<name>, <country>" if found, or None if not found / un_code is None.
-    If terminal_id is provided, looks up the terminal name from the port's terminals array
-    and returns "<name> (<terminal_name>), <country>".
-    Port Kind uses un_code as the entity key.
-    """
-    if not un_code:
-        return None
-    try:
-        entity = client.get(client.key("Port", un_code))
-        if entity:
-            name = entity.get("name")
-            country = entity.get("country")
-            # Check for terminal-specific label
-            if terminal_id:
-                terminals = entity.get("terminals", [])
-                for t in terminals:
-                    if t.get("terminal_id") == terminal_id:
-                        terminal_name = t.get("name")
-                        if terminal_name and name and country:
-                            return f"{name} ({terminal_name}), {country}"
-                        elif terminal_name and name:
-                            return f"{name} ({terminal_name})"
-                        break
-            if name and country:
-                return f"{name}, {country}"
-            elif name:
-                return name
-    except Exception:
-        pass
-    return None
 
 
 def _log_system_action(client, action: str, entity_id: str, uid: str, email: str):

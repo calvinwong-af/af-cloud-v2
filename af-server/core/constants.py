@@ -66,11 +66,6 @@ ALL_ORDER_TYPES = [
     ORDER_TYPE_GROUND,
 ]
 
-# V1 quotation_type values — used when reading V1 records
-V1_TYPE_FCL = "FCL"
-V1_TYPE_LCL = "LCL"
-V1_TYPE_AIR = "AIR"
-
 # ---------------------------------------------------------------------------
 # Transaction types
 # ---------------------------------------------------------------------------
@@ -161,22 +156,6 @@ V1_TO_V2_STATUS = {
     V1_STATUS_COMPLETED:         STATUS_COMPLETED,
 }
 
-# V1 records are "active" when status >= 110 and < 10000  # DEPRECATED post-migration
-V1_ACTIVE_MIN = V1_STATUS_BOOKING_CONFIRMED   # DEPRECATED post-migration
-V1_ACTIVE_MAX = V1_STATUS_COMPLETED           # DEPRECATED post-migration
-
-# ---------------------------------------------------------------------------
-# V1 Quotation status codes  # DEPRECATED post-migration
-# (Quotation Kind, prefix AFCQ-)
-# Used only for reading V1 records. Can be deleted in post-migration cleanup.
-# ---------------------------------------------------------------------------
-V1_Q_EXPIRED   = -1      # DEPRECATED post-migration
-V1_Q_DRAFT     = 1001    # DEPRECATED post-migration
-V1_Q_REQUEST   = 1002    # DEPRECATED post-migration
-V1_Q_PROPOSED  = 2001    # DEPRECATED post-migration
-V1_Q_CONFIRMED = 3001    # DEPRECATED post-migration
-V1_Q_ACTIVE    = 4001    # DEPRECATED post-migration
-V1_Q_COMPLETED = 5001    # DEPRECATED post-migration
 
 # ---------------------------------------------------------------------------
 # CommercialQuotation status  (V2 only)

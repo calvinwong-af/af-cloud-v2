@@ -475,6 +475,8 @@ def main():
     skipped_already = len(afcq_ids) - len(ids_to_migrate)
     print(f"  Already migrated (skipped): {skipped_already}")
     print(f"  To migrate: {len(ids_to_migrate)}")
+    # Note: records without a ShipmentOrder will be skipped in Step 3
+    print(f"  (Records without ShipmentOrder will be skipped — unconfirmed quotations)")
 
     if not ids_to_migrate:
         print("\nNo records to migrate.")
@@ -498,12 +500,19 @@ def main():
     status_counts: dict[int, int] = defaultdict(int)
     active_orders: list[tuple[str, str, int]] = []  # (afcq_id, af_id, status)
     assembly_count = 0
+    skipped_no_so = 0
 
     for afcq_id in ids_to_migrate:
         af_id = _afcq_to_af(afcq_id)
         quotation = quotation_lookup[afcq_id]
         q_freight = freight_lookup.get(afcq_id)
         shipment_order = so_lookup.get(afcq_id)
+
+        # Skip unconfirmed orphan quotations (no ShipmentOrder)
+        if not shipment_order:
+            skipped_no_so += 1
+            log.debug("Skipping %s — no ShipmentOrder (unconfirmed quotation)", afcq_id)
+            continue
 
         # Inline issued_invoice resolution (Step 2 from prompt)
         issued_so = bool(shipment_order.get("issued_invoice", False)) if shipment_order else False
@@ -533,7 +542,7 @@ def main():
             errors.append((afcq_id, str(e)))
             log.error("Failed to assemble %s: %s", afcq_id, e)
 
-    print(f"  Assembled: {assembly_count}, Errors: {len(errors)}")
+    print(f"  Assembled: {assembly_count}, Skipped (no ShipmentOrder): {skipped_no_so}, Errors: {len(errors)}")
 
     # ===================================================================
     # Step 4 — Re-key ShipmentWorkFlow

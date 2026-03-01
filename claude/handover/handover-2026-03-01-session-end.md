@@ -1,83 +1,91 @@
 # Handover — 01 March 2026 (Session End)
 
 ## Session Summary
-v2.38 through v2.41. Resolved active badge discrepancy (LV-02) and added incoterm direction indicators. One minor open issue carried forward.
+v2.42 through v2.44. Dashboard fixed to show active-only shipments. 003862 workaround investigated, correctly identified as a cancelled order, and fully reverted from Datastore. Mobile tests reviewed and deferred to a dedicated improvement pass.
 
 ---
 
 ## Current System State
 
-### Stats (verified snapshot — v2.41)
+### Stats (verified snapshot — v2.44)
 | Metric | Value |
 |---|---|
-| Total Orders | 2,044 |
-| Active | 24 |
+| Total Orders | 2,043 |
+| Active | 23 |
 | Completed | 2,019 |
 | Draft | 1 |
 | To Invoice | 8 |
 | Cancelled | 0 |
 
 ### Active tab — visible records (top of list)
-AF-003867, AF-003866 (native V2, no badge), AF-003864, AF-003863, AF-003862, AF-003861... (migrated, V1 badge)
+AF-003867, AF-003866 (native V2, no badge), AF-003864, AF-003863, AF-003861, AF-003860... (migrated, V1 badge)
+AF-003862 is correctly absent — it is a cancelled order, superseded=True.
 
 ---
 
 ## What Was Done This Session
 
-### v2.38 — Incoterm direction indicator + stats logic fix
-- `IncotermBadge` updated to render `↑` (EXPORT) / `↓` (IMPORT) inside the pill with muted divider
-- `V2_ACTIVE_STATUSES` → `V2_OPERATIONAL_STATUSES` in stats and list V1 loop (correct, but wasn't the cause of the 23 discrepancy)
-- **Result:** Direction arrows working ✅. Active count unchanged at 23 (root cause was data, not code).
+### v2.43 — Dashboard active-only shipments
+- `fetchDashboardShipmentsAction()` added to actions layer — calls `GET /api/v2/shipments?tab=active&limit=24`
+- Dashboard page updated to use active-only fetch, section renamed "Active Shipments"
+- Completed historical records (AF-000001 etc.) no longer appear on dashboard
+- **Result:** Dashboard shows only 23 active shipments in correct descending order ✅
 
-### v2.39 + v2.40 — Diagnostic logging
-- Added `[stats_active]` logging to reveal exactly which records were counted
-- Added `[diag_003862]` block to inspect AF-003862 and AFCQ-003862 entities directly
-- **Finding:** AF-003862 Quotation entity does not exist. AFCQ-003862 ShipmentOrder exists with status=3001 (Booking Pending), superseded=True. Record was completely invisible across all tabs.
+### v2.44 — Revert 003862 migration workaround
+- AF-003862 was incorrectly migrated in v2.41 based on incomplete information
+- AFCQ-003862 / AF-003862 is a cancelled order legitimately replaced by AF-003867
+- `revert_003862_migration.py` created and run — deleted `Quotation AF-003862`, `ShipmentOrderV2CountId AF-003862`, `ShipmentWorkFlow AF-003862`
+- `ShipmentOrder AFCQ-003862` superseded=True preserved (correct original state)
+- IN series and SU series retired as NA in test list
+- **Result:** Total=2,043, Active=23 ✅. System state clean.
 
-### v2.41 — Migrate 003862 + remove diagnostic logging
-- Created `af-server/scripts/migrate_003862.py` — single-record migration that builds AF-003862 Quotation from AFCQ-003862 ShipmentOrder data
-- Removed all diagnostic logging (v2.39 + v2.40 additions)
-- **Result:** Active=24 ✅, Total=2,044 ✅, AF-003862 visible in list with V1 badge ✅
+### Mobile snapshot reviewed
+- V1 badge confirmed working on mobile (GS-11 YES)
+- MB series created in test list — all mobile tests deferred pending dedicated UX improvement pass
+- SSL cert issue flagged on pv2.accelefreight.com (MB-13)
 
 ---
 
-## Open Issue — Next Session Priority
+## Key Decision — 003862
+AFCQ-003862 was a real order that was cancelled and replaced by AF-003867 (same company AFC-0637, MB Automation). The active count of 23 was always correct. The v2.39–v2.41 diagnostic work and migration script were based on the assumption that 003862 was a missing active order — this was wrong. All workaround data has been removed. `migrate_003862.py` and `fix_afcq_003862_superseded.py` remain in scripts/ as historical reference but should not be re-run.
 
-### IN-01: AF-003862 incoterm column shows `—`
-- **Cause:** `migrate_003862.py` built the Quotation entity from `ShipmentOrder AFCQ-003862` fields only. The ShipmentOrder does not have `incoterm_code`. The incoterm lives on `Quotation AFCQ-003862` — but that entity doesn't exist in Datastore (only the ShipmentOrder does for this record).
-- **Fix approach:** Either:
-  1. Patch AF-003862 Quotation directly in Datastore with the correct incoterm (need to check what it should be — look at the shipment context, MB Automation AFC-0637)
-  2. Update `migrate_003862.py` to also check Quotation AFCQ-003862 as a fallback — but since it doesn't exist, option 1 is more direct
-  3. Write a small targeted patch script `fix_af_003862_incoterm.py` that sets `incoterm_code` on the existing AF-003862 Quotation
+---
 
-**Recommended:** Check what incoterm 003862 should have (MB Automation, Sea FCL, Booking Pending) then write a one-line patch script. Likely CNF or FOB based on the company pattern.
+## Prompt Log
+Current log file: `claude/prompts/log/PROMPT-LOG-v2.32-v2.41.md`
+**Note:** v2.42–v2.44 entries need to be appended to a new log file: `claude/prompts/log/PROMPT-LOG-v2.42-v2.51.md`
+Last completed version: v2.44
+Next version: v2.45
 
 ---
 
 ## Test List
-Version 2.13 — see `claude/tests/AF-Test-List.md`
+Version 2.16 — see `claude/tests/AF-Test-List.md`
 
-Key open tests:
-- **IN-01:** AF-003862 incoterm missing (NO — next session priority)
-- **IN-02:** AF-003862 detail page full field check (PENDING — blocked by IN-01)
-- **GS-11:** Mobile V1 badge confirmation (PENDING)
-- **SU-01/02/03/04:** 003862 superseded dedup verification (PENDING)
+### Open / Actionable
+| Item | Status | Priority |
+|---|---|---|
+| MI series (full V1→V2 migration, ~3,851 records) | PENDING | High — removes dual-path complexity |
+| PT series (MYPKG_N port terminal migration) | PENDING | Medium — scripts ready, not yet run |
+| LV-03 | PENDING | Low — test trashed records excluded (as encountered) |
+| LV-05/06 | PENDING | Low — verify all tabs load without error |
+
+### Deferred (intentional)
+| Item | Reason |
+|---|---|
+| MB series (all mobile tests) | Awaiting dedicated mobile UX improvement pass |
+| DT series (most) | Test as encountered during normal use |
+| VD-03/06/07 | Minor edge cases, test as encountered |
+| PP-06 | ETA sync requires server-side work, deferred to V2 focus |
 
 ---
 
 ## Files Modified This Session
 | File | Change |
 |---|---|
-| `af-server/routers/shipments.py` | V2_ACTIVE → V2_OPERATIONAL in stats+list; diagnostic logging added then removed |
-| `af-platform/src/components/shipments/ShipmentOrderTable.tsx` | IncotermBadge direction arrows |
-| `af-server/scripts/migrate_003862.py` | New — single-record migration script |
-| `claude/prompts/log/PROMPT-LOG-v2.32-v2.41.md` | v2.38–v2.41 entries added |
-| `claude/tests/AF-Test-List.md` | v2.13 — LV-02 closed YES, IN series added |
-| `claude/handover/` | This file |
-
----
-
-## Prompt Log
-Current log file: `claude/prompts/log/PROMPT-LOG-v2.32-v2.41.md`
-Last entry: v2.41
-Next version: v2.42
+| `af-platform/src/app/actions/shipments.ts` | Added `fetchDashboardShipmentsAction()` |
+| `af-platform/src/app/(platform)/dashboard/page.tsx` | Active-only shipments, renamed section |
+| `af-server/scripts/revert_003862_migration.py` | New — reverts AF-003862 workaround data |
+| `claude/tests/AF-Test-List.md` | v2.16 — GS-11 YES, MB series added, IN/SU retired |
+| `claude/prompts/PROMPT-CURRENT.md` | Cleared after v2.44 execution |
+| `claude/handover/handover-2026-03-01-session-end.md` | This file (updated) |

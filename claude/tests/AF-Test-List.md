@@ -1,10 +1,13 @@
 # AF Platform — Test List
-**Version:** 2.13
+**Version:** 2.16
 **Last Updated:** 01 March 2026
 
 ## Version History
 | Version | Date | Changes |
 |---|---|---|
+| 2.16 | 01 Mar 2026 | GS-11 confirmed YES from mobile snapshot. MB series added — all mobile tests deferred pending mobile UX improvement pass. |
+| 2.15 | 01 Mar 2026 | v2.44 confirmed: Active=23, Total=2043. AF-003862 absent from list. All 003862 workaround data removed from Datastore. |
+| 2.14 | 01 Mar 2026 | IN and SU series retired (NA) — 003862 was a cancelled order, never should have been active. migrate_003862.py was a mistake; revert script written (v2.44). LV-02 notes corrected. Active count correct at 23. |
 | 1.0 | 28 Feb 2026 | Initial test list |
 | 1.1 | 28 Feb 2026 | Added DT series, TS series |
 | 1.2 | 28 Feb 2026 | Added TV series; TS-02, DT-10, TV-01-04 confirmed |
@@ -171,7 +174,7 @@
 | GS-08 | V1 badge shows on un-migrated AFCQ- records in list | NA | No un-migrated AFCQ- records remain in system |
 | GS-09 | V1 badge shows on migrated AF- records (migrated_from_v1=true) in list | YES | v2.37 confirmed — AF-003864, AF-003863, AF-003861, AF-003860 all show V1 badge in snapshot |
 | GS-10 | V1 badge NOT shown on native V2 AF- records (e.g. AF-003867) | YES | Confirmed 01 Mar 2026 — all native AF- records in list show no badge |
-| GS-11 | V1 badge visible on mobile card view | PENDING | GS-09 resolved — needs mobile visual confirmation |
+| GS-11 | V1 badge visible on mobile card view | YES | Confirmed 01 Mar 2026 — AF-003864, AF-003863, AF-003861 all show V1 badge on mobile |
 
 ---
 
@@ -281,7 +284,7 @@
 | # | Test | Status | Notes |
 |---|---|---|---|
 | LV-01 | Native V2 AF- records (e.g. AF-003864, AF-003863, AF-003861) appear in Active tab | YES | Confirmed 01 Mar 2026 |
-| LV-02 | Active tab count matches stats badge | YES | v2.41: Active=24 confirmed. Root cause: AF-003862 Quotation missing from Datastore (migration gap). Fixed by migrate_003862.py script. |
+| LV-02 | Active tab count matches stats badge | YES | Active=23 confirmed v2.44. Total=2,043. AF-003862 absent. Revert clean. |
 | LV-03 | Explicitly trashed records (trash=true) still excluded from list | PENDING | Functional regression — test as encountered |
 | LV-04 | Stats counts unchanged after fix (Active=22, To Invoice=8) | YES | Confirmed 01 Mar 2026 — Active=22, TI=8, Completed=2021 |
 | LV-05 | Migrated AF- records appear in list with migrated_from_v1=true | PENDING | AF- records visible — V1 badge on migrated ones not yet confirmed |
@@ -289,18 +292,40 @@
 
 ---
 
-## 003862 Incoterm Fix (IN series)
+## 003862 Incoterm Fix (IN series) — RETIRED
 | # | Test | Status | Notes |
 |---|---|---|---|
-| IN-01 | AF-003862 incoterm column shows correct value (not —) | NO | migrate_003862.py built entity from ShipmentOrder only — incoterm_code not pulled from AFCQ-003862 Quotation. Needs targeted fix. |
-| IN-02 | AF-003862 detail page loads correctly with all fields | PENDING | Blocked by IN-01 |
+| IN-01 | AF-003862 incoterm column shows correct value (not —) | NA | 003862 is a cancelled order. AF-003862 entity removed by revert script (v2.44). Non-issue. |
+| IN-02 | AF-003862 detail page loads correctly with all fields | NA | Non-issue — see IN-01. |
 
 ---
 
-## AFCQ Superseded Dedup (SU series)
+## AFCQ Superseded Dedup (SU series) — RETIRED
 | # | Test | Status | Notes |
 |---|---|---|---|
-| SU-01 | AFCQ-003862 does NOT appear in shipment list | PENDING | Script reported already-superseded on run. Needs list verification. |
-| SU-02 | AF-003862 DOES appear in shipment list | PENDING | Cannot confirm until SU-01 resolved |
-| SU-03 | AF-003862 shows V1 badge | PENDING | v2.34 — migrated_from_v1=true |
-| SU-04 | Navigating to /shipments/AFCQ-003862 redirects to AF-003862 detail | PENDING | Existing server redirect logic |
+| SU-01 | AFCQ-003862 does NOT appear in shipment list | YES | Confirmed v2.44 — 003862 absent from Active tab. superseded=True preserved. |
+| SU-02 | AF-003862 DOES appear in shipment list | NA | AF-003862 entity removed by revert script (v2.44). Correctly absent. |
+| SU-03 | AF-003862 shows V1 badge | NA | Non-issue — entity removed. |
+| SU-04 | Navigating to /shipments/AFCQ-003862 redirects to AF-003862 detail | NA | AF-003862 removed. AFCQ-003862 invisible — correct. |
+
+---
+
+## Mobile (MB series) — DEFERRED
+> All mobile tests are deferred pending a dedicated mobile UX improvement pass.
+> Do not test incrementally — test after improvements are complete.
+
+| # | Test | Status | Notes |
+|---|---|---|---|
+| MB-01 | Shipment list renders correctly on mobile | DEFERRED | Cards functional, layout needs UX work |
+| MB-02 | Incoterm shown on mobile shipment card | DEFERRED | Currently absent from card — needs design decision |
+| MB-03 | Cargo ready date shown on mobile shipment card | DEFERRED | Currently absent from card |
+| MB-04 | Status pill renders correctly on mobile (all statuses) | DEFERRED | Booking Pending + Booking Confirmed confirmed functional from snapshot |
+| MB-05 | V1 badge renders on mobile card | YES | Confirmed 01 Mar 2026 snapshot — AF-003864/003863/003861 |
+| MB-06 | Order type (Air Freight / Sea FCL / Sea LCL) shown on mobile card | DEFERRED | Functional from snapshot, layout review pending |
+| MB-07 | Shipment detail page renders correctly on mobile | DEFERRED | Not yet tested |
+| MB-08 | Tasks tab usable on mobile | DEFERRED | Not yet tested |
+| MB-09 | BL update modal usable on mobile | DEFERRED | Not yet tested |
+| MB-10 | Dashboard active shipments list renders correctly on mobile | DEFERRED | Not yet tested |
+| MB-11 | Sidebar / hamburger menu opens and closes correctly on mobile | DEFERRED | Visible in snapshot — not fully tested |
+| MB-12 | Quick search usable on mobile | DEFERRED | Not yet tested |
+| MB-13 | SSL certificate valid on all platform domains (mobile + desktop) | DEFERRED | Red lock seen on pv2.accelefreight.com in snapshot — check cert status |
