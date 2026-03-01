@@ -1,5 +1,19 @@
 # Prompt Completion Log — v2.53–v2.62
 
+### [2026-03-02 16:00 UTC] — v2.54: BLUploadTab — Add shipper, consignee address, and notify party fields
+- **Status:** Completed
+- **Tasks:**
+  - TASK 1: Added shipperName, shipperAddress, consigneeAddress, notifyPartyName to BLFormState + defaults
+  - TASK 2: Pre-fill new fields from parsed BL data in handleFile()
+  - TASK 3: Added Shipper section, Consignee Address textarea, conditional Notify Party section to preview UI
+  - TASK 4: Updated CreateShipmentModal to read party fields from blFormState instead of raw parsed
+  - TASK 5: Updated AF-Test-List.md to v2.27 — BU series (7 tests)
+- **Files Modified:**
+  - `af-platform/src/components/shipments/BLUploadTab.tsx` — 4 new form fields + 3 new UI sections
+  - `af-platform/src/components/shipments/CreateShipmentModal.tsx` — party fields from blFormState
+  - `claude/tests/AF-Test-List.md` — v2.27
+- **Notes:** Notify Party section conditionally shown only when name is non-empty. Section order matches prompt spec.
+
 ### [2026-03-02 15:00 UTC] — v2.53: DS-01 + DS-02: Migrate createShipmentOrder and deleteShipmentOrder to af-server
 - **Status:** Completed
 - **Tasks:**

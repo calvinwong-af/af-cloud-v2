@@ -84,6 +84,10 @@ export interface BLFormState {
   vesselName: string;
   voyageNumber: string;
   consigneeName: string;
+  shipperName: string;
+  shipperAddress: string;
+  consigneeAddress: string;
+  notifyPartyName: string;
   cargoDescription: string;
   cargoWeight: string;
   customerReference: string;
@@ -105,6 +109,10 @@ export function getDefaultBLFormState(): BLFormState {
     vesselName: '',
     voyageNumber: '',
     consigneeName: '',
+    shipperName: '',
+    shipperAddress: '',
+    consigneeAddress: '',
+    notifyPartyName: '',
     cargoDescription: '',
     cargoWeight: '',
     customerReference: '',
@@ -183,6 +191,10 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
         vesselName: data.parsed.vessel_name ?? '',
         voyageNumber: data.parsed.voyage_number ?? '',
         consigneeName: data.parsed.consignee_name ?? '',
+        shipperName: data.parsed.shipper_name ?? '',
+        shipperAddress: data.parsed.shipper_address ?? '',
+        consigneeAddress: data.parsed.consignee_address ?? '',
+        notifyPartyName: data.parsed.notify_party_name ?? '',
         cargoDescription: data.parsed.cargo_description ?? '',
         cargoWeight: data.parsed.total_weight_kg != null ? String(data.parsed.total_weight_kg) : '',
         customerReference: '',
@@ -431,6 +443,29 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
         </div>
       </div>
 
+      {/* Shipper */}
+      <div>
+        <SectionLabel>Shipper</SectionLabel>
+        <div>
+          <FieldLabel>Name</FieldLabel>
+          <input
+            type="text"
+            value={formState.shipperName}
+            onChange={e => update({ shipperName: e.target.value })}
+            className={`${inputBase} ${formState.shipperName ? prefilled : ''}`}
+          />
+        </div>
+        <div className="mt-2">
+          <FieldLabel>Address</FieldLabel>
+          <textarea
+            value={formState.shipperAddress}
+            onChange={e => update({ shipperAddress: e.target.value })}
+            rows={2}
+            className={`${inputBase} resize-none ${formState.shipperAddress ? prefilled : ''}`}
+          />
+        </div>
+      </div>
+
       {/* Customer (Consignee) */}
       <div>
         <SectionLabel>Customer (Consignee)</SectionLabel>
@@ -441,6 +476,15 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
             value={formState.consigneeName}
             onChange={e => update({ consigneeName: e.target.value })}
             className={`${inputBase} ${formState.consigneeName ? prefilled : ''}`}
+          />
+        </div>
+        <div className="mt-2">
+          <FieldLabel>Address</FieldLabel>
+          <textarea
+            value={formState.consigneeAddress}
+            onChange={e => update({ consigneeAddress: e.target.value })}
+            rows={2}
+            className={`${inputBase} resize-none ${formState.consigneeAddress ? prefilled : ''}`}
           />
         </div>
 
@@ -497,6 +541,22 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
           </div>
         )}
       </div>
+
+      {/* Notify Party (conditional) */}
+      {(formState.notifyPartyName || parsedResult?.parsed.notify_party_name) && (
+        <div>
+          <SectionLabel>Notify Party</SectionLabel>
+          <div>
+            <FieldLabel>Name</FieldLabel>
+            <input
+              type="text"
+              value={formState.notifyPartyName}
+              onChange={e => update({ notifyPartyName: e.target.value })}
+              className={`${inputBase} ${formState.notifyPartyName ? prefilled : ''}`}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Cargo */}
       <div>

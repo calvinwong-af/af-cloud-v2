@@ -1,10 +1,11 @@
 # AF Platform — Test List
-**Version:** 2.26
+**Version:** 2.27
 **Last Updated:** 02 March 2026
 
 ## Version History
 | Version | Date | Changes |
 |---|---|---|
+| 2.27 | 02 Mar 2026 | BU series added (7 tests) — BL Upload Tab party fields (shipper, consignee address, notify party). |
 | 2.26 | 02 Mar 2026 | DS-01/02 YES — create+delete migrated to af-server. MC series (5 tests) + SD series (5 tests) added. |
 | 2.25 | 02 Mar 2026 | BUG1-01/02 and BUG2-01 confirmed YES from snapshot. BUG2-02 deferred to mobile pass. |
 | 2.24 | 02 Mar 2026 | BUG1 series (invoice icon on All tab/search) + BUG2 series (4002 Arrived icon fix). |
@@ -416,6 +417,19 @@
 | SD-03 | Hard delete — returns 403 in production environment | PENDING | |
 | SD-04 | Hard delete — removes rows from shipments, shipment_workflows, shipment_files in dev | PENDING | |
 | SD-05 | deleteShipmentOrderAction() no longer imports from lib/shipments-write deleteShipmentOrder | PENDING | |
+
+---
+
+## BL Upload Tab — Party Fields (BU series)
+| # | Test | Status | Notes |
+|---|---|---|---|
+| BU-01 | Upload BL on create — shipper name pre-filled from parsed BL | PENDING | |
+| BU-02 | Upload BL on create — shipper address pre-filled from parsed BL | PENDING | |
+| BU-03 | Upload BL on create — consignee address pre-filled from parsed BL | PENDING | |
+| BU-04 | Upload BL on create — notify party shown when present in parsed BL | PENDING | |
+| BU-05 | Upload BL on create — shipper/consignee/notify party editable before confirm | PENDING | |
+| BU-06 | Upload BL on create — edited shipper name saved to created shipment parties | PENDING | |
+| BU-07 | Upload BL on create — notify party section hidden when not in parsed BL | PENDING | |
 
 ---
 
