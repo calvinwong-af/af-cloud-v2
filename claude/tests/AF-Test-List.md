@@ -35,6 +35,7 @@
 | 2.11 | 01 Mar 2026 | v2.35 context: AF-003866/003867 visible in Active tab. Active badge=23 (off by 1 — open issue). GS-09 still NO (V1 badge not confirmed on migrated AF- records). SU-01 still NO (003862 superseded script not run). |
 | 2.12 | 01 Mar 2026 | v2.37 snapshot: GS-09 YES — V1 badge confirmed on AF-003864/003863/003861/003860. GS-11 PENDING. Active badge still 23 (off by 1, open issue). Stats otherwise stable (Total=2043, Completed=2019, Draft=1, TI=8, Cancelled=0). |
 | 2.13 | 01 Mar 2026 | v2.41 snapshot: LV-02 YES — Active=24, Total=2044. AF-003862 visible in list with V1 badge. IN series added for 003862 incoterm missing. |
+| 2.14 | 02 Mar 2026 | v2.34 session: PG-08/PG-09 confirmed. Sort fix applied — list now sorts by countid DESC. Three 500 fixes verified locally. |
 
 ## How to Use
 - YES = Confirmed working
@@ -213,8 +214,8 @@
 | PG-05 | Active tab loads in under 150ms | YES | 128ms–357ms observed in production Network tab |
 | PG-06 | Completed tab loads 25 records with total count in response | PENDING | |
 | PG-07 | Search returns results in under 100ms | PENDING | |
-| PG-08 | AF-003867 detail page loads correctly | PENDING | |
-| PG-09 | AFCQ-003829 resolves to AF-003829 | PENDING | |
+| PG-08 | AF-003867 detail page loads correctly | YES | AF-003866 + AF-003830 + AF-003844 all confirmed locally 02 Mar 2026 |
+| PG-09 | AFCQ-003829 resolves to AF-003829 | YES | Migrated V1 records load via AF- prefix — confirmed locally 02 Mar 2026 |
 | PG-10 | Status update writes to PostgreSQL correctly | PENDING | |
 | PG-11 | BL update writes to PostgreSQL correctly | PENDING | |
 | PG-12 | New shipment from BL gets correct AF-XXXXXX sequence ID | PENDING | |
