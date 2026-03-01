@@ -353,8 +353,12 @@ async def list_shipments(
     claims: Claims = Depends(require_auth),
 ):
     """
-    List shipments with tab-based filtering.
+    List shipments with tab-based filtering and cursor pagination.
     V2 Quotation only (data_version=2).
+
+    Tabs with small datasets (active, to_invoice, draft, cancelled) fetch all
+    and filter in-memory. Tabs with large datasets (completed, all) push
+    status filters to Datastore and use cursor pagination.
     """
     logger.info(f"[list] tab received: '{tab}' repr: {repr(tab)}")
 
@@ -370,24 +374,66 @@ async def list_shipments(
     elif company_id:
         effective_company_id = company_id
 
-    items: list[dict] = []
+    # Small-dataset tabs: fetch all, filter in-memory, no pagination
+    if tab in ("active", "to_invoice", "draft", "cancelled"):
+        return _list_in_memory(client, tab, effective_company_id)
 
+    # Large-dataset tabs (completed, all): Datastore-level filter + cursor pagination
     v2_query = client.query(kind="Quotation")
     v2_query.add_filter(filter=PropertyFilter("data_version", "=", 2))
     if effective_company_id:
         v2_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
 
+    if tab == "completed":
+        v2_query.add_filter(filter=PropertyFilter("status", "=", STATUS_COMPLETED))
+
+    # Decode cursor
+    start_cursor = None
+    if cursor:
+        start_cursor = base64.urlsafe_b64decode(cursor)
+
+    query_iter = v2_query.fetch(limit=limit, start_cursor=start_cursor)
+    page = next(query_iter.pages)
+    entities = list(page)
+    next_cursor_token = query_iter.next_page_token
+
+    # Filter out trash in-memory (rare — most records have trash=False)
+    items = [_make_v2_summary(e) for e in entities if e.get("trash") is not True]
+
+    encoded_cursor = None
+    if next_cursor_token:
+        encoded_cursor = base64.urlsafe_b64encode(next_cursor_token).decode("ascii")
+
+    # Batch-fetch company names
+    cids = list({s["company_id"] for s in items if s.get("company_id")})
+    names = _batch_company_names(client, cids)
+    for s in items:
+        s["company_name"] = names.get(s.get("company_id", ""), "")
+
+    return {
+        "shipments": items,
+        "next_cursor": encoded_cursor,
+        "total_shown": len(items),
+    }
+
+
+def _list_in_memory(client, tab: str, effective_company_id: str | None) -> dict:
+    """Fetch all V2 records and filter in-memory. For small-dataset tabs."""
+    v2_query = client.query(kind="Quotation")
+    v2_query.add_filter(filter=PropertyFilter("data_version", "=", 2))
+    if effective_company_id:
+        v2_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
+
+    items: list[dict] = []
     for entity in v2_query.fetch():
         if entity.get("trash") is True:
             continue
         if _v2_tab_match(tab, entity):
             items.append(_make_v2_summary(entity))
 
-    # -------------------------------------------------------------------
     # Batch-fetch company names
-    # -------------------------------------------------------------------
-    company_ids = list({s["company_id"] for s in items if s.get("company_id")})
-    names = _batch_company_names(client, company_ids)
+    cids = list({s["company_id"] for s in items if s.get("company_id")})
+    names = _batch_company_names(client, cids)
     for s in items:
         s["company_name"] = names.get(s.get("company_id", ""), "")
 
@@ -401,12 +447,11 @@ async def list_shipments(
             return 0
 
     items.sort(key=_id_sort_key, reverse=True)
-    result = items[:limit]
 
     return {
-        "shipments": result,
+        "shipments": items,
         "next_cursor": None,
-        "total_shown": len(result),
+        "total_shown": len(items),
     }
 
 

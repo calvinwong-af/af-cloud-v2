@@ -1,10 +1,11 @@
 # AF Platform — Test List
-**Version:** 2.16
+**Version:** 2.17
 **Last Updated:** 01 March 2026
 
 ## Version History
 | Version | Date | Changes |
 |---|---|---|
+| 2.17 | 01 Mar 2026 | MI series retired (NA) — migration complete. V2C series added (10 tests, V2 cleanup verification). |
 | 2.16 | 01 Mar 2026 | GS-11 confirmed YES from mobile snapshot. MB series added — all mobile tests deferred pending mobile UX improvement pass. |
 | 2.15 | 01 Mar 2026 | v2.44 confirmed: Active=23, Total=2043. AF-003862 absent from list. All 003862 workaround data removed from Datastore. |
 | 2.14 | 01 Mar 2026 | IN and SU series retired (NA) — 003862 was a cancelled order, never should have been active. migrate_003862.py was a mistake; revert script written (v2.44). LV-02 notes corrected. Active count correct at 23. |
@@ -251,19 +252,35 @@
 
 ---
 
-## V1 to V2 Migration (MI series)
+## V1 to V2 Migration (MI series) — RETIRED
 | # | Test | Status | Notes |
 |---|---|---|---|
-| MI-01 | --only AFCQ-003829 dry run — correct V2 record assembled, no errors | PENDING | First validation step |
-| MI-02 | Full dry run — 3,851 records, 0 assembly errors reported | PENDING | |
-| MI-03 | Live run — spot-check 3 migrated records readable in platform (active, completed, cancelled) | PENDING | |
-| MI-04 | Status writes on migrated AF- records use data_version check not ID prefix | PENDING | |
-| MI-05 | Stale AFCQ- URL in browser resolves to correct AF- record | PENDING | |
-| MI-06 | All 3,851 AFCQ- records appear as AF- in shipments list post-migration | PENDING | |
-| MI-07 | ShipmentWorkFlow re-keyed — tasks still visible on migrated shipments | PENDING | |
-| MI-08 | Files re-keyed — uploaded files still visible on migrated shipments | PENDING | |
-| MI-09 | ShipmentOrderV2CountId registered — new shipment creation does not reuse migrated numbers | PENDING | |
-| MI-10 | Migration script is idempotent — re-run dry run reports all records as already migrated | PENDING | |
+| MI-01 | --only AFCQ-003829 dry run — correct V2 record assembled, no errors | NA | Migration already complete. 3,854 AF- Quotation entities confirmed in Datastore. V1 ShipmentOrder dual-path removed in v2.45. |
+| MI-02 | Full dry run — 3,851 records, 0 assembly errors reported | NA | Migration already complete. 3,854 AF- Quotation entities confirmed in Datastore. V1 ShipmentOrder dual-path removed in v2.45. |
+| MI-03 | Live run — spot-check 3 migrated records readable in platform (active, completed, cancelled) | NA | Migration already complete. 3,854 AF- Quotation entities confirmed in Datastore. V1 ShipmentOrder dual-path removed in v2.45. |
+| MI-04 | Status writes on migrated AF- records use data_version check not ID prefix | NA | Migration already complete. 3,854 AF- Quotation entities confirmed in Datastore. V1 ShipmentOrder dual-path removed in v2.45. |
+| MI-05 | Stale AFCQ- URL in browser resolves to correct AF- record | NA | Migration already complete. 3,854 AF- Quotation entities confirmed in Datastore. V1 ShipmentOrder dual-path removed in v2.45. |
+| MI-06 | All 3,851 AFCQ- records appear as AF- in shipments list post-migration | NA | Migration already complete. 3,854 AF- Quotation entities confirmed in Datastore. V1 ShipmentOrder dual-path removed in v2.45. |
+| MI-07 | ShipmentWorkFlow re-keyed — tasks still visible on migrated shipments | NA | Migration already complete. 3,854 AF- Quotation entities confirmed in Datastore. V1 ShipmentOrder dual-path removed in v2.45. |
+| MI-08 | Files re-keyed — uploaded files still visible on migrated shipments | NA | Migration already complete. 3,854 AF- Quotation entities confirmed in Datastore. V1 ShipmentOrder dual-path removed in v2.45. |
+| MI-09 | ShipmentOrderV2CountId registered — new shipment creation does not reuse migrated numbers | NA | Migration already complete. 3,854 AF- Quotation entities confirmed in Datastore. V1 ShipmentOrder dual-path removed in v2.45. |
+| MI-10 | Migration script is idempotent — re-run dry run reports all records as already migrated | NA | Migration already complete. 3,854 AF- Quotation entities confirmed in Datastore. V1 ShipmentOrder dual-path removed in v2.45. |
+
+---
+
+## V2 Cleanup Verification (V2C series)
+| # | Test | Status | Notes |
+|---|---|---|---|
+| V2C-01 | Shipment list (active tab) loads without error after V1 path removal | PENDING | Regression |
+| V2C-02 | Shipment list (completed tab) loads and shows historical records | PENDING | Key — was served by V1 path |
+| V2C-03 | Shipment list (to_invoice tab) shows 8 records | PENDING | Regression |
+| V2C-04 | Stats counts unchanged — Active=23, Total=2044, TI=8 | PENDING | Regression |
+| V2C-05 | AFCQ-003829 URL resolves to AF-003829 detail page without error | PENDING | AFCQ→AF redirect |
+| V2C-06 | AF-003829 detail page loads all fields correctly | PENDING | Migrated record |
+| V2C-07 | Status update on migrated AF- record saves correctly | PENDING | Write path |
+| V2C-08 | BL update on migrated AF- record saves correctly | PENDING | Write path |
+| V2C-09 | Search returns migrated AF- records by AFCQ- ID (e.g. search "003829") | PENDING | Search path |
+| V2C-10 | Server starts without import errors after constants.py cleanup | PENDING | Already confirmed by log |
 
 ---
 

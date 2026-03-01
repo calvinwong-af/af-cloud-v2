@@ -8,7 +8,8 @@
 
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Package, Truck, CheckCircle2, AlertCircle, RefreshCw, Search, X } from 'lucide-react';
 import { getShipmentListAction, fetchShipmentOrderStatsAction, fetchCompaniesForShipmentAction, fetchPortsAction, searchShipmentsAction } from '@/app/actions/shipments';
 import type { ShipmentListItem } from '@/app/actions/shipments';
@@ -91,14 +92,20 @@ function toShipmentOrder(item: ShipmentListItem): ShipmentOrder {
 // Page
 // ---------------------------------------------------------------------------
 
-export default function ShipmentsPage() {
+function ShipmentsPageInner() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const tabParam = searchParams.get('tab') as FilterTab | null;
+  const validTabs: FilterTab[] = ['all', 'active', 'draft', 'completed', 'to_invoice', 'cancelled'];
+  const initialTab: FilterTab = tabParam && validTabs.includes(tabParam) ? tabParam : 'active';
+
   const [orders, setOrders] = useState<ShipmentOrder[]>([]);
   const [stats, setStats] = useState<{
     total: number; active: number; draft: number; completed: number; to_invoice: number; cancelled: number;
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<FilterTab>('active');
+  const [activeTab, setActiveTab] = useState<FilterTab>(initialTab);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [companies, setCompanies] = useState<{ company_id: string; name: string }[]>([]);
@@ -182,6 +189,9 @@ export default function ShipmentsPage() {
     setActiveTab(tab);
     setOrders([]);
     setNextCursor(null);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', tab);
+    router.replace(`?${params.toString()}`, { scroll: false });
   }
 
   function handleSearchChange(value: string) {
@@ -247,7 +257,7 @@ export default function ShipmentsPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="hidden sm:grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           icon={<Package className="w-5 h-5" />}
           label="Total Orders"
@@ -361,4 +371,8 @@ export default function ShipmentsPage() {
       )}
     </div>
   );
+}
+
+export default function ShipmentsPage() {
+  return <Suspense><ShipmentsPageInner /></Suspense>;
 }

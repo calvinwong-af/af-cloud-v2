@@ -7,7 +7,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Truck, Building2, PackageCheck, CheckCircle2, FileEdit, RefreshCw } from 'lucide-react';
+import { Truck, Building2, PackageCheck, CheckCircle2, FileEdit, RefreshCw, ChevronRight } from 'lucide-react';
 import { fetchShipmentOrderStatsAction, fetchDashboardShipmentsAction } from '@/app/actions/shipments';
 import type { ShipmentListItem } from '@/app/actions/shipments';
 import { fetchCompanyStatsAction } from '@/app/actions/companies';
@@ -15,6 +15,7 @@ import { getCurrentUserProfileAction } from '@/app/actions/users';
 import { KpiCard } from '@/components/shared/KpiCard';
 import { ShipmentOrderTable } from '@/components/shipments/ShipmentOrderTable';
 import type { ShipmentOrder, OrderType } from '@/lib/types';
+import { useRouter } from 'next/navigation';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -97,6 +98,7 @@ interface CompanyStats {
 // ---------------------------------------------------------------------------
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [shipmentStats, setShipmentStats] = useState<ShipmentStats | null>(null);
   const [companyStats, setCompanyStats] = useState<CompanyStats | null>(null);
   const [activeOrders, setActiveOrders] = useState<ShipmentOrder[]>([]);
@@ -275,15 +277,39 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Active Shipments */}
+      {/* Active Shipments — table on desktop, tap card on mobile */}
       <div>
         <h2 className="text-sm font-medium text-[var(--text-mid)] mb-3">Active Shipments</h2>
-        <ShipmentOrderTable orders={activeOrders} loading={loading || !profileLoaded} accountType={accountType} onRefresh={() => load()} />
+
+        {/* Mobile: tap card */}
+        <div
+          className="sm:hidden cursor-pointer rounded-xl border border-[var(--border)] bg-white p-5
+                      flex items-center justify-between active:bg-[var(--surface)] transition-colors"
+          onClick={() => router.push('/shipments?tab=active')}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-sky-50 flex items-center justify-center">
+              <Truck className="w-5 h-5 text-sky-600" />
+            </div>
+            <div>
+              <p className="text-sm text-[var(--text-muted)]">Active Shipments</p>
+              <p className="text-2xl font-semibold text-[var(--text)]">
+                {shipmentStats?.active ?? '—'}
+              </p>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-[var(--text-muted)]" />
+        </div>
+
+        {/* Desktop: full table */}
+        <div className="hidden sm:block">
+          <ShipmentOrderTable orders={activeOrders} loading={loading || !profileLoaded} accountType={accountType} onRefresh={() => load()} />
+        </div>
       </div>
 
-      {/* To Invoice */}
+      {/* To Invoice — hidden on mobile */}
       {toInvoiceOrders.length > 0 && (
-        <div>
+        <div className="hidden sm:block">
           <h2 className="text-sm font-medium text-[var(--text-mid)] mb-3">
             To Invoice ({toInvoiceOrders.length})
           </h2>

@@ -1,6 +1,21 @@
 # Prompt Log — v2.42–v2.51
 AF Platform — AcceleFreight
 
+### [2026-03-01 23:00 UTC] — v2.46: Batch — backlog cleanup + mobile/UX improvements
+- **Status:** Completed ✅
+- **Tasks:**
+  - TASK 1: MI series retired in test list (NA). V2C series added (10 tests, all PENDING). Test list → v2.17
+  - TASK 2: URL-based tab persistence on shipments page (?tab= param)
+  - TASK 3: Server-side cursor pagination for completed tab
+  - TASK 4: Mobile dashboard — active shipments tap card replacing table
+  - TASK 5: Mobile shipments page — KPI cards hidden on mobile
+- **Files Modified:**
+  - `claude/tests/AF-Test-List.md` — v2.17
+  - `af-platform/src/app/(platform)/shipments/page.tsx`
+  - `af-platform/src/app/(platform)/dashboard/page.tsx`
+  - `af-server/routers/shipments.py`
+  - `af-platform/src/app/actions/shipments.ts` (verified — no changes needed)
+
 ### [2026-03-01 22:00 UTC] — v2.45: Remove V1 dual-path code from shipments.py
 - **Status:** Completed ✅
 - **Tasks:**
