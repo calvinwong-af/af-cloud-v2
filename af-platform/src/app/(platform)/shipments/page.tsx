@@ -113,22 +113,17 @@ export default function ShipmentsPage() {
   // Ref to track fetch generation — incremented on each new load call.
   // Stale responses (where fetchId !== fetchIdRef.current) are ignored.
   const fetchIdRef = useRef(0);
-  const statsRef = useRef(stats);
-  statsRef.current = stats;
-
   useEffect(() => {
-    // Load profile, companies, ports and stats in parallel on mount
+    // Load profile, companies, ports on mount — stats are fetched by load()
     Promise.all([
       fetchCompaniesForShipmentAction(),
       fetchPortsAction(),
       getCurrentUserProfileAction(),
-      fetchShipmentOrderStatsAction(),
-    ]).then(([c, p, profile, statsResult]) => {
+    ]).then(([c, p, profile]) => {
       setCompanies(c);
       setPorts(p);
       setAccountType(profile.account_type);
       setProfileLoaded(true);
-      if (statsResult.success) setStats(statsResult.data);
     });
   }, []);
 
@@ -141,11 +136,10 @@ export default function ShipmentsPage() {
     setError(null);
 
     try {
-      const currentStats = statsRef.current;
       const [listResult, statsResult] = await Promise.all([
         getShipmentListAction(tab, cursor, 25),
-        // Stats already loaded on mount — only refresh when explicitly requested (stats==null)
-        currentStats == null ? fetchShipmentOrderStatsAction() : Promise.resolve({ success: true as const, data: currentStats }),
+        // Stats fetched on page 1 (no cursor), skipped on load-more
+        !cursor ? fetchShipmentOrderStatsAction() : Promise.resolve(null),
       ]);
 
       // Ignore stale responses — a newer load() has been triggered
@@ -166,7 +160,7 @@ export default function ShipmentsPage() {
       }
       setNextCursor(listResult.next_cursor);
 
-      if (statsResult.success) setStats(statsResult.data);
+      if (statsResult && statsResult.success) setStats(statsResult.data);
     } catch (err) {
       if (fetchId !== fetchIdRef.current) return;
       setError(err instanceof Error ? err.message : 'Failed to load orders');
@@ -349,7 +343,7 @@ export default function ShipmentsPage() {
         orders={isSearchActive ? searchResults : orders}
         loading={isSearchActive ? searching : (loading || !profileLoaded)}
         accountType={accountType}
-        onRefresh={() => { setStats(null); statsRef.current = null; load(activeTab); }}
+        onRefresh={() => load(activeTab)}
       />
 
       {/* Load more */}

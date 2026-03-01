@@ -144,11 +144,11 @@ async def get_shipment_stats(
         if entity.get("trash") is True:
             continue
         s = entity.get("status", 0)
-        if s in V2_OPERATIONAL_STATUSES:
+        is_migrated = bool(entity.get("migrated_from_v1", False))
+        if s in V2_OPERATIONAL_STATUSES or (s == STATUS_CONFIRMED and not is_migrated):
             stats["active"] += 1
-        elif s == STATUS_COMPLETED or s == STATUS_CONFIRMED:
+        elif s == STATUS_COMPLETED or (s == STATUS_CONFIRMED and is_migrated):
             stats["completed"] += 1
-            # to_invoice: only STATUS_COMPLETED (not confirmed historical)
             if s == STATUS_COMPLETED and not bool(entity.get("issued_invoice", False)):
                 stats["to_invoice"] += 1
         elif s == STATUS_CANCELLED:
@@ -525,12 +525,19 @@ _VALID_TABS = {"all", "active", "completed", "to_invoice", "draft", "cancelled"}
 def _v2_tab_match(tab: str, entity) -> bool:
     """Return True if a V2 Quotation entity belongs in the requested tab."""
     s = entity.get("status", 0)
+    is_migrated = bool(entity.get("migrated_from_v1", False))
     if tab == "all":
         return True
     if tab == "active":
-        return s in V2_OPERATIONAL_STATUSES
+        if is_migrated:
+            return s in V2_OPERATIONAL_STATUSES            # migrated: 2001 = historical, not active
+        else:
+            return s in V2_OPERATIONAL_STATUSES or s == STATUS_CONFIRMED  # native V2: 2001 = active
     if tab == "completed":
-        return s == STATUS_COMPLETED or s == STATUS_CONFIRMED
+        if is_migrated:
+            return s == STATUS_COMPLETED or s == STATUS_CONFIRMED  # migrated: 2001 = completed historical
+        else:
+            return s == STATUS_COMPLETED                   # native V2: 2001 is active, not completed
     if tab == "to_invoice":
         return s == STATUS_COMPLETED and not bool(entity.get("issued_invoice", False))
     if tab == "draft":

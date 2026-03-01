@@ -42,3 +42,15 @@ AF Platform — AcceleFreight
   - `af-server/routers/shipments.py` — removed 4 Datastore-level trash filters, added 4 in-memory guards
   - `af-server/scripts/fix_afcq_003862_superseded.py` (new)
 - **Notes:** Server compiles. Build passes. Script must be run manually against Datastore.
+
+### [2026-03-02 10:00 UTC] — Active tab missing native V2 records + double API call fix
+- **Status:** Completed
+- **Tasks:**
+  - Fix A: `_v2_tab_match()` — distinguish native V2 vs migrated records for STATUS_CONFIRMED; native V2 2001 = active, migrated 2001 = completed historical
+  - Fix B: `get_shipment_stats()` V2 Quotation bucketing — same migrated_from_v1 distinction for active vs completed counts
+  - Fix C: Removed `[list_diag]` diagnostic logging from `list_shipments()`, restored clean fetch loop
+  - Problem 2: Consolidated stats fetching — removed `fetchShipmentOrderStatsAction()` from mount useEffect; `load()` now owns all data fetching; stats fetched on page 1 only, skipped on load-more; removed statsRef
+- **Files Modified:**
+  - `af-server/routers/shipments.py` — `_v2_tab_match` migrated distinction, stats bucketing, removed diagnostic logging
+  - `af-platform/src/app/(platform)/shipments/page.tsx` — consolidated data fetching, removed double stats call, removed statsRef
+- **Notes:** Build passes. Active count should go from 22 → 24. Page load now makes 2 API calls instead of 4.
