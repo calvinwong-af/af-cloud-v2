@@ -12,6 +12,7 @@
  * - soft deletes only (trash: true) — always filter trash=false
  */
 
+import { Datastore } from '@google-cloud/datastore';
 import { getDatastore } from './datastore-query';
 import {
   assembleV1ShipmentOrder,
@@ -137,6 +138,14 @@ export async function getShipmentOrders(
   const orders: ShipmentOrder[] = [];
   for (const entity of entities) {
     const raw = entity as Record<string, unknown>;
+
+    // Extract entity key name — Datastore stores the key separately
+    const dsKey = (entity as Record<symbol, { name?: string; id?: number }>)[Datastore.KEY];
+    const keyName = dsKey?.name ?? String(dsKey?.id ?? '');
+    // Ensure quotation_id is always populated from the entity key
+    if (!raw.quotation_id && keyName) {
+      raw.quotation_id = keyName;
+    }
 
     // Skip child orders if requested
     if (excludeChildren && raw.parent_id) continue;

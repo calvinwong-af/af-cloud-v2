@@ -1,5 +1,17 @@
 # Prompt Completion Log
 
+### [2026-03-02 03:00 UTC] — Dashboard Order ID + Duplicate AFCQ-/AF- Entries + Incoterm Column
+- **Status:** Completed
+- **Tasks:**
+  - Issue 1: Fixed Order ID column blank — extract entity key via `Datastore.KEY` symbol and populate `quotation_id` fallback in list query
+  - Issue 2: Fixed duplicate AFCQ-/AF- entries — added `migrated_numerics` dedup set in stats, list, and search endpoints; added `superseded` fast-skip; created `mark_superseded.py` one-time script
+  - Issue 3: Moved Incoterm column after Type (before Route); added colour-coded `IncotermBadge` component with 13 incoterm colours
+- **Files Modified:**
+  - `af-platform/src/lib/shipments.ts` — Datastore.KEY extraction for quotation_id
+  - `af-platform/src/components/shipments/ShipmentOrderTable.tsx` — IncotermBadge + column reorder
+  - `af-server/routers/shipments.py` — dedup logic in stats, list, search endpoints
+  - `af-server/scripts/mark_superseded.py` — new one-time script
+
 ### [2026-03-02 02:00 UTC] — Fix Shipment Stats & List Tab Filters Post-Migration
 - **Status:** Completed
 - **Tasks:**

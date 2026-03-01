@@ -374,6 +374,47 @@ function ShipmentCard({ order, href }: { order: ShipmentOrder; href: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Incoterm badge
+// ---------------------------------------------------------------------------
+
+const INCOTERM_COLORS: Record<string, { bg: string; text: string }> = {
+  EXW: { bg: '#fef3c7', text: '#92400e' },
+  FCA: { bg: '#ede9fe', text: '#5b21b6' },
+  FAS: { bg: '#f3e8ff', text: '#7c3aed' },
+  FOB: { bg: '#dbeafe', text: '#1d4ed8' },
+  CFR: { bg: '#cffafe', text: '#0e7490' },
+  CNF: { bg: '#cffafe', text: '#0e7490' },
+  CIF: { bg: '#e0f2fe', text: '#0369a1' },
+  CPT: { bg: '#d1fae5', text: '#065f46' },
+  CIP: { bg: '#dcfce7', text: '#166534' },
+  DAT: { bg: '#fce7f3', text: '#9d174d' },
+  DPU: { bg: '#fce7f3', text: '#9d174d' },
+  DAP: { bg: '#fee2e2', text: '#991b1b' },
+  DDP: { bg: '#fecaca', text: '#7f1d1d' },
+};
+
+function IncotermBadge({ code }: { code?: string | null }) {
+  if (!code) return <span className="text-[var(--text-muted)]">—</span>;
+  const upper = code.toUpperCase();
+  const colors = INCOTERM_COLORS[upper];
+  if (colors) {
+    return (
+      <span
+        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-medium"
+        style={{ background: colors.bg, color: colors.text }}
+      >
+        {upper}
+      </span>
+    );
+  }
+  return (
+    <span className="px-2 py-0.5 bg-[var(--surface)] rounded text-xs font-mono text-[var(--text-mid)]">
+      {upper}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Table
 // ---------------------------------------------------------------------------
 
@@ -413,9 +454,9 @@ export function ShipmentOrderTable({ orders, loading, accountType, onRefresh }: 
                 <Th>Order ID</Th>
                 <Th>Status</Th>
                 <Th>Type</Th>
+                <Th>Incoterm</Th>
                 <Th>Route</Th>
                 <Th>Company</Th>
-                <Th>Incoterm</Th>
                 <Th>Cargo Ready</Th>
                 <Th>Updated</Th>
                 <Th><span className="sr-only">Actions</span></Th>
@@ -500,6 +541,11 @@ function ShipmentRow({
         <OrderTypeIcon type={order.order_type} />
       </td>
 
+      {/* Incoterm */}
+      <td className="px-4 py-3">
+        <IncotermBadge code={order.incoterm_code} />
+      </td>
+
       {/* Route — port codes only */}
       <td className="px-4 py-3">
         <div className="flex items-center gap-1.5 text-sm text-[var(--text-mid)]">
@@ -519,15 +565,6 @@ function ShipmentRow({
             {order.company_id}
           </div>
         )}
-      </td>
-
-      {/* Incoterm */}
-      <td className="px-4 py-3">
-        {order.incoterm_code
-          ? <span className="px-2 py-0.5 bg-[var(--surface)] rounded text-xs font-mono text-[var(--text-mid)]">
-              {order.incoterm_code}
-            </span>
-          : <span className="text-[var(--text-muted)]">—</span>}
       </td>
 
       {/* Cargo ready date */}
@@ -559,7 +596,7 @@ function ShipmentTableSkeleton() {
         <table className="w-full min-w-max text-sm">
           <thead>
             <tr className="bg-[var(--surface)] border-b border-[var(--border)]">
-              {['Order ID', 'Status', 'Type', 'Route', 'Company', 'Incoterm', 'Cargo Ready', 'Updated', ''].map((h) => (
+              {['Order ID', 'Status', 'Type', 'Incoterm', 'Route', 'Company', 'Cargo Ready', 'Updated', ''].map((h) => (
                 <th key={h} className="px-4 py-3 text-left text-xs font-medium text-[var(--text-mid)] uppercase tracking-wide">
                   {h}
                 </th>

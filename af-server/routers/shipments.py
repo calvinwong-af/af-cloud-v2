@@ -138,6 +138,9 @@ async def get_shipment_stats(
     if effective_company_id:
         v2_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
 
+    # Track migrated numeric suffixes to deduplicate against V1 ShipmentOrder
+    migrated_numerics: set[str] = set()
+
     for entity in v2_query.fetch():
         s = entity.get("status", 0)
         if s in V2_OPERATIONAL_STATUSES:
@@ -152,6 +155,14 @@ async def get_shipment_stats(
         elif s in (STATUS_DRAFT, STATUS_DRAFT_REVIEW):
             stats["draft"] += 1
 
+        # Build dedup set from AF- keys
+        sid = entity.key.name or str(entity.key.id)
+        if sid.startswith(PREFIX_V2_SHIPMENT):
+            try:
+                migrated_numerics.add(str(int(sid[3:])))
+            except ValueError:
+                pass
+
     # -----------------------------------------------------------------------
     # V1 records — ShipmentOrder Kind (operational status source of truth)
     # Only records that reached at least booking confirmation are shipments.
@@ -162,11 +173,18 @@ async def get_shipment_stats(
     if effective_company_id:
         v1_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
 
-    # First pass: collect all V1 entities
+    # First pass: collect all V1 entities (skip superseded by migration)
     v1_entities_list = []
     for entity in v1_query.fetch():
         if entity.get("data_version") == 2:
             continue
+        if entity.get("superseded"):
+            continue
+        sid = entity.key.name or str(entity.key.id)
+        if sid.startswith(PREFIX_V1_SHIPMENT):
+            numeric = sid[5:].lstrip("0") or "0"
+            if numeric in migrated_numerics:
+                continue
         v1_entities_list.append(entity)
 
     # Bucket by resolved status
@@ -299,6 +317,16 @@ async def search_shipments(
                 items.append(_make_v2_summary(entity))
                 seen_ids.add(sid)
 
+    # Build dedup set from V2 items already found
+    search_migrated_numerics: set[str] = set()
+    for item in items:
+        sid = item.get("shipment_id", "")
+        if sid.startswith(PREFIX_V2_SHIPMENT):
+            try:
+                search_migrated_numerics.add(str(int(sid[3:])))
+            except ValueError:
+                pass
+
     # -------------------------------------------------------------------
     # V1 records — ShipmentOrder Kind (status >= 100 = booking started+)
     # -------------------------------------------------------------------
@@ -321,9 +349,16 @@ async def search_shipments(
         # Skip migrated records — they have V2 structure, not V1
         if so_entity.get("data_version") == 2:
             continue
+        if so_entity.get("superseded"):
+            continue
         sid = so_entity.key.name or str(so_entity.key.id)
         if sid in seen_ids:
             continue
+        # Dedup: skip AFCQ- records whose AF- equivalent was already found
+        if sid.startswith(PREFIX_V1_SHIPMENT):
+            numeric = sid[5:].lstrip("0") or "0"
+            if numeric in search_migrated_numerics:
+                continue
         v1_status = so_entity.get("status", 0)
         v2_status = V1_TO_V2_STATUS.get(v1_status, STATUS_CONFIRMED)
         q_entity = q_map.get(sid)
@@ -689,6 +724,9 @@ async def list_shipments(
     # Only included on page 1 (no cursor). On subsequent pages the cursor
     # drives V1 pagination only; V2 records are already displayed.
     # -------------------------------------------------------------------
+    # Track migrated numeric suffixes to deduplicate V1 ShipmentOrder records
+    migrated_numerics: set[str] = set()
+
     if not cursor:
         v2_query = client.query(kind="Quotation")
         v2_query.add_filter(filter=PropertyFilter("data_version", "=", 2))
@@ -697,6 +735,12 @@ async def list_shipments(
             v2_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
         v2_count = 0
         for entity in v2_query.fetch():
+            sid = entity.key.name or str(entity.key.id)
+            if sid.startswith(PREFIX_V2_SHIPMENT):
+                try:
+                    migrated_numerics.add(str(int(sid[3:])))
+                except ValueError:
+                    pass
             if _v2_tab_match(tab, entity):
                 items.append(_make_v2_summary(entity))
                 v2_count += 1
@@ -792,6 +836,13 @@ async def list_shipments(
                 for so_entity in v1_shipment_orders:
                     if so_entity.get("data_version") == 2:
                         continue
+                    if so_entity.get("superseded"):
+                        continue
+                    sid = so_entity.key.name or str(so_entity.key.id)
+                    if sid.startswith(PREFIX_V1_SHIPMENT):
+                        numeric = sid[5:].lstrip("0") or "0"
+                        if numeric in migrated_numerics:
+                            continue
                     raw_status = so_entity.get("status", 0)
                     v2_status = _resolve_so_status_to_v2(raw_status)
                     if v2_status != STATUS_COMPLETED:
@@ -823,6 +874,13 @@ async def list_shipments(
                 for so_entity in v1_shipment_orders:
                     if so_entity.get("data_version") == 2:
                         continue
+                    if so_entity.get("superseded"):
+                        continue
+                    sid = so_entity.key.name or str(so_entity.key.id)
+                    if sid.startswith(PREFIX_V1_SHIPMENT):
+                        numeric = sid[5:].lstrip("0") or "0"
+                        if numeric in migrated_numerics:
+                            continue
                     raw_status = so_entity.get("status", 0)
                     v2_status = _resolve_so_status_to_v2(raw_status)
                     if tab == "active" and v2_status not in V2_ACTIVE_STATUSES:
