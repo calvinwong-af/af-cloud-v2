@@ -92,7 +92,7 @@ AF Platform — AcceleFreight
 - **Notes:** Temporary logging — will be removed once data is captured.
 
 ### [2026-03-01 14:00 UTC] — v2.38: Active badge off by 1 + Incoterm direction indicator
-- **Status:** Completed
+- **Status:** Completed ✅
 - **Tasks:**
   - Fix 1 (LV-02): In `get_shipment_stats()` V1 ShipmentOrder loop, changed active bucket from `V2_ACTIVE_STATUSES` to `V2_OPERATIONAL_STATUSES` — removes STATUS_CONFIRMED (2001) from V1 active count, aligning stats with `_v2_tab_match()` list logic
   - Fix 1 (LV-02): In `list_shipments()` V1 ShipmentOrder loop, same change — `V2_ACTIVE_STATUSES` → `V2_OPERATIONAL_STATUSES` for the active tab filter
@@ -100,7 +100,21 @@ AF Platform — AcceleFreight
 - **Files Modified:**
   - `af-server/routers/shipments.py` — two one-line changes + removed unused import
   - `af-platform/src/components/shipments/ShipmentOrderTable.tsx` — `IncotermBadge` + call site
-- **Notes:** Active badge should now match list count. No stats total change expected.
+- **Notes:** Code changes correct. Active count remained 23 — root cause was missing AF-003862 Quotation entity, not a logic error. Incoterm direction arrows ✅ confirmed in snapshot.
+
+### [2026-03-01 15:00 UTC] — v2.39: Diagnostic — active count logging
+- **Status:** Completed ✅ — Removed in v2.41
+- **Tasks:**
+  - Added 3 `[stats_active]` logger.info calls to `get_shipment_stats()`: one in V2 Quotation loop, one in V1 ShipmentOrder loop, one TOTAL summary before return
+- **Files Modified:** `af-server/routers/shipments.py` — 3 logger.info statements added
+- **Notes:** Log showed 23 active records (21 migrated at operational statuses + 2 native V2 at 2001). AF-003862 completely absent from log.
+
+### [2026-03-01 15:30 UTC] — v2.40: Diagnostic — AF-003862 entity inspection
+- **Status:** Completed ✅ — Removed in v2.41
+- **Tasks:**
+  - Added `[diag_003862]` block at start of `get_shipment_stats()` — direct Datastore fetch of `Quotation AF-003862` and `ShipmentOrder AFCQ-003862`, logging status, migrated_from_v1, trash, superseded, data_version
+- **Files Modified:** `af-server/routers/shipments.py` — diagnostic block inserted
+- **Notes:** Log result: AF-003862 Quotation DOES NOT EXIST. AFCQ-003862 ShipmentOrder EXISTS: status=3001, superseded=True, data_version=None. Root cause confirmed — migration never wrote AF-003862 Quotation. Superseded flag prevents V1 loop from picking it up. Record invisible in all tabs.
 
 ### [2026-03-01 12:00 UTC] — v2.37: Remove dead migrated SO query blocks + add migrated_from_v1 to V2 summary
 - **Status:** Completed ✅ — Verified against snapshot

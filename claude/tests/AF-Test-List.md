@@ -1,5 +1,5 @@
 # AF Platform — Test List
-**Version:** 2.12
+**Version:** 2.13
 **Last Updated:** 01 March 2026
 
 ## Version History
@@ -28,6 +28,7 @@
 | 2.10 | 01 Mar 2026 | v2.34 evaluated against snapshot. LV-01/02/04 confirmed. GS-10 confirmed. SU-01 still NO (script not run). |
 | 2.11 | 01 Mar 2026 | v2.35 context: AF-003866/003867 visible in Active tab. Active badge=23 (off by 1 — open issue). GS-09 still NO (V1 badge not confirmed on migrated AF- records). SU-01 still NO (003862 superseded script not run). |
 | 2.12 | 01 Mar 2026 | v2.37 snapshot: GS-09 YES — V1 badge confirmed on AF-003864/003863/003861/003860. GS-11 PENDING. Active badge still 23 (off by 1, open issue). Stats otherwise stable (Total=2043, Completed=2019, Draft=1, TI=8, Cancelled=0). |
+| 2.13 | 01 Mar 2026 | v2.41 snapshot: LV-02 YES — Active=24, Total=2044. AF-003862 visible in list with V1 badge. IN series added for 003862 incoterm missing. |
 
 ## How to Use
 - YES = Confirmed working
@@ -280,11 +281,19 @@
 | # | Test | Status | Notes |
 |---|---|---|---|
 | LV-01 | Native V2 AF- records (e.g. AF-003864, AF-003863, AF-003861) appear in Active tab | YES | Confirmed 01 Mar 2026 |
-| LV-02 | Active tab count matches stats badge | NO | v2.37: badge still 23, 003866+003867 both active in list. Off by 1 — open issue persists |
+| LV-02 | Active tab count matches stats badge | YES | v2.41: Active=24 confirmed. Root cause: AF-003862 Quotation missing from Datastore (migration gap). Fixed by migrate_003862.py script. |
 | LV-03 | Explicitly trashed records (trash=true) still excluded from list | PENDING | Functional regression — test as encountered |
 | LV-04 | Stats counts unchanged after fix (Active=22, To Invoice=8) | YES | Confirmed 01 Mar 2026 — Active=22, TI=8, Completed=2021 |
 | LV-05 | Migrated AF- records appear in list with migrated_from_v1=true | PENDING | AF- records visible — V1 badge on migrated ones not yet confirmed |
 | LV-06 | All list tabs (active, completed, to_invoice, draft, cancelled) load without error | PENDING | Active confirmed OK — others not yet tested |
+
+---
+
+## 003862 Incoterm Fix (IN series)
+| # | Test | Status | Notes |
+|---|---|---|---|
+| IN-01 | AF-003862 incoterm column shows correct value (not —) | NO | migrate_003862.py built entity from ShipmentOrder only — incoterm_code not pulled from AFCQ-003862 Quotation. Needs targeted fix. |
+| IN-02 | AF-003862 detail page loads correctly with all fields | PENDING | Blocked by IN-01 |
 
 ---
 
