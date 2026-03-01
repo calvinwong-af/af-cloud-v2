@@ -77,20 +77,34 @@ def main():
         print(f"  QuotationFreight {AFCQ_ID} not found")
 
     # ------------------------------------------------------------------
-    # Step 4: Determine best incoterm value
+    # Step 4: Check Quotation AFCQ-003862 for incoterm
     # ------------------------------------------------------------------
-    best_incoterm = so_incoterm or qf_incoterm or DEFAULT_INCOTERM
+    print(f"\nStep 4: Checking Quotation {AFCQ_ID} for incoterm...")
+    q_entity = client.get(client.key("Quotation", AFCQ_ID))
+    q_incoterm = None
+    if q_entity:
+        q = entity_to_dict(q_entity)
+        q_incoterm = q.get("incoterm_code") or q.get("incoterm") or None
+        print(f"  Quotation {AFCQ_ID} incoterm: {q_incoterm!r}")
+    else:
+        print(f"  Quotation {AFCQ_ID} not found")
+
+    # ------------------------------------------------------------------
+    # Step 5: Determine best incoterm value
+    # ------------------------------------------------------------------
+    best_incoterm = so_incoterm or qf_incoterm or q_incoterm or DEFAULT_INCOTERM
     source = (
         "ShipmentOrder" if so_incoterm
         else "QuotationFreight" if qf_incoterm
+        else f"Quotation {AFCQ_ID}" if q_incoterm
         else f"default ({DEFAULT_INCOTERM})"
     )
-    print(f"\nStep 4: Best incoterm = {best_incoterm} (source: {source})")
+    print(f"\nStep 5: Best incoterm = {best_incoterm} (source: {source})")
 
     # ------------------------------------------------------------------
-    # Step 5: Patch and write
+    # Step 6: Patch and write
     # ------------------------------------------------------------------
-    print(f"\nStep 5: Patching Quotation {AF_ID}...")
+    print(f"\nStep 6: Patching Quotation {AF_ID}...")
     entity["incoterm_code"] = best_incoterm
     entity["updated"] = datetime.now(timezone.utc).isoformat()
     client.put(entity)
