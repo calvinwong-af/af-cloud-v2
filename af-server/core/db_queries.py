@@ -92,7 +92,7 @@ def list_shipments(conn, tab: str, company_id: str | None, limit: int, offset: i
         FROM shipments s
         LEFT JOIN companies c ON c.id = s.company_id
         WHERE {where}
-        ORDER BY s.updated_at DESC
+        ORDER BY s.countid DESC
         LIMIT :limit OFFSET :offset
     """), params).fetchall()
 

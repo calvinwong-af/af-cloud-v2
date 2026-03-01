@@ -351,7 +351,7 @@ def _lazy_init_tasks_pg(conn, shipment_id: str, shipment_data: dict) -> list[dic
         now = datetime.now(timezone.utc).isoformat()
         conn.execute(text("""
             UPDATE shipment_workflows
-            SET workflow_tasks = :tasks::jsonb, updated_at = :now
+            SET workflow_tasks = cast(:tasks as jsonb), updated_at = :now
             WHERE shipment_id = :id
         """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
 

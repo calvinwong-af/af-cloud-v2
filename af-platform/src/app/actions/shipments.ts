@@ -65,7 +65,18 @@ export async function fetchShipmentOrderDetailAction(
       return { success: false, error: 'Not found' };
     }
 
-    return { success: true, data: data as ShipmentOrder };
+    // Normalize fields that the PostgreSQL API doesn't include but the UI expects
+    const normalized: ShipmentOrder = {
+      ...data,
+      customs_clearance: data.customs_clearance ?? [],
+      files: data.files ?? [],
+      related_orders: data.related_orders ?? [],
+      commercial_quotation_ids: data.commercial_quotation_ids ?? [],
+      status_history: data.status_history ?? [],
+      _company_name: data.company_name ?? data._company_name,
+    };
+
+    return { success: true, data: normalized };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[fetchShipmentOrderDetailAction]', message);
