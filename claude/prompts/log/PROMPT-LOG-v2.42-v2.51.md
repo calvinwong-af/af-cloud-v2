@@ -1,6 +1,19 @@
 # Prompt Log — v2.42–v2.51
 AF Platform — AcceleFreight
 
+### [2026-03-02 18:00 UTC] — v2.51: Status Update Loading Indicator Fix
+- **Status:** Completed
+- **Tasks:**
+  - Replaced single `loading` boolean with per-action states: `advanceLoading`, `revertLoading`, `cancelLoading`
+  - Added `anyLoading` derived boolean to disable all buttons during any mutation
+  - Advance button: sky spinner + "Updating…" (revert shows amber spinner)
+  - Cancel button: red spinner + "Updating…"
+  - Exception button: amber spinner + "Updating…"
+  - Timeline node clicks trigger advanceLoading (spinner on Advance button)
+- **Files Modified:**
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — StatusCard per-action loading refactor
+  - `claude/tests/AF-Test-List.md` — v2.23 (LO-01/LO-03 updated, LO-04/LO-05 added)
+
 ### [2026-03-02 17:00 UTC] — v2.50 (revised): Sort standing principle + Datastore Sweep + Loading States
 - **Status:** Completed
 - **Tasks:**

@@ -1,10 +1,13 @@
 # AF Platform — Test List
-**Version:** 2.20
+**Version:** 2.23
 **Last Updated:** 02 March 2026
 
 ## Version History
 | Version | Date | Changes |
 |---|---|---|
+| 2.23 | 02 Mar 2026 | LO-01/LO-03 updated — per-action loading states with colored spinners. advanceLoading/revertLoading/cancelLoading replace single loading boolean. |
+| 2.22 | 02 Mar 2026 | PG-16 to PG-20 all confirmed YES. Invoice icons, sort order, and AF-003752 all verified on production. |
+| 2.21 | 02 Mar 2026 | PG-16 to PG-20 added — issued_invoice fix, backfill, sort simplification, AF-003752 manual fix. All changes from this session captured. |
 | 2.20 | 02 Mar 2026 | SR series retired (sort resolved — countid DESC standing principle). DS series added (4 items, Datastore sweep audit). LO series added (3 tests, inline loading indicators). |
 | 2.19 | 01 Mar 2026 | PG series partially confirmed — PG-03/04/05/14/15 YES from live production snapshot. Migration complete and deployed. |
 | 2.18 | 01 Mar 2026 | PG series added (15 tests, PostgreSQL migration verification). V2C series retired (NA) — superseded by PG series. |
@@ -223,6 +226,11 @@
 | PG-13 | af-platform builds without errors after Datastore lib removal | YES | Platform live and loading correctly post-deployment |
 | PG-14 | Stats: Active=23, Total=2043, TI=8 after migration | YES | Confirmed live — Total=2043, Active=23, Completed=2019, Draft=1, TI=8 |
 | PG-15 | Dashboard loads in under 500ms total (was 8-12 seconds) | YES | Well under 500ms — full page load ~350ms observed |
+| PG-16 | issued_invoice flows through list and search — invoice icon correct on completed shipments | YES | Confirmed 02 Mar 2026 — green/amber icons rendering correctly across completed tab |
+| PG-17 | AF-003854 and AF-003851 show green invoiced icon in list after deploy | YES | Confirmed 02 Mar 2026 |
+| PG-18 | All V1 completed shipments show correct invoice icon | YES | Confirmed 02 Mar 2026 — invoiced=green, awaiting=amber. Backfill recovery applied for 8 genuine to-invoice records |
+| PG-19 | Shipment list sorts by countid DESC — AF-003867 appears first | YES | Confirmed 02 Mar 2026 — 003867 first, 003866 second, V1 records descending |
+| PG-20 | AF-003752 status = -1, absent from active list | YES | Fixed directly in Cloud SQL Studio 02 Mar 2026 |
 
 ---
 
@@ -373,9 +381,11 @@
 ## Loading State UI (LO series)
 | # | Test | Status | Notes |
 |---|---|---|---|
-| LO-01 | Advance status button: shows spinner + "Updating…" text while loading, disabled | PENDING | StatusCard: loading state |
-| LO-02 | Invoiced toggle: shows spinner + "Updating…" replacing status text while loading | PENDING | StatusCard: invoiceLoading state |
-| LO-03 | Cancel/Exception buttons: show spinner + disabled while their loading states are true | PENDING | StatusCard: exceptionLoading/loading states |
+| LO-01 | Advance button: sky spinner + "Updating…" beside button; revert shows amber spinner | PENDING | advanceLoading/revertLoading states |
+| LO-02 | Invoiced toggle: shows spinner + "Updating…" replacing status text while loading | YES | Confirmed 02 Mar 2026 — AF-003844 shows Loader2 + "Updating…" inline |
+| LO-03 | Cancel: red spinner + "Updating…"; Exception: amber spinner + "Updating…" | PENDING | cancelLoading/exceptionLoading states |
+| LO-04 | All action buttons disabled while any mutation is in progress | PENDING | anyLoading disables all buttons |
+| LO-05 | Timeline node click triggers spinner on Advance button (not timeline) | PENDING | executeStatusChange sets advanceLoading |
 
 ---
 

@@ -457,7 +457,9 @@ const SUB_LABELS: Record<number, string> = {
 };
 
 function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; onReload: () => void; accountType: string | null }) {
-  const [loading, setLoading] = useState(false);
+  const [advanceLoading, setAdvanceLoading] = useState(false);
+  const [revertLoading, setRevertLoading] = useState(false);
+  const [cancelLoading, setCancelLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<{
     status: ShipmentOrderStatus;
@@ -500,6 +502,9 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
   // Can cancel from any non-terminal status
   const canCancel = !isTerminal;
 
+  // Any mutation in progress — disables all action buttons
+  const anyLoading = advanceLoading || revertLoading || cancelLoading || exceptionLoading;
+
   // Group steps by node (thousands digit)
   const nodes = (() => {
     const grouped: { node: number; label: string; steps: ShipmentOrderStatus[] }[] = [];
@@ -528,12 +533,14 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
 
   async function executeStatusChange(newStatus: ShipmentOrderStatus, allowJump?: boolean, reverted?: boolean) {
     setError(null);
-    setLoading(true);
+    // Set per-action loading state
+    const setLoader = newStatus === -1 ? setCancelLoading : reverted ? setRevertLoading : setAdvanceLoading;
+    setLoader(true);
     setConfirmAction(null);
     setSubStepDialog(null);
     try {
       const result = await updateShipmentStatusAction(order.quotation_id, newStatus, allowJump || undefined, reverted || undefined);
-      if (!result) { setError('No response from server'); setLoading(false); return; }
+      if (!result) { setError('No response from server'); setLoader(false); return; }
       if (result.success) {
         setHistoryEntries([]);
         onReload();
@@ -543,12 +550,12 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
     } catch {
       setError('Failed to update status');
     }
-    setLoading(false);
+    setLoader(false);
   }
 
   // Clicking a FUTURE node
   function handleFutureNodeClick(nodeGroup: { node: number; label: string; steps: ShipmentOrderStatus[] }) {
-    if (loading || isTerminal || !isAfu) return;
+    if (anyLoading || isTerminal || !isAfu) return;
     if (nodeGroup.steps.length === 1) {
       // Single-step node (Confirmed, Completed) → advance directly
       const target = nodeGroup.steps[0];
@@ -569,7 +576,7 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
 
   // Clicking a PAST node or sub-step
   function handlePastClick(targetStatus: ShipmentOrderStatus) {
-    if (loading || !isAfu) return;
+    if (anyLoading || !isAfu) return;
     const targetIdx = pathList.indexOf(targetStatus);
     const label = SHIPMENT_STATUS_LABELS[targetStatus] ?? `${targetStatus}`;
     const undoneSteps: string[] = [];
@@ -816,11 +823,11 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
                   executeStatusChange(advanceStatus);
                 }
               }}
-              disabled={loading}
+              disabled={anyLoading}
               className="px-4 py-2 bg-[var(--sky)] text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2"
             >
-              {loading ? (
-                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating…</>
+              {(advanceLoading || revertLoading) ? (
+                <><Loader2 className={`w-3.5 h-3.5 animate-spin ${revertLoading ? 'text-amber-300' : ''}`} /> Updating…</>
               ) : (
                 <>Advance to {SHIPMENT_STATUS_LABELS[advanceStatus]}</>
               )}
@@ -830,26 +837,32 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
           {/* Exception flag/clear button */}
           <button
             onClick={handleExceptionToggle}
-            disabled={exceptionLoading || loading}
+            disabled={anyLoading}
             className={`px-4 py-2 border text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 ${
               exceptionFlagged
                 ? 'border-green-400 text-green-700 bg-green-50 hover:bg-green-100'
                 : 'border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100'
             }`}
           >
-            {exceptionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            {exceptionFlagged ? 'Clear Exception' : '\u2691 Flag Exception'}
+            {exceptionLoading ? (
+              <><Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" /> Updating…</>
+            ) : (
+              exceptionFlagged ? 'Clear Exception' : '\u2691 Flag Exception'
+            )}
           </button>
 
           {/* Cancel button */}
           {canCancel && (
             <button
               onClick={handleCancelClick}
-              disabled={loading}
+              disabled={anyLoading}
               className="px-4 py-2 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50 flex items-center gap-2"
             >
-              {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              &#x2715; Cancel Shipment
+              {cancelLoading ? (
+                <><Loader2 className="w-3.5 h-3.5 animate-spin text-red-500" /> Updating…</>
+              ) : (
+                <><span>&#x2715;</span> Cancel Shipment</>
+              )}
             </button>
           )}
         </div>
