@@ -1,10 +1,12 @@
 # AF Platform — Test List
-**Version:** 2.24
+**Version:** 2.26
 **Last Updated:** 02 March 2026
 
 ## Version History
 | Version | Date | Changes |
 |---|---|---|
+| 2.26 | 02 Mar 2026 | DS-01/02 YES — create+delete migrated to af-server. MC series (5 tests) + SD series (5 tests) added. |
+| 2.25 | 02 Mar 2026 | BUG1-01/02 and BUG2-01 confirmed YES from snapshot. BUG2-02 deferred to mobile pass. |
 | 2.24 | 02 Mar 2026 | BUG1 series (invoice icon on All tab/search) + BUG2 series (4002 Arrived icon fix). |
 | 2.23 | 02 Mar 2026 | LO-01/LO-03 updated — per-action loading states with colored spinners. advanceLoading/revertLoading/cancelLoading replace single loading boolean. |
 | 2.22 | 02 Mar 2026 | PG-16 to PG-20 all confirmed YES. Invoice icons, sort order, and AF-003752 all verified on production. |
@@ -238,16 +240,16 @@
 ## Invoice Icon Fix (BUG1 series)
 | # | Test | Status | Notes |
 |---|---|---|---|
-| BUG1-01 | All tab — invoiced completed shipments show green icon (not amber) | PENDING | issued_invoice was missing from search result mapping |
-| BUG1-02 | Search results — invoiced shipments show green icon, awaiting show amber | PENDING | issued_invoice added to SearchResult interface + mapping |
+| BUG1-01 | All tab — invoiced completed shipments show green icon (not amber) | YES | Confirmed 02 Mar 2026 — 003854/003851 show green on All tab |
+| BUG1-02 | Search results — invoiced shipments show green icon, awaiting show amber | YES | Confirmed 02 Mar 2026 — v2.52 issued_invoice mapped unconditionally |
 
 ---
 
 ## Status Icon Fix (BUG2 series)
 | # | Test | Status | Notes |
 |---|---|---|---|
-| BUG2-01 | AF-003864 status column shows Arrived (Anchor) icon, not red warning triangle | PENDING | 4002 icon changed from AlertTriangle to Anchor |
-| BUG2-02 | Exception flag visible as separate amber indicator on mobile card (not replacing status) | PENDING | Mobile card already correct — exception shown alongside status badge |
+| BUG2-01 | AF-003864 status column shows Arrived (Anchor) icon, not red warning triangle | YES | Confirmed 02 Mar 2026 — anchor icon visible on 003864 in snapshot |
+| BUG2-02 | Exception flag visible as separate amber indicator on mobile card (not replacing status) | PENDING | Mobile — test during mobile UX pass |
 
 ---
 
@@ -385,13 +387,35 @@
 
 ---
 
-## Datastore Sweep Audit (DS series)
+## Datastore Sweep (DS series)
 | # | Test | Status | Notes |
 |---|---|---|---|
-| DS-01 | createShipmentOrder() in shipments-write.ts writes to Datastore — needs POST /api/v2/shipments endpoint | PENDING | CRITICAL — creates Quotation, CountId, TrackingId, WorkFlow in Datastore |
-| DS-02 | deleteShipmentOrder() in shipments-write.ts writes to Datastore — needs DELETE endpoint | PENDING | HIGH — deletes Quotation, CountId, TrackingId, WorkFlow from Datastore |
+| DS-01 | createShipmentOrder() in shipments-write.ts writes to Datastore — needs POST /api/v2/shipments endpoint | YES | Implemented v2.53 — af-server POST /api/v2/shipments, action layer migrated |
+| DS-02 | deleteShipmentOrder() in shipments-write.ts writes to Datastore — needs DELETE endpoint | YES | Implemented v2.53 — af-server DELETE /api/v2/shipments/{id} soft+hard modes |
 | DS-03 | datastore-query.ts still imported by users module (UserIAM, UserAccount, CompanyUserAccount) | PENDING | LOW — expected, users not migrated to PostgreSQL |
 | DS-04 | actions/shipments.ts has zero direct Datastore reads — all via af-server | PENDING | Verified clean in v2.50 audit |
+
+---
+
+## Manual Shipment Creation (MC series)
+| # | Test | Status | Notes |
+|---|---|---|---|
+| MC-01 | POST /api/v2/shipments creates shipment in PostgreSQL — row visible in shipments table | PENDING | |
+| MC-02 | Created shipment appears in active list with correct status (1002 Draft Review) | PENDING | |
+| MC-03 | Created shipment has shipment_workflows row with auto-generated tasks | PENDING | |
+| MC-04 | createShipmentOrderAction() no longer imports from lib/shipments-write createShipmentOrder | PENDING | |
+| MC-05 | createShipmentOrderAction() returns correct shipment_id from server response | PENDING | |
+
+---
+
+## Shipment Delete (SD series)
+| # | Test | Status | Notes |
+|---|---|---|---|
+| SD-01 | Soft delete — shipment disappears from all list tabs after DELETE (no hard param) | PENDING | |
+| SD-02 | Soft delete — shipment row still exists in DB with trash=true | PENDING | |
+| SD-03 | Hard delete — returns 403 in production environment | PENDING | |
+| SD-04 | Hard delete — removes rows from shipments, shipment_workflows, shipment_files in dev | PENDING | |
+| SD-05 | deleteShipmentOrderAction() no longer imports from lib/shipments-write deleteShipmentOrder | PENDING | |
 
 ---
 

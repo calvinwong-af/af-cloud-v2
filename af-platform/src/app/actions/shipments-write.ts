@@ -2,9 +2,6 @@
 
 import { verifySessionAndRole, logAction } from '@/lib/auth-server';
 import {
-  createShipmentOrder,
-  deleteShipmentOrder,
-  type CreateShipmentOrderInput,
   type CreateShipmentOrderResult,
   type UpdateInvoicedStatusResult,
   type DeleteShipmentOrderResult,
@@ -103,67 +100,82 @@ export async function createShipmentOrderAction(
     }
   }
 
-  // 3. Build input — map flat payload to nested lib input
-  const input: CreateShipmentOrderInput = {
-    order_type: payload.order_type,
-    transaction_type: payload.transaction_type,
-    company_id: payload.company_id,
-    company_key_path: [{ kind: 'Company', name: payload.company_id }],
-    origin_port_un_code: payload.origin_port_un_code,
-    origin_terminal_id: payload.origin_terminal_id ?? null,
-    origin_label: payload.origin_label,
-    destination_port_un_code: payload.destination_port_un_code,
-    destination_terminal_id: payload.destination_terminal_id ?? null,
-    destination_label: payload.destination_label,
-    incoterm_code: payload.incoterm_code ?? '',
-    cargo: {
-      description: payload.cargo_description.trim(),
-      hs_code: payload.cargo_hs_code?.trim() || null,
-      is_dg: payload.cargo_is_dg,
-      dg_class: null,
-      dg_un_number: null,
-    },
-    containers: payload.containers ?? [],
-    packages: payload.packages ?? [],
-    parties: {
-      shipper: payload.shipper,
-      consignee: payload.consignee,
-      notify_party: payload.notify_party,
-    },
-    cargo_ready_date: payload.cargo_ready_date,
-    etd: payload.etd,
-    eta: payload.eta,
-    creator_uid: session.uid,
-    creator_email: session.email,
-  };
-
-  // 4. Write
-  const result = await createShipmentOrder(input);
-
-  // 5. Log at action level
+  // 3. Call af-server POST /api/v2/shipments
   try {
-    await logAction({
-      uid: session.uid,
-      email: session.email,
-      account_type: session.account_type,
-      action: 'CREATE_SHIPMENT_ORDER',
-      entity_kind: 'Quotation',
-      entity_id: result.success ? result.shipment_id : 'unknown',
-      success: result.success,
-      error: result.success ? null : result.error,
-      meta: {
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) return { success: false, error: 'No session token' };
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) return { success: false, error: 'Server URL not configured' };
+
+    const url = new URL('/api/v2/shipments', serverUrl);
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         order_type: payload.order_type,
         transaction_type: payload.transaction_type,
         company_id: payload.company_id,
-        tracking_id: result.success ? result.tracking_id : null,
-      },
+        origin_port_un_code: payload.origin_port_un_code,
+        origin_terminal_id: payload.origin_terminal_id,
+        origin_label: payload.origin_label,
+        destination_port_un_code: payload.destination_port_un_code,
+        destination_terminal_id: payload.destination_terminal_id,
+        destination_label: payload.destination_label,
+        incoterm_code: payload.incoterm_code,
+        cargo_description: payload.cargo_description,
+        cargo_hs_code: payload.cargo_hs_code,
+        cargo_is_dg: payload.cargo_is_dg,
+        containers: payload.containers,
+        packages: payload.packages,
+        shipper: payload.shipper,
+        consignee: payload.consignee,
+        notify_party: payload.notify_party,
+        cargo_ready_date: payload.cargo_ready_date,
+        etd: payload.etd,
+        eta: payload.eta,
+      }),
+      cache: 'no-store',
     });
-  } catch (logError) {
-    // Never let logging failure break the operation
-    console.error('[createShipmentOrderAction] Logging failed:', logError);
-  }
 
-  return result;
+    let result: CreateShipmentOrderResult;
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      result = { success: false, error: json?.detail ?? json?.msg ?? `Server responded ${res.status}` };
+    } else {
+      const json = await res.json();
+      result = { success: true, shipment_id: json.data?.shipment_id ?? '', tracking_id: '' };
+    }
+
+    // Log at action level
+    try {
+      await logAction({
+        uid: session.uid,
+        email: session.email,
+        account_type: session.account_type,
+        action: 'CREATE_SHIPMENT_ORDER',
+        entity_kind: 'Quotation',
+        entity_id: result.success ? result.shipment_id : 'unknown',
+        success: result.success,
+        error: result.success ? null : result.error,
+        meta: {
+          order_type: payload.order_type,
+          transaction_type: payload.transaction_type,
+          company_id: payload.company_id,
+        },
+      });
+    } catch (logError) {
+      console.error('[createShipmentOrderAction] Logging failed:', logError);
+    }
+
+    return result;
+  } catch (err) {
+    console.error('[createShipmentOrderAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to create shipment order' };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -476,16 +488,37 @@ export async function flagExceptionAction(
 export async function deleteShipmentOrderAction(
   shipment_id: string
 ): Promise<DeleteShipmentOrderResult> {
-  const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF', 'AFC-ADMIN', 'AFC-M']);
+  const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
   if (!session.valid) {
     return { success: false, error: 'Unauthorised' };
   }
 
-  return deleteShipmentOrder({
-    shipment_id,
-    changed_by_uid: session.uid,
-    changed_by_email: session.email,
-  });
+  try {
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) return { success: false, error: 'No session token' };
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) return { success: false, error: 'Server URL not configured' };
+
+    const url = new URL(`/api/v2/shipments/${encodeURIComponent(shipment_id)}`, serverUrl);
+    const res = await fetch(url.toString(), {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${idToken}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: json?.detail ?? json?.msg ?? `Server responded ${res.status}` };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error('[deleteShipmentOrderAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to delete shipment' };
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ All shipments are served from the `shipments` PostgreSQL table.
 import base64
 import json
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from typing import Optional
@@ -1323,25 +1324,274 @@ async def create_from_bl(
 
 
 # ---------------------------------------------------------------------------
-# Create shipment  (V2 only — stub)
+# Create shipment (V2 — manual entry)
 # ---------------------------------------------------------------------------
 
-@router.post("/create-manual")
-async def create_shipment(
-    claims: Claims = Depends(require_auth),
+class CreateManualShipmentRequest(BaseModel):
+    order_type: str                          # SEA_FCL | SEA_LCL | AIR
+    transaction_type: str                    # IMPORT | EXPORT | DOMESTIC
+    company_id: str
+    origin_port_un_code: str
+    origin_terminal_id: str | None = None
+    origin_label: str | None = None
+    destination_port_un_code: str
+    destination_terminal_id: str | None = None
+    destination_label: str | None = None
+    incoterm_code: str
+    cargo_description: str = "General Cargo"
+    cargo_hs_code: str | None = None
+    cargo_is_dg: bool = False
+    containers: list | None = None           # SEA_FCL: [{container_size, container_type, quantity}]
+    packages: list | None = None             # SEA_LCL / AIR: [{packaging_type, quantity, gross_weight_kg, volume_cbm}]
+    shipper: dict | None = None              # {name, address, contact_person, phone, email, company_id, company_contact_id}
+    consignee: dict | None = None
+    notify_party: dict | None = None
+    cargo_ready_date: str | None = None
+    etd: str | None = None
+    eta: str | None = None
+
+
+@router.post("")
+async def create_shipment_manual(
+    body: CreateManualShipmentRequest,
+    claims: Claims = Depends(require_afu_admin),
     conn=Depends(get_db),
 ):
     """
     Create a new V2 ShipmentOrder (manual entry).
-
-    Currently handled by shipments-write.ts in the Next.js layer.
-    This endpoint will replace that once the server is wired up.
+    Replaces the old Datastore-based createShipmentOrder() in shipments-write.ts.
     """
+    # 1. Validate required fields
+    if body.order_type not in ("SEA_FCL", "SEA_LCL", "AIR"):
+        raise HTTPException(status_code=400, detail="order_type must be SEA_FCL, SEA_LCL, or AIR")
+    if body.transaction_type not in ("IMPORT", "EXPORT", "DOMESTIC"):
+        raise HTTPException(status_code=400, detail="transaction_type must be IMPORT, EXPORT, or DOMESTIC")
+    if not body.company_id:
+        raise HTTPException(status_code=400, detail="company_id is required")
+    if not body.origin_port_un_code:
+        raise HTTPException(status_code=400, detail="origin_port_un_code is required")
+    if not body.destination_port_un_code:
+        raise HTTPException(status_code=400, detail="destination_port_un_code is required")
+    if not body.incoterm_code:
+        raise HTTPException(status_code=400, detail="incoterm_code is required")
+
+    # 2. Validate company exists
+    company_row = conn.execute(text("SELECT id FROM companies WHERE id = :id"), {"id": body.company_id}).fetchone()
+    if not company_row:
+        raise HTTPException(status_code=404, detail=f"Company {body.company_id} not found")
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # 3. Generate shipment ID
+    shipment_id, new_countid = db_queries.next_shipment_id(conn)
+
+    # 4. Build origin/destination JSONB
+    origin = {
+        "type": "PORT",
+        "port_un_code": body.origin_port_un_code,
+        "terminal_id": body.origin_terminal_id,
+        "city_id": None,
+        "address": None,
+        "country_code": None,
+        "label": body.origin_label or body.origin_port_un_code,
+    }
+    destination = {
+        "type": "PORT",
+        "port_un_code": body.destination_port_un_code,
+        "terminal_id": body.destination_terminal_id,
+        "city_id": None,
+        "address": None,
+        "country_code": None,
+        "label": body.destination_label or body.destination_port_un_code,
+    }
+
+    # 5. Build cargo JSONB
+    cargo = {
+        "description": body.cargo_description or "General Cargo",
+        "hs_code": body.cargo_hs_code,
+        "is_dg": body.cargo_is_dg,
+        "dg_class": None,
+        "dg_un_number": None,
+    }
+
+    # 6. Build type_details JSONB
+    if body.order_type == "SEA_FCL":
+        type_details = {"containers": body.containers or []}
+    else:
+        type_details = {"packages": body.packages or []}
+
+    # 7. Build parties JSONB
+    parties = {}
+    if body.shipper:
+        parties["shipper"] = body.shipper
+    if body.consignee:
+        parties["consignee"] = body.consignee
+    if body.notify_party:
+        parties["notify_party"] = body.notify_party
+
+    # 8. Initial status = 1002 (Draft Review)
+    status = STATUS_CONFIRMED
+
+    # 9. Status history
+    initial_history = [{
+        "status": status,
+        "label": STATUS_LABELS.get(status, str(status)),
+        "timestamp": now,
+        "changed_by": claims.email,
+        "note": "Manually created",
+    }]
+
+    # 10. Creator
+    creator = {"uid": claims.uid, "email": claims.email}
+
+    # 11. INSERT into shipments
+    conn.execute(text("""
+        INSERT INTO shipments (
+            id, countid, company_id, order_type, transaction_type, incoterm_code,
+            status, issued_invoice, last_status_updated, status_history,
+            origin_port, origin_terminal, dest_port, dest_terminal,
+            cargo, type_details, booking, parties, bl_document,
+            exception_data, route_nodes, tracking_id, trash,
+            cargo_ready_date, etd, eta, creator, customer_reference,
+            migrated_from_v1, created_at, updated_at
+        ) VALUES (
+            :id, :countid, :company_id, :order_type, :transaction_type, :incoterm_code,
+            :status, FALSE, :now, :status_history::jsonb,
+            :origin_port, :origin_terminal, :dest_port, :dest_terminal,
+            :cargo::jsonb, :type_details::jsonb, NULL, :parties::jsonb, NULL,
+            NULL, NULL, NULL, FALSE,
+            :cargo_ready_date, :etd, :eta, :creator::jsonb, NULL,
+            FALSE, :now, :now
+        )
+    """), {
+        "id": shipment_id,
+        "countid": new_countid,
+        "company_id": body.company_id,
+        "order_type": body.order_type,
+        "transaction_type": body.transaction_type,
+        "incoterm_code": body.incoterm_code,
+        "status": status,
+        "now": now,
+        "status_history": json.dumps(initial_history),
+        "origin_port": body.origin_port_un_code,
+        "origin_terminal": body.origin_terminal_id,
+        "dest_port": body.destination_port_un_code,
+        "dest_terminal": body.destination_terminal_id,
+        "cargo": json.dumps(cargo),
+        "type_details": json.dumps(type_details),
+        "parties": json.dumps(parties),
+        "creator": json.dumps(creator),
+        "cargo_ready_date": body.cargo_ready_date,
+        "etd": body.etd,
+        "eta": body.eta,
+    })
+
+    # 12. Auto-generate tasks
+    from datetime import date as _date
+    etd_date = None
+    if body.etd:
+        try:
+            etd_date = _date.fromisoformat(body.etd[:10])
+        except (ValueError, TypeError):
+            pass
+
+    tasks = generate_incoterm_tasks(
+        incoterm=body.incoterm_code,
+        transaction_type=body.transaction_type,
+        etd=etd_date,
+        updated_by=claims.email,
+    )
+
+    # 13. Workflow history
+    wf_history = [{
+        "status": status,
+        "status_label": STATUS_LABELS.get(status, str(status)),
+        "timestamp": now,
+        "changed_by": claims.uid,
+    }]
+
+    # 14. INSERT into shipment_workflows
+    conn.execute(text("""
+        INSERT INTO shipment_workflows (
+            shipment_id, company_id, status_history, workflow_tasks,
+            completed, created_at, updated_at
+        ) VALUES (
+            :shipment_id, :company_id, :status_history::jsonb, :workflow_tasks::jsonb,
+            FALSE, :now, :now
+        )
+    """), {
+        "shipment_id": shipment_id,
+        "company_id": body.company_id,
+        "status_history": json.dumps(wf_history),
+        "workflow_tasks": json.dumps(tasks),
+        "now": now,
+    })
+
+    # 15. Log
+    _log_system_action_pg(conn, "SHIPMENT_CREATED_MANUAL", shipment_id, claims.uid, claims.email)
+
+    logger.info("Shipment %s created manually by %s", shipment_id, claims.uid)
+
+    # 16. Return
     return {
         "status": "OK",
-        "data": None,
-        "msg": "Shipment create — implementation in progress",
+        "data": {"shipment_id": shipment_id},
+        "msg": "Shipment created",
     }
+
+
+# ---------------------------------------------------------------------------
+# Delete shipment (soft + hard)
+# ---------------------------------------------------------------------------
+
+ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
+
+
+@router.delete("/{shipment_id}")
+async def delete_shipment(
+    shipment_id: str,
+    hard: bool = Query(False),
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    """
+    Delete a shipment. Soft delete by default (sets trash=TRUE).
+    Hard delete (permanent row removal) only permitted in development environment.
+    """
+    # Environment guard for hard delete
+    if hard and ENVIRONMENT != "development":
+        raise HTTPException(status_code=403, detail="Hard delete only permitted in development environment")
+
+    # Verify shipment exists
+    row = conn.execute(text("SELECT id, trash FROM shipments WHERE id = :id"), {"id": shipment_id}).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Shipment {shipment_id} not found")
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    if hard:
+        # Hard delete — log BEFORE deletion
+        _log_system_action_pg(conn, "SHIPMENT_HARD_DELETED", shipment_id, claims.uid, claims.email)
+        conn.execute(text("DELETE FROM shipment_files WHERE shipment_id = :id"), {"id": shipment_id})
+        conn.execute(text("DELETE FROM shipment_workflows WHERE shipment_id = :id"), {"id": shipment_id})
+        conn.execute(text("DELETE FROM shipments WHERE id = :id"), {"id": shipment_id})
+        logger.info("Shipment %s hard-deleted by %s", shipment_id, claims.uid)
+        return {"deleted": True, "shipment_id": shipment_id, "mode": "hard"}
+    else:
+        # Soft delete
+        if row[1]:  # trash column
+            raise HTTPException(status_code=400, detail="Shipment already deleted")
+
+        conn.execute(text("""
+            UPDATE shipments SET trash = TRUE, updated_at = :now WHERE id = :id
+        """), {"id": shipment_id, "now": now})
+        conn.execute(text("""
+            UPDATE shipment_workflows SET trash = TRUE, updated_at = :now WHERE shipment_id = :id
+        """), {"id": shipment_id, "now": now})
+
+        _log_system_action_pg(conn, "SHIPMENT_SOFT_DELETED", shipment_id, claims.uid, claims.email)
+        logger.info("Shipment %s soft-deleted by %s", shipment_id, claims.uid)
+        return {"deleted": True, "shipment_id": shipment_id, "mode": "soft"}
 
 
 # ---------------------------------------------------------------------------
