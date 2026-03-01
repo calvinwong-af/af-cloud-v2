@@ -692,7 +692,7 @@ async def update_exception_flag(
 
     conn.execute(text("""
         UPDATE shipments
-        SET exception_data = :exception::jsonb, updated_at = :now
+        SET exception_data = CAST(:exception AS jsonb), updated_at = :now
         WHERE id = :id
     """), {"exception": json.dumps(exception_data), "now": now, "id": shipment_id})
 
@@ -1244,11 +1244,11 @@ async def create_from_bl(
             migrated_from_v1, created_at, updated_at
         ) VALUES (
             :id, :countid, :company_id, :order_type, :transaction_type, :incoterm_code,
-            :status, FALSE, :now, :status_history::jsonb,
+            :status, FALSE, :now, CAST(:status_history AS jsonb),
             :origin_port, :origin_terminal, :dest_port, :dest_terminal,
-            :cargo::jsonb, :type_details::jsonb, :booking::jsonb, :parties::jsonb, NULL,
+            CAST(:cargo AS jsonb), CAST(:type_details AS jsonb), CAST(:booking AS jsonb), CAST(:parties AS jsonb), NULL,
             NULL, NULL, NULL, FALSE,
-            NULL, :etd, NULL, :creator::jsonb, :customer_reference,
+            NULL, :etd, NULL, CAST(:creator AS jsonb), :customer_reference,
             FALSE, :now, :now
         )
     """), {
@@ -1303,7 +1303,7 @@ async def create_from_bl(
             shipment_id, company_id, status_history, workflow_tasks,
             completed, created_at, updated_at
         ) VALUES (
-            :shipment_id, :company_id, :status_history::jsonb, :workflow_tasks::jsonb,
+            :shipment_id, :company_id, CAST(:status_history AS jsonb), CAST(:workflow_tasks AS jsonb),
             FALSE, :now, :now
         )
     """), {
@@ -1456,11 +1456,11 @@ async def create_shipment_manual(
             migrated_from_v1, created_at, updated_at
         ) VALUES (
             :id, :countid, :company_id, :order_type, :transaction_type, :incoterm_code,
-            :status, FALSE, :now, :status_history::jsonb,
+            :status, FALSE, :now, CAST(:status_history AS jsonb),
             :origin_port, :origin_terminal, :dest_port, :dest_terminal,
-            :cargo::jsonb, :type_details::jsonb, NULL, :parties::jsonb, NULL,
+            CAST(:cargo AS jsonb), CAST(:type_details AS jsonb), NULL, CAST(:parties AS jsonb), NULL,
             NULL, NULL, NULL, FALSE,
-            :cargo_ready_date, :etd, :eta, :creator::jsonb, NULL,
+            :cargo_ready_date, :etd, :eta, CAST(:creator AS jsonb), NULL,
             FALSE, :now, :now
         )
     """), {
@@ -1516,7 +1516,7 @@ async def create_shipment_manual(
             shipment_id, company_id, status_history, workflow_tasks,
             completed, created_at, updated_at
         ) VALUES (
-            :shipment_id, :company_id, :status_history::jsonb, :workflow_tasks::jsonb,
+            :shipment_id, :company_id, CAST(:status_history AS jsonb), CAST(:workflow_tasks AS jsonb),
             FALSE, :now, :now
         )
     """), {
@@ -1803,7 +1803,7 @@ async def update_shipment_task(
     tasks[target_idx] = task
     conn.execute(text("""
         UPDATE shipment_workflows
-        SET workflow_tasks = :tasks::jsonb, updated_at = :now
+        SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
         WHERE shipment_id = :id
     """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
 
@@ -1870,8 +1870,8 @@ def _create_file_record(
             trash, created_at, updated_at
         ) VALUES (
             :shipment_id, :company_id, 'shipments', :file_name, :file_location,
-            :file_tags::jsonb, NULL, :file_size, :visibility,
-            FALSE, :permission::jsonb, :uploaded_by, :uploaded_by_email,
+            CAST(:file_tags AS jsonb), NULL, :file_size, :visibility,
+            FALSE, CAST(:permission AS jsonb), :uploaded_by, :uploaded_by_email,
             FALSE, :now, :now
         )
         RETURNING *
@@ -2029,7 +2029,7 @@ async def update_shipment_file(
     params: dict = {"now": now, "id": file_id}
 
     if body.file_tags is not None:
-        updates.append("file_tags = :file_tags::jsonb")
+        updates.append("file_tags = CAST(:file_tags AS jsonb)")
         params["file_tags"] = json.dumps(body.file_tags)
 
     # AFC Admin/Manager cannot change visibility
@@ -2276,10 +2276,10 @@ async def update_from_bl(
 
     # Build UPDATE statement
     set_clauses = [
-        "booking = :booking::jsonb",
-        "parties = :parties::jsonb",
-        "bl_document = :bl_document::jsonb",
-        "type_details = :type_details::jsonb",
+        "booking = CAST(:booking AS jsonb)",
+        "parties = CAST(:parties AS jsonb)",
+        "bl_document = CAST(:bl_document AS jsonb)",
+        "type_details = CAST(:type_details AS jsonb)",
         "updated_at = :now",
     ]
     params: dict = {
@@ -2438,7 +2438,7 @@ async def update_parties(
             parties["notify_party"] = notify_party
 
     conn.execute(text("""
-        UPDATE shipments SET parties = :parties::jsonb, updated_at = :now WHERE id = :id
+        UPDATE shipments SET parties = CAST(:parties AS jsonb), updated_at = :now WHERE id = :id
     """), {"parties": json.dumps(parties), "now": now, "id": shipment_id})
 
     _log_system_action_pg(conn, "PARTIES_UPDATED", shipment_id, claims.uid, claims.email)
@@ -2484,7 +2484,7 @@ def _maybe_unblock_export_clearance_pg(conn, shipment_id: str, user_id: str):
     if changed:
         conn.execute(text("""
             UPDATE shipment_workflows
-            SET workflow_tasks = :tasks::jsonb, updated_at = :now
+            SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
             WHERE shipment_id = :id
         """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
         logger.info("EXPORT_CLEARANCE unblocked for %s", shipment_id)
@@ -2685,7 +2685,7 @@ async def save_route_nodes(
 
     now = datetime.now(timezone.utc).isoformat()
 
-    set_clauses = ["route_nodes = :route_nodes::jsonb", "updated_at = :now"]
+    set_clauses = ["route_nodes = CAST(:route_nodes AS jsonb)", "updated_at = :now"]
     params: dict = {"route_nodes": json.dumps(node_dicts), "now": now, "id": shipment_id}
 
     if flat_etd is not None:
@@ -2768,7 +2768,7 @@ async def update_route_node_timing(
         target["actual_etd"] = body.actual_etd
 
     # Build update
-    set_clauses = ["route_nodes = :route_nodes::jsonb", "updated_at = :now"]
+    set_clauses = ["route_nodes = CAST(:route_nodes AS jsonb)", "updated_at = :now"]
     params: dict = {"route_nodes": json.dumps(nodes), "now": datetime.now(timezone.utc).isoformat(), "id": shipment_id}
 
     # Sync flat fields if ORIGIN or DESTINATION

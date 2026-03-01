@@ -1,5 +1,11 @@
 # Prompt Completion Log — v2.53–v2.62
 
+### [2026-03-02 17:00 UTC] — v2.55: SQLAlchemy ::jsonb cast syntax fix — full sweep
+- **Status:** Completed
+- **Tasks:** Replaced all `:param::jsonb` patterns with `CAST(:param AS jsonb)` in SQLAlchemy text() strings
+- **Files Modified:** `af-server/routers/shipments.py` — 28 occurrences across 13 locations
+- **Notes:** Column casts (e.g. `cargo_ready_date::text`) left unchanged. No logic changes.
+
 ### [2026-03-02 16:00 UTC] — v2.54: BLUploadTab — Add shipper, consignee address, and notify party fields
 - **Status:** Completed
 - **Tasks:**
