@@ -250,6 +250,7 @@ export interface ShipmentOrder {
   quotation_id: string;           // AFCQ-XXXXXX
   countid: number;
   data_version: number;           // 1 = V1, 2 = V2. Default: 1
+  migrated_from_v1?: boolean;     // true for migrated V1 records (AF- prefix, data_version=2)
 
   // Core fields
   company_id: string;             // AFC-XXXXXX

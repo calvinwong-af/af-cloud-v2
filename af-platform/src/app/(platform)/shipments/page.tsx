@@ -50,6 +50,7 @@ function toShipmentOrder(item: ShipmentListItem): ShipmentOrder {
     quotation_id: item.shipment_id,
     countid: 0,
     data_version: item.data_version,
+    migrated_from_v1: item.migrated_from_v1,
     company_id: item.company_id,
     order_type: ORDER_TYPE_MAP[item.order_type] ?? 'SEA_FCL',
     transaction_type: (item.transaction_type as ShipmentOrder['transaction_type']) || 'IMPORT',

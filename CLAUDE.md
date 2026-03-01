@@ -34,7 +34,7 @@ Do not write these files to the repo root.
 | Active Opus prompt | `claude/prompts/PROMPT-CURRENT.md` |
 | Test list | `claude/tests/AF-Test-List.md` |
 | Handover notes | `claude/handover/AF-Handover-Notes-v2_XX.md` |
-| Prompt completion log | `claude/PROMPT-LOG.md` |
+| Prompt completion log | `claude/prompts/log/` (versioned archive files) |
 
 ### Rules
 - Handover notes are written by Claude AI (Sonnet) via MCP at session end, only when prompted
@@ -42,8 +42,8 @@ Do not write these files to the repo root.
 - `AF-Test-List.md` is updated alongside each handover note
 - Opus reads `PROMPT-CURRENT.md` from `claude/prompts/` — not the repo root
 
-### Prompt Completion Log (`claude/PROMPT-LOG.md`)
-**Rule:** After completing any prompt (from `PROMPT-CURRENT.md` or user-issued tasks), Claude MUST append an entry to `claude/PROMPT-LOG.md` with the following format:
+### Prompt Completion Log (`claude/prompts/log/`)
+**Rule:** After completing any prompt (from `PROMPT-CURRENT.md` or user-issued tasks), Claude MUST append an entry to the active archive file in `claude/prompts/log/` with the following format:
 
 ```markdown
 ### [YYYY-MM-DD HH:MM UTC] — Prompt Title
@@ -53,7 +53,8 @@ Do not write these files to the repo root.
 - **Notes:** Any issues, blockers, or follow-ups (optional)
 ```
 
-- Append to the file — never overwrite previous entries
+- Archive files are named `PROMPT-LOG-v2.XX-v2.YY.md` with 10 entries per file
+- Append to the highest-numbered archive file; create a new file when it reaches 10 entries
 - Use UTC timestamps
 - Log every prompt execution, including partial completions and failures
 - If a prompt has multiple tasks, report status per task
@@ -104,11 +105,22 @@ npm run lint         # ESLint
 ```bash
 cd af-server
 # Activate venv first (PowerShell: .venv\Scripts\Activate.ps1)
-source .venv/bin/activate          # or .venv\Scripts\Activate.ps1 on Windows
+.venv\Scripts\Activate.ps1                        # Windows PowerShell
+source .venv/bin/activate                         # Mac/Linux
 python -m uvicorn main:app --reload --port 8000   # Dev server (localhost:8000)
-pip install -r requirements.txt    # Install dependencies
+pip install -r requirements.txt                   # Install dependencies
 ```
-- Python: **3.11 via `.venv`** — do NOT use system Python
+
+> ⚠️ **ALWAYS use `.venv` — NEVER system Python**
+> System Python is 3.14 which is incompatible with `google-cloud-datastore`
+> (protobuf C extension fails with `TypeError: Metaclasses with custom tp_new`).
+> All `python` and `pip` commands must use the `.venv` interpreter:
+> - Scripts: `.venv\Scripts\python scripts/my_script.py`
+> - One-liners: `.venv\Scripts\python -c "..."`
+> - pip: `.venv\Scripts\pip install ...`
+> A `.python-version` file pinning `3.11` is present in `af-server/` for tools
+> that respect it (pyenv, mise, VS Code Python extension).
+
 - API docs available at `http://localhost:8000/docs` when running
 
 ### af-web (public site)

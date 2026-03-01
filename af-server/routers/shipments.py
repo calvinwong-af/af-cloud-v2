@@ -147,8 +147,8 @@ async def get_shipment_stats(
             stats["active"] += 1
         elif s == STATUS_COMPLETED or s == STATUS_CONFIRMED:
             stats["completed"] += 1
-            # to_invoice: completed/confirmed but invoice not yet issued
-            if not bool(entity.get("issued_invoice", False)):
+            # to_invoice: only STATUS_COMPLETED (not confirmed historical)
+            if s == STATUS_COMPLETED and not bool(entity.get("issued_invoice", False)):
                 stats["to_invoice"] += 1
         elif s == STATUS_CANCELLED:
             stats["cancelled"] += 1
@@ -242,7 +242,8 @@ async def get_shipment_stats(
             stats["active"] += 1
         elif s == STATUS_COMPLETED or s == STATUS_CONFIRMED:
             stats["completed"] += 1
-            migrated_completed_ids.append(entity.key.name or str(entity.key.id))
+            if s == STATUS_COMPLETED:
+                migrated_completed_ids.append(entity.key.name or str(entity.key.id))
         elif s == STATUS_CANCELLED:
             stats["cancelled"] += 1
         elif s in (STATUS_DRAFT, STATUS_DRAFT_REVIEW):
@@ -529,7 +530,7 @@ def _v2_tab_match(tab: str, entity) -> bool:
     if tab == "completed":
         return s == STATUS_COMPLETED or s == STATUS_CONFIRMED
     if tab == "to_invoice":
-        return (s == STATUS_COMPLETED or s == STATUS_CONFIRMED) and not bool(entity.get("issued_invoice", False))
+        return s == STATUS_COMPLETED and not bool(entity.get("issued_invoice", False))
     if tab == "draft":
         return s in _DRAFT_STATUSES
     if tab == "cancelled":
@@ -595,7 +596,7 @@ def _migrated_tab_match(tab: str, entity) -> bool:
         return s == STATUS_COMPLETED or s == STATUS_CONFIRMED
     if tab == "to_invoice":
         issued = entity.get("issued_invoice")
-        return (s == STATUS_COMPLETED or s == STATUS_CONFIRMED) and not issued
+        return s == STATUS_COMPLETED and not issued
     if tab == "draft":
         return s in _DRAFT_STATUSES
     if tab == "cancelled":
@@ -733,7 +734,6 @@ async def list_shipments(
         v2_query.add_filter(filter=PropertyFilter("trash", "=", False))
         if effective_company_id:
             v2_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
-        v2_count = 0
         for entity in v2_query.fetch():
             sid = entity.key.name or str(entity.key.id)
             if sid.startswith(PREFIX_V2_SHIPMENT):
@@ -743,10 +743,6 @@ async def list_shipments(
                     pass
             if _v2_tab_match(tab, entity):
                 items.append(_make_v2_summary(entity))
-                v2_count += 1
-
-        if tab == "to_invoice":
-            logger.info("[to_invoice] V2 Quotation matches: %d records", v2_count)
 
     # -------------------------------------------------------------------
     # Migrated records — ShipmentOrder Kind, data_version=2
@@ -763,11 +759,9 @@ async def list_shipments(
             migrated_query.add_filter(
                 filter=PropertyFilter("company_id", "=", effective_company_id)
             )
-        # For to_invoice: match as "completed", post-filter after Quotation lookup
-        migrated_tab = "completed" if tab == "to_invoice" else tab
         migrated_items: list[dict] = []
         for entity in migrated_query.fetch():
-            if _migrated_tab_match(migrated_tab, entity):
+            if _migrated_tab_match(tab, entity):
                 migrated_items.append(_make_migrated_summary(entity))
 
         if tab == "to_invoice" and migrated_items:
@@ -821,14 +815,7 @@ async def list_shipments(
             token = v1_iter.next_page_token
             v1_next_cursor = base64.urlsafe_b64encode(token).decode() if token else None
 
-        if tab == "to_invoice":
-            logger.info("[to_invoice] ShipmentOrder query returned: %d records", len(v1_shipment_orders))
-
         if v1_shipment_orders:
-            # Display fields are read directly from ShipmentOrder — no Quotation batch fetch needed.
-            if tab == "to_invoice":
-                logger.info("[to_invoice] Processing %d ShipmentOrders (no Quotation join)", len(v1_shipment_orders))
-
             if tab == "to_invoice":
                 # Two-pass: collect completed V1 records where SO doesn't have issued=True,
                 # then batch-fetch Quotation records to verify issued_invoice
@@ -845,6 +832,8 @@ async def list_shipments(
                             continue
                     raw_status = so_entity.get("status", 0)
                     v2_status = _resolve_so_status_to_v2(raw_status)
+                    if v2_status == STATUS_CANCELLED:
+                        continue
                     if v2_status != STATUS_COMPLETED:
                         continue
                     so_issued = bool(so_entity.get("issued_invoice", False))
@@ -867,8 +856,6 @@ async def list_shipments(
                             continue  # Quotation says invoiced — skip
                         items.append(_make_v1_summary(so_entity, None, v2_status))
 
-                logger.info("[to_invoice] V1 records after two-source filter: %d",
-                            sum(1 for s in items if s.get("data_version") == 1))
             else:
                 # All other tabs — single-pass
                 for so_entity in v1_shipment_orders:
@@ -908,9 +895,6 @@ async def list_shipments(
 
     items.sort(key=_id_sort_key, reverse=True)
     result = items[:limit]
-
-    if tab == "to_invoice":
-        logger.info("[to_invoice] Final response: %d shipments", len(result))
 
     return {
         "shipments": result,

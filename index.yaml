@@ -23,11 +23,18 @@ indexes:
       - name: countid
         direction: desc
 
-  # ShipmentOrder — V1 stats + list queries
+  # ShipmentOrder — V1 stats + list queries (unfiltered range on status)
   - kind: ShipmentOrder
     properties:
       - name: status
       - name: company_id
+
+  # ShipmentOrder — V1 company-filtered list (AFC users + AFU per-company)
+  # company_id must come before status for equality+range queries to work
+  - kind: ShipmentOrder
+    properties:
+      - name: company_id
+      - name: status
 
   # Quotation V2 — base list (all companies, AFU staff view)
   - kind: Quotation

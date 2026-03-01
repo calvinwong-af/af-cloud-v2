@@ -348,8 +348,15 @@ function ShipmentCard({ order, href }: { order: ShipmentOrder; href: string }) {
       </div>
 
       {/* Shipment ID */}
-      <div className="font-mono text-sm font-medium mb-1" style={{ color: 'var(--sky)' }}>
-        {order.quotation_id}
+      <div className="flex items-center gap-2 mb-1">
+        <span className="font-mono text-sm font-medium" style={{ color: 'var(--sky)' }}>
+          {order.quotation_id}
+        </span>
+        {(order.data_version === 1 || order.migrated_from_v1 === true || order.quotation_id?.startsWith('AFCQ-')) && (
+          <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded">
+            V1
+          </span>
+        )}
       </div>
 
       {/* Route */}
@@ -523,7 +530,7 @@ function ShipmentRow({
           <span className="font-mono text-xs font-medium text-[var(--sky)]">
             {order.quotation_id}
           </span>
-          {order.data_version === 1 && (
+          {(order.data_version === 1 || order.migrated_from_v1 === true || order.quotation_id?.startsWith('AFCQ-')) && (
             <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded">
               V1
             </span>

@@ -115,6 +115,7 @@ export async function fetchShipmentOrderDetailAction(
 export interface ShipmentListItem {
   shipment_id: string;
   data_version: number;
+  migrated_from_v1?: boolean;
   status: number;
   order_type: string;
   transaction_type: string;
