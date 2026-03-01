@@ -57,7 +57,7 @@ function toShipmentOrder(item: ShipmentListItem): ShipmentOrder {
     transaction_type: (item.transaction_type as ShipmentOrder['transaction_type']) || 'IMPORT',
     incoterm_code: item.incoterm || null,
     status: item.status as ShipmentOrder['status'],
-    issued_invoice: false,
+    issued_invoice: item.issued_invoice ?? false,
     last_status_updated: null,
     status_history: [],
     parent_id: null,
@@ -209,15 +209,16 @@ function ShipmentsPageInner() {
       setSearchResults(results.map((r) => toShipmentOrder({
         shipment_id: r.shipment_id,
         data_version: r.data_version,
+        migrated_from_v1: r.migrated_from_v1 ?? false,
         status: r.status,
         order_type: r.order_type,
-        transaction_type: '',
-        incoterm: '',
+        transaction_type: r.transaction_type ?? '',
+        incoterm: r.incoterm ?? '',
         origin_port: r.origin_port,
         destination_port: r.destination_port,
         company_id: r.company_id,
         company_name: r.company_name,
-        cargo_ready_date: '',
+        cargo_ready_date: r.cargo_ready_date ?? '',
         updated: r.updated,
       })));
       setSearching(false);
@@ -308,10 +309,41 @@ function ShipmentsPageInner() {
 
       {/* Search active indicator or filter tabs */}
       {isSearchActive ? (
-        <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
-          <span>Searching across all shipments</span>
-          {!searching && <span className="font-medium" style={{ color: 'var(--text)' }}>· {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}</span>}
-          {searching && <span className="italic">…</span>}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+            <span>Searching across all shipments</span>
+            {!searching && <span className="font-medium" style={{ color: 'var(--text)' }}>· {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}</span>}
+            {searching && <span className="italic">…</span>}
+          </div>
+          {!searching && searchResults.length > 0 && (() => {
+            const ACTIVE_STATUSES = new Set([3001, 3002, 4001, 4002]);
+            const NATIVE_ACTIVE = (r: ShipmentOrder) =>
+              r.status === 2001 && !r.migrated_from_v1;
+            const activeCount = searchResults.filter(r => ACTIVE_STATUSES.has(r.status as number) || NATIVE_ACTIVE(r)).length;
+            const completedCount = searchResults.filter(r => r.status === 5001 || (r.status === 2001 && r.migrated_from_v1)).length;
+            const otherCount = searchResults.length - activeCount - completedCount;
+            return (
+              <div className="flex flex-wrap gap-2">
+                {activeCount > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-sky-50 text-sky-700 border border-sky-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-sky-500 inline-block" />
+                    Active · {activeCount}
+                  </span>
+                )}
+                {completedCount > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                    Completed · {completedCount}
+                  </span>
+                )}
+                {otherCount > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-50 text-gray-600 border border-gray-200">
+                    Other · {otherCount}
+                  </span>
+                )}
+              </div>
+            );
+          })()}
         </div>
       ) : (
         <div className="border-b border-[var(--border)]">

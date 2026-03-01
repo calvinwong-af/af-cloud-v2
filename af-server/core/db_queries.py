@@ -88,11 +88,27 @@ def list_shipments(conn, tab: str, company_id: str | None, limit: int, offset: i
                s.status, s.order_type, s.transaction_type, s.incoterm_code AS incoterm,
                s.origin_port, s.dest_port AS destination_port,
                s.company_id, c.name AS company_name,
-               s.cargo_ready_date::text, s.updated_at::text AS updated
+               s.cargo_ready_date::text, s.updated_at::text AS updated,
+               s.issued_invoice
         FROM shipments s
         LEFT JOIN companies c ON c.id = s.company_id
         WHERE {where}
-        ORDER BY s.countid DESC
+        ORDER BY
+            CASE
+                WHEN s.status IN (3001, 3002, 4001, 4002)
+                     OR (s.status = 2001 AND s.migrated_from_v1 = FALSE) THEN 0
+                ELSE 1
+            END ASC,
+            CASE s.status
+                WHEN 4002 THEN 0
+                WHEN 4001 THEN 1
+                WHEN 3002 THEN 2
+                WHEN 3001 THEN 3
+                WHEN 2001 THEN 4
+                ELSE 5
+            END ASC,
+            s.cargo_ready_date DESC NULLS LAST,
+            s.countid DESC
         LIMIT :limit OFFSET :offset
     """), params).fetchall()
 
@@ -112,6 +128,7 @@ def list_shipments(conn, tab: str, company_id: str | None, limit: int, offset: i
             "company_name": r[10] or "",
             "cargo_ready_date": (r[11] or "")[:10] if r[11] else "",
             "updated": (r[12] or "")[:10] if r[12] else "",
+            "issued_invoice": r[13] or False,
         })
 
     return items, total
@@ -126,14 +143,32 @@ def search_shipments(conn, q: str, company_id: str | None, limit: int) -> list[d
         params["company_id"] = company_id
 
     rows = conn.execute(text(f"""
-        SELECT s.id AS shipment_id, 2 AS data_version, s.status,
-               s.order_type, s.company_id, c.name AS company_name,
-               s.origin_port, s.dest_port AS destination_port, s.updated_at::text AS updated
+        SELECT s.id AS shipment_id, 2 AS data_version, s.migrated_from_v1,
+               s.status, s.order_type, s.transaction_type, s.incoterm_code AS incoterm,
+               s.company_id, c.name AS company_name,
+               s.origin_port, s.dest_port AS destination_port,
+               s.cargo_ready_date::text, s.updated_at::text AS updated,
+               s.issued_invoice
         FROM shipments s
         LEFT JOIN companies c ON c.id = s.company_id
         WHERE {where}
           AND (s.id ILIKE :q OR c.name ILIKE :q OR s.origin_port ILIKE :q OR s.dest_port ILIKE :q)
-        ORDER BY s.updated_at DESC
+        ORDER BY
+            CASE
+                WHEN s.status IN (3001, 3002, 4001, 4002)
+                     OR (s.status = 2001 AND s.migrated_from_v1 = FALSE) THEN 0
+                ELSE 1
+            END ASC,
+            CASE s.status
+                WHEN 4002 THEN 0
+                WHEN 4001 THEN 1
+                WHEN 3002 THEN 2
+                WHEN 3001 THEN 3
+                WHEN 2001 THEN 4
+                ELSE 5
+            END ASC,
+            s.cargo_ready_date DESC NULLS LAST,
+            s.countid DESC
         LIMIT :limit
     """), params).fetchall()
 
@@ -142,14 +177,19 @@ def search_shipments(conn, q: str, company_id: str | None, limit: int) -> list[d
         items.append({
             "shipment_id": r[0],
             "data_version": r[1],
-            "status": r[2],
-            "status_label": STATUS_LABELS.get(r[2], str(r[2])),
-            "order_type": r[3] or "",
-            "company_id": r[4] or "",
-            "company_name": r[5] or "",
-            "origin_port": r[6] or "",
-            "destination_port": r[7] or "",
-            "updated": (r[8] or "")[:10] if r[8] else "",
+            "migrated_from_v1": r[2] or False,
+            "status": r[3],
+            "status_label": STATUS_LABELS.get(r[3], str(r[3])),
+            "order_type": r[4] or "",
+            "transaction_type": r[5] or "",
+            "incoterm": r[6] or "",
+            "company_id": r[7] or "",
+            "company_name": r[8] or "",
+            "origin_port": r[9] or "",
+            "destination_port": r[10] or "",
+            "cargo_ready_date": (r[11] or "")[:10] if r[11] else "",
+            "updated": (r[12] or "")[:10] if r[12] else "",
+            "issued_invoice": r[13] or False,
         })
 
     return items

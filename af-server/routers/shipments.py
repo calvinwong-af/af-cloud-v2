@@ -485,9 +485,11 @@ async def update_shipment_status(
 
     # --- e. Validate transition using path-aware logic ---
     if not body.allow_jump and not body.reverted:
-        if path_list and current_status in path_list and new_status != STATUS_CANCELLED:
+        if new_status == STATUS_CANCELLED:
+            pass  # Cancellation always allowed from non-terminal states
+        elif path_list and current_status in path_list:
             current_idx = path_list.index(current_status)
-            # Only allow advancing to the next step on the path, or cancelling
+            # Only allow advancing to the next step on the path
             if current_idx + 1 < len(path_list):
                 expected_next = path_list[current_idx + 1]
                 if new_status != expected_next:
@@ -498,8 +500,16 @@ async def update_shipment_status(
                     }
             else:
                 return {"status": "ERROR", "msg": "Already at final status on this path"}
-        elif new_status == STATUS_CANCELLED:
-            pass  # Cancellation always allowed from non-terminal
+        elif path_list and current_status not in path_list:
+            # Out-of-path: migrated shipment has a status not on its incoterm path
+            # (e.g. status=3001 Booking Pending on a Path B incoterm like CNF IMPORT).
+            # Allow advancing to any status that is numerically ahead in the full
+            # ordered list, or to STATUS_CANCELLED. Block going backwards.
+            all_codes = [1001, 1002, 2001, 3001, 3002, 4001, 4002, 5001]
+            current_ord = all_codes.index(current_status) if current_status in all_codes else -1
+            new_ord = all_codes.index(new_status) if new_status in all_codes else -1
+            if current_ord >= 0 and new_ord >= 0 and new_ord <= current_ord:
+                return {"status": "ERROR", "msg": "Cannot go backwards without revert flag"}
         elif not path_list:
             # Fallback if no incoterm — use simple forward check
             all_codes = [1001, 1002, 2001, 3001, 3002, 4001, 4002, 5001]
@@ -525,9 +535,8 @@ async def update_shipment_status(
     conn.execute(text("""
         UPDATE shipments
         SET status = :new_status,
-            last_status_updated = :now,
             updated_at = :now,
-            status_history = :history::jsonb
+            status_history = CAST(:history AS jsonb)
         WHERE id = :id
     """), {
         "new_status": new_status,
@@ -564,13 +573,13 @@ async def update_shipment_status(
         if completed_val is not None:
             conn.execute(text("""
                 UPDATE shipment_workflows
-                SET status_history = :history::jsonb, updated_at = :now, completed = :completed
+                SET status_history = CAST(:history AS jsonb), updated_at = :now, completed = :completed
                 WHERE shipment_id = :id
             """), {"history": json.dumps(new_wf_history), "now": now, "completed": completed_val, "id": shipment_id})
         else:
             conn.execute(text("""
                 UPDATE shipment_workflows
-                SET status_history = :history::jsonb, updated_at = :now
+                SET status_history = CAST(:history AS jsonb), updated_at = :now
                 WHERE shipment_id = :id
             """), {"history": json.dumps(new_wf_history), "now": now, "id": shipment_id})
 
@@ -584,6 +593,43 @@ async def update_shipment_status(
         "data": {"shipment_id": shipment_id, "new_status": new_status, "path": path},
         "msg": "Status updated",
     }
+
+
+# ---------------------------------------------------------------------------
+# Update invoiced status
+# ---------------------------------------------------------------------------
+
+class UpdateInvoicedRequest(BaseModel):
+    issued_invoice: bool
+
+
+@router.patch("/{shipment_id}/invoiced")
+async def update_invoiced_status(
+    shipment_id: str,
+    body: UpdateInvoicedRequest,
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    """Update the issued_invoice flag. AFU staff only. Shipment must be completed (5001)."""
+    now = datetime.now(timezone.utc).isoformat()
+
+    row = conn.execute(text("""
+        SELECT status FROM shipments WHERE id = :id
+    """), {"id": shipment_id}).fetchone()
+
+    if not row:
+        raise NotFoundError(f"Shipment {shipment_id} not found")
+
+    if row[0] != STATUS_COMPLETED:
+        return {"status": "ERROR", "msg": "Invoiced flag can only be set on completed shipments"}
+
+    conn.execute(text("""
+        UPDATE shipments SET issued_invoice = :issued_invoice, updated_at = :now WHERE id = :id
+    """), {"issued_invoice": body.issued_invoice, "now": now, "id": shipment_id})
+
+    logger.info("Invoiced %s on %s by %s", body.issued_invoice, shipment_id, claims.uid)
+
+    return {"status": "OK", "data": {"issued_invoice": body.issued_invoice}, "msg": "Invoiced status updated"}
 
 
 # ---------------------------------------------------------------------------

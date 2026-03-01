@@ -1,10 +1,11 @@
 # AF Platform — Test List
-**Version:** 2.18
-**Last Updated:** 01 March 2026
+**Version:** 2.20
+**Last Updated:** 02 March 2026
 
 ## Version History
 | Version | Date | Changes |
 |---|---|---|
+| 2.20 | 02 Mar 2026 | SR series added (3 tests, sort order regression). DS series added (4 items, Datastore sweep audit). LO series added (3 tests, loading state UI). |
 | 2.19 | 01 Mar 2026 | PG series partially confirmed — PG-03/04/05/14/15 YES from live production snapshot. Migration complete and deployed. |
 | 2.18 | 01 Mar 2026 | PG series added (15 tests, PostgreSQL migration verification). V2C series retired (NA) — superseded by PG series. |
 | 2.17 | 01 Mar 2026 | MI series retired (NA) — migration complete. V2C series added (10 tests, V2 cleanup verification). |
@@ -348,6 +349,34 @@
 | SU-02 | AF-003862 DOES appear in shipment list | NA | AF-003862 entity removed by revert script (v2.44). Correctly absent. |
 | SU-03 | AF-003862 shows V1 badge | NA | Non-issue — entity removed. |
 | SU-04 | Navigating to /shipments/AFCQ-003862 redirects to AF-003862 detail | NA | AF-003862 removed. AFCQ-003862 invisible — correct. |
+
+---
+
+## Sort Order Regression (SR series)
+| # | Test | Status | Notes |
+|---|---|---|---|
+| SR-01 | Active tab: Booking Confirmed (3002) records appear above Booking Pending (3001) | PENDING | AF-003867/003866 (3002) should be above AF-003864/003858 (3001) |
+| SR-02 | Active tab: Within same status, sorted by cargo_ready_date DESC then countid DESC | PENDING | AF-003864 (CRD 26 Feb) before AF-003858 (CRD 24 Feb) |
+| SR-03 | Search results: active-first sort preserved with 4-tier ORDER BY | PENDING | Same CASE ordering applied to search_shipments() |
+
+---
+
+## Datastore Sweep Audit (DS series)
+| # | Test | Status | Notes |
+|---|---|---|---|
+| DS-01 | createShipmentOrder() in shipments-write.ts writes to Datastore — needs POST /api/v2/shipments endpoint | PENDING | CRITICAL — creates Quotation, CountId, TrackingId, WorkFlow in Datastore |
+| DS-02 | deleteShipmentOrder() in shipments-write.ts writes to Datastore — needs DELETE endpoint | PENDING | HIGH — deletes Quotation, CountId, TrackingId, WorkFlow from Datastore |
+| DS-03 | datastore-query.ts still imported by users module (UserIAM, UserAccount, CompanyUserAccount) | PENDING | LOW — expected, users not migrated to PostgreSQL |
+| DS-04 | actions/shipments.ts has zero direct Datastore reads — all via af-server | PENDING | Verified clean in v2.50 audit |
+
+---
+
+## Loading State UI (LO series)
+| # | Test | Status | Notes |
+|---|---|---|---|
+| LO-01 | Advance status button: timeline shows opacity-60 + loading bar at top of card during mutation | PENDING | StatusCard: transition-opacity on timeline div |
+| LO-02 | Invoiced toggle: Loader2 spinner next to label + animate-pulse on toggle track during mutation | PENDING | StatusCard: invoiceLoading state |
+| LO-03 | Any mutation in progress: thin sky-400 pulse bar visible at top of SectionCard | PENDING | loading OR invoiceLoading OR exceptionLoading |
 
 ---
 

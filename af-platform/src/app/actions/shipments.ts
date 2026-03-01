@@ -102,6 +102,7 @@ export interface ShipmentListItem {
   company_name: string;
   cargo_ready_date: string | null;
   updated: string;
+  issued_invoice?: boolean;
 }
 
 export async function getShipmentListAction(
@@ -161,13 +162,17 @@ export async function getShipmentListAction(
 export interface SearchResult {
   shipment_id: string;
   data_version: number;
+  migrated_from_v1?: boolean;
   status: number;
   status_label: string;
+  order_type: string;
+  transaction_type: string;
+  incoterm: string;
+  company_id: string;
   company_name: string;
   origin_port: string;
   destination_port: string;
-  order_type: string;
-  company_id: string;
+  cargo_ready_date: string;
   updated: string;
 }
 

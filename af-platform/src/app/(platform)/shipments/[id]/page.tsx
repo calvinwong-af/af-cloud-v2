@@ -642,6 +642,11 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
 
   return (
     <SectionCard title="Shipment Status" icon={<Activity className="w-4 h-4" />}>
+      {/* Mutation loading bar */}
+      {(loading || invoiceLoading || exceptionLoading) && (
+        <div className="h-0.5 bg-sky-400 animate-pulse rounded-full -mt-2 mb-3" />
+      )}
+
       {/* Exception banner */}
       {exceptionFlagged && (
         <div className="mb-4 px-3 py-2 bg-amber-50 border border-amber-300 rounded-lg flex items-center gap-2">
@@ -656,7 +661,7 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
       )}
 
       {/* Node-based Status Timeline — label-based, no numbers, no path label */}
-      <div className="flex items-start justify-between overflow-x-auto pb-2 mb-4">
+      <div className={`flex items-start justify-between overflow-x-auto pb-2 mb-4 transition-opacity ${loading ? 'opacity-60' : ''}`}>
         {nodes.map((nodeGroup, ni) => {
           const state = getNodeState(nodeGroup);
           const isLastNode = ni === nodes.length - 1;
@@ -987,6 +992,7 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
         <div className="mt-4 pt-4 border-t border-[var(--border)] flex items-center justify-between">
           <div>
             <span className="text-sm text-[var(--text)]">Invoiced</span>
+            {invoiceLoading && <Loader2 className="w-3 h-3 animate-spin text-[var(--sky)] inline ml-1.5" />}
             <span className="text-xs text-[var(--text-muted)] ml-2">
               {currentStatus === 5001
                 ? (order.issued_invoice ? 'Invoice processed' : 'Awaiting invoice')
@@ -998,7 +1004,7 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
             disabled={currentStatus !== 5001 || invoiceLoading}
             className={`relative w-10 h-5 rounded-full transition-colors ${
               order.issued_invoice && currentStatus === 5001 ? 'bg-[var(--sky)]' : 'bg-gray-300'
-            } ${currentStatus !== 5001 ? 'opacity-40 cursor-not-allowed' : ''} ${invoiceLoading ? 'opacity-50' : ''}`}
+            } ${currentStatus !== 5001 ? 'opacity-40 cursor-not-allowed' : ''} ${invoiceLoading ? 'opacity-50 animate-pulse' : ''}`}
           >
             <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
               order.issued_invoice ? 'translate-x-5' : ''
