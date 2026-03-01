@@ -1823,7 +1823,16 @@ def _file_row_to_dict(row) -> dict:
     cols = row._mapping
     d = dict(cols)
     d["file_id"] = d.get("id")
-    d["file_tags"] = _parse_jsonb(d.get("file_tags")) or []
+    raw_tags = d.get("file_tags")
+    if isinstance(raw_tags, list):
+        d["file_tags"] = raw_tags
+    elif isinstance(raw_tags, str):
+        try:
+            d["file_tags"] = json.loads(raw_tags)
+        except (ValueError, TypeError):
+            d["file_tags"] = []
+    else:
+        d["file_tags"] = []
     d["created"] = str(d.get("created_at") or "")
     d["updated"] = str(d.get("updated_at") or "")
     return d
@@ -1858,7 +1867,7 @@ def _create_file_record(
             trash, created_at, updated_at
         ) VALUES (
             :shipment_id, :company_id, :file_name, :file_location,
-            CAST(:file_tags AS jsonb), NULL, :file_size_kb, :visibility,
+            :file_tags, NULL, :file_size_kb, :visibility,
             FALSE, :uploaded_by_uid, :uploaded_by_email,
             FALSE, :now, :now
         )
@@ -1868,7 +1877,7 @@ def _create_file_record(
         "company_id": company_id,
         "file_name": file_name,
         "file_location": gcs_path,
-        "file_tags": json.dumps(file_tags or []),
+        "file_tags": file_tags or [],
         "file_size_kb": round(file_size_kb, 2),
         "visibility": visibility,
         "uploaded_by_uid": uploader_uid,
@@ -2016,8 +2025,8 @@ async def update_shipment_file(
     params: dict = {"now": now, "id": file_id}
 
     if body.file_tags is not None:
-        updates.append("file_tags = CAST(:file_tags AS jsonb)")
-        params["file_tags"] = json.dumps(body.file_tags)
+        updates.append("file_tags = :file_tags")
+        params["file_tags"] = body.file_tags
 
     # AFC Admin/Manager cannot change visibility
     if body.visibility is not None:

@@ -1,5 +1,14 @@
 # Prompt Completion Log — v2.53–v2.62
 
+### [2026-03-02 21:00 UTC] — BL Update 500 Fix: file_tags CAST jsonb → TEXT[] native
+- **Status:** Completed
+- **Tasks:**
+  - Fix 1: `_create_file_record()` — removed `CAST(:file_tags AS jsonb)`, pass Python list directly (psycopg2 handles list → TEXT[])
+  - Fix 2: `update_shipment_file()` — same CAST removal + removed `json.dumps()` wrapper
+  - Fix 3: `_file_row_to_dict()` — replaced `_parse_jsonb()` with type-aware handler (list passthrough, string JSON parse, fallback empty)
+- **Files Modified:** `af-server/routers/shipments.py`
+- **Notes:** `shipment_files.file_tags` is `TEXT[]` not JSONB. The CAST caused a type mismatch 500 on BL upload with PDF attachment.
+
 ### [2026-03-02 20:00 UTC] — v2.58: Delete Fixes — Soft Delete 500 + Hard Delete Environment Guard
 - **Status:** Completed
 - **Tasks:**
