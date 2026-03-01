@@ -304,7 +304,7 @@ def _lazy_init_tasks_pg(conn, shipment_id: str, shipment_data: dict) -> list[dic
     from datetime import date as _date
 
     row = conn.execute(text("""
-        SELECT workflow_tasks, incoterm, transaction_type
+        SELECT workflow_tasks
         FROM shipment_workflows
         WHERE shipment_id = :id
     """), {"id": shipment_id}).fetchone()
@@ -317,8 +317,8 @@ def _lazy_init_tasks_pg(conn, shipment_id: str, shipment_data: dict) -> list[dic
         return existing_tasks
 
     # Need both incoterm and transaction_type to generate
-    incoterm = shipment_data.get("incoterm_code") or (row[1] or "") or ""
-    txn_type = shipment_data.get("transaction_type") or (row[2] or "") or ""
+    incoterm = shipment_data.get("incoterm_code") or ""
+    txn_type = shipment_data.get("transaction_type") or ""
 
     if not incoterm or not txn_type:
         return []
