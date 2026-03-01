@@ -1542,23 +1542,18 @@ async def create_shipment_manual(
 # Delete shipment (soft + hard)
 # ---------------------------------------------------------------------------
 
-ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
-
-
 @router.delete("/{shipment_id}")
 async def delete_shipment(
     shipment_id: str,
     hard: bool = Query(False),
-    claims: Claims = Depends(require_afu),
+    claims: Claims = Depends(require_afu_admin),
     conn=Depends(get_db),
 ):
     """
     Delete a shipment. Soft delete by default (sets trash=TRUE).
-    Hard delete (permanent row removal) only permitted in development environment.
+    Hard delete (permanent row removal) restricted to AFU-Admin.
     """
-    # Environment guard for hard delete
-    if hard and ENVIRONMENT != "development":
-        raise HTTPException(status_code=403, detail="Hard delete only permitted in development environment")
+    # Hard delete is permanent — restricted to AFU-Admin via endpoint auth above
 
     # Verify shipment exists
     row = conn.execute(text("SELECT id, trash FROM shipments WHERE id = :id"), {"id": shipment_id}).fetchone()
@@ -1582,9 +1577,6 @@ async def delete_shipment(
 
         conn.execute(text("""
             UPDATE shipments SET trash = TRUE, updated_at = :now WHERE id = :id
-        """), {"id": shipment_id, "now": now})
-        conn.execute(text("""
-            UPDATE shipment_workflows SET trash = TRUE, updated_at = :now WHERE shipment_id = :id
         """), {"id": shipment_id, "now": now})
 
         _log_system_action_pg(conn, "SHIPMENT_SOFT_DELETED", shipment_id, claims.uid, claims.email)

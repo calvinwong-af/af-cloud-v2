@@ -1,5 +1,15 @@
 # Prompt Completion Log — v2.53–v2.62
 
+### [2026-03-02 20:00 UTC] — v2.58: Delete Fixes — Soft Delete 500 + Hard Delete Environment Guard
+- **Status:** Completed
+- **Tasks:**
+  - TASK 1: Removed `shipment_workflows` UPDATE from soft delete (table has no `trash` column)
+  - TASK 2a: Removed module-level `ENVIRONMENT` constant
+  - TASK 2b: Changed delete endpoint auth from `require_afu` to `require_afu_admin`
+  - TASK 2c: Removed environment guard block, replaced with comment noting AFU-Admin restriction
+- **Files Modified:** `af-server/routers/shipments.py`
+- **Notes:** Soft delete now only updates `shipments.trash`. Hard delete gated by role (AFU-Admin) instead of environment variable.
+
 ### [2026-03-02 19:00 UTC] — v2.57: Hard Delete — Menu Item + Action Extension
 - **Status:** Completed
 - **Tasks:**
