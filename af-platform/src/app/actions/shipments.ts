@@ -454,6 +454,79 @@ export async function fetchStatusHistoryAction(
 }
 
 // ---------------------------------------------------------------------------
+// Dashboard — Active + To Invoice (via af-server)
+// ---------------------------------------------------------------------------
+
+export async function fetchDashboardShipmentsAction(): Promise<ActionResult<{
+  active: ShipmentListItem[];
+  to_invoice: ShipmentListItem[];
+}>> {
+  const empty = { active: [], to_invoice: [] };
+
+  try {
+    const session = await verifySessionAndRole(['AFC-ADMIN', 'AFC-M', 'AFU-ADMIN']);
+    if (!session.valid) {
+      return { success: false, error: 'Unauthorised' };
+    }
+
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) {
+      return { success: true, data: empty };
+    }
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) {
+      return { success: false, error: 'Server URL not configured' };
+    }
+
+    // AFC customers: scope to own company
+    const isCustomer = session.account_type === 'AFC';
+    const companyParam = isCustomer ? session.company_id : undefined;
+
+    const activeUrl = new URL('/api/v2/shipments', serverUrl);
+    activeUrl.searchParams.set('tab', 'active');
+    activeUrl.searchParams.set('limit', '24');
+    if (companyParam) activeUrl.searchParams.set('company_id', companyParam);
+
+    const invoiceUrl = new URL('/api/v2/shipments', serverUrl);
+    invoiceUrl.searchParams.set('tab', 'to_invoice');
+    invoiceUrl.searchParams.set('limit', '8');
+    if (companyParam) invoiceUrl.searchParams.set('company_id', companyParam);
+
+    const headers = { Authorization: `Bearer ${idToken}` };
+
+    const [activeRes, invoiceRes] = await Promise.all([
+      fetch(activeUrl.toString(), { headers, cache: 'no-store' }),
+      fetch(invoiceUrl.toString(), { headers, cache: 'no-store' }),
+    ]);
+
+    if (!activeRes.ok || !invoiceRes.ok) {
+      console.error('[fetchDashboardShipmentsAction] af-server responded', activeRes.status, invoiceRes.status);
+      return { success: true, data: empty };
+    }
+
+    const [activeJson, invoiceJson] = await Promise.all([
+      activeRes.json(),
+      invoiceRes.json(),
+    ]);
+
+    return {
+      success: true,
+      data: {
+        active: activeJson.shipments ?? [],
+        to_invoice: invoiceJson.shipments ?? [],
+      },
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[fetchDashboardShipmentsAction]', message);
+    return { success: false, error: 'Failed to load dashboard shipments' };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Get current session account type (lightweight — for UI role guards)
 // ---------------------------------------------------------------------------
 

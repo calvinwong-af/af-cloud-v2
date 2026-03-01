@@ -8,12 +8,69 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Truck, Building2, PackageCheck, CheckCircle2, FileEdit, RefreshCw } from 'lucide-react';
-import { fetchShipmentOrderStatsAction, fetchShipmentOrdersAction } from '@/app/actions/shipments';
+import { fetchShipmentOrderStatsAction, fetchDashboardShipmentsAction } from '@/app/actions/shipments';
+import type { ShipmentListItem } from '@/app/actions/shipments';
 import { fetchCompanyStatsAction } from '@/app/actions/companies';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
 import { KpiCard } from '@/components/shared/KpiCard';
 import { ShipmentOrderTable } from '@/components/shipments/ShipmentOrderTable';
-import type { ShipmentOrder } from '@/lib/types';
+import type { ShipmentOrder, OrderType } from '@/lib/types';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const ORDER_TYPE_MAP: Record<string, OrderType> = {
+  FCL: 'SEA_FCL',
+  LCL: 'SEA_LCL',
+  AIR: 'AIR',
+  SEA_FCL: 'SEA_FCL',
+  SEA_LCL: 'SEA_LCL',
+  CROSS_BORDER: 'CROSS_BORDER',
+  GROUND: 'GROUND',
+};
+
+function toShipmentOrder(item: ShipmentListItem): ShipmentOrder {
+  return {
+    quotation_id: item.shipment_id,
+    countid: 0,
+    data_version: item.data_version,
+    migrated_from_v1: item.migrated_from_v1,
+    company_id: item.company_id,
+    order_type: ORDER_TYPE_MAP[item.order_type] ?? 'SEA_FCL',
+    transaction_type: (item.transaction_type as ShipmentOrder['transaction_type']) || 'IMPORT',
+    incoterm_code: item.incoterm || null,
+    status: item.status as ShipmentOrder['status'],
+    issued_invoice: false,
+    last_status_updated: null,
+    status_history: [],
+    parent_id: null,
+    related_orders: [],
+    commercial_quotation_ids: [],
+    origin: item.origin_port
+      ? { type: 'PORT', port_un_code: item.origin_port, terminal_id: null, city_id: null, address: null, country_code: null, label: item.origin_port }
+      : null,
+    destination: item.destination_port
+      ? { type: 'PORT', port_un_code: item.destination_port, terminal_id: null, city_id: null, address: null, country_code: null, label: item.destination_port }
+      : null,
+    cargo: null,
+    type_details: null,
+    booking: null,
+    parties: null,
+    customs_clearance: [],
+    bl_document: null,
+    exception: null,
+    tracking_id: null,
+    files: [],
+    trash: false,
+    cargo_ready_date: item.cargo_ready_date,
+    creator: null,
+    user: '',
+    created: '',
+    updated: item.updated,
+    _company_name: item.company_name || undefined,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -42,7 +99,8 @@ interface CompanyStats {
 export default function DashboardPage() {
   const [shipmentStats, setShipmentStats] = useState<ShipmentStats | null>(null);
   const [companyStats, setCompanyStats] = useState<CompanyStats | null>(null);
-  const [recentOrders, setRecentOrders] = useState<ShipmentOrder[]>([]);
+  const [activeOrders, setActiveOrders] = useState<ShipmentOrder[]>([]);
+  const [toInvoiceOrders, setToInvoiceOrders] = useState<ShipmentOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [accountType, setAccountType] = useState<string | null>(null);
@@ -55,26 +113,19 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const [shipmentStatsResult, ordersResult, profile] = await Promise.all([
+      const [shipmentStatsResult, dashResult, profile] = await Promise.all([
         fetchShipmentOrderStatsAction(),
-        fetchShipmentOrdersAction({ limit: 10 }),
+        fetchDashboardShipmentsAction(),
         getCurrentUserProfileAction(),
       ]);
 
       if (!shipmentStatsResult.success) throw new Error(shipmentStatsResult.error);
-      if (!ordersResult.success) throw new Error(ordersResult.error);
+      if (!dashResult) throw new Error('No response from dashboard action');
+      if (!dashResult.success) throw new Error(dashResult.error);
 
       setShipmentStats(shipmentStatsResult.data);
-
-      // Sort dashboard orders: active first (status 2001–4002), then completed/other
-      // Within each group, keep updated DESC (server order preserved)
-      const ACTIVE_STATUSES = new Set([2001, 3001, 3002, 4001, 4002]);
-      const sorted = [...ordersResult.data.orders].sort((a, b) => {
-        const aActive = ACTIVE_STATUSES.has(a.status) ? 0 : 1;
-        const bActive = ACTIVE_STATUSES.has(b.status) ? 0 : 1;
-        return aActive - bActive;
-      });
-      setRecentOrders(sorted);
+      setActiveOrders(dashResult.data.active.map(toShipmentOrder));
+      setToInvoiceOrders(dashResult.data.to_invoice.map(toShipmentOrder));
       setAccountType(profile.account_type);
       setCompanyName(profile.company_name);
       setCompanyId(profile.company_id);
@@ -224,11 +275,21 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Recent Shipments */}
+      {/* Active Shipments */}
       <div>
-        <h2 className="text-sm font-medium text-[var(--text-mid)] mb-3">Recent Shipments</h2>
-        <ShipmentOrderTable orders={recentOrders} loading={loading || !profileLoaded} accountType={accountType} onRefresh={() => load()} />
+        <h2 className="text-sm font-medium text-[var(--text-mid)] mb-3">Active Shipments</h2>
+        <ShipmentOrderTable orders={activeOrders} loading={loading || !profileLoaded} accountType={accountType} onRefresh={() => load()} />
       </div>
+
+      {/* To Invoice */}
+      {toInvoiceOrders.length > 0 && (
+        <div>
+          <h2 className="text-sm font-medium text-[var(--text-mid)] mb-3">
+            To Invoice ({toInvoiceOrders.length})
+          </h2>
+          <ShipmentOrderTable orders={toInvoiceOrders} loading={loading || !profileLoaded} accountType={accountType} onRefresh={() => load()} />
+        </div>
+      )}
     </div>
   );
 }
