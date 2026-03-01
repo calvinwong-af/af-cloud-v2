@@ -1,5 +1,17 @@
 # Prompt Completion Log — v2.53–v2.62
 
+### [2026-03-02 18:00 UTC] — v2.56: Schema alignment sweep — fix column mismatches in shipments.py
+- **Status:** Completed
+- **Tasks:**
+  - Removed ghost columns from INSERT: `last_status_updated`, `tracking_id`, `customer_reference` (shipments)
+  - Fixed `shipment_files` INSERT: `file_size`→`file_size_kb`, `uploaded_by`→`uploaded_by_uid`, removed `permission`+`category`
+  - Fixed `system_logs` INSERT: `timestamp`→`created_at`
+  - Fixed `file_tags` SELECT: `name`→`label`, removed `category`
+  - Removed `vessel_name`/`voyage_number` flat column updates from `update_from_bl` (data lives in `booking` JSONB)
+  - Cleaned up `_file_row_to_dict` — removed `permission` parse
+- **Files Modified:** `af-server/routers/shipments.py`
+- **Notes:** No logic changes. Column name alignment only against `create_schema.py` source of truth.
+
 ### [2026-03-02 17:00 UTC] — v2.55: SQLAlchemy ::jsonb cast syntax fix — full sweep
 - **Status:** Completed
 - **Tasks:** Replaced all `:param::jsonb` patterns with `CAST(:param AS jsonb)` in SQLAlchemy text() strings

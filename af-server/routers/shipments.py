@@ -369,14 +369,13 @@ async def get_file_tags(
     conn=Depends(get_db),
 ):
     """Return all file tags from file_tags table."""
-    rows = conn.execute(text("SELECT id, name, category, color FROM file_tags")).fetchall()
+    rows = conn.execute(text("SELECT id, label, color FROM file_tags")).fetchall()
     results = []
     for r in rows:
         results.append({
             "tag_id": r[0],
             "name": r[1] or "",
-            "category": r[2] or "",
-            "color": r[3] or "",
+            "color": r[2] or "",
         })
     return {"status": "OK", "data": results}
 
@@ -1236,19 +1235,19 @@ async def create_from_bl(
     conn.execute(text("""
         INSERT INTO shipments (
             id, countid, company_id, order_type, transaction_type, incoterm_code,
-            status, issued_invoice, last_status_updated, status_history,
+            status, issued_invoice, status_history,
             origin_port, origin_terminal, dest_port, dest_terminal,
             cargo, type_details, booking, parties, bl_document,
-            exception_data, route_nodes, tracking_id, trash,
-            cargo_ready_date, etd, eta, creator, customer_reference,
+            exception_data, route_nodes, trash,
+            cargo_ready_date, etd, eta, creator,
             migrated_from_v1, created_at, updated_at
         ) VALUES (
             :id, :countid, :company_id, :order_type, :transaction_type, :incoterm_code,
-            :status, FALSE, :now, CAST(:status_history AS jsonb),
+            :status, FALSE, CAST(:status_history AS jsonb),
             :origin_port, :origin_terminal, :dest_port, :dest_terminal,
             CAST(:cargo AS jsonb), CAST(:type_details AS jsonb), CAST(:booking AS jsonb), CAST(:parties AS jsonb), NULL,
-            NULL, NULL, NULL, FALSE,
-            NULL, :etd, NULL, CAST(:creator AS jsonb), :customer_reference,
+            NULL, NULL, FALSE,
+            NULL, :etd, NULL, CAST(:creator AS jsonb),
             FALSE, :now, :now
         )
     """), {
@@ -1270,7 +1269,6 @@ async def create_from_bl(
         "booking": json.dumps(booking),
         "parties": json.dumps(parties),
         "creator": json.dumps(creator),
-        "customer_reference": body.customer_reference,
         "etd": body.etd,
     })
 
@@ -1448,19 +1446,19 @@ async def create_shipment_manual(
     conn.execute(text("""
         INSERT INTO shipments (
             id, countid, company_id, order_type, transaction_type, incoterm_code,
-            status, issued_invoice, last_status_updated, status_history,
+            status, issued_invoice, status_history,
             origin_port, origin_terminal, dest_port, dest_terminal,
-            cargo, type_details, booking, parties, bl_document,
-            exception_data, route_nodes, tracking_id, trash,
-            cargo_ready_date, etd, eta, creator, customer_reference,
+            cargo, type_details, parties, bl_document,
+            exception_data, route_nodes, trash,
+            cargo_ready_date, etd, eta, creator,
             migrated_from_v1, created_at, updated_at
         ) VALUES (
             :id, :countid, :company_id, :order_type, :transaction_type, :incoterm_code,
-            :status, FALSE, :now, CAST(:status_history AS jsonb),
+            :status, FALSE, CAST(:status_history AS jsonb),
             :origin_port, :origin_terminal, :dest_port, :dest_terminal,
-            CAST(:cargo AS jsonb), CAST(:type_details AS jsonb), NULL, CAST(:parties AS jsonb), NULL,
-            NULL, NULL, NULL, FALSE,
-            :cargo_ready_date, :etd, :eta, CAST(:creator AS jsonb), NULL,
+            CAST(:cargo AS jsonb), CAST(:type_details AS jsonb), CAST(:parties AS jsonb), NULL,
+            NULL, NULL, FALSE,
+            :cargo_ready_date, :etd, :eta, CAST(:creator AS jsonb),
             FALSE, :now, :now
         )
     """), {
@@ -1834,7 +1832,6 @@ def _file_row_to_dict(row) -> dict:
     d = dict(cols)
     d["file_id"] = d.get("id")
     d["file_tags"] = _parse_jsonb(d.get("file_tags")) or []
-    d["permission"] = _parse_jsonb(d.get("permission")) or {}
     d["created"] = str(d.get("created_at") or "")
     d["updated"] = str(d.get("updated_at") or "")
     return d
@@ -1860,18 +1857,17 @@ def _create_file_record(
 ) -> dict:
     """Insert a file record into shipment_files and return it as dict."""
     now = datetime.now(timezone.utc).isoformat()
-    permission = {"role": "AFU", "owner": uploader_uid}
 
     row = conn.execute(text("""
         INSERT INTO shipment_files (
-            shipment_id, company_id, category, file_name, file_location,
-            file_tags, file_description, file_size, visibility,
-            notification_sent, permission, uploaded_by, uploaded_by_email,
+            shipment_id, company_id, file_name, file_location,
+            file_tags, file_description, file_size_kb, visibility,
+            notification_sent, uploaded_by_uid, uploaded_by_email,
             trash, created_at, updated_at
         ) VALUES (
-            :shipment_id, :company_id, 'shipments', :file_name, :file_location,
-            CAST(:file_tags AS jsonb), NULL, :file_size, :visibility,
-            FALSE, CAST(:permission AS jsonb), :uploaded_by, :uploaded_by_email,
+            :shipment_id, :company_id, :file_name, :file_location,
+            CAST(:file_tags AS jsonb), NULL, :file_size_kb, :visibility,
+            FALSE, :uploaded_by_uid, :uploaded_by_email,
             FALSE, :now, :now
         )
         RETURNING *
@@ -1881,10 +1877,9 @@ def _create_file_record(
         "file_name": file_name,
         "file_location": gcs_path,
         "file_tags": json.dumps(file_tags or []),
-        "file_size": round(file_size_kb, 2),
+        "file_size_kb": round(file_size_kb, 2),
         "visibility": visibility,
-        "permission": json.dumps(permission),
-        "uploaded_by": uploader_uid,
+        "uploaded_by_uid": uploader_uid,
         "uploaded_by_email": uploader_email,
         "now": now,
     }).fetchone()
@@ -2205,10 +2200,7 @@ async def update_from_bl(
 
     # Also write flat fields so detail-page readers see updated values
     flat_updates: dict = {}
-    if vessel_name is not None:
-        flat_updates["vessel_name"] = vessel_name
-    if voyage_number is not None:
-        flat_updates["voyage_number"] = voyage_number
+    # vessel_name and voyage_number live in booking JSONB only — no flat columns
     if etd is not None:
         flat_updates["etd"] = etd
 
@@ -2291,12 +2283,6 @@ async def update_from_bl(
         "id": shipment_id,
     }
 
-    if "vessel_name" in flat_updates:
-        set_clauses.append("vessel_name = :vessel_name_flat")
-        params["vessel_name_flat"] = flat_updates["vessel_name"]
-    if "voyage_number" in flat_updates:
-        set_clauses.append("voyage_number = :voyage_number_flat")
-        params["voyage_number_flat"] = flat_updates["voyage_number"]
     if "etd" in flat_updates:
         set_clauses.append("etd = :etd_flat")
         params["etd_flat"] = flat_updates["etd"]
@@ -2494,14 +2480,14 @@ def _log_system_action_pg(conn, action: str, entity_id: str, uid: str, email: st
     """Write a log entry to system_logs table."""
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(text("""
-        INSERT INTO system_logs (action, entity_id, uid, email, timestamp)
-        VALUES (:action, :entity_id, :uid, :email, :timestamp)
+        INSERT INTO system_logs (action, entity_id, uid, email, created_at)
+        VALUES (:action, :entity_id, :uid, :email, :created_at)
     """), {
         "action": action,
         "entity_id": entity_id,
         "uid": uid,
         "email": email,
-        "timestamp": now,
+        "created_at": now,
     })
 
 
