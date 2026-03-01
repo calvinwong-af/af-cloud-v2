@@ -16,8 +16,9 @@ pg8000==1.31.2
 # Local dev only — psycopg2 for direct TCP connection
 psycopg2-binary==2.9.9
 
-# Google Cloud (retain for GCS and Firebase)
+# Google Cloud (retain for GCS, Firebase, and Datastore — auth.py still reads user records from Datastore)
 google-cloud-storage==2.18.2
+google-cloud-datastore==2.19.0
 firebase-admin==6.5.0
 
 # HTTP client
