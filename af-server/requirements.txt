@@ -1,22 +1,26 @@
 # AF Server V2 — FastAPI / Cloud Run
-# Replaces: Flask 2.0.1 / Python 3.7 / GAE
-#
-# Pinned to versions with pre-built Windows wheels.
-# pydantic v1 (pure Python — no Rust/Cargo required).
+# Database: Cloud SQL (PostgreSQL 15) via SQLAlchemy Core + Cloud SQL Python Connector
 
 # Web framework
 fastapi==0.103.2
 uvicorn[standard]==0.23.2
 
-# Pydantic v1 — pure Python, no Rust compiler needed
+# Pydantic v1
 pydantic==1.10.13
 
-# Google Cloud
-google-cloud-datastore==2.19.0
+# Database — Cloud SQL Python Connector (pg8000, no binary deps on Cloud Run)
+cloud-sql-python-connector[pg8000]==1.10.0
+sqlalchemy==2.0.30
+pg8000==1.31.2
+
+# Local dev only — psycopg2 for direct TCP connection
+psycopg2-binary==2.9.9
+
+# Google Cloud (retain for GCS and Firebase)
 google-cloud-storage==2.18.2
 firebase-admin==6.5.0
 
-# HTTP client (for any outbound calls e.g. Mailgun, Xero)
+# HTTP client
 httpx==0.25.2
 
 # AI (BL parsing)

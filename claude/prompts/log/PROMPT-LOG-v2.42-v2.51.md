@@ -1,6 +1,38 @@
 # Prompt Log — v2.42–v2.51
 AF Platform — AcceleFreight
 
+### [2026-03-02 01:00 UTC] — v2.47: PostgreSQL Migration — Phase 1 and 2
+- **Status:** Completed
+- **Tasks:**
+  - TASK 1: Updated requirements.txt (removed google-cloud-datastore, added SQLAlchemy/pg8000/psycopg2/cloud-sql-python-connector)
+  - TASK 2: Created core/db.py (engine factory with Cloud Run vs local detection, get_db FastAPI dependency)
+  - TASK 3: Created scripts/create_schema.py (idempotent schema: 7 tables, indexes, sequence)
+  - TASK 4: Created scripts/migrate_to_postgres.py (Datastore → PostgreSQL, --dry-run/--commit, FK-ordered)
+  - TASK 5: Created core/db_queries.py (shared SQL helpers: stats, list, search, get_by_id, etc.)
+  - TASK 6: Rewrote routers/shipments.py (all 24 endpoints, Datastore → PostgreSQL)
+  - TASK 7: Implemented routers/companies.py (5 endpoints: list, stats, get, create, update)
+  - TASK 8: Rewrote routers/geography.py (ports table queries, added GET /ports/{un_code})
+  - TASK 9: Updated cloudbuild.yaml (Cloud SQL instance + Secret Manager secrets)
+  - TASK 10: Removed Datastore from af-platform (deleted lib/v1-assembly.ts + lib/shipments.ts, rewrote actions cursor→offset, fixed company shipments action)
+  - TASK 11: Updated test list to v2.18 (PG series: 15 tests, V2C series retired as NA)
+- **Files Modified:**
+  - `af-server/requirements.txt`
+  - `af-server/core/db.py` (new)
+  - `af-server/core/db_queries.py` (new)
+  - `af-server/scripts/create_schema.py` (new)
+  - `af-server/scripts/migrate_to_postgres.py` (new)
+  - `af-server/routers/shipments.py` (full rewrite)
+  - `af-server/routers/companies.py` (full rewrite)
+  - `af-server/routers/geography.py` (rewrite)
+  - `af-server/cloudbuild.yaml`
+  - `af-platform/src/app/actions/shipments.ts` (cursor→offset, detail via af-server)
+  - `af-platform/src/app/actions/companies.ts` (company shipments via af-server)
+  - `af-platform/src/app/(platform)/shipments/page.tsx` (offset pagination)
+  - `af-platform/src/app/(platform)/companies/[id]/page.tsx` (offset pagination)
+  - `af-platform/src/lib/companies.ts` (removed shipments import)
+  - `claude/tests/AF-Test-List.md` — v2.18
+- **Notes:** lib/datastore.ts and lib/datastore-query.ts retained — still needed by users module (UserIAM/UserAccount/CompanyUserAccount remain on Datastore). @google-cloud/datastore kept in package.json for same reason. Build passes clean.
+
 ### [2026-03-01 23:00 UTC] — v2.46: Batch — backlog cleanup + mobile/UX improvements
 - **Status:** Completed ✅
 - **Tasks:**

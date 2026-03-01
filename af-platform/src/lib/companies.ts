@@ -8,7 +8,6 @@
  */
 
 import { getDatastore } from './datastore-query';
-import { getShipmentOrders } from './shipments';
 import type { Company } from './types';
 
 // ---------------------------------------------------------------------------
@@ -244,16 +243,3 @@ export async function getCompanyUsers(companyId: string): Promise<CompanyUser[]>
   }
 }
 
-// ---------------------------------------------------------------------------
-// Company Shipments — paginated orders for a specific company
-// ---------------------------------------------------------------------------
-
-export async function getCompanyShipments(companyId: string, cursor?: string) {
-  return getShipmentOrders({
-    companyId,
-    cursor,
-    limit: 20,
-    excludeTrash: true,
-    excludeChildren: true,
-  });
-}

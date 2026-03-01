@@ -11,7 +11,7 @@
  * 3. Security        → token verify, role check
  */
 
-import { getCompanies, getCompanyById, getCompanyStats, getCompanyUsers, getCompanyShipments } from '@/lib/companies';
+import { getCompanies, getCompanyById, getCompanyStats, getCompanyUsers } from '@/lib/companies';
 import { createCompany, updateCompany, deleteCompany } from '@/lib/companies-write';
 import type { CreateCompanyInput, UpdateCompanyInput } from '@/lib/companies-write';
 import type { CompanyUser } from '@/lib/companies';
@@ -143,14 +143,39 @@ export async function fetchCompanyUsersAction(
 
 export async function fetchCompanyShipmentsAction(
   companyId: string,
-  cursor?: string
-): Promise<ActionResult<{ orders: import('@/lib/types').ShipmentOrder[]; nextCursor: string | null }>> {
+  offset: number = 0
+): Promise<ActionResult<{ shipments: import('@/app/actions/shipments').ShipmentListItem[]; next_cursor: string | null; total: number }>> {
   try {
     const session = await verifySessionAndRole(['AFU-ADMIN', 'AFC-ADMIN', 'AFC-M']);
     if (!session.valid) return { success: false, error: 'Unauthorised' };
 
-    const result = await getCompanyShipments(companyId, cursor);
-    return { success: true, data: result };
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) return { success: false, error: 'No session token' };
+
+    const url = new URL('/api/v2/shipments', process.env.AF_SERVER_URL);
+    url.searchParams.set('tab', 'all');
+    url.searchParams.set('company_id', companyId);
+    url.searchParams.set('limit', '20');
+    if (offset > 0) url.searchParams.set('offset', String(offset));
+
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${idToken}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) return { success: false, error: `Server responded ${res.status}` };
+
+    const json = await res.json();
+    return {
+      success: true,
+      data: {
+        shipments: json.shipments ?? [],
+        next_cursor: json.next_cursor ?? null,
+        total: json.total ?? 0,
+      },
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[fetchCompanyShipmentsAction]', message);

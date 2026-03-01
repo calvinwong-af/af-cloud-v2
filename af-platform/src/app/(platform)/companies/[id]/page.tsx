@@ -261,18 +261,19 @@ export default function CompanyDetailPage({ params }: { params: { id: string } }
 
 function CompanyShipmentsTab({ companyId }: { companyId: string }) {
   const [orders, setOrders] = useState<ShipmentOrder[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const load = useCallback(async (cursor?: string) => {
-    const isLoadMore = !!cursor;
+  const load = useCallback(async (offset?: number) => {
+    const isLoadMore = !!offset;
     if (isLoadMore) setLoadingMore(true); else setLoading(true);
 
-    const result = await fetchCompanyShipmentsAction(companyId, cursor);
+    const result = await fetchCompanyShipmentsAction(companyId, offset ?? 0);
     if (result.success) {
-      setOrders((prev) => isLoadMore ? [...prev, ...result.data.orders] : result.data.orders);
-      setNextCursor(result.data.nextCursor);
+      const items = (result.data.shipments ?? []) as unknown as ShipmentOrder[];
+      setOrders((prev) => isLoadMore ? [...prev, ...items] : items);
+      setNextOffset(result.data.next_cursor ? parseInt(result.data.next_cursor, 10) : null);
     }
 
     if (isLoadMore) setLoadingMore(false); else setLoading(false);
@@ -347,9 +348,9 @@ function CompanyShipmentsTab({ companyId }: { companyId: string }) {
       </div>
       <div className="px-4 py-2.5 text-xs text-[var(--text-muted)] border-t border-[var(--border)] flex items-center justify-between">
         <span>{orders.length} orders shown</span>
-        {nextCursor && (
+        {nextOffset && (
           <button
-            onClick={() => load(nextCursor)}
+            onClick={() => load(nextOffset)}
             disabled={loadingMore}
             className="text-[var(--sky)] hover:underline flex items-center gap-1"
           >

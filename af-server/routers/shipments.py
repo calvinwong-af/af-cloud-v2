@@ -3,12 +3,11 @@ routers/shipments.py
 
 Shipment endpoints — V2 only (post-migration).
 
-All shipments are served from Quotation Kind with data_version=2.
-V1 ShipmentOrder Kind is no longer a data source.
+All shipments are served from the `shipments` PostgreSQL table.
 """
 
 import base64
-import json as _json
+import json
 import logging
 import time
 from datetime import datetime, timezone
@@ -16,6 +15,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import text
 
 from core.auth import Claims, require_auth, require_afu, require_afu_admin
 from logic.incoterm_tasks import (
@@ -49,14 +49,32 @@ from core.constants import (
     get_status_path,
     get_status_path_list,
 )
-from google.cloud.datastore.query import PropertyFilter
 
-from core.datastore import get_client, get_multi_chunked, parse_timestamp, run_query, entity_to_dict
+from core.db import get_db
+from core import db_queries
 from core.exceptions import NotFoundError, ForbiddenError
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Helper: parse JSONB values that may come back as str or dict
+# ---------------------------------------------------------------------------
+
+def _parse_jsonb(val):
+    """Parse a JSONB value from the database (may already be dict or str)."""
+    if val is None:
+        return None
+    if isinstance(val, (dict, list)):
+        return val
+    if isinstance(val, str):
+        try:
+            return json.loads(val)
+        except (ValueError, TypeError):
+            return val
+    return val
 
 
 # ---------------------------------------------------------------------------
@@ -67,13 +85,11 @@ router = APIRouter()
 async def get_shipment_stats(
     company_id: Optional[str] = Query(None, description="Filter by company (AFC users)"),
     claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
 ):
     """
     Return shipment counts for the dashboard KPI cards and tab badges.
-    All counts from V2 Quotation entities (data_version=2).
     """
-    client = get_client()
-
     # AFC users can only see their own company — enforce this regardless of query param
     effective_company_id = None
     if claims.is_afc():
@@ -81,43 +97,13 @@ async def get_shipment_stats(
     elif company_id:
         effective_company_id = company_id
 
-    stats = {
-        "active":     0,
-        "completed":  0,
-        "to_invoice": 0,
-        "draft":      0,
-        "cancelled":  0,
-        "total":      0,
-    }
-
-    v2_query = client.query(kind="Quotation")
-    v2_query.add_filter(filter=PropertyFilter("data_version", "=", 2))
-    if effective_company_id:
-        v2_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
-
-    for entity in v2_query.fetch():
-        if entity.get("trash") is True:
-            continue
-        s = entity.get("status", 0)
-        is_migrated = bool(entity.get("migrated_from_v1", False))
-        if s in V2_OPERATIONAL_STATUSES or (s == STATUS_CONFIRMED and not is_migrated):
-            stats["active"] += 1
-        elif s == STATUS_COMPLETED or (s == STATUS_CONFIRMED and is_migrated):
-            stats["completed"] += 1
-            if s == STATUS_COMPLETED and not bool(entity.get("issued_invoice", False)):
-                stats["to_invoice"] += 1
-        elif s == STATUS_CANCELLED:
-            stats["cancelled"] += 1
-        elif s in (STATUS_DRAFT, STATUS_DRAFT_REVIEW):
-            stats["draft"] += 1
-
-    stats["total"] = stats["active"] + stats["completed"] + stats["cancelled"] + stats["draft"]
+    stats = db_queries.get_shipment_stats(conn, effective_company_id)
 
     return {"status": "OK", "data": stats, "msg": "Shipment stats fetched"}
 
 
 # ---------------------------------------------------------------------------
-# Search shipments — in-memory filter (Datastore has no substring queries)
+# Search shipments — SQL ILIKE
 # ---------------------------------------------------------------------------
 
 @router.get("/search")
@@ -126,12 +112,11 @@ async def search_shipments(
     limit: int = Query(8, ge=1, le=50),
     search_fields: str = Query("id"),  # "id" or "all"
     claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
 ):
     """
     Search shipments by partial ID, company name, or route port codes.
-    V2 Quotation only (data_version=2).
     """
-    client = get_client()
     q_lower = q.strip().lower()
     q_upper = q.strip().upper()
 
@@ -143,85 +128,55 @@ async def search_shipments(
     # Extract numeric portion for ID matching (e.g. "3780" or "AFCQ-003780")
     q_digits = "".join(c for c in q if c.isdigit())
 
-    items: list[dict] = []
-    seen_ids: set[str] = set()
-
-    # -------------------------------------------------------------------
-    # V2 records — Quotation Kind, data_version=2
-    # -------------------------------------------------------------------
-    v2_query = client.query(kind="Quotation")
-    v2_query.add_filter(filter=PropertyFilter("data_version", "=", 2))
-    v2_query.add_filter(filter=PropertyFilter("trash", "=", False))
-    if effective_company_id:
-        v2_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
-
-    v2_entities = list(v2_query.fetch())
-    for entity in v2_entities:
-        sid = entity.key.name or str(entity.key.id)
-        if _id_matches(sid, q_lower, q_upper, q_digits):
-            if sid not in seen_ids:
-                items.append(_make_v2_summary(entity))
-                seen_ids.add(sid)
-
-    # Also check V2 port codes if search_fields=all
     if search_fields == "all":
-        for entity in v2_entities:
-            sid = entity.key.name or str(entity.key.id)
-            if sid in seen_ids:
-                continue
-            origin = entity.get("origin_port", "")
-            dest = entity.get("destination_port", "")
-            if (origin and q_upper in origin.upper()) or (dest and q_upper in dest.upper()):
-                items.append(_make_v2_summary(entity))
-                seen_ids.add(sid)
-
-    # -------------------------------------------------------------------
-    # Company name matching (search_fields=all only)
-    # -------------------------------------------------------------------
-    if search_fields == "all":
-        all_company_ids = list({
-            s["company_id"] for s in items if s.get("company_id")
-        })
-        unmatched_v2 = [e for e in v2_entities if (e.key.name or str(e.key.id)) not in seen_ids]
-        unmatched_company_ids = list({
-            e.get("company_id", "") for e in unmatched_v2 if e.get("company_id")
-        })
-        all_company_ids_set = set(all_company_ids) | set(unmatched_company_ids)
-        names = _batch_company_names(client, list(all_company_ids_set))
-
-        for entity in unmatched_v2:
-            sid = entity.key.name or str(entity.key.id)
-            cname = names.get(entity.get("company_id", ""), "")
-            if cname and q_lower in cname.lower():
-                summary = _make_v2_summary(entity)
-                summary["company_name"] = cname
-                items.append(summary)
-                seen_ids.add(sid)
-
-        for s in items:
-            if not s["company_name"] and s.get("company_id"):
-                s["company_name"] = names.get(s["company_id"], "")
+        # Full search across id, company name, ports
+        items = db_queries.search_shipments(conn, q, effective_company_id, limit)
     else:
-        company_ids = list({s["company_id"] for s in items if s.get("company_id")})
-        names = _batch_company_names(client, company_ids)
-        for s in items:
-            if not s["company_name"] and s.get("company_id"):
-                s["company_name"] = names.get(s["company_id"], "")
+        # ID-only search
+        params: dict = {"q": f"%{q}%", "limit": limit}
+        where = "s.trash = FALSE"
+        if effective_company_id:
+            where += " AND s.company_id = :company_id"
+            params["company_id"] = effective_company_id
 
-    # Add status_label to each result
+        rows = conn.execute(text(f"""
+            SELECT s.id AS shipment_id, 2 AS data_version, s.migrated_from_v1,
+                   s.status, s.order_type, s.transaction_type, s.incoterm_code AS incoterm,
+                   s.origin_port, s.dest_port AS destination_port,
+                   s.company_id, c.name AS company_name,
+                   s.cargo_ready_date::text, s.updated_at::text AS updated
+            FROM shipments s
+            LEFT JOIN companies c ON c.id = s.company_id
+            WHERE {where}
+              AND s.id ILIKE :q
+            ORDER BY s.updated_at DESC
+            LIMIT :limit
+        """), params).fetchall()
+
+        items = []
+        for r in rows:
+            items.append({
+                "shipment_id": r[0],
+                "data_version": r[1],
+                "migrated_from_v1": r[2] or False,
+                "status": r[3],
+                "status_label": STATUS_LABELS.get(r[3], str(r[3])),
+                "order_type": r[4] or "",
+                "transaction_type": r[5] or "",
+                "incoterm": r[6] or "",
+                "origin_port": r[7] or "",
+                "destination_port": r[8] or "",
+                "company_id": r[9] or "",
+                "company_name": r[10] or "",
+                "cargo_ready_date": (r[11] or "")[:10] if r[11] else "",
+                "updated": (r[12] or "")[:10] if r[12] else "",
+            })
+
+    # Add status_label to each result (may already be set by search_shipments)
     for s in items:
-        s["status_label"] = STATUS_LABELS.get(s.get("status", 0), str(s.get("status", 0)))
+        if "status_label" not in s:
+            s["status_label"] = STATUS_LABELS.get(s.get("status", 0), str(s.get("status", 0)))
 
-    # Sort by numeric ID descending, truncate
-    def _sort_key(x):
-        sid = x.get("shipment_id", "")
-        parts = sid.rsplit("-", 1)
-        try:
-            return int(parts[-1])
-        except (ValueError, IndexError):
-            return 0
-
-    items.sort(key=_sort_key, reverse=True)
     return {"results": items[:limit]}
 
 
@@ -255,117 +210,30 @@ _DRAFT_STATUSES = frozenset({STATUS_DRAFT, STATUS_DRAFT_REVIEW})
 _VALID_TABS = {"all", "active", "completed", "to_invoice", "draft", "cancelled"}
 
 
-def _v2_tab_match(tab: str, entity) -> bool:
-    """Return True if a V2 Quotation entity belongs in the requested tab."""
-    s = entity.get("status", 0)
-    is_migrated = bool(entity.get("migrated_from_v1", False))
-    if tab == "all":
-        return True
-    if tab == "active":
-        if is_migrated:
-            return s in V2_OPERATIONAL_STATUSES            # migrated: 2001 = historical, not active
-        else:
-            return s in V2_OPERATIONAL_STATUSES or s == STATUS_CONFIRMED  # native V2: 2001 = active
-    if tab == "completed":
-        if is_migrated:
-            return s == STATUS_COMPLETED or s == STATUS_CONFIRMED  # migrated: 2001 = completed historical
-        else:
-            return s == STATUS_COMPLETED                   # native V2: 2001 is active, not completed
-    if tab == "to_invoice":
-        return s == STATUS_COMPLETED and not bool(entity.get("issued_invoice", False))
-    if tab == "draft":
-        return s in _DRAFT_STATUSES
-    if tab == "cancelled":
-        return s == STATUS_CANCELLED
-    return True
-
-
 def _fmt_date(val) -> str:
-    """Coerce a Datastore value to YYYY-MM-DD string using robust parsing."""
+    """Coerce a value to YYYY-MM-DD string."""
     if val is None:
         return ""
-    dt = parse_timestamp(val)
-    if dt is not None:
-        return dt.isoformat()[:10]
     s = str(val).strip()
     return s[:10] if s else ""
-
-
-_company_name_cache: dict[str, str] = {}
-_company_name_cache_ts: float = 0
-_COMPANY_CACHE_TTL = 300  # 5 minutes
-
-
-def _batch_company_names(client, company_ids: list[str]) -> dict[str, str]:
-    """Batch-fetch company names from Company Kind with 5-minute cache."""
-    global _company_name_cache, _company_name_cache_ts
-
-    if not company_ids:
-        return {}
-
-    now = time.monotonic()
-    cache_fresh = (now - _company_name_cache_ts) < _COMPANY_CACHE_TTL
-
-    # If cache is fresh and all IDs are cached, return from cache
-    if cache_fresh and all(cid in _company_name_cache for cid in company_ids):
-        return {cid: _company_name_cache[cid] for cid in company_ids}
-
-    # Fetch only missing IDs from Datastore
-    missing = [cid for cid in company_ids if cid not in _company_name_cache or not cache_fresh]
-    if missing:
-        keys = [client.key("Company", cid) for cid in missing]
-        entities = get_multi_chunked(client, keys)
-        for e in entities:
-            eid = e.key.name or str(e.key.id)
-            _company_name_cache[eid] = e.get("name", "")
-        _company_name_cache_ts = now
-
-    return {cid: _company_name_cache.get(cid, "") for cid in company_ids}
-
-
-
-def _make_v2_summary(entity) -> dict:
-    """Build summary dict for a V2 Quotation entity."""
-    updated = entity.get("updated") or entity.get("modified") or entity.get("created") or ""
-    return {
-        "shipment_id": entity.key.name or str(entity.key.id),
-        "data_version": 2,
-        "migrated_from_v1": bool(entity.get("migrated_from_v1", False)),
-        "status": entity.get("status", 0),
-        "order_type": entity.get("order_type", ""),
-        "transaction_type": entity.get("transaction_type", ""),
-        "incoterm": entity.get("incoterm_code", "") or entity.get("incoterm", ""),
-        "origin_port": entity.get("origin_port_un_code", "") or entity.get("origin_port", ""),
-        "destination_port": entity.get("destination_port_un_code", "") or entity.get("destination_port", ""),
-        "company_id": entity.get("company_id", ""),
-        "company_name": "",  # batch-filled after merge
-        "cargo_ready_date": _fmt_date(entity.get("cargo_ready_date")),
-        "updated": _fmt_date(updated),
-    }
 
 
 @router.get("")
 async def list_shipments(
     tab: str = Query("active", description="active | completed | to_invoice | draft | cancelled | all"),
     company_id: Optional[str] = Query(None),
-    cursor: Optional[str] = Query(None),
+    offset: int = Query(0, ge=0),
     limit: int = Query(25, ge=1, le=100),
     claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
 ):
     """
-    List shipments with tab-based filtering and cursor pagination.
-    V2 Quotation only (data_version=2).
-
-    Tabs with small datasets (active, to_invoice, draft, cancelled) fetch all
-    and filter in-memory. Tabs with large datasets (completed, all) push
-    status filters to Datastore and use cursor pagination.
+    List shipments with tab-based filtering and offset pagination.
     """
     logger.info(f"[list] tab received: '{tab}' repr: {repr(tab)}")
 
     if tab not in _VALID_TABS:
         raise HTTPException(status_code=400, detail=f"Unrecognised tab value: {tab}")
-
-    client = get_client()
 
     # AFC users always scoped to own company; AFU can optionally filter
     effective_company_id = None
@@ -374,114 +242,50 @@ async def list_shipments(
     elif company_id:
         effective_company_id = company_id
 
-    # Small-dataset tabs: fetch all, filter in-memory, no pagination
-    if tab in ("active", "to_invoice", "draft", "cancelled"):
-        return _list_in_memory(client, tab, effective_company_id)
+    items, total = db_queries.list_shipments(conn, tab, effective_company_id, limit, offset)
 
-    # Large-dataset tabs (completed, all): Datastore-level filter + cursor pagination
-    v2_query = client.query(kind="Quotation")
-    v2_query.add_filter(filter=PropertyFilter("data_version", "=", 2))
-    if effective_company_id:
-        v2_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
-
-    if tab == "completed":
-        v2_query.add_filter(filter=PropertyFilter("status", "=", STATUS_COMPLETED))
-
-    # Decode cursor
-    start_cursor = None
-    if cursor:
-        start_cursor = base64.urlsafe_b64decode(cursor)
-
-    query_iter = v2_query.fetch(limit=limit, start_cursor=start_cursor)
-    page = next(query_iter.pages)
-    entities = list(page)
-    next_cursor_token = query_iter.next_page_token
-
-    # Filter out trash in-memory (rare — most records have trash=False)
-    items = [_make_v2_summary(e) for e in entities if e.get("trash") is not True]
-
-    encoded_cursor = None
-    if next_cursor_token:
-        encoded_cursor = base64.urlsafe_b64encode(next_cursor_token).decode("ascii")
-
-    # Batch-fetch company names
-    cids = list({s["company_id"] for s in items if s.get("company_id")})
-    names = _batch_company_names(client, cids)
-    for s in items:
-        s["company_name"] = names.get(s.get("company_id", ""), "")
+    next_cursor = str(offset + limit) if (offset + limit) < total else None
 
     return {
         "shipments": items,
-        "next_cursor": encoded_cursor,
-        "total_shown": len(items),
-    }
-
-
-def _list_in_memory(client, tab: str, effective_company_id: str | None) -> dict:
-    """Fetch all V2 records and filter in-memory. For small-dataset tabs."""
-    v2_query = client.query(kind="Quotation")
-    v2_query.add_filter(filter=PropertyFilter("data_version", "=", 2))
-    if effective_company_id:
-        v2_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
-
-    items: list[dict] = []
-    for entity in v2_query.fetch():
-        if entity.get("trash") is True:
-            continue
-        if _v2_tab_match(tab, entity):
-            items.append(_make_v2_summary(entity))
-
-    # Batch-fetch company names
-    cids = list({s["company_id"] for s in items if s.get("company_id")})
-    names = _batch_company_names(client, cids)
-    for s in items:
-        s["company_name"] = names.get(s.get("company_id", ""), "")
-
-    # Sort by shipment ID numeric suffix descending
-    def _id_sort_key(x):
-        sid = x.get("shipment_id", "")
-        parts = sid.rsplit("-", 1)
-        try:
-            return int(parts[-1])
-        except (ValueError, IndexError):
-            return 0
-
-    items.sort(key=_id_sort_key, reverse=True)
-
-    return {
-        "shipments": items,
-        "next_cursor": None,
+        "next_cursor": next_cursor,
+        "total": total,
         "total_shown": len(items),
     }
 
 
 # ---------------------------------------------------------------------------
-# Status history — read from ShipmentWorkFlow
+# Status history — read from shipment_workflows
 # ---------------------------------------------------------------------------
 
 @router.get("/{shipment_id}/status-history")
 async def get_status_history(
     shipment_id: str,
     claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
 ):
     """
     Return the status change history for a shipment.
 
-    Reads from ShipmentWorkFlow.status_history. Records created before
+    Reads from shipment_workflows.status_history. Records created before
     this feature was added will have an empty history array.
     """
-    client = get_client()
-    wf_entity = client.get(client.key("ShipmentWorkFlow", shipment_id))
-    if not wf_entity:
+    row = conn.execute(text("""
+        SELECT sw.status_history, sw.company_id
+        FROM shipment_workflows sw
+        WHERE sw.shipment_id = :id
+    """), {"id": shipment_id}).fetchone()
+
+    if not row:
         raise NotFoundError(f"Shipment workflow {shipment_id} not found")
 
     # AFC users: verify company ownership via the workflow's company_id
     if claims.is_afc():
-        wf_company = wf_entity.get("company_id", "")
+        wf_company = row[1] or ""
         if wf_company != claims.company_id:
             raise NotFoundError(f"Shipment workflow {shipment_id} not found")
 
-    history = wf_entity.get("status_history") or []
+    history = _parse_jsonb(row[0]) or []
     # Ensure sorted by timestamp ascending
     history = sorted(history, key=lambda h: h.get("timestamp", ""))
 
@@ -489,29 +293,32 @@ async def get_status_history(
 
 
 # ---------------------------------------------------------------------------
-# Lazy-init workflow tasks helper
+# Lazy-init workflow tasks helper (PostgreSQL version)
 # ---------------------------------------------------------------------------
 
-def _lazy_init_tasks(client, shipment_id: str, shipment_data: dict) -> list[dict]:
+def _lazy_init_tasks_pg(conn, shipment_id: str, shipment_data: dict) -> list[dict]:
     """
-    Check if ShipmentWorkFlow has workflow_tasks. If empty, auto-generate
+    Check if shipment_workflows has workflow_tasks. If empty, auto-generate
     from incoterm + transaction_type and persist. Returns the task list.
     """
     from datetime import date as _date
 
-    wf_key = client.key("ShipmentWorkFlow", shipment_id)
-    wf_entity = client.get(wf_key)
+    row = conn.execute(text("""
+        SELECT workflow_tasks, incoterm, transaction_type
+        FROM shipment_workflows
+        WHERE shipment_id = :id
+    """), {"id": shipment_id}).fetchone()
 
-    if not wf_entity:
+    if not row:
         return []
 
-    existing_tasks = wf_entity.get("workflow_tasks") or []
+    existing_tasks = _parse_jsonb(row[0]) or []
     if existing_tasks:
         return existing_tasks
 
     # Need both incoterm and transaction_type to generate
-    incoterm = shipment_data.get("incoterm_code") or wf_entity.get("incoterm") or ""
-    txn_type = shipment_data.get("transaction_type") or wf_entity.get("transaction_type") or ""
+    incoterm = shipment_data.get("incoterm_code") or (row[1] or "") or ""
+    txn_type = shipment_data.get("transaction_type") or (row[2] or "") or ""
 
     if not incoterm or not txn_type:
         return []
@@ -541,10 +348,12 @@ def _lazy_init_tasks(client, shipment_id: str, shipment_data: dict) -> list[dict
     )
 
     if tasks:
-        wf_entity["workflow_tasks"] = tasks
-        wf_entity["updated"] = datetime.now(timezone.utc).isoformat()
-        wf_entity.exclude_from_indexes = set(wf_entity.exclude_from_indexes or set()) | {"workflow_tasks"}
-        client.put(wf_entity)
+        now = datetime.now(timezone.utc).isoformat()
+        conn.execute(text("""
+            UPDATE shipment_workflows
+            SET workflow_tasks = :tasks::jsonb, updated_at = :now
+            WHERE shipment_id = :id
+        """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
 
     return tasks
 
@@ -556,15 +365,18 @@ def _lazy_init_tasks(client, shipment_id: str, shipment_data: dict) -> list[dict
 @router.get("/file-tags")
 async def get_file_tags(
     claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
 ):
-    """Return all file tags from FileTags Kind."""
-    client = get_client()
-    query = client.query(kind="FileTags")
+    """Return all file tags from file_tags table."""
+    rows = conn.execute(text("SELECT id, name, category, color FROM file_tags")).fetchall()
     results = []
-    for entity in query.fetch():
-        d = dict(entity)
-        d["tag_id"] = entity.key.name or str(entity.key.id)
-        results.append(d)
+    for r in rows:
+        results.append({
+            "tag_id": r[0],
+            "name": r[1] or "",
+            "category": r[2] or "",
+            "color": r[3] or "",
+        })
     return {"status": "OK", "data": results}
 
 
@@ -576,40 +388,36 @@ async def get_file_tags(
 async def get_shipment(
     shipment_id: str,
     claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
 ):
     """
     Get a single shipment by ID.
 
-    AF-XXXXX   → V2 record (Quotation Kind, data_version=2)
-    AF2-XXXXX  → V2 record (legacy prefix, same as AF-)
-    AFCQ-XXXXX → resolves to migrated AF- record
+    AF-XXXXX   -> V2 record
+    AF2-XXXXX  -> V2 record (legacy prefix, same as AF-)
+    AFCQ-XXXXX -> resolves to migrated AF- record
     """
-    client = get_client()
-
     if shipment_id.startswith(PREFIX_V2_SHIPMENT) or shipment_id.startswith("AF2-"):
-        # V2 — read from Quotation Kind
-        entity = client.get(client.key("Quotation", shipment_id))
-        if not entity or entity.get("data_version") != 2:
+        # V2 — read from shipments table
+        data = db_queries.get_shipment_by_id(conn, shipment_id)
+        if not data:
             raise NotFoundError(f"Shipment {shipment_id} not found")
-
-        data = entity_to_dict(entity)
 
         if claims.is_afc() and data.get("company_id") != claims.company_id:
             raise NotFoundError(f"Shipment {shipment_id} not found")
 
-        data["workflow_tasks"] = _lazy_init_tasks(client, shipment_id, data)
+        data["workflow_tasks"] = _lazy_init_tasks_pg(conn, shipment_id, data)
 
         return {"status": "OK", "data": data, "msg": "Shipment fetched"}
 
     elif shipment_id.startswith(PREFIX_V1_SHIPMENT):
-        # AFCQ- request → resolve to migrated AF- record
+        # AFCQ- request -> resolve to migrated AF- record
         af_id = f"AF-{shipment_id[5:]}"
-        af_entity = client.get(client.key("Quotation", af_id))
-        if af_entity and af_entity.get("data_version") == 2:
-            data = entity_to_dict(af_entity)
+        data = db_queries.get_shipment_by_id(conn, af_id)
+        if data:
             if claims.is_afc() and data.get("company_id") != claims.company_id:
                 raise NotFoundError(f"Shipment {shipment_id} not found")
-            data["workflow_tasks"] = _lazy_init_tasks(client, af_id, data)
+            data["workflow_tasks"] = _lazy_init_tasks_pg(conn, af_id, data)
             return {"status": "OK", "data": data, "msg": "Shipment fetched (migrated)"}
 
         raise NotFoundError(f"Shipment {shipment_id} not found")
@@ -619,7 +427,7 @@ async def get_shipment(
 
 
 # ---------------------------------------------------------------------------
-# Update shipment status  (V1 + V2, atomic status + history write)
+# Update shipment status  (atomic status + history write)
 # ---------------------------------------------------------------------------
 
 class UpdateStatusRequest(BaseModel):
@@ -633,31 +441,36 @@ async def update_shipment_status(
     shipment_id: str,
     body: UpdateStatusRequest,
     claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
 ):
     """
     Update a shipment's status with atomic status + history write.
 
     Incoterm-aware: determines Path A (booking) or Path B (no booking)
     and validates the requested status is the correct next step on that path.
-    Appends to ShipmentWorkFlow.status_history in the same request.
+    Appends to shipment_workflows.status_history in the same request.
     """
     logger.info(f"[status write] shipment: {shipment_id} new_status: {body.status} reverted: {body.reverted}")
-    client = get_client()
     now = datetime.now(timezone.utc).isoformat()
     new_status = body.status
 
-    # --- a. Read Quotation entity ---
-    q_key = client.key("Quotation", shipment_id)
-    q_entity = client.get(q_key)
-    if not q_entity:
+    # --- a. Read shipment ---
+    row = conn.execute(text("""
+        SELECT status, incoterm_code, transaction_type, status_history
+        FROM shipments
+        WHERE id = :id
+    """), {"id": shipment_id}).fetchone()
+
+    if not row:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
     # --- b. Current status ---
-    current_status = q_entity.get("status", 0)
+    current_status = row[0] or 0
+    incoterm = row[1] or ""
+    txn_type = row[2] or ""
+    q_history = _parse_jsonb(row[3]) or []
 
     # --- c2. Determine incoterm-aware status path ---
-    incoterm = q_entity.get("incoterm_code") or q_entity.get("incoterm") or ""
-    txn_type = q_entity.get("transaction_type") or ""
     path = get_status_path(incoterm, txn_type) if incoterm and txn_type else "A"
     path_list = get_status_path_list(incoterm, txn_type) if incoterm and txn_type else None
 
@@ -694,15 +507,7 @@ async def update_shipment_status(
                 if all_codes.index(new_status) <= all_codes.index(current_status):
                     return {"status": "ERROR", "msg": "Cannot go backwards without revert flag"}
 
-    # --- f. Build Quotation update ---
-    q_update: dict = {
-        "status": new_status,
-        "last_status_updated": now,
-        "updated": now,
-    }
-
-    # Append to Quotation status_history (backward compat)
-    q_history = q_entity.get("status_history") or []
+    # --- f. Build status_history entry for shipments table ---
     q_history_entry: dict = {
         "status": new_status,
         "label": STATUS_LABELS.get(new_status, str(new_status)),
@@ -713,19 +518,31 @@ async def update_shipment_status(
     if body.reverted:
         q_history_entry["reverted"] = True
         q_history_entry["reverted_from"] = current_status
-    q_update["status_history"] = list(q_history) + [q_history_entry]
 
-    # --- g. Write Quotation ---
-    for k, v in q_update.items():
-        q_entity[k] = v
-    q_entity.exclude_from_indexes = set(q_entity.exclude_from_indexes or set()) | {"status_history"}
-    client.put(q_entity)
+    new_q_history = list(q_history) + [q_history_entry]
 
-    # --- h. Append to ShipmentWorkFlow.status_history ---
-    wf_key = client.key("ShipmentWorkFlow", shipment_id)
-    wf_entity = client.get(wf_key)
-    if wf_entity:
-        wf_history = wf_entity.get("status_history") or []
+    # --- g. Write shipment ---
+    conn.execute(text("""
+        UPDATE shipments
+        SET status = :new_status,
+            last_status_updated = :now,
+            updated_at = :now,
+            status_history = :history::jsonb
+        WHERE id = :id
+    """), {
+        "new_status": new_status,
+        "now": now,
+        "history": json.dumps(new_q_history),
+        "id": shipment_id,
+    })
+
+    # --- h. Append to shipment_workflows.status_history ---
+    wf_row = conn.execute(text("""
+        SELECT status_history FROM shipment_workflows WHERE shipment_id = :id
+    """), {"id": shipment_id}).fetchone()
+
+    if wf_row:
+        wf_history = _parse_jsonb(wf_row[0]) or []
         wf_history_entry: dict = {
             "status": new_status,
             "status_label": STATUS_LABELS.get(new_status, str(new_status)),
@@ -735,17 +552,30 @@ async def update_shipment_status(
         if body.reverted:
             wf_history_entry["reverted"] = True
             wf_history_entry["reverted_from"] = current_status
-        wf_entity["status_history"] = list(wf_history) + [wf_history_entry]
-        wf_entity["updated"] = now
+
+        new_wf_history = list(wf_history) + [wf_history_entry]
+
+        completed_val = None
         if new_status == STATUS_COMPLETED:
-            wf_entity["completed"] = True
+            completed_val = True
         elif new_status == STATUS_CANCELLED:
-            wf_entity["completed"] = False
-        wf_entity.exclude_from_indexes = set(wf_entity.exclude_from_indexes or set()) | {"status_history"}
-        client.put(wf_entity)
+            completed_val = False
+
+        if completed_val is not None:
+            conn.execute(text("""
+                UPDATE shipment_workflows
+                SET status_history = :history::jsonb, updated_at = :now, completed = :completed
+                WHERE shipment_id = :id
+            """), {"history": json.dumps(new_wf_history), "now": now, "completed": completed_val, "id": shipment_id})
+        else:
+            conn.execute(text("""
+                UPDATE shipment_workflows
+                SET status_history = :history::jsonb, updated_at = :now
+                WHERE shipment_id = :id
+            """), {"history": json.dumps(new_wf_history), "now": now, "id": shipment_id})
 
     logger.info(
-        "Status updated %s: %s → %s (path %s) by %s",
+        "Status updated %s: %s -> %s (path %s) by %s",
         shipment_id, current_status, new_status, path, claims.uid,
     )
 
@@ -770,6 +600,7 @@ async def update_exception_flag(
     shipment_id: str,
     body: ExceptionRequest,
     claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
 ):
     """
     Raise or clear the exception flag on a shipment.
@@ -782,17 +613,18 @@ async def update_exception_flag(
         if claims.role not in (AFC_ADMIN, AFC_M):
             raise HTTPException(status_code=403, detail="Only admins and managers can flag exceptions")
 
-    client = get_client()
     now = datetime.now(timezone.utc).isoformat()
 
     # Read the shipment record
-    q_key = client.key("Quotation", shipment_id)
-    q_entity = client.get(q_key)
-    if not q_entity:
+    row = conn.execute(text("""
+        SELECT id, company_id FROM shipments WHERE id = :id
+    """), {"id": shipment_id}).fetchone()
+
+    if not row:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
     # AFC company check
-    if claims.is_afc() and q_entity.get("company_id") != claims.company_id:
+    if claims.is_afc() and (row[1] or "") != claims.company_id:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
     # Build exception object
@@ -811,9 +643,11 @@ async def update_exception_flag(
             "notes": None,
         }
 
-    q_entity["exception"] = exception_data
-    q_entity["updated"] = now
-    client.put(q_entity)
+    conn.execute(text("""
+        UPDATE shipments
+        SET exception_data = :exception::jsonb, updated_at = :now
+        WHERE id = :id
+    """), {"exception": json.dumps(exception_data), "now": now, "id": shipment_id})
 
     logger.info(
         "Exception %s on %s by %s: %s",
@@ -841,36 +675,34 @@ async def assign_company(
     shipment_id: str,
     body: AssignCompanyRequest,
     claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
 ):
     """
     Reassign a shipment to a different company. AFU staff only.
-
-    For V1 records: writes company_id to both ShipmentOrder and Quotation.
-    For V2 records: writes company_id to Quotation only.
     """
-    client = get_client()
     now = datetime.now(timezone.utc).isoformat()
 
     # Validate company exists
-    company_entity = client.get(client.key("Company", body.company_id))
-    if not company_entity:
+    company_row = conn.execute(text("""
+        SELECT id, name, short_name FROM companies WHERE id = :id
+    """), {"id": body.company_id}).fetchone()
+
+    if not company_row:
         raise NotFoundError(f"Company {body.company_id} not found")
 
-    company_name = (
-        company_entity.get("name")
-        or company_entity.get("short_name")
-        or body.company_id
-    )
+    company_name = company_row[1] or company_row[2] or body.company_id
 
-    # Load Quotation entity — works for all prefixes (AF-, AF2-, AFCQ-)
-    q_key = client.key("Quotation", shipment_id)
-    q_entity = client.get(q_key)
-    if not q_entity:
+    # Verify shipment exists
+    shipment_row = conn.execute(text("""
+        SELECT id FROM shipments WHERE id = :id
+    """), {"id": shipment_id}).fetchone()
+
+    if not shipment_row:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
-    q_entity["company_id"] = body.company_id
-    q_entity["updated"] = now
-    client.put(q_entity)
+    conn.execute(text("""
+        UPDATE shipments SET company_id = :company_id, updated_at = :now WHERE id = :id
+    """), {"company_id": body.company_id, "now": now, "id": shipment_id})
 
     logger.info("Reassigned %s to company %s by %s", shipment_id, body.company_id, claims.uid)
 
@@ -980,8 +812,8 @@ _PORT_ALIASES: dict[str, str] = {
 }
 
 
-def _match_port_un_code(client, port_text: str) -> str | None:
-    """Match free-text port name to a Geography Kind UN code."""
+def _match_port_un_code(conn, port_text: str) -> str | None:
+    """Match free-text port name to a ports table UN code."""
     if not port_text:
         return None
     port_text_upper = port_text.upper().strip()
@@ -994,43 +826,48 @@ def _match_port_un_code(client, port_text: str) -> str | None:
 
     # Quick check: if it looks like a UN code already (5 uppercase letters)
     if len(port_text_upper) == 5 and port_text_upper.isalpha():
-        entity = client.get(client.key("Geography", port_text_upper))
-        if entity:
+        row = conn.execute(text("""
+            SELECT id FROM geography WHERE id = :code
+        """), {"code": port_text_upper}).fetchone()
+        if row:
             logger.info("[port_match] Direct UN code hit: %s", port_text_upper)
             return port_text_upper
 
-    # Search Port Kind for matching name
-    query = client.query(kind="Port")
-    best_match = None
-    sample_logged = False
-    for entity in query.fetch():
-        name = (entity.get("name") or "").upper()
-        un_code = (entity.get("un_code") or entity.key.name or "").upper()
-        if not sample_logged:
-            logger.info("[port_match] Sample Port record — key: '%s', un_code: '%s', name: '%s'",
-                        entity.key.name, un_code, name)
-            sample_logged = True
-        if name == port_text_upper:
-            logger.info("[port_match] Exact name match: %s -> %s", port_text_upper, un_code)
-            return un_code
-        if port_text_upper in name or name in port_text_upper:
-            logger.info("[port_match] Contains match: '%s' ~ '%s' -> %s", port_text_upper, name, un_code)
-            best_match = un_code
+    # Search ports table for matching name
+    rows = conn.execute(text("""
+        SELECT un_code, name FROM ports
+        WHERE UPPER(name) = :exact
+        LIMIT 1
+    """), {"exact": port_text_upper}).fetchall()
 
-    logger.info("[port_match] Result for '%s': %s", port_text_upper, best_match)
-    return best_match
+    if rows:
+        logger.info("[port_match] Exact name match: %s -> %s", port_text_upper, rows[0][0])
+        return rows[0][0]
+
+    # Contains match
+    row = conn.execute(text("""
+        SELECT un_code, name FROM ports
+        WHERE UPPER(name) LIKE :pattern OR :search LIKE '%' || UPPER(name) || '%'
+        LIMIT 1
+    """), {"pattern": f"%{port_text_upper}%", "search": port_text_upper}).fetchone()
+
+    if row:
+        logger.info("[port_match] Contains match: '%s' ~ '%s' -> %s", port_text_upper, row[1], row[0])
+        return row[0]
+
+    logger.info("[port_match] No match for '%s'", port_text_upper)
+    return None
 
 
-def _match_company(client, consignee_name: str) -> list[dict]:
-    """Match consignee name against Company Kind. Returns top 3 matches."""
+def _match_company(conn, consignee_name: str) -> list[dict]:
+    """Match consignee name against companies table. Returns top 3 matches."""
     if not consignee_name:
         return []
     name_lower = consignee_name.lower().strip()
     logger.info("[company_match] Looking for: '%s'", name_lower)
-    query = client.query(kind="Company")
-    matches: list[dict] = []
 
     import re as _re
+
     def _normalise(s: str) -> str:
         """Strip punctuation, collapse spaces for fuzzy comparison."""
         s = s.lower()
@@ -1041,10 +878,15 @@ def _match_company(client, consignee_name: str) -> list[dict]:
     name_norm = _normalise(name_lower)
     name_words = [w for w in name_norm.split() if len(w) > 2]
 
-    for entity in query.fetch():
-        company_name = entity.get("name") or ""
-        if not company_name:
-            continue
+    # Fetch companies matching by ILIKE for pre-filtering, then score in Python
+    rows = conn.execute(text("""
+        SELECT id, name FROM companies
+        WHERE trash = FALSE AND name IS NOT NULL AND name != ''
+    """)).fetchall()
+
+    matches: list[dict] = []
+    for r in rows:
+        company_name = r[1]
         company_norm = _normalise(company_name)
 
         # Score: exact normalised match = 1.0, contains = 0.8, word overlap = 0.5+
@@ -1063,7 +905,7 @@ def _match_company(client, consignee_name: str) -> list[dict]:
         if score > 0.3:
             logger.info("[company_match] Hit: '%s' norm:'%s' (score %.2f)", company_name, company_norm, score)
             matches.append({
-                "company_id": entity.key.name or str(entity.key.id),
+                "company_id": r[0],
                 "name": company_name,
                 "score": round(score, 2),
             })
@@ -1094,12 +936,12 @@ def _determine_initial_status(on_board_date: str | None) -> int:
 async def parse_bl(
     file: UploadFile = File(...),
     claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
 ):
     """
     Parse a Bill of Lading PDF or image using Claude API.
     Returns structured extracted data + company matches + derived fields.
     """
-    import json
     import os
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -1198,7 +1040,6 @@ async def parse_bl(
         raise HTTPException(status_code=502, detail="AI returned invalid JSON")
 
     # Derive fields
-    ds_client = get_client()
 
     # Order type: containers = FCL, otherwise check delivery_status
     containers = parsed.get("containers") or []
@@ -1213,14 +1054,14 @@ async def parse_bl(
     # Port matching
     origin_parsed_label = (parsed.get("port_of_loading") or "").strip()
     destination_parsed_label = (parsed.get("port_of_discharge") or "").strip()
-    origin_un_code = _match_port_un_code(ds_client, origin_parsed_label)
-    destination_un_code = _match_port_un_code(ds_client, destination_parsed_label)
+    origin_un_code = _match_port_un_code(conn, origin_parsed_label)
+    destination_un_code = _match_port_un_code(conn, destination_parsed_label)
 
     # Initial status
     initial_status = _determine_initial_status(parsed.get("on_board_date"))
 
     # Company matching
-    company_matches = _match_company(ds_client, parsed.get("consignee_name") or "")
+    company_matches = _match_company(conn, parsed.get("consignee_name") or "")
 
     return {
         "parsed": parsed,
@@ -1270,89 +1111,21 @@ class CreateFromBLRequest(BaseModel):
 async def create_from_bl(
     body: CreateFromBLRequest,
     claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
 ):
     """
     Create a V2 shipment from parsed BL data.
-    Creates Quotation + ShipmentWorkFlow + auto-generates tasks.
+    Creates shipment + shipment_workflow + auto-generates tasks.
     """
-    client = get_client()
     now = datetime.now(timezone.utc).isoformat()
 
-    # Generate shipment ID — scan-based global max (same logic as shipments-write.ts)
-    # Scans ShipmentOrderV2CountId for V2 max and Quotation keys for V1 AFCQ- max.
-    # Ensures the AF- sequence never collides with AFCQ- or previously issued AF- IDs.
+    # Generate shipment ID from sequence
+    shipment_id, new_countid = db_queries.next_shipment_id(conn)
 
-    # 1. Max V2 countid from ShipmentOrderV2CountId
-    v2_query = client.query(kind="ShipmentOrderV2CountId")
-    v2_entities = list(v2_query.fetch())
-    v2_max = 0
-    for e in v2_entities:
-        val = e.get("countid") or 0
-        if isinstance(val, (int, float)) and int(val) > v2_max:
-            v2_max = int(val)
-
-    # 2. Max V1 countid from AFCQ- Quotation keys
-    v1_query = client.query(kind="Quotation")
-    v1_query.keys_only()
-    v1_entities = list(v1_query.fetch())
-    v1_max = 0
-    for e in v1_entities:
-        key_name = e.key.name or ""
-        if key_name.startswith("AFCQ-"):
-            try:
-                num = int(key_name[5:])
-                if num > v1_max:
-                    v1_max = num
-            except ValueError:
-                pass
-
-    # 3. Also scan AF- and AF2- keys to catch any previously issued V2 IDs
-    for e in v1_entities:
-        key_name = e.key.name or ""
-        for prefix in ("AF-", "AF2-"):
-            if key_name.startswith(prefix):
-                try:
-                    num = int(key_name[len(prefix):])
-                    if num > v2_max:
-                        v2_max = num
-                except ValueError:
-                    pass
-
-    new_countid = max(v2_max, v1_max) + 1
-    shipment_id = f"AF-{new_countid:06d}"
-
-    # Register in ShipmentOrderV2CountId (matches the atomic write pattern in shipments-write.ts)
-    counter_key = client.key("ShipmentOrderV2CountId", shipment_id)
-    counter_entity = client.entity(counter_key)
-    counter_entity["countid"] = new_countid
-    counter_entity["created"] = now
-    client.put(counter_entity)
-
-    # Build Quotation entity
-    q_key = client.key("Quotation", shipment_id)
-    q_entity = client.entity(q_key)
-    q_entity.update({
-        "quotation_id": shipment_id,
-        "countid": new_countid,
-        "data_version": 2,
-        "company_id": body.company_id or "",
-        "order_type": body.order_type,
-        "transaction_type": body.transaction_type,
-        "incoterm_code": body.incoterm_code,
-        "status": body.initial_status,
-        "issued_invoice": False,
-        "last_status_updated": now,
-        "status_history": [{
-            "status": body.initial_status,
-            "label": STATUS_LABELS.get(body.initial_status, str(body.initial_status)),
-            "timestamp": now,
-            "changed_by": claims.email,
-            "note": "Created from BL upload",
-        }],
-        "parent_id": None,
-        "related_orders": [],
-        "commercial_quotation_ids": [],
-        "origin": {
+    # Build origin/destination JSONB
+    origin = None
+    if body.origin_port_un_code:
+        origin = {
             "type": "PORT",
             "port_un_code": body.origin_port_un_code,
             "terminal_id": body.origin_terminal_id,
@@ -1360,8 +1133,11 @@ async def create_from_bl(
             "address": None,
             "country_code": None,
             "label": body.origin_label or body.origin_port_un_code or "",
-        } if body.origin_port_un_code else None,
-        "destination": {
+        }
+
+    destination = None
+    if body.destination_port_un_code:
+        destination = {
             "type": "PORT",
             "port_un_code": body.destination_port_un_code,
             "terminal_id": body.destination_terminal_id,
@@ -1369,50 +1145,87 @@ async def create_from_bl(
             "address": None,
             "country_code": None,
             "label": body.destination_label or body.destination_port_un_code or "",
-        } if body.destination_port_un_code else None,
-        "origin_port_un_code": body.origin_port_un_code or "",
-        "origin_terminal_id": body.origin_terminal_id or None,
-        "destination_port_un_code": body.destination_port_un_code or "",
-        "destination_terminal_id": body.destination_terminal_id or None,
-        "cargo": {
-            "description": body.cargo_description or "",
-            "hs_code": None,
-            "is_dg": False,
-            "dg_class": None,
-            "dg_un_number": None,
-        },
-        "type_details": None,
-        "booking": {
-            "carrier": body.carrier,
-            "booking_reference": body.waybill_number,
-            "vessel_name": body.vessel_name,
-            "voyage_number": body.voyage_number,
-        },
-        "parties": {
-            "shipper": {"name": body.shipper_name, "address": body.shipper_address, "contact_person": None, "phone": None, "email": None, "company_id": None, "company_contact_id": None} if body.shipper_name else None,
-            "consignee": {"name": body.consignee_name, "address": body.consignee_address, "contact_person": None, "phone": None, "email": None, "company_id": body.company_id, "company_contact_id": None} if body.consignee_name else None,
-            "notify_party": {"name": body.notify_party_name, "address": None, "contact_person": None, "phone": None, "email": None, "company_id": None, "company_contact_id": None} if body.notify_party_name else None,
-        },
-        "customs_clearance": [],
-        "exception": None,
-        "tracking_id": None,
-        "files": [],
-        "trash": False,
-        "cargo_ready_date": None,
-        "etd": body.etd,
-        "eta": None,
-        "creator": {"uid": claims.uid, "email": claims.email},
-        "user": claims.email,
-        "created": now,
-        "updated": now,
-        "customer_reference": body.customer_reference,
-    })
-    q_entity.exclude_from_indexes = {"status_history", "booking", "parties", "cargo", "type_details", "origin", "destination", "customs_clearance"}
-    client.put(q_entity)
+        }
 
-    # Create ShipmentWorkFlow
-    wf_key = client.key("ShipmentWorkFlow", shipment_id)
-    wf_entity = client.entity(wf_key)
+    cargo = {
+        "description": body.cargo_description or "",
+        "hs_code": None,
+        "is_dg": False,
+        "dg_class": None,
+        "dg_un_number": None,
+    }
+
+    booking = {
+        "carrier": body.carrier,
+        "booking_reference": body.waybill_number,
+        "vessel_name": body.vessel_name,
+        "voyage_number": body.voyage_number,
+    }
+
+    parties = {}
+    if body.shipper_name:
+        parties["shipper"] = {"name": body.shipper_name, "address": body.shipper_address, "contact_person": None, "phone": None, "email": None, "company_id": None, "company_contact_id": None}
+    if body.consignee_name:
+        parties["consignee"] = {"name": body.consignee_name, "address": body.consignee_address, "contact_person": None, "phone": None, "email": None, "company_id": body.company_id, "company_contact_id": None}
+    if body.notify_party_name:
+        parties["notify_party"] = {"name": body.notify_party_name, "address": None, "contact_person": None, "phone": None, "email": None, "company_id": None, "company_contact_id": None}
+
+    initial_history = [{
+        "status": body.initial_status,
+        "label": STATUS_LABELS.get(body.initial_status, str(body.initial_status)),
+        "timestamp": now,
+        "changed_by": claims.email,
+        "note": "Created from BL upload",
+    }]
+
+    creator = {"uid": claims.uid, "email": claims.email}
+
+    # Type details for containers
+    type_details = None
+    if body.containers:
+        type_details = {"containers": body.containers}
+
+    # Insert into shipments table
+    conn.execute(text("""
+        INSERT INTO shipments (
+            id, countid, company_id, order_type, transaction_type, incoterm_code,
+            status, issued_invoice, last_status_updated, status_history,
+            origin_port, origin_terminal, dest_port, dest_terminal,
+            cargo, type_details, booking, parties, bl_document,
+            exception_data, route_nodes, tracking_id, trash,
+            cargo_ready_date, etd, eta, creator, customer_reference,
+            migrated_from_v1, created_at, updated_at
+        ) VALUES (
+            :id, :countid, :company_id, :order_type, :transaction_type, :incoterm_code,
+            :status, FALSE, :now, :status_history::jsonb,
+            :origin_port, :origin_terminal, :dest_port, :dest_terminal,
+            :cargo::jsonb, :type_details::jsonb, :booking::jsonb, :parties::jsonb, NULL,
+            NULL, NULL, NULL, FALSE,
+            NULL, :etd, NULL, :creator::jsonb, :customer_reference,
+            FALSE, :now, :now
+        )
+    """), {
+        "id": shipment_id,
+        "countid": new_countid,
+        "company_id": body.company_id or "",
+        "order_type": body.order_type,
+        "transaction_type": body.transaction_type,
+        "incoterm_code": body.incoterm_code,
+        "status": body.initial_status,
+        "now": now,
+        "status_history": json.dumps(initial_history),
+        "origin_port": body.origin_port_un_code or "",
+        "origin_terminal": body.origin_terminal_id,
+        "dest_port": body.destination_port_un_code or "",
+        "dest_terminal": body.destination_terminal_id,
+        "cargo": json.dumps(cargo),
+        "type_details": json.dumps(type_details) if type_details else None,
+        "booking": json.dumps(booking),
+        "parties": json.dumps(parties),
+        "creator": json.dumps(creator),
+        "customer_reference": body.customer_reference,
+        "etd": body.etd,
+    })
 
     # Auto-generate tasks
     from datetime import date as _date
@@ -1430,22 +1243,29 @@ async def create_from_bl(
         updated_by=claims.email,
     )
 
-    wf_entity.update({
+    wf_history = [{
+        "status": body.initial_status,
+        "status_label": STATUS_LABELS.get(body.initial_status, str(body.initial_status)),
+        "timestamp": now,
+        "changed_by": claims.uid,
+    }]
+
+    # Insert into shipment_workflows table
+    conn.execute(text("""
+        INSERT INTO shipment_workflows (
+            shipment_id, company_id, status_history, workflow_tasks,
+            completed, created_at, updated_at
+        ) VALUES (
+            :shipment_id, :company_id, :status_history::jsonb, :workflow_tasks::jsonb,
+            FALSE, :now, :now
+        )
+    """), {
         "shipment_id": shipment_id,
         "company_id": body.company_id or "",
-        "status_history": [{
-            "status": body.initial_status,
-            "status_label": STATUS_LABELS.get(body.initial_status, str(body.initial_status)),
-            "timestamp": now,
-            "changed_by": claims.uid,
-        }],
-        "workflow_tasks": tasks,
-        "completed": False,
-        "created": now,
-        "updated": now,
+        "status_history": json.dumps(wf_history),
+        "workflow_tasks": json.dumps(tasks),
+        "now": now,
     })
-    wf_entity.exclude_from_indexes = {"status_history", "workflow_tasks"}
-    client.put(wf_entity)
 
     logger.info("Shipment %s created from BL by %s", shipment_id, claims.uid)
 
@@ -1463,6 +1283,7 @@ async def create_from_bl(
 @router.post("/create-manual")
 async def create_shipment(
     claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
 ):
     """
     Create a new V2 ShipmentOrder (manual entry).
@@ -1485,25 +1306,22 @@ async def create_shipment(
 async def get_shipment_tasks(
     shipment_id: str,
     claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
 ):
     """
     Get the workflow tasks for a shipment.
     Auto-generates tasks on first access if incoterm + transaction_type are set.
     """
-    client = get_client()
-
     # Fetch shipment data for AFC company check and lazy init
-    q_entity = client.get(client.key("Quotation", shipment_id))
-    if not q_entity:
+    shipment_data = db_queries.get_shipment_by_id(conn, shipment_id)
+    if not shipment_data:
         raise NotFoundError(f"Shipment {shipment_id} not found")
-
-    shipment_data = entity_to_dict(q_entity)
 
     # AFC users can only see their own company's shipments
     if claims.is_afc() and shipment_data.get("company_id") != claims.company_id:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
-    tasks = _lazy_init_tasks(client, shipment_id, shipment_data)
+    tasks = _lazy_init_tasks_pg(conn, shipment_id, shipment_data)
 
     # Apply migration-on-read for tasks missing new fields
     tasks = [migrate_task_on_read(t) for t in tasks]
@@ -1543,15 +1361,15 @@ async def update_shipment_task(
     task_id: str,
     body: UpdateTaskRequest,
     claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
 ):
     """
-    Update a single task within workflow_tasks on ShipmentWorkFlow.
+    Update a single task within workflow_tasks on shipment_workflows.
     Permission enforcement:
       AFU: all fields
       AFC_ADMIN / AFC_M: all except visibility
       AFC (regular): read-only — 403
     """
-    client = get_client()
     now = datetime.now(timezone.utc).isoformat()
 
     # --- Permission check ---
@@ -1572,13 +1390,15 @@ async def update_shipment_task(
     if body.visibility is not None and body.visibility not in ("VISIBLE", "HIDDEN"):
         raise HTTPException(status_code=400, detail=f"Invalid visibility: {body.visibility}")
 
-    # --- Load ShipmentWorkFlow ---
-    wf_key = client.key("ShipmentWorkFlow", shipment_id)
-    wf_entity = client.get(wf_key)
-    if not wf_entity:
+    # --- Load shipment_workflows ---
+    wf_row = conn.execute(text("""
+        SELECT workflow_tasks FROM shipment_workflows WHERE shipment_id = :id
+    """), {"id": shipment_id}).fetchone()
+
+    if not wf_row:
         raise NotFoundError(f"ShipmentWorkFlow for {shipment_id} not found")
 
-    tasks: list[dict] = wf_entity.get("workflow_tasks") or []
+    tasks: list[dict] = _parse_jsonb(wf_row[0]) or []
 
     # --- Find the target task ---
     target_idx = None
@@ -1662,16 +1482,16 @@ async def update_shipment_task(
     task["updated_by"] = claims.uid
     task["updated_at"] = now
 
-    # --- FREIGHT_BOOKING completion → unblock EXPORT_CLEARANCE ---
+    # --- FREIGHT_BOOKING completion -> unblock EXPORT_CLEARANCE ---
     if body.status == COMPLETED and task.get("task_type") == FREIGHT_BOOKING:
         # Check shipment for booking_reference
-        q_entity = client.get(client.key("Quotation", shipment_id))
+        booking_row = conn.execute(text("""
+            SELECT booking FROM shipments WHERE id = :id
+        """), {"id": shipment_id}).fetchone()
         booking_ref = ""
-        if q_entity:
-            booking = q_entity.get("booking") or {}
+        if booking_row:
+            booking = _parse_jsonb(booking_row[0]) or {}
             booking_ref = booking.get("booking_reference", "") if isinstance(booking, dict) else ""
-            if not booking_ref:
-                booking_ref = q_entity.get("booking_reference", "") or ""
 
         if booking_ref:
             # Unblock EXPORT_CLEARANCE
@@ -1685,10 +1505,11 @@ async def update_shipment_task(
 
     # --- Write back ---
     tasks[target_idx] = task
-    wf_entity["workflow_tasks"] = tasks
-    wf_entity["updated"] = now
-    wf_entity.exclude_from_indexes = set(wf_entity.exclude_from_indexes or set()) | {"workflow_tasks"}
-    client.put(wf_entity)
+    conn.execute(text("""
+        UPDATE shipment_workflows
+        SET workflow_tasks = :tasks::jsonb, updated_at = :now
+        WHERE shipment_id = :id
+    """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
 
     logger.info("Task %s updated on %s by %s", task_id, shipment_id, claims.uid)
 
@@ -1711,10 +1532,15 @@ def _resolve_gcs_path(company_id: str, shipment_id: str, filename: str) -> str:
     return f"company/{safe_company}/shipments/{shipment_id}/{filename}"
 
 
-def _file_entity_to_dict(entity) -> dict:
-    """Convert a Files Datastore entity to a response dict."""
-    d = dict(entity)
-    d["file_id"] = entity.key.id
+def _file_row_to_dict(row) -> dict:
+    """Convert a shipment_files row to a response dict."""
+    cols = row._mapping
+    d = dict(cols)
+    d["file_id"] = d.get("id")
+    d["file_tags"] = _parse_jsonb(d.get("file_tags")) or []
+    d["permission"] = _parse_jsonb(d.get("permission")) or {}
+    d["created"] = str(d.get("created_at") or "")
+    d["updated"] = str(d.get("updated_at") or "")
     return d
 
 
@@ -1724,8 +1550,8 @@ def _save_file_to_gcs(bucket, gcs_path: str, file_bytes: bytes, content_type: st
     blob.upload_from_string(file_bytes, content_type=content_type)
 
 
-def _create_file_entity(
-    client,
+def _create_file_record(
+    conn,
     shipment_id: str,
     company_id: str,
     file_name: str,
@@ -1736,33 +1562,38 @@ def _create_file_entity(
     uploader_uid: str,
     uploader_email: str,
 ) -> dict:
-    """Create a Files entity in Datastore and return it as dict."""
+    """Insert a file record into shipment_files and return it as dict."""
     now = datetime.now(timezone.utc).isoformat()
+    permission = {"role": "AFU", "owner": uploader_uid}
 
-    # Use incomplete key for auto-ID
-    key = client.key("Files")
-    entity = client.entity(key)
-    entity.update({
-        "shipment_order_id": shipment_id,
+    row = conn.execute(text("""
+        INSERT INTO shipment_files (
+            shipment_id, company_id, category, file_name, file_location,
+            file_tags, file_description, file_size, visibility,
+            notification_sent, permission, uploaded_by, uploaded_by_email,
+            trash, created_at, updated_at
+        ) VALUES (
+            :shipment_id, :company_id, 'shipments', :file_name, :file_location,
+            :file_tags::jsonb, NULL, :file_size, :visibility,
+            FALSE, :permission::jsonb, :uploaded_by, :uploaded_by_email,
+            FALSE, :now, :now
+        )
+        RETURNING *
+    """), {
+        "shipment_id": shipment_id,
         "company_id": company_id,
-        "category": "shipments",
         "file_name": file_name,
         "file_location": gcs_path,
-        "file_tags": file_tags or [],
-        "file_description": None,
+        "file_tags": json.dumps(file_tags or []),
         "file_size": round(file_size_kb, 2),
         "visibility": visibility,
-        "notification_sent": False,
-        "permission": {"role": "AFU", "owner": uploader_uid},
-        "user": uploader_email,
-        "created": now,
-        "updated": now,
-        "trash": False,
-    })
-    entity.exclude_from_indexes = {"file_tags", "permission", "file_description"}
-    client.put(entity)
+        "permission": json.dumps(permission),
+        "uploaded_by": uploader_uid,
+        "uploaded_by_email": uploader_email,
+        "now": now,
+    }).fetchone()
 
-    return _file_entity_to_dict(entity)
+    return _file_row_to_dict(row)
 
 
 # ---------------------------------------------------------------------------
@@ -1773,24 +1604,23 @@ def _create_file_entity(
 async def list_shipment_files(
     shipment_id: str,
     claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
 ):
     """List files for a shipment. AFC regular users only see visible files."""
-    client = get_client()
+    where = "shipment_id = :shipment_id AND trash = FALSE"
+    params: dict = {"shipment_id": shipment_id}
 
-    query = client.query(kind="Files")
-    query.add_filter(filter=PropertyFilter("shipment_order_id", "=", shipment_id))
-    query.add_filter(filter=PropertyFilter("trash", "=", False))
+    # AFC regular users: only visible files
+    if claims.is_afc() and claims.role not in (AFC_ADMIN, AFC_M):
+        where += " AND visibility = TRUE"
 
-    results = []
-    for entity in query.fetch():
-        # AFC regular users: only visible files
-        if claims.is_afc() and claims.role not in (AFC_ADMIN, AFC_M):
-            if not entity.get("visibility", True):
-                continue
-        results.append(_file_entity_to_dict(entity))
+    rows = conn.execute(text(f"""
+        SELECT * FROM shipment_files
+        WHERE {where}
+        ORDER BY created_at DESC
+    """), params).fetchall()
 
-    # Sort by created DESC
-    results.sort(key=lambda f: f.get("created", ""), reverse=True)
+    results = [_file_row_to_dict(r) for r in rows]
 
     return {"status": "OK", "data": results}
 
@@ -1806,29 +1636,29 @@ async def upload_shipment_file(
     file_tags: str = Form("[]"),
     visibility: str = Form("true"),
     claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
 ):
     """Upload a file to a shipment. AFU or AFC Admin/Manager only."""
     # Permission check
     if claims.is_afc() and claims.role not in (AFC_ADMIN, AFC_M):
         raise ForbiddenError("Only staff or company admins/managers can upload files")
 
-    client = get_client()
-
     # Parse form fields
     try:
-        tags_list = _json.loads(file_tags)
+        tags_list = json.loads(file_tags)
     except (ValueError, TypeError):
         tags_list = []
     vis_bool = visibility.lower() in ("true", "1", "yes")
 
     # Read the shipment to get company_id
-    q_entity = client.get(client.key("Quotation", shipment_id))
-    if not q_entity:
-        q_entity = client.get(client.key("ShipmentOrder", shipment_id))
-    if not q_entity:
+    row = conn.execute(text("""
+        SELECT company_id FROM shipments WHERE id = :id
+    """), {"id": shipment_id}).fetchone()
+
+    if not row:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
-    company_id = q_entity.get("company_id", "")
+    company_id = row[0] or ""
 
     # Read file
     file_bytes = await file.read()
@@ -1848,9 +1678,9 @@ async def upload_shipment_file(
     content_type = file.content_type or "application/octet-stream"
     _save_file_to_gcs(bucket, gcs_path, file_bytes, content_type)
 
-    # Create Files entity
-    file_record = _create_file_entity(
-        client=client,
+    # Create file record
+    file_record = _create_file_record(
+        conn=conn,
         shipment_id=shipment_id,
         company_id=company_id,
         file_name=original_name,
@@ -1882,34 +1712,45 @@ async def update_shipment_file(
     file_id: int,
     body: UpdateFileRequest,
     claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
 ):
     """Update file tags and/or visibility. AFU or AFC Admin/Manager."""
     if claims.is_afc() and claims.role not in (AFC_ADMIN, AFC_M):
         raise ForbiddenError("Only staff or company admins/managers can edit files")
 
-    client = get_client()
     now = datetime.now(timezone.utc).isoformat()
 
-    key = client.key("Files", file_id)
-    entity = client.get(key)
-    if not entity:
+    row = conn.execute(text("""
+        SELECT id, shipment_id FROM shipment_files WHERE id = :id
+    """), {"id": file_id}).fetchone()
+
+    if not row:
         raise NotFoundError(f"File {file_id} not found")
-    if entity.get("shipment_order_id") != shipment_id:
+    if row[1] != shipment_id:
         raise NotFoundError(f"File {file_id} not found on shipment {shipment_id}")
 
+    updates = ["updated_at = :now"]
+    params: dict = {"now": now, "id": file_id}
+
     if body.file_tags is not None:
-        entity["file_tags"] = body.file_tags
+        updates.append("file_tags = :file_tags::jsonb")
+        params["file_tags"] = json.dumps(body.file_tags)
 
     # AFC Admin/Manager cannot change visibility
     if body.visibility is not None:
         if claims.is_afc():
             raise ForbiddenError("Only AF staff can change file visibility")
-        entity["visibility"] = body.visibility
+        updates.append("visibility = :visibility")
+        params["visibility"] = body.visibility
 
-    entity["updated"] = now
-    client.put(entity)
+    conn.execute(text(f"""
+        UPDATE shipment_files SET {', '.join(updates)} WHERE id = :id
+    """), params)
 
-    return {"status": "OK", "data": _file_entity_to_dict(entity), "msg": "File updated"}
+    # Re-fetch for response
+    updated_row = conn.execute(text("SELECT * FROM shipment_files WHERE id = :id"), {"id": file_id}).fetchone()
+
+    return {"status": "OK", "data": _file_row_to_dict(updated_row), "msg": "File updated"}
 
 
 # ---------------------------------------------------------------------------
@@ -1921,21 +1762,23 @@ async def delete_shipment_file(
     shipment_id: str,
     file_id: int,
     claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
 ):
     """Soft-delete a file. AFU only."""
-    client = get_client()
     now = datetime.now(timezone.utc).isoformat()
 
-    key = client.key("Files", file_id)
-    entity = client.get(key)
-    if not entity:
+    row = conn.execute(text("""
+        SELECT id, shipment_id FROM shipment_files WHERE id = :id
+    """), {"id": file_id}).fetchone()
+
+    if not row:
         raise NotFoundError(f"File {file_id} not found")
-    if entity.get("shipment_order_id") != shipment_id:
+    if row[1] != shipment_id:
         raise NotFoundError(f"File {file_id} not found on shipment {shipment_id}")
 
-    entity["trash"] = True
-    entity["updated"] = now
-    client.put(entity)
+    conn.execute(text("""
+        UPDATE shipment_files SET trash = TRUE, updated_at = :now WHERE id = :id
+    """), {"now": now, "id": file_id})
 
     logger.info("File %d soft-deleted on %s by %s", file_id, shipment_id, claims.uid)
     return {"deleted": True, "file_id": file_id}
@@ -1950,23 +1793,24 @@ async def download_shipment_file(
     shipment_id: str,
     file_id: int,
     claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
 ):
     """Generate a signed GCS URL for file download."""
-    client = get_client()
+    row = conn.execute(text("""
+        SELECT id, shipment_id, visibility, file_location FROM shipment_files WHERE id = :id
+    """), {"id": file_id}).fetchone()
 
-    key = client.key("Files", file_id)
-    entity = client.get(key)
-    if not entity:
+    if not row:
         raise NotFoundError(f"File {file_id} not found")
-    if entity.get("shipment_order_id") != shipment_id:
+    if row[1] != shipment_id:
         raise NotFoundError(f"File {file_id} not found on shipment {shipment_id}")
 
     # AFC regular: only visible files
     if claims.is_afc() and claims.role not in (AFC_ADMIN, AFC_M):
-        if not entity.get("visibility", True):
+        if not row[2]:  # visibility
             raise NotFoundError(f"File {file_id} not found")
 
-    file_location = entity.get("file_location", "")
+    file_location = row[3] or ""
     if not file_location:
         raise HTTPException(status_code=500, detail="File location not set")
 
@@ -2012,6 +1856,7 @@ async def update_from_bl(
     cargo_items: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
 ):
     """
     Update a shipment from parsed BL data. AFU only.
@@ -2022,21 +1867,34 @@ async def update_from_bl(
     file_content_type = file.content_type if file else None
     file_original_name = file.filename if file else None
 
-    client = get_client()
     now = datetime.now(timezone.utc).isoformat()
 
-    # Load Quotation entity
-    q_key = client.key("Quotation", shipment_id)
-    q_entity = client.get(q_key)
-    if not q_entity:
+    # Load shipment
+    row = conn.execute(text("""
+        SELECT id, company_id, booking, parties, bl_document, type_details, trash
+        FROM shipments WHERE id = :id
+    """), {"id": shipment_id}).fetchone()
+
+    if not row:
         raise NotFoundError(f"Shipment {shipment_id} not found")
-    if q_entity.get("trash"):
+    if row[6]:  # trash
         raise HTTPException(status_code=410, detail=f"Shipment {shipment_id} has been deleted")
 
-    # Merge booking fields (don't replace whole dict)
-    booking = q_entity.get("booking") or {}
+    company_id = row[1] or ""
+    booking = _parse_jsonb(row[2]) or {}
     if not isinstance(booking, dict):
         booking = {}
+    parties = _parse_jsonb(row[3]) or {}
+    if not isinstance(parties, dict):
+        parties = {}
+    bl_doc = _parse_jsonb(row[4]) or {}
+    if not isinstance(bl_doc, dict):
+        bl_doc = {}
+    type_details = _parse_jsonb(row[5]) or {}
+    if not isinstance(type_details, dict):
+        type_details = {}
+
+    # Merge booking fields (don't replace whole dict)
     if waybill_number is not None:
         booking["booking_reference"] = waybill_number
     # Write carrier_agent as new field alongside existing carrier (backward compat)
@@ -2048,24 +1906,19 @@ async def update_from_bl(
         booking["vessel_name"] = vessel_name
     if voyage_number is not None:
         booking["voyage_number"] = voyage_number
-    q_entity["booking"] = booking
 
     # Also write flat fields so detail-page readers see updated values
+    flat_updates: dict = {}
     if vessel_name is not None:
-        q_entity["vessel_name"] = vessel_name
+        flat_updates["vessel_name"] = vessel_name
     if voyage_number is not None:
-        q_entity["voyage_number"] = voyage_number
-
-    # ETD
+        flat_updates["voyage_number"] = voyage_number
     if etd is not None:
-        q_entity["etd"] = etd
+        flat_updates["etd"] = etd
 
     # Merge parties — shipper + consignee (don't replace whole parties dict)
     # Only write to parties if currently empty — unless force_update is set
     is_force = force_update == "true"
-    parties = q_entity.get("parties") or {}
-    if not isinstance(parties, dict):
-        parties = {}
 
     if shipper_name is not None or shipper_address is not None:
         shipper = parties.get("shipper") or {}
@@ -2095,12 +1948,7 @@ async def update_from_bl(
             notify_party["name"] = notify_party_name
         parties["notify_party"] = notify_party
 
-    q_entity["parties"] = parties
-
     # Write raw parsed BL values to bl_document (always overwrite — audit record)
-    bl_doc = q_entity.get("bl_document") or {}
-    if not isinstance(bl_doc, dict):
-        bl_doc = {}
     if bl_shipper_name is not None or bl_shipper_address is not None:
         bl_doc["shipper"] = {
             "name": bl_shipper_name,
@@ -2111,61 +1959,70 @@ async def update_from_bl(
             "name": bl_consignee_name,
             "address": bl_consignee_address,
         }
-    if bl_doc:
-        q_entity["bl_document"] = bl_doc
 
     # Containers — replace array if provided and non-empty
     if containers is not None:
         try:
-            containers_list = _json.loads(containers)
+            containers_list = json.loads(containers)
         except (ValueError, TypeError):
             containers_list = None
         if containers_list:
-            td = q_entity.get("type_details") or {}
-            if not isinstance(td, dict):
-                td = {}
-            td["containers"] = containers_list
-            q_entity["type_details"] = td
+            type_details["containers"] = containers_list
 
     # Cargo items — replace array if provided and non-empty (LCL shipments)
     if cargo_items is not None:
         try:
-            cargo_items_list = _json.loads(cargo_items)
+            cargo_items_list = json.loads(cargo_items)
         except (ValueError, TypeError):
             cargo_items_list = None
         if cargo_items_list:
-            td = q_entity.get("type_details") or {}
-            if not isinstance(td, dict):
-                td = {}
-            td["cargo_items"] = cargo_items_list
-            q_entity["type_details"] = td
+            type_details["cargo_items"] = cargo_items_list
 
-    q_entity["updated"] = now
+    # Build UPDATE statement
+    set_clauses = [
+        "booking = :booking::jsonb",
+        "parties = :parties::jsonb",
+        "bl_document = :bl_document::jsonb",
+        "type_details = :type_details::jsonb",
+        "updated_at = :now",
+    ]
+    params: dict = {
+        "booking": json.dumps(booking),
+        "parties": json.dumps(parties),
+        "bl_document": json.dumps(bl_doc) if bl_doc else None,
+        "type_details": json.dumps(type_details) if type_details else None,
+        "now": now,
+        "id": shipment_id,
+    }
 
-    # Safe exclude_from_indexes — V1 entities may not support reassignment
-    try:
-        existing = set(q_entity.exclude_from_indexes or set())
-        q_entity.exclude_from_indexes = existing | {"booking", "parties", "type_details", "bl_document"}
-    except (TypeError, AttributeError):
-        pass  # V1 entities may not support this — skip silently
+    if "vessel_name" in flat_updates:
+        set_clauses.append("vessel_name = :vessel_name_flat")
+        params["vessel_name_flat"] = flat_updates["vessel_name"]
+    if "voyage_number" in flat_updates:
+        set_clauses.append("voyage_number = :voyage_number_flat")
+        params["voyage_number_flat"] = flat_updates["voyage_number"]
+    if "etd" in flat_updates:
+        set_clauses.append("etd = :etd_flat")
+        params["etd_flat"] = flat_updates["etd"]
 
     # Unblock export clearance if waybill set
     if waybill_number:
-        _maybe_unblock_export_clearance(client, shipment_id, claims.uid)
+        _maybe_unblock_export_clearance_pg(conn, shipment_id, claims.uid)
 
-    logger.info("[bl_update] Writing to Quotation %s", shipment_id)
+    logger.info("[bl_update] Writing to shipments %s", shipment_id)
     try:
-        client.put(q_entity)
+        conn.execute(text(f"""
+            UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
+        """), params)
     except Exception as e:
-        logger.error("[bl_update] Failed to write Quotation %s: %s", shipment_id, str(e))
+        logger.error("[bl_update] Failed to write shipment %s: %s", shipment_id, str(e))
         raise HTTPException(status_code=500, detail=f"Failed to save shipment: {str(e)}")
 
-    # Log to AFSystemLogs
-    _log_system_action(client, "BL_UPDATED", shipment_id, claims.uid, claims.email)
+    # Log to system_logs
+    _log_system_action_pg(conn, "BL_UPDATED", shipment_id, claims.uid, claims.email)
 
     # Auto-save BL file if provided (file_bytes read at top of handler)
     if file_bytes:
-        company_id = q_entity.get("company_id", "")
         original_name = file_original_name or f"BL_{shipment_id}.pdf"
         gcs_path = _resolve_gcs_path(company_id, shipment_id, original_name)
 
@@ -2175,8 +2032,8 @@ async def update_from_bl(
         content_type = file_content_type or "application/pdf"
         _save_file_to_gcs(bucket, gcs_path, file_bytes, content_type)
 
-        _create_file_entity(
-            client=client,
+        _create_file_record(
+            conn=conn,
             shipment_id=shipment_id,
             company_id=company_id,
             file_name=original_name,
@@ -2194,10 +2051,10 @@ async def update_from_bl(
         "status": "OK",
         "data": {
             "shipment_id": shipment_id,
-            "booking": dict(q_entity.get("booking") or {}),
-            "parties": dict(q_entity.get("parties") or {}),
-            "bl_document": dict(q_entity.get("bl_document") or {}),
-            "etd": q_entity.get("etd"),
+            "booking": booking,
+            "parties": parties,
+            "bl_document": bl_doc,
+            "etd": flat_updates.get("etd"),
         },
         "msg": "Shipment updated from BL",
     }
@@ -2221,21 +2078,23 @@ async def update_parties(
     shipment_id: str,
     body: UpdatePartiesRequest,
     claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
 ):
     """
     Update shipper/consignee on a shipment. AFU only.
     Merges into existing parties dict — preserves notify_party and other fields.
     Does NOT touch bl_document.
     """
-    client = get_client()
     now = datetime.now(timezone.utc).isoformat()
 
-    q_key = client.key("Quotation", shipment_id)
-    q_entity = client.get(q_key)
-    if not q_entity:
+    row = conn.execute(text("""
+        SELECT parties FROM shipments WHERE id = :id
+    """), {"id": shipment_id}).fetchone()
+
+    if not row:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
-    parties = q_entity.get("parties") or {}
+    parties = _parse_jsonb(row[0]) or {}
     if not isinstance(parties, dict):
         parties = {}
 
@@ -2282,18 +2141,11 @@ async def update_parties(
         else:
             parties["notify_party"] = notify_party
 
-    q_entity["parties"] = parties
-    q_entity["updated"] = now
+    conn.execute(text("""
+        UPDATE shipments SET parties = :parties::jsonb, updated_at = :now WHERE id = :id
+    """), {"parties": json.dumps(parties), "now": now, "id": shipment_id})
 
-    try:
-        existing = set(q_entity.exclude_from_indexes or set())
-        q_entity.exclude_from_indexes = existing | {"parties"}
-    except (TypeError, AttributeError):
-        pass
-
-    client.put(q_entity)
-
-    _log_system_action(client, "PARTIES_UPDATED", shipment_id, claims.uid, claims.email)
+    _log_system_action_pg(conn, "PARTIES_UPDATED", shipment_id, claims.uid, claims.email)
 
     return {
         "status": "OK",
@@ -2301,14 +2153,16 @@ async def update_parties(
     }
 
 
-def _maybe_unblock_export_clearance(client, shipment_id: str, user_id: str):
+def _maybe_unblock_export_clearance_pg(conn, shipment_id: str, user_id: str):
     """Unblock EXPORT_CLEARANCE if FREIGHT_BOOKING is completed and waybill is set."""
-    wf_key = client.key("ShipmentWorkFlow", shipment_id)
-    wf_entity = client.get(wf_key)
-    if not wf_entity:
+    wf_row = conn.execute(text("""
+        SELECT workflow_tasks FROM shipment_workflows WHERE shipment_id = :id
+    """), {"id": shipment_id}).fetchone()
+
+    if not wf_row:
         return
 
-    tasks = wf_entity.get("workflow_tasks") or []
+    tasks = _parse_jsonb(wf_row[0]) or []
     now = datetime.now(timezone.utc).isoformat()
 
     # Check FREIGHT_BOOKING status
@@ -2332,26 +2186,27 @@ def _maybe_unblock_export_clearance(client, shipment_id: str, user_id: str):
             break
 
     if changed:
-        wf_entity["workflow_tasks"] = tasks
-        wf_entity["updated"] = now
-        wf_entity.exclude_from_indexes = set(wf_entity.exclude_from_indexes or set()) | {"workflow_tasks"}
-        client.put(wf_entity)
+        conn.execute(text("""
+            UPDATE shipment_workflows
+            SET workflow_tasks = :tasks::jsonb, updated_at = :now
+            WHERE shipment_id = :id
+        """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
         logger.info("EXPORT_CLEARANCE unblocked for %s", shipment_id)
 
 
-def _log_system_action(client, action: str, entity_id: str, uid: str, email: str):
-    """Write a log entry to AFSystemLogs Kind."""
+def _log_system_action_pg(conn, action: str, entity_id: str, uid: str, email: str):
+    """Write a log entry to system_logs table."""
     now = datetime.now(timezone.utc).isoformat()
-    log_key = client.key("AFSystemLogs")
-    log_entity = client.entity(log_key)
-    log_entity.update({
+    conn.execute(text("""
+        INSERT INTO system_logs (action, entity_id, uid, email, timestamp)
+        VALUES (:action, :entity_id, :uid, :email, :timestamp)
+    """), {
         "action": action,
         "entity_id": entity_id,
         "uid": uid,
         "email": email,
         "timestamp": now,
     })
-    client.put(log_entity)
 
 
 # ---------------------------------------------------------------------------
@@ -2365,7 +2220,7 @@ def _derive_route_nodes(shipment_data: dict) -> list[dict]:
     """
     nodes = []
     origin_code = shipment_data.get("origin_port_un_code") or shipment_data.get("origin_port") or ""
-    dest_code = shipment_data.get("destination_port_un_code") or shipment_data.get("destination_port") or ""
+    dest_code = shipment_data.get("destination_port_un_code") or shipment_data.get("dest_port") or ""
 
     if origin_code:
         nodes.append({
@@ -2394,8 +2249,8 @@ def _derive_route_nodes(shipment_data: dict) -> list[dict]:
     return nodes
 
 
-def _enrich_route_nodes(client, nodes: list[dict]) -> list[dict]:
-    """Enrich route nodes with port details from Port Kind if available."""
+def _enrich_route_nodes(conn, nodes: list[dict]) -> list[dict]:
+    """Enrich route nodes with port details from ports table if available."""
     if not nodes:
         return nodes
 
@@ -2403,22 +2258,26 @@ def _enrich_route_nodes(client, nodes: list[dict]) -> list[dict]:
     if not port_codes:
         return nodes
 
-    # Batch-fetch Port entities
-    port_keys = [client.key("Port", code) for code in port_codes]
-    port_entities = get_multi_chunked(client, port_keys)
+    # Batch-fetch port records
+    placeholders = ", ".join(f":p{i}" for i in range(len(port_codes)))
+    params = {f"p{i}": code for i, code in enumerate(port_codes)}
+
+    rows = conn.execute(text(f"""
+        SELECT un_code, name, country_code, port_type
+        FROM ports
+        WHERE un_code IN ({placeholders})
+    """), params).fetchall()
 
     port_map = {}
-    for entity in port_entities:
-        if entity:
-            code = entity.key.name or entity.key.id_or_name
-            port_map[code] = entity
+    for r in rows:
+        port_map[r[0]] = {"port_name": r[1] or "", "country": r[2] or "", "port_type": r[3] or ""}
 
     for node in nodes:
         port = port_map.get(node.get("port_un_code", ""))
         if port:
-            node["port_name"] = port.get("port_name") or port.get("name") or node.get("port_name", "")
-            node["country"] = port.get("country") or port.get("country_code") or ""
-            node["port_type"] = port.get("port_type") or ""
+            node["port_name"] = port["port_name"] or node.get("port_name", "")
+            node["country"] = port["country"]
+            node["port_type"] = port["port_type"]
 
     return nodes
 
@@ -2443,30 +2302,25 @@ def _assign_sequences(nodes: list[dict]) -> list[dict]:
 async def get_route_nodes(
     shipment_id: str,
     claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
 ):
     """Get route nodes for a shipment. Derives from ports if not yet saved."""
-    client = get_client()
-
-    q_entity = client.get(client.key("Quotation", shipment_id))
-    if not q_entity:
-        q_entity = client.get(client.key("ShipmentOrder", shipment_id))
-    if not q_entity:
+    shipment_data = db_queries.get_shipment_by_id(conn, shipment_id)
+    if not shipment_data:
         raise NotFoundError(f"Shipment {shipment_id} not found")
-
-    shipment_data = entity_to_dict(q_entity)
 
     # AFC users can only see their own company's shipments
     if claims.is_afc() and shipment_data.get("company_id") != claims.company_id:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
-    nodes = shipment_data.get("route_nodes") or []
+    nodes = _parse_jsonb(shipment_data.get("route_nodes")) or []
 
     # Derive from origin/destination if no saved route nodes
     if not nodes:
         nodes = _derive_route_nodes(shipment_data)
 
     # Enrich with port details
-    nodes = _enrich_route_nodes(client, nodes)
+    nodes = _enrich_route_nodes(conn, nodes)
 
     return {
         "shipment_id": shipment_id,
@@ -2494,22 +2348,21 @@ async def save_route_nodes(
     shipment_id: str,
     nodes: list[RouteNodeInput],
     claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
 ):
     """Replace route nodes array on a shipment. AFU + AFC Admin/Manager only."""
-    client = get_client()
-
     # Permission check
     if claims.is_afc():
         if claims.role not in ("AFC-ADMIN", "AFC-M"):
             raise HTTPException(status_code=403, detail="Only admin/manager can update route nodes")
 
-    q_entity = client.get(client.key("Quotation", shipment_id))
-    if not q_entity:
-        raise NotFoundError(f"Shipment {shipment_id} not found")
+    # Verify shipment exists
+    row = conn.execute(text("""
+        SELECT id FROM shipments WHERE id = :id
+    """), {"id": shipment_id}).fetchone()
 
-    # V1 shipments are read-only for route nodes (use data_version, not prefix)
-    if (q_entity.get("data_version") or 1) < 2:
-        raise HTTPException(status_code=400, detail="Cannot write route nodes to V1 shipments")
+    if not row:
+        raise NotFoundError(f"Shipment {shipment_id} not found")
 
     # Validate roles
     roles = [n.role for n in nodes]
@@ -2525,25 +2378,36 @@ async def save_route_nodes(
     node_dicts = [n.dict() for n in nodes]
     node_dicts = _assign_sequences(node_dicts)
 
-    # Write to Quotation entity
-    q_entity["route_nodes"] = node_dicts
-    q_entity.exclude_from_indexes = set(q_entity.exclude_from_indexes or set()) | {"route_nodes"}
-
     # Sync flat ETD/ETA from ORIGIN and DESTINATION nodes
+    flat_etd = None
+    flat_eta = None
     for nd in node_dicts:
         if nd["role"] == "ORIGIN" and nd.get("scheduled_etd"):
-            q_entity["etd"] = nd["scheduled_etd"]
+            flat_etd = nd["scheduled_etd"]
         if nd["role"] == "DESTINATION" and nd.get("scheduled_eta"):
-            q_entity["eta"] = nd["scheduled_eta"]
+            flat_eta = nd["scheduled_eta"]
 
-    q_entity["updated"] = datetime.now(timezone.utc).isoformat()
-    client.put(q_entity)
+    now = datetime.now(timezone.utc).isoformat()
+
+    set_clauses = ["route_nodes = :route_nodes::jsonb", "updated_at = :now"]
+    params: dict = {"route_nodes": json.dumps(node_dicts), "now": now, "id": shipment_id}
+
+    if flat_etd is not None:
+        set_clauses.append("etd = :etd")
+        params["etd"] = flat_etd
+    if flat_eta is not None:
+        set_clauses.append("eta = :eta")
+        params["eta"] = flat_eta
+
+    conn.execute(text(f"""
+        UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
+    """), params)
 
     # Enrich for response
-    node_dicts = _enrich_route_nodes(client, node_dicts)
+    node_dicts = _enrich_route_nodes(conn, node_dicts)
 
     # Log
-    _log_system_action(client, "ROUTE_NODES_UPDATED", shipment_id, claims.uid, claims.email)
+    _log_system_action_pg(conn, "ROUTE_NODES_UPDATED", shipment_id, claims.uid, claims.email)
 
     return {
         "shipment_id": shipment_id,
@@ -2568,23 +2432,22 @@ async def update_route_node_timing(
     sequence: int,
     body: RouteNodeTimingUpdate,
     claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
 ):
     """Update timing on a single route node by sequence number."""
-    client = get_client()
-
     # Permission check
     if claims.is_afc():
         if claims.role not in ("AFC-ADMIN", "AFC-M"):
             raise HTTPException(status_code=403, detail="Only admin/manager can update route nodes")
 
-    q_entity = client.get(client.key("Quotation", shipment_id))
-    if not q_entity:
+    row = conn.execute(text("""
+        SELECT route_nodes FROM shipments WHERE id = :id
+    """), {"id": shipment_id}).fetchone()
+
+    if not row:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
-    if (q_entity.get("data_version") or 1) < 2:
-        raise HTTPException(status_code=400, detail="Cannot write route nodes to V1 shipments")
-
-    nodes = q_entity.get("route_nodes") or []
+    nodes = _parse_jsonb(row[0]) or []
     if not nodes:
         raise HTTPException(status_code=400, detail="No route nodes saved — use PUT to initialize first")
 
@@ -2608,16 +2471,21 @@ async def update_route_node_timing(
     if body.actual_etd is not None:
         target["actual_etd"] = body.actual_etd
 
+    # Build update
+    set_clauses = ["route_nodes = :route_nodes::jsonb", "updated_at = :now"]
+    params: dict = {"route_nodes": json.dumps(nodes), "now": datetime.now(timezone.utc).isoformat(), "id": shipment_id}
+
     # Sync flat fields if ORIGIN or DESTINATION
     if target.get("role") == "ORIGIN" and body.scheduled_etd is not None:
-        q_entity["etd"] = body.scheduled_etd
+        set_clauses.append("etd = :etd")
+        params["etd"] = body.scheduled_etd
     if target.get("role") == "DESTINATION" and body.scheduled_eta is not None:
-        q_entity["eta"] = body.scheduled_eta
+        set_clauses.append("eta = :eta")
+        params["eta"] = body.scheduled_eta
 
-    q_entity["route_nodes"] = nodes
-    q_entity.exclude_from_indexes = set(q_entity.exclude_from_indexes or set()) | {"route_nodes"}
-    q_entity["updated"] = datetime.now(timezone.utc).isoformat()
-    client.put(q_entity)
+    conn.execute(text(f"""
+        UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
+    """), params)
 
     return {
         "shipment_id": shipment_id,

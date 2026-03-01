@@ -1,10 +1,11 @@
 # AF Platform — Test List
-**Version:** 2.17
+**Version:** 2.18
 **Last Updated:** 01 March 2026
 
 ## Version History
 | Version | Date | Changes |
 |---|---|---|
+| 2.18 | 01 Mar 2026 | PG series added (15 tests, PostgreSQL migration verification). V2C series retired (NA) — superseded by PG series. |
 | 2.17 | 01 Mar 2026 | MI series retired (NA) — migration complete. V2C series added (10 tests, V2 cleanup verification). |
 | 2.16 | 01 Mar 2026 | GS-11 confirmed YES from mobile snapshot. MB series added — all mobile tests deferred pending mobile UX improvement pass. |
 | 2.15 | 01 Mar 2026 | v2.44 confirmed: Active=23, Total=2043. AF-003862 absent from list. All 003862 workaround data removed from Datastore. |
@@ -201,6 +202,27 @@
 
 ---
 
+## PostgreSQL Migration (PG series)
+| # | Test | Status | Notes |
+|---|---|---|---|
+| PG-01 | Schema created without errors (create_schema.py runs clean) | PENDING | |
+| PG-02 | Dry run: 3,854 shipments assembled without errors | PENDING | |
+| PG-03 | Commit run: row counts match — shipments, companies, workflows, files | PENDING | |
+| PG-04 | Stats endpoint returns correct counts in under 100ms | PENDING | |
+| PG-05 | Active tab loads in under 150ms | PENDING | |
+| PG-06 | Completed tab loads 25 records with total count in response | PENDING | |
+| PG-07 | Search returns results in under 100ms | PENDING | |
+| PG-08 | AF-003867 detail page loads correctly | PENDING | |
+| PG-09 | AFCQ-003829 resolves to AF-003829 | PENDING | |
+| PG-10 | Status update writes to PostgreSQL correctly | PENDING | |
+| PG-11 | BL update writes to PostgreSQL correctly | PENDING | |
+| PG-12 | New shipment from BL gets correct AF-XXXXXX sequence ID | PENDING | |
+| PG-13 | af-platform builds without errors after Datastore lib removal | PENDING | |
+| PG-14 | Stats: Active=23, Total=2044, TI=8 after migration | PENDING | |
+| PG-15 | Dashboard loads in under 500ms total (was 8-12 seconds) | PENDING | |
+
+---
+
 ## Deferred Items
 | Item | Reason |
 |---|---|
@@ -268,19 +290,19 @@
 
 ---
 
-## V2 Cleanup Verification (V2C series)
+## V2 Cleanup Verification (V2C series) — RETIRED
 | # | Test | Status | Notes |
 |---|---|---|---|
-| V2C-01 | Shipment list (active tab) loads without error after V1 path removal | PENDING | Regression |
-| V2C-02 | Shipment list (completed tab) loads and shows historical records | PENDING | Key — was served by V1 path |
-| V2C-03 | Shipment list (to_invoice tab) shows 8 records | PENDING | Regression |
-| V2C-04 | Stats counts unchanged — Active=23, Total=2044, TI=8 | PENDING | Regression |
-| V2C-05 | AFCQ-003829 URL resolves to AF-003829 detail page without error | PENDING | AFCQ→AF redirect |
-| V2C-06 | AF-003829 detail page loads all fields correctly | PENDING | Migrated record |
-| V2C-07 | Status update on migrated AF- record saves correctly | PENDING | Write path |
-| V2C-08 | BL update on migrated AF- record saves correctly | PENDING | Write path |
-| V2C-09 | Search returns migrated AF- records by AFCQ- ID (e.g. search "003829") | PENDING | Search path |
-| V2C-10 | Server starts without import errors after constants.py cleanup | PENDING | Already confirmed by log |
+| V2C-01 | Shipment list (active tab) loads without error after V1 path removal | NA | Superseded by PG series (PostgreSQL migration) |
+| V2C-02 | Shipment list (completed tab) loads and shows historical records | NA | Superseded by PG series |
+| V2C-03 | Shipment list (to_invoice tab) shows 8 records | NA | Superseded by PG series |
+| V2C-04 | Stats counts unchanged — Active=23, Total=2044, TI=8 | NA | Superseded by PG-14 |
+| V2C-05 | AFCQ-003829 URL resolves to AF-003829 detail page without error | NA | Superseded by PG-09 |
+| V2C-06 | AF-003829 detail page loads all fields correctly | NA | Superseded by PG-08 |
+| V2C-07 | Status update on migrated AF- record saves correctly | NA | Superseded by PG-10 |
+| V2C-08 | BL update on migrated AF- record saves correctly | NA | Superseded by PG-11 |
+| V2C-09 | Search returns migrated AF- records by AFCQ- ID (e.g. search "003829") | NA | Superseded by PG-07 |
+| V2C-10 | Server starts without import errors after constants.py cleanup | NA | Superseded by PG series |
 
 ---
 

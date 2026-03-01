@@ -106,7 +106,7 @@ function ShipmentsPageInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<FilterTab>(initialTab);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [companies, setCompanies] = useState<{ company_id: string; name: string }[]>([]);
   const [ports, setPorts] = useState<{ un_code: string; name: string; country: string; port_type: string; has_terminals: boolean; terminals: Array<{ terminal_id: string; name: string; is_default: boolean }> }[]>([]);
@@ -134,19 +134,18 @@ function ShipmentsPageInner() {
     });
   }, []);
 
-  const load = useCallback(async (tab: FilterTab, cursor?: string) => {
+  const load = useCallback(async (tab: FilterTab, offset?: number) => {
     const fetchId = ++fetchIdRef.current;
-    console.log('[ShipmentsPage] fetching list for tab:', tab, 'fetchId:', fetchId);
 
-    if (!cursor) setLoading(true);
+    if (!offset) setLoading(true);
     else setLoadingMore(true);
     setError(null);
 
     try {
       const [listResult, statsResult] = await Promise.all([
-        getShipmentListAction(tab, cursor, 25),
-        // Stats fetched on page 1 (no cursor), skipped on load-more
-        !cursor ? fetchShipmentOrderStatsAction() : Promise.resolve(null),
+        getShipmentListAction(tab, offset ?? 0, 25),
+        // Stats fetched on page 1 (no offset), skipped on load-more
+        !offset ? fetchShipmentOrderStatsAction() : Promise.resolve(null),
       ]);
 
       // Ignore stale responses — a newer load() has been triggered
@@ -159,13 +158,13 @@ function ShipmentsPageInner() {
 
       const fetchedOrders = listResult.shipments.map(toShipmentOrder);
 
-      if (cursor) {
+      if (offset) {
         setOrders((prev) => [...prev, ...fetchedOrders]);
       } else {
         console.log('[ShipmentsPage] setOrders called with:', fetchedOrders.length, 'items');
         setOrders(fetchedOrders);
       }
-      setNextCursor(listResult.next_cursor);
+      setNextCursor(listResult.next_cursor ? parseInt(listResult.next_cursor, 10) : null);
 
       if (statsResult && statsResult.success) setStats(statsResult.data);
     } catch (err) {
@@ -360,7 +359,7 @@ function ShipmentsPageInner() {
       {!isSearchActive && nextCursor && !loading && (
         <div className="flex justify-center">
           <button
-            onClick={() => load(activeTab, nextCursor)}
+            onClick={() => load(activeTab, nextCursor ?? undefined)}
             disabled={loadingMore}
             className="px-6 py-2 text-sm rounded-lg border border-[var(--border)] text-[var(--text-mid)]
                        hover:bg-[var(--surface)] transition-colors disabled:opacity-50"

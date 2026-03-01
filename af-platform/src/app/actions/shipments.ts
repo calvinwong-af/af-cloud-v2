@@ -6,65 +6,16 @@
  * Read-only for now — write (create/update) actions come in the next phase.
  */
 
-import { getShipmentOrders, getShipmentOrderDetail } from '@/lib/shipments';
-import { verifySessionAndRole, logAction } from '@/lib/auth-server';
+import { verifySessionAndRole } from '@/lib/auth-server';
 import { getCompanies } from '@/lib/companies';
-import type { ShipmentOrder, OrderType, ShipmentOrderStatus } from '@/lib/types';
+import type { ShipmentOrder } from '@/lib/types';
 
 type ActionResult<T> =
   | { success: true; data: T }
   | { success: false; error: string };
 
 // ---------------------------------------------------------------------------
-// List
-// ---------------------------------------------------------------------------
-
-export async function fetchShipmentOrdersAction(options?: {
-  companyId?: string;
-  status?: ShipmentOrderStatus[];
-  orderType?: OrderType[];
-  limit?: number;
-  cursor?: string;
-}): Promise<ActionResult<{ orders: ShipmentOrder[]; nextCursor: string | null }>> {
-  try {
-    // AFC staff and Admin can see all orders
-    // AFU users can only see their own company's orders (enforced by companyId check below)
-    const session = await verifySessionAndRole(['AFC-ADMIN', 'AFC-M', 'AFU-ADMIN']);
-    if (!session.valid) {
-      return { success: false, error: 'Unauthorised' };
-    }
-
-    // AFC and AFU-ADMIN (internal staff) can see all orders
-    // AFU customers are scoped to their own company only
-    let companyId = options?.companyId;
-    const isCustomer = session.account_type === 'AFC';
-    if (isCustomer) {
-      if (!session.company_id) {
-        return { success: false, error: 'No company associated with this account' };
-      }
-      companyId = session.company_id;
-    }
-
-    const result = await getShipmentOrders({
-      companyId,
-      status: options?.status,
-      orderType: options?.orderType,
-      limit: options?.limit ?? 50,
-      cursor: options?.cursor,
-      excludeTrash: true,
-      excludeChildren: true,
-    });
-
-    return { success: true, data: result };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[fetchShipmentOrdersAction]', message);
-    return { success: false, error: 'Failed to load shipment orders. Please try again.' };
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Detail
+// Detail (via af-server)
 // ---------------------------------------------------------------------------
 
 export async function fetchShipmentOrderDetailAction(
@@ -80,27 +31,41 @@ export async function fetchShipmentOrderDetailAction(
       return { success: false, error: 'Invalid shipment order ID format' };
     }
 
-    const order = await getShipmentOrderDetail(quotationId);
-    if (!order) {
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) {
+      return { success: false, error: 'No session token' };
+    }
+
+    const url = new URL(
+      `/api/v2/shipments/${encodeURIComponent(quotationId)}`,
+      process.env.AF_SERVER_URL
+    );
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${idToken}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      if (res.status === 404) {
+        return { success: false, error: `Shipment order ${quotationId} not found` };
+      }
+      return { success: false, error: `Server responded ${res.status}` };
+    }
+
+    const json = await res.json();
+    const data = json.data;
+    if (!data) {
       return { success: false, error: `Shipment order ${quotationId} not found` };
     }
 
     // AFC customers can only see their own company's orders
-    if (session.account_type === 'AFC' && order.company_id !== session.company_id) {
-      return { success: false, error: 'Not found' };  // Don't reveal it exists
+    if (session.account_type === 'AFC' && data.company_id !== session.company_id) {
+      return { success: false, error: 'Not found' };
     }
 
-    await logAction({
-      uid: session.uid,
-      email: session.email,
-      account_type: session.account_type,
-      action: 'SHIPMENT_ORDER_VIEW',
-      entity_kind: 'Quotation',
-      entity_id: quotationId,
-      success: true,
-    });
-
-    return { success: true, data: order };
+    return { success: true, data: data as ShipmentOrder };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[fetchShipmentOrderDetailAction]', message);
@@ -130,21 +95,19 @@ export interface ShipmentListItem {
 
 export async function getShipmentListAction(
   tab: string = 'active',
-  cursor?: string | null,
+  offset: number = 0,
   limit: number = 25,
 ): Promise<{
   shipments: ShipmentListItem[];
   next_cursor: string | null;
-  total_shown: number;
+  total: number;
 }> {
-  const empty = { shipments: [], next_cursor: null, total_shown: 0 };
-  console.log('[getShipmentListAction] called with tab:', tab, 'cursor:', cursor);
+  const empty = { shipments: [], next_cursor: null, total: 0 };
 
   try {
     const session = await verifySessionAndRole(['AFC-ADMIN', 'AFC-M', 'AFU-ADMIN']);
     if (!session.valid) return empty;
 
-    // Get Firebase ID token from session cookie to forward to af-server
     const { cookies } = await import('next/headers');
     const cookieStore = cookies();
     const idToken = cookieStore.get('af-session')?.value;
@@ -153,8 +116,8 @@ export async function getShipmentListAction(
     const url = new URL('/api/v2/shipments', process.env.AF_SERVER_URL);
     url.searchParams.set('tab', tab);
     url.searchParams.set('limit', String(limit));
-    if (cursor) {
-      url.searchParams.set('cursor', cursor);
+    if (offset > 0) {
+      url.searchParams.set('offset', String(offset));
     }
 
     const res = await fetch(url.toString(), {
@@ -162,23 +125,20 @@ export async function getShipmentListAction(
       cache: 'no-store',
     });
 
-    console.log('[getShipmentListAction] response status:', res.status);
-
     if (!res.ok) {
       console.error('[getShipmentListAction] af-server responded', res.status);
       return empty;
     }
 
     const json = await res.json();
-    console.log('[getShipmentListAction] shipments count:', json.shipments?.length, 'total_shown:', json.total_shown);
     return {
       shipments: json.shipments ?? [],
       next_cursor: json.next_cursor ?? null,
-      total_shown: json.total_shown ?? 0,
+      total: json.total ?? 0,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    console.log('[getShipmentListAction] ERROR:', message);
+    console.error('[getShipmentListAction] ERROR:', message);
     return empty;
   }
 }
