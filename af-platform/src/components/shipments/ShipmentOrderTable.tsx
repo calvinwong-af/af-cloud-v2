@@ -56,7 +56,7 @@ function StatusIcon({ order }: { order: ShipmentOrder }) {
     4001: { icon: order.order_type === 'AIR'
               ? <Plane className="w-4 h-4" />
               : <Ship className="w-4 h-4" />,            color: '#0369a1' },
-    4002: { icon: <AlertTriangle className="w-4 h-4" />, color: '#dc2626' },
+    4002: { icon: <Anchor className="w-4 h-4" />,         color: '#7c3aed' },
     5001: { icon: <PackageCheck className="w-4 h-4" />,  color: '#16a34a' },
     [-1]: { icon: <Ban className="w-4 h-4" />,           color: '#6b7280' },
   };

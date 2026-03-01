@@ -174,6 +174,7 @@ export interface SearchResult {
   destination_port: string;
   cargo_ready_date: string;
   updated: string;
+  issued_invoice?: boolean;
 }
 
 export async function searchShipmentsAction(

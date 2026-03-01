@@ -1,10 +1,11 @@
 # AF Platform — Test List
-**Version:** 2.23
+**Version:** 2.24
 **Last Updated:** 02 March 2026
 
 ## Version History
 | Version | Date | Changes |
 |---|---|---|
+| 2.24 | 02 Mar 2026 | BUG1 series (invoice icon on All tab/search) + BUG2 series (4002 Arrived icon fix). |
 | 2.23 | 02 Mar 2026 | LO-01/LO-03 updated — per-action loading states with colored spinners. advanceLoading/revertLoading/cancelLoading replace single loading boolean. |
 | 2.22 | 02 Mar 2026 | PG-16 to PG-20 all confirmed YES. Invoice icons, sort order, and AF-003752 all verified on production. |
 | 2.21 | 02 Mar 2026 | PG-16 to PG-20 added — issued_invoice fix, backfill, sort simplification, AF-003752 manual fix. All changes from this session captured. |
@@ -234,6 +235,22 @@
 
 ---
 
+## Invoice Icon Fix (BUG1 series)
+| # | Test | Status | Notes |
+|---|---|---|---|
+| BUG1-01 | All tab — invoiced completed shipments show green icon (not amber) | PENDING | issued_invoice was missing from search result mapping |
+| BUG1-02 | Search results — invoiced shipments show green icon, awaiting show amber | PENDING | issued_invoice added to SearchResult interface + mapping |
+
+---
+
+## Status Icon Fix (BUG2 series)
+| # | Test | Status | Notes |
+|---|---|---|---|
+| BUG2-01 | AF-003864 status column shows Arrived (Anchor) icon, not red warning triangle | PENDING | 4002 icon changed from AlertTriangle to Anchor |
+| BUG2-02 | Exception flag visible as separate amber indicator on mobile card (not replacing status) | PENDING | Mobile card already correct — exception shown alongside status badge |
+
+---
+
 ## Deferred Items
 | Item | Reason |
 |---|---|
@@ -381,11 +398,11 @@
 ## Loading State UI (LO series)
 | # | Test | Status | Notes |
 |---|---|---|---|
-| LO-01 | Advance button: sky spinner + "Updating…" beside button; revert shows amber spinner | PENDING | advanceLoading/revertLoading states |
+| LO-01 | Advance button: sky spinner + "Updating…" beside button; revert shows amber spinner | YES | Confirmed 02 Mar 2026 — v2.51 per-action loading states |
 | LO-02 | Invoiced toggle: shows spinner + "Updating…" replacing status text while loading | YES | Confirmed 02 Mar 2026 — AF-003844 shows Loader2 + "Updating…" inline |
-| LO-03 | Cancel: red spinner + "Updating…"; Exception: amber spinner + "Updating…" | PENDING | cancelLoading/exceptionLoading states |
-| LO-04 | All action buttons disabled while any mutation is in progress | PENDING | anyLoading disables all buttons |
-| LO-05 | Timeline node click triggers spinner on Advance button (not timeline) | PENDING | executeStatusChange sets advanceLoading |
+| LO-03 | Cancel: red spinner + "Updating…"; Exception: amber spinner + "Updating…" | YES | Confirmed 02 Mar 2026 — v2.51 per-action loading states |
+| LO-04 | All action buttons disabled while any mutation is in progress | YES | Confirmed 02 Mar 2026 — v2.51 anyLoading guard |
+| LO-05 | Timeline node click triggers spinner on Advance button (not timeline) | YES | Confirmed 02 Mar 2026 — v2.51 |
 
 ---
 

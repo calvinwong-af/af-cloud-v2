@@ -1,5 +1,16 @@
-# Prompt Log — v2.42–v2.51
+# Prompt Log — v2.42–v2.52
 AF Platform — AcceleFreight
+
+### [2026-03-02 19:00 UTC] — v2.52: Two Bug Fixes (invoice icon + status icon)
+- **Status:** Completed
+- **Tasks:**
+  - BUG 1: Added `issued_invoice` to `SearchResult` interface and search result mapping in page.tsx — invoice icon now correct on All tab and search results
+  - BUG 2: Changed 4002 (Arrived) icon from `AlertTriangle` (red) to `Anchor` (purple) — no longer looks like an exception flag
+- **Files Modified:**
+  - `af-platform/src/app/actions/shipments.ts` — `issued_invoice` added to SearchResult interface
+  - `af-platform/src/app/(platform)/shipments/page.tsx` — `issued_invoice` mapped in search results
+  - `af-platform/src/components/shipments/ShipmentOrderTable.tsx` — 4002 icon changed to Anchor
+  - `claude/tests/AF-Test-List.md` — v2.24 (BUG1/BUG2 series added)
 
 ### [2026-03-02 18:00 UTC] — v2.51: Status Update Loading Indicator Fix
 - **Status:** Completed

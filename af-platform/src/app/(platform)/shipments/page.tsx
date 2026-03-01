@@ -220,6 +220,7 @@ function ShipmentsPageInner() {
         company_name: r.company_name,
         cargo_ready_date: r.cargo_ready_date ?? '',
         updated: r.updated,
+        issued_invoice: r.issued_invoice ?? false,
       })));
       setSearching(false);
     }, 300);
