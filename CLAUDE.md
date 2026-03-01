@@ -46,7 +46,7 @@ Do not write these files to the repo root.
 **Rule:** After completing any prompt (from `PROMPT-CURRENT.md` or user-issued tasks), Claude MUST append an entry to the active archive file in `claude/prompts/log/` with the following format:
 
 ```markdown
-### [YYYY-MM-DD HH:MM UTC] — Prompt Title
+### [YYYY-MM-DD HH:MM UTC] — vX.XX: Prompt Title
 - **Status:** Completed | Partial | Failed
 - **Tasks:** Brief list of what was done
 - **Files Modified:** List of changed files

@@ -1,5 +1,5 @@
 # AF Platform — Test List
-**Version:** 2.3
+**Version:** 2.12
 **Last Updated:** 01 March 2026
 
 ## Version History
@@ -19,6 +19,15 @@
 | 2.1 | 01 Mar 2026 | AFC test session complete. AC series added and all confirmed. BL-04, PP-01, TL-09 confirmed. canEdit() fixed to AFU-only |
 | 2.2 | 01 Mar 2026 | EP series added (Edit Parties clear fix). OF series added (Order list filter pagination). |
 | 2.3 | 01 Mar 2026 | EP series all confirmed PASSED. OF series retired (resolved by V1 migration). MI series added (V1 to V2 migration). |
+| 2.4 | 01 Mar 2026 | TI series added (To Invoice fixes). V1 badge tests added to GS series. |
+| 2.5 | 01 Mar 2026 | TI-04, TI-05 confirmed. |
+| 2.6 | 01 Mar 2026 | TI-06 confirmed (v2.33 deployed). GS-08–11, TI-07 updated to ready-for-visual-test. |
+| 2.7 | 01 Mar 2026 | TI series fully confirmed. |
+| 2.8 | 01 Mar 2026 | GS-08 retired (NA). GS-09 opened as NO — migrated_from_v1 not surfacing in list. GS-10/11 blocked. |
+| 2.9 | 01 Mar 2026 | v2.34 tests added: LV series (list visibility), SU series (superseded dedup). GS-09/10/11 unblocked pending v2.34. |
+| 2.10 | 01 Mar 2026 | v2.34 evaluated against snapshot. LV-01/02/04 confirmed. GS-10 confirmed. SU-01 still NO (script not run). |
+| 2.11 | 01 Mar 2026 | v2.35 context: AF-003866/003867 visible in Active tab. Active badge=23 (off by 1 — open issue). GS-09 still NO (V1 badge not confirmed on migrated AF- records). SU-01 still NO (003862 superseded script not run). |
+| 2.12 | 01 Mar 2026 | v2.37 snapshot: GS-09 YES — V1 badge confirmed on AF-003864/003863/003861/003860. GS-11 PENDING. Active badge still 23 (off by 1, open issue). Stats otherwise stable (Total=2043, Completed=2019, Draft=1, TI=8, Cancelled=0). |
 
 ## How to Use
 - YES = Confirmed working
@@ -158,6 +167,10 @@
 | GS-05 | Stale task display_name resolved | YES | |
 | GS-06 | Edit button visible on IGNORED tasks | YES | |
 | GS-07 | Task timestamps status guard working | YES | |
+| GS-08 | V1 badge shows on un-migrated AFCQ- records in list | NA | No un-migrated AFCQ- records remain in system |
+| GS-09 | V1 badge shows on migrated AF- records (migrated_from_v1=true) in list | YES | v2.37 confirmed — AF-003864, AF-003863, AF-003861, AF-003860 all show V1 badge in snapshot |
+| GS-10 | V1 badge NOT shown on native V2 AF- records (e.g. AF-003867) | YES | Confirmed 01 Mar 2026 — all native AF- records in list show no badge |
+| GS-11 | V1 badge visible on mobile card view | PENDING | GS-09 resolved — needs mobile visual confirmation |
 
 ---
 
@@ -247,3 +260,38 @@
 | MI-08 | Files re-keyed — uploaded files still visible on migrated shipments | PENDING | |
 | MI-09 | ShipmentOrderV2CountId registered — new shipment creation does not reuse migrated numbers | PENDING | |
 | MI-10 | Migration script is idempotent — re-run dry run reports all records as already migrated | PENDING | |
+
+---
+
+## To Invoice Fixes (TI series)
+| # | Test | Status | Notes |
+|---|---|---|---|
+| TI-01 | To Invoice tab count shows 8 (not 17) | YES | Confirmed via server console log 01 Mar 2026 |
+| TI-02 | Cancelled V1 orders do not appear in To Invoice list | YES | AFCQ-003862 (raw_status=3001) excluded by STATUS_CANCELLED guard |
+| TI-03 | 8 legitimate V1 orders appear in To Invoice list | YES | Confirmed via final response log |
+| TI-04 | AF-003867 does NOT appear in To Invoice list | YES | Confirmed 01 Mar 2026 |
+| TI-05 | AF-003866 does NOT appear in To Invoice list | YES | Confirmed 01 Mar 2026 |
+| TI-06 | No [to_invoice] debug logs in server console after v2.33 deployed | YES | v2.33 deployed 01 Mar 2026 |
+| TI-07 | To Invoice tab still shows 8 after debug logs removed (no regression) | YES | Confirmed 01 Mar 2026 |
+
+---
+
+## List Visibility — Trash Filter Fix (LV series)
+| # | Test | Status | Notes |
+|---|---|---|---|
+| LV-01 | Native V2 AF- records (e.g. AF-003864, AF-003863, AF-003861) appear in Active tab | YES | Confirmed 01 Mar 2026 |
+| LV-02 | Active tab count matches stats badge | NO | v2.37: badge still 23, 003866+003867 both active in list. Off by 1 — open issue persists |
+| LV-03 | Explicitly trashed records (trash=true) still excluded from list | PENDING | Functional regression — test as encountered |
+| LV-04 | Stats counts unchanged after fix (Active=22, To Invoice=8) | YES | Confirmed 01 Mar 2026 — Active=22, TI=8, Completed=2021 |
+| LV-05 | Migrated AF- records appear in list with migrated_from_v1=true | PENDING | AF- records visible — V1 badge on migrated ones not yet confirmed |
+| LV-06 | All list tabs (active, completed, to_invoice, draft, cancelled) load without error | PENDING | Active confirmed OK — others not yet tested |
+
+---
+
+## AFCQ Superseded Dedup (SU series)
+| # | Test | Status | Notes |
+|---|---|---|---|
+| SU-01 | AFCQ-003862 does NOT appear in shipment list | PENDING | Script reported already-superseded on run. Needs list verification. |
+| SU-02 | AF-003862 DOES appear in shipment list | PENDING | Cannot confirm until SU-01 resolved |
+| SU-03 | AF-003862 shows V1 badge | PENDING | v2.34 — migrated_from_v1=true |
+| SU-04 | Navigating to /shipments/AFCQ-003862 redirects to AF-003862 detail | PENDING | Existing server redirect logic |

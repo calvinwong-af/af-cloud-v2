@@ -400,23 +400,43 @@ const INCOTERM_COLORS: Record<string, { bg: string; text: string }> = {
   DDP: { bg: '#fecaca', text: '#7f1d1d' },
 };
 
-function IncotermBadge({ code }: { code?: string | null }) {
+function IncotermBadge({ code, transactionType }: { code?: string | null; transactionType?: string }) {
   if (!code) return <span className="text-[var(--text-muted)]">—</span>;
   const upper = code.toUpperCase();
   const colors = INCOTERM_COLORS[upper];
+
+  const dirArrow = transactionType === 'EXPORT' ? '↑' : transactionType === 'IMPORT' ? '↓' : null;
+  const tooltip = transactionType === 'EXPORT' ? 'Export' : transactionType === 'IMPORT' ? 'Import' : undefined;
+
+  const inner = (
+    <>
+      <span>{upper}</span>
+      {dirArrow && (
+        <>
+          <span style={{ opacity: 0.3, marginInline: '4px' }}>|</span>
+          <span style={{ opacity: 0.6 }}>{dirArrow}</span>
+        </>
+      )}
+    </>
+  );
+
   if (colors) {
     return (
       <span
         className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-medium"
         style={{ background: colors.bg, color: colors.text }}
+        title={tooltip}
       >
-        {upper}
+        {inner}
       </span>
     );
   }
   return (
-    <span className="px-2 py-0.5 bg-[var(--surface)] rounded text-xs font-mono text-[var(--text-mid)]">
-      {upper}
+    <span
+      className="inline-flex items-center px-2 py-0.5 bg-[var(--surface)] rounded text-xs font-mono text-[var(--text-mid)]"
+      title={tooltip}
+    >
+      {inner}
     </span>
   );
 }
@@ -550,7 +570,7 @@ function ShipmentRow({
 
       {/* Incoterm */}
       <td className="px-4 py-3">
-        <IncotermBadge code={order.incoterm_code} />
+        <IncotermBadge code={order.incoterm_code} transactionType={order.transaction_type} />
       </td>
 
       {/* Route — port codes only */}

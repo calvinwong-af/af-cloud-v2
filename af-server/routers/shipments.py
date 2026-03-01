@@ -50,7 +50,6 @@ from core.constants import (
     STATUS_BOOKING_CONFIRMED,
     STATUS_DEPARTED,
     STATUS_ARRIVED,
-    V2_ACTIVE_STATUSES,
     V2_OPERATIONAL_STATUSES,
     STATUS_LABELS,
     OLD_TO_NEW_STATUS,
@@ -205,7 +204,7 @@ async def get_shipment_stats(
                 v1_completed_ids.append(entity.key.name or str(entity.key.id))
         elif v2_status == STATUS_CANCELLED:
             stats["cancelled"] += 1
-        elif v2_status in V2_ACTIVE_STATUSES:
+        elif v2_status in V2_OPERATIONAL_STATUSES:
             stats["active"] += 1
         elif v2_status in (STATUS_DRAFT, STATUS_DRAFT_REVIEW):
             stats["draft"] += 1
@@ -223,47 +222,6 @@ async def get_shipment_stats(
             # Only count as to_invoice if Quotation exists AND issued_invoice is falsy
             # If Quotation is missing entirely, skip — we cannot verify
             if sid in q_invoice_map and not bool(issued_q):
-                stats["to_invoice"] += 1
-
-    # -----------------------------------------------------------------------
-    # Migrated records — ShipmentOrder Kind, data_version=2
-    # These were written by the V1→V2 migration script.
-    # Status is already V2 codes — treat same as Quotation V2 records.
-    # -----------------------------------------------------------------------
-    migrated_query = client.query(kind="ShipmentOrder")
-    migrated_query.add_filter(filter=PropertyFilter("data_version", "=", 2))
-    if effective_company_id:
-        migrated_query.add_filter(filter=PropertyFilter("company_id", "=", effective_company_id))
-
-    migrated_completed_ids: list[str] = []
-    for entity in migrated_query.fetch():
-        if entity.get("trash") is True:
-            continue
-        s = entity.get("status", 0)
-        if s in V2_OPERATIONAL_STATUSES:
-            stats["active"] += 1
-        elif s == STATUS_COMPLETED or s == STATUS_CONFIRMED:
-            stats["completed"] += 1
-            if s == STATUS_COMPLETED:
-                migrated_completed_ids.append(entity.key.name or str(entity.key.id))
-        elif s == STATUS_CANCELLED:
-            stats["cancelled"] += 1
-        elif s in (STATUS_DRAFT, STATUS_DRAFT_REVIEW):
-            stats["draft"] += 1
-
-    # issued_invoice was not carried over by the migration script — read from
-    # the original Quotation records (untouched by migration) instead.
-    if migrated_completed_ids:
-        q_keys = [client.key("Quotation", mid) for mid in migrated_completed_ids]
-        q_entities = get_multi_chunked(client, q_keys)
-        q_invoice_map = {
-            (e.key.name or str(e.key.id)): e.get("issued_invoice")
-            for e in q_entities
-        }
-        for mid in migrated_completed_ids:
-            # Only count as to_invoice if Quotation record exists AND issued_invoice is falsy
-            # If the Quotation entity is missing, we cannot verify — skip rather than over-count
-            if mid in q_invoice_map and not bool(q_invoice_map[mid]):
                 stats["to_invoice"] += 1
 
     stats["total"] = stats["active"] + stats["completed"] + stats["cancelled"] + stats["draft"]
@@ -590,55 +548,6 @@ def _batch_company_names(client, company_ids: list[str]) -> dict[str, str]:
     return {cid: _company_name_cache.get(cid, "") for cid in company_ids}
 
 
-def _migrated_tab_match(tab: str, entity) -> bool:
-    """Tab matching for migrated ShipmentOrder records.
-
-    Same as _v2_tab_match except to_invoice uses bare truthiness check
-    for issued_invoice (migrated records may have False, 0, None, or []).
-    """
-    s = entity.get("status", 0)
-    if tab == "all":
-        return True
-    if tab == "active":
-        return s in V2_OPERATIONAL_STATUSES
-    if tab == "completed":
-        return s == STATUS_COMPLETED or s == STATUS_CONFIRMED
-    if tab == "to_invoice":
-        issued = entity.get("issued_invoice")
-        return s == STATUS_COMPLETED and not issued
-    if tab == "draft":
-        return s in _DRAFT_STATUSES
-    if tab == "cancelled":
-        return s == STATUS_CANCELLED
-    return True
-
-
-def _make_migrated_summary(entity) -> dict:
-    """Build summary dict for a migrated ShipmentOrder entity (data_version=2).
-
-    These records use the V2 nested origin/destination structure:
-      origin: {port_un_code: "VNSGN", type: "SEA"}
-      destination: {port_un_code: "MYPKG", type: "SEA"}
-    """
-    origin = entity.get("origin") or {}
-    destination = entity.get("destination") or {}
-    updated = entity.get("updated") or entity.get("created") or ""
-    return {
-        "shipment_id": entity.key.name or str(entity.key.id),
-        "data_version": 2,
-        "migrated_from_v1": True,
-        "status": entity.get("status", 0),
-        "order_type": entity.get("order_type", ""),
-        "transaction_type": entity.get("transaction_type", ""),
-        "incoterm": entity.get("incoterm") or entity.get("incoterm_code") or "",
-        "origin_port": origin.get("port_un_code", "") if isinstance(origin, dict) else "",
-        "destination_port": destination.get("port_un_code", "") if isinstance(destination, dict) else "",
-        "company_id": entity.get("company_id", ""),
-        "company_name": "",  # batch-filled after merge
-        "cargo_ready_date": _fmt_date(entity.get("cargo_ready_date")),
-        "updated": _fmt_date(updated),
-    }
-
 
 def _make_v2_summary(entity) -> dict:
     """Build summary dict for a V2 Quotation entity."""
@@ -646,6 +555,7 @@ def _make_v2_summary(entity) -> dict:
     return {
         "shipment_id": entity.key.name or str(entity.key.id),
         "data_version": 2,
+        "migrated_from_v1": bool(entity.get("migrated_from_v1", False)),
         "status": entity.get("status", 0),
         "order_type": entity.get("order_type", ""),
         "transaction_type": entity.get("transaction_type", ""),
@@ -755,43 +665,6 @@ async def list_shipments(
                 items.append(_make_v2_summary(entity))
 
     # -------------------------------------------------------------------
-    # Migrated records — ShipmentOrder Kind, data_version=2
-    # Status is V2 codes. Origin/dest use nested dict structure.
-    # Note: issued_invoice was not carried over by the migration script,
-    # so for to_invoice tab we fetch all completed then post-filter via
-    # the original Quotation records.
-    # -------------------------------------------------------------------
-    if not cursor:  # Only on first page — migrated records included with V2
-        migrated_query = client.query(kind="ShipmentOrder")
-        migrated_query.add_filter(filter=PropertyFilter("data_version", "=", 2))
-        if effective_company_id:
-            migrated_query.add_filter(
-                filter=PropertyFilter("company_id", "=", effective_company_id)
-            )
-        migrated_items: list[dict] = []
-        for entity in migrated_query.fetch():
-            if entity.get("trash") is True:
-                continue
-            if _migrated_tab_match(tab, entity):
-                migrated_items.append(_make_migrated_summary(entity))
-
-        if tab == "to_invoice" and migrated_items:
-            # Batch-fetch Quotation records to check issued_invoice
-            mig_ids = [m["shipment_id"] for m in migrated_items]
-            q_keys = [client.key("Quotation", mid) for mid in mig_ids]
-            q_entities = get_multi_chunked(client, q_keys)
-            q_invoice_map = {
-                (e.key.name or str(e.key.id)): e.get("issued_invoice")
-                for e in q_entities
-            }
-            for m in migrated_items:
-                issued = q_invoice_map.get(m["shipment_id"])
-                if not issued:
-                    items.append(m)
-        else:
-            items.extend(migrated_items)
-
-    # -------------------------------------------------------------------
     # V1 records — query ShipmentOrder Kind directly with status filters.
     # This mirrors the stats endpoint strategy and avoids the unreliable
     # has_shipment flag on Quotation Kind.
@@ -881,7 +754,7 @@ async def list_shipments(
                             continue
                     raw_status = so_entity.get("status", 0)
                     v2_status = _resolve_so_status_to_v2(raw_status)
-                    if tab == "active" and v2_status not in V2_ACTIVE_STATUSES:
+                    if tab == "active" and v2_status not in V2_OPERATIONAL_STATUSES:
                         continue
                     if tab == "completed" and v2_status != STATUS_COMPLETED:
                         continue
