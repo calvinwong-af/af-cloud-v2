@@ -1,6 +1,17 @@
 # Prompt Log — v2.42–v2.51
 AF Platform — AcceleFreight
 
+### [2026-03-02 14:00 UTC] — v2.48 + v2.49: Status update out-of-path fix + search improvements
+- **Status:** Completed
+- **Tasks:**
+  - v2.48: Added out-of-path guard in status transition validation for migrated shipments (e.g. AF-003851 CNF IMPORT with status 3001 not on Path B)
+  - v2.49: Search results now sort active-first (CASE ordering), enriched SELECT with migrated_from_v1/transaction_type/incoterm/cargo_ready_date, status filter chips (Active/Completed/Other) in UI
+- **Files Modified:**
+  - `af-server/routers/shipments.py` — out-of-path guard in update_shipment_status()
+  - `af-server/core/db_queries.py` — search_shipments() enriched SELECT + active-first ORDER BY
+  - `af-platform/src/app/actions/shipments.ts` — SearchResult interface expanded
+  - `af-platform/src/app/(platform)/shipments/page.tsx` — search result mapping + status filter chips
+
 ### [2026-03-02 01:00 UTC] — v2.47: PostgreSQL Migration — Phase 1 and 2
 - **Status:** Completed
 - **Tasks:**
