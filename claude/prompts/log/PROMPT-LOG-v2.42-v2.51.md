@@ -1,16 +1,15 @@
 # Prompt Log — v2.42–v2.51
 AF Platform — AcceleFreight
 
-### [2026-03-02 16:00 UTC] — v2.50: Sort Fix + Datastore Sweep + Loading States
+### [2026-03-02 17:00 UTC] — v2.50 (revised): Sort standing principle + Datastore Sweep + Loading States
 - **Status:** Completed
 - **Tasks:**
-  - TASK 1: Sort fix in `db_queries.py` — 4-tier ORDER BY (active-group first, status progression, cargo_ready_date DESC NULLS LAST, countid DESC) applied to both `list_shipments()` and `search_shipments()`
+  - TASK 1: Sort reverted to `countid DESC` (standing principle). Removed 4-tier ORDER BY. Both list_shipments() and search_shipments() use simple countid DESC.
   - TASK 2: Datastore sweep audit — identified `createShipmentOrder()` (CRITICAL) and `deleteShipmentOrder()` (HIGH) still writing to Datastore. `datastore-query.ts` retained for users module (expected). `actions/shipments.ts` confirmed clean.
-  - TASK 3: Loading UI on StatusCard — thin sky-400 pulse bar at top of card during any mutation, timeline opacity-60 while status loading, invoiced toggle animate-pulse + Loader2 spinner next to label
+  - TASK 3: Loading UI on StatusCard — inline spinners + "Updating…" text on advance button and invoiced toggle. Removed pulse bar and timeline opacity. All mutation buttons have spinner + disabled pattern.
 - **Files Modified:**
-  - `af-server/core/db_queries.py` — 4-tier ORDER BY in list_shipments() and search_shipments()
-  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — loading bar, timeline opacity, invoiced toggle spinner/pulse
-  - `claude/tests/AF-Test-List.md` — v2.20 (SR/DS/LO series added)
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — inline loading indicators (spinner + Updating… text), removed pulse bar/opacity
+  - `claude/tests/AF-Test-List.md` — v2.20 (SR retired, DS/LO series updated)
 
 ### [2026-03-02 14:00 UTC] — v2.48 + v2.49: Status update out-of-path fix + search improvements
 - **Status:** Completed

@@ -642,11 +642,6 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
 
   return (
     <SectionCard title="Shipment Status" icon={<Activity className="w-4 h-4" />}>
-      {/* Mutation loading bar */}
-      {(loading || invoiceLoading || exceptionLoading) && (
-        <div className="h-0.5 bg-sky-400 animate-pulse rounded-full -mt-2 mb-3" />
-      )}
-
       {/* Exception banner */}
       {exceptionFlagged && (
         <div className="mb-4 px-3 py-2 bg-amber-50 border border-amber-300 rounded-lg flex items-center gap-2">
@@ -661,7 +656,7 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
       )}
 
       {/* Node-based Status Timeline — label-based, no numbers, no path label */}
-      <div className={`flex items-start justify-between overflow-x-auto pb-2 mb-4 transition-opacity ${loading ? 'opacity-60' : ''}`}>
+      <div className="flex items-start justify-between overflow-x-auto pb-2 mb-4">
         {nodes.map((nodeGroup, ni) => {
           const state = getNodeState(nodeGroup);
           const isLastNode = ni === nodes.length - 1;
@@ -824,8 +819,11 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
               disabled={loading}
               className="px-4 py-2 bg-[var(--sky)] text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2"
             >
-              {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              Advance to {SHIPMENT_STATUS_LABELS[advanceStatus]}
+              {loading ? (
+                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating…</>
+              ) : (
+                <>Advance to {SHIPMENT_STATUS_LABELS[advanceStatus]}</>
+              )}
             </button>
           )}
 
@@ -992,19 +990,24 @@ function StatusCard({ order, onReload, accountType }: { order: ShipmentOrder; on
         <div className="mt-4 pt-4 border-t border-[var(--border)] flex items-center justify-between">
           <div>
             <span className="text-sm text-[var(--text)]">Invoiced</span>
-            {invoiceLoading && <Loader2 className="w-3 h-3 animate-spin text-[var(--sky)] inline ml-1.5" />}
-            <span className="text-xs text-[var(--text-muted)] ml-2">
-              {currentStatus === 5001
-                ? (order.issued_invoice ? 'Invoice processed' : 'Awaiting invoice')
-                : 'Available after shipment is completed'}
-            </span>
+            {invoiceLoading ? (
+              <span className="text-xs text-[var(--sky)] ml-2 inline-flex items-center gap-1">
+                <Loader2 className="w-3 h-3 animate-spin" /> Updating…
+              </span>
+            ) : (
+              <span className="text-xs text-[var(--text-muted)] ml-2">
+                {currentStatus === 5001
+                  ? (order.issued_invoice ? 'Invoice processed' : 'Awaiting invoice')
+                  : 'Available after shipment is completed'}
+              </span>
+            )}
           </div>
           <button
             onClick={currentStatus === 5001 ? handleInvoiceToggle : undefined}
             disabled={currentStatus !== 5001 || invoiceLoading}
             className={`relative w-10 h-5 rounded-full transition-colors ${
               order.issued_invoice && currentStatus === 5001 ? 'bg-[var(--sky)]' : 'bg-gray-300'
-            } ${currentStatus !== 5001 ? 'opacity-40 cursor-not-allowed' : ''} ${invoiceLoading ? 'opacity-50 animate-pulse' : ''}`}
+            } ${currentStatus !== 5001 ? 'opacity-40 cursor-not-allowed' : ''} ${invoiceLoading ? 'opacity-50' : ''}`}
           >
             <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
               order.issued_invoice ? 'translate-x-5' : ''
