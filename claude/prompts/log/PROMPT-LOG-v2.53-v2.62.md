@@ -1,5 +1,18 @@
 # Prompt Completion Log — v2.53–v2.62
 
+### [2026-03-02 19:00 UTC] — v2.57: Hard Delete — Menu Item + Action Extension
+- **Status:** Completed
+- **Tasks:**
+  - TASK 1: Extended `deleteShipmentOrderAction` with optional `hard` boolean parameter, appends `?hard=true` to URL
+  - TASK 2a: Added `showHardConfirm`, `hardDeleting`, `hardDeleteError` state to ShipmentActionsMenu
+  - TASK 2b: Added `handleHardDelete()` handler calling action with `hard=true`
+  - TASK 2c: Added Hard Delete menu item with Zap icon, dark red hover style
+  - TASK 2d: Added visually distinct Hard Delete confirmation modal with dark red-900 header
+- **Files Modified:**
+  - `af-platform/src/app/actions/shipments-write.ts` — added `hard` param to deleteShipmentOrderAction
+  - `af-platform/src/components/shipments/ShipmentOrderTable.tsx` — Zap import, hard delete state/handler/menu/modal
+- **Notes:** No server changes. AFU-only guard reused from existing `showDelete`. Modal visually distinct from soft delete (dark header, stronger warning).
+
 ### [2026-03-02 18:00 UTC] — v2.56: Schema alignment sweep — fix column mismatches in shipments.py
 - **Status:** Completed
 - **Tasks:**

@@ -486,7 +486,8 @@ export async function flagExceptionAction(
 // ---------------------------------------------------------------------------
 
 export async function deleteShipmentOrderAction(
-  shipment_id: string
+  shipment_id: string,
+  hard: boolean = false,
 ): Promise<DeleteShipmentOrderResult> {
   const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
   if (!session.valid) {
@@ -503,6 +504,7 @@ export async function deleteShipmentOrderAction(
     if (!serverUrl) return { success: false, error: 'Server URL not configured' };
 
     const url = new URL(`/api/v2/shipments/${encodeURIComponent(shipment_id)}`, serverUrl);
+    if (hard) url.searchParams.set('hard', 'true');
     const res = await fetch(url.toString(), {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${idToken}` },

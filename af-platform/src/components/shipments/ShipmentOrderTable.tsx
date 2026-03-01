@@ -24,7 +24,7 @@ import {
   MoreVertical, Ship, Plane, Truck, ArrowRight, Container, Package,
   FileText, FilePen, CircleCheck, BookmarkCheck, Bookmark, Anchor,
   AlertTriangle, PackageCheck, Ban, ReceiptText, Receipt, Stamp,
-  ExternalLink, Copy, Hash, CopyPlus, Trash2, Loader2,
+  ExternalLink, Copy, Hash, CopyPlus, Trash2, Loader2, Zap,
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { deleteShipmentOrderAction } from '@/app/actions/shipments-write';
@@ -114,6 +114,9 @@ function ShipmentActionsMenu({
   const [showConfirm, setShowConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [showHardConfirm, setShowHardConfirm] = useState(false);
+  const [hardDeleting, setHardDeleting] = useState(false);
+  const [hardDeleteError, setHardDeleteError] = useState<string | null>(null);
   const [copied, setCopied] = useState<'id' | 'tracking' | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -152,6 +155,19 @@ function ShipmentActionsMenu({
       onDeleted();
     } else {
       setDeleteError(result.error);
+    }
+  }
+
+  async function handleHardDelete() {
+    setHardDeleting(true);
+    setHardDeleteError(null);
+    const result = await deleteShipmentOrderAction(order.quotation_id, true);
+    setHardDeleting(false);
+    if (result.success) {
+      setShowHardConfirm(false);
+      onDeleted();
+    } else {
+      setHardDeleteError(result.error);
     }
   }
 
@@ -231,10 +247,73 @@ function ShipmentActionsMenu({
                   <Trash2 className="w-4 h-4" />
                   Delete
                 </button>
+                <button
+                  onClick={() => { setShowHardConfirm(true); setOpen(false); setHardDeleteError(null); }}
+                  className="w-full flex items-center gap-2.5 px-4 py-2 text-left text-red-700 hover:bg-red-700 hover:text-white transition-colors font-medium"
+                >
+                  <Zap className="w-4 h-4" />
+                  Hard Delete
+                </button>
               </>
             )}
           </div>,
         document.body
+      )}
+
+      {/* Hard delete confirmation modal */}
+      {showHardConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowHardConfirm(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+            {/* Dark header */}
+            <div className="bg-red-900 px-6 py-5">
+              <div className="w-10 h-10 rounded-full bg-red-700 flex items-center justify-center mb-3">
+                <Zap className="w-5 h-5 text-white" />
+              </div>
+              <h3 className="text-base font-bold text-white">Hard Delete</h3>
+              <p className="text-sm text-red-200 mt-0.5">Permanent — cannot be recovered</p>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-5">
+              <p className="text-sm text-[var(--text)] mb-2">
+                This will permanently erase <span className="font-mono font-semibold">{order.quotation_id}</span> and all associated records from the database.
+              </p>
+              <p className="text-sm text-[var(--text-muted)] mb-1">The following will be deleted:</p>
+              <ul className="text-sm text-[var(--text-muted)] mb-4 ml-4 list-disc space-y-0.5">
+                <li>Shipment record</li>
+                <li>Workflow &amp; tasks</li>
+                <li>All uploaded files</li>
+              </ul>
+              <p className="text-xs text-red-700 font-semibold mb-5 uppercase tracking-wide">
+                ⚠ This cannot be undone. No recovery is possible.
+              </p>
+
+              {hardDeleteError && (
+                <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                  {hardDeleteError}
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowHardConfirm(false)}
+                  className="flex-1 px-4 py-2 text-sm rounded-lg border border-[var(--border)] text-[var(--text-mid)] hover:bg-[var(--surface)] transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleHardDelete}
+                  disabled={hardDeleting}
+                  className="flex-1 px-4 py-2 text-sm rounded-lg bg-red-900 text-white font-semibold hover:bg-red-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {hardDeleting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {hardDeleting ? 'Deleting…' : 'Hard Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Delete confirmation modal */}
