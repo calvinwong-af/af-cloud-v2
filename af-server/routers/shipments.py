@@ -1414,9 +1414,9 @@ async def create_shipment_manual(
 
     # 6. Build type_details JSONB
     if body.order_type == "SEA_FCL":
-        type_details = {"containers": body.containers or []}
+        type_details = {"type": "SEA_FCL", "containers": body.containers or []}
     else:
-        type_details = {"packages": body.packages or []}
+        type_details = {"type": body.order_type, "packages": body.packages or []}
 
     # 7. Build parties JSONB
     parties = {}

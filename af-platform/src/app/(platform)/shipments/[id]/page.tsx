@@ -13,7 +13,7 @@ import type { StatusHistoryEntry } from '@/app/actions/shipments';
 import { updateShipmentStatusAction, updateInvoicedStatusAction, updatePartiesAction } from '@/app/actions/shipments-write';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
 import { formatDate } from '@/lib/utils';
-import type { ShipmentOrder, ShipmentOrderStatus } from '@/lib/types';
+import type { ShipmentOrder, ShipmentOrderStatus, TypeDetailsFCL, TypeDetailsLCL } from '@/lib/types';
 import ShipmentTasks from '@/components/shipments/ShipmentTasks';
 import ShipmentFilesTab from '@/components/shipments/ShipmentFilesTab';
 import BLUpdateModal from '@/components/shipments/BLUpdateModal';
@@ -120,7 +120,7 @@ function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumber }: {
 
 // ─── Type details card ────────────────────────────────────────────────────────
 
-function TypeDetailsCard({ order }: { order: ShipmentOrder }) {
+function TypeDetailsCard({ order, orderType }: { order: ShipmentOrder; orderType: string }) {
   const td = order.type_details;
 
   if (!td) {
@@ -131,14 +131,15 @@ function TypeDetailsCard({ order }: { order: ShipmentOrder }) {
     );
   }
 
-  if (td.type === 'SEA_FCL') {
+  if (orderType === 'SEA_FCL') {
+    const fcl = td as TypeDetailsFCL;
     return (
       <SectionCard title="Containers" icon={<Container className="w-4 h-4" />}>
-        {td.containers.length === 0
+        {(fcl.containers?.length ?? 0) === 0
           ? <EmptyState message="No containers recorded" />
           : (
             <div className="space-y-2">
-              {td.containers.map((c, i) => (
+              {fcl.containers.map((c, i) => (
                 <div key={i} className="flex items-center justify-between py-2 border-b border-[var(--border)] last:border-0">
                   <div className="flex items-center gap-2">
                     <span className="px-2 py-0.5 bg-[var(--surface)] border border-[var(--border)] rounded text-xs font-mono font-semibold text-[var(--text-mid)]">
@@ -156,17 +157,18 @@ function TypeDetailsCard({ order }: { order: ShipmentOrder }) {
     );
   }
 
-  if (td.type === 'SEA_LCL' || td.type === 'AIR') {
-    const totalWeight = td.packages.reduce((sum, p) => sum + (p.gross_weight_kg ?? 0), 0);
-    const totalVolume = td.packages.reduce((sum, p) => sum + (p.volume_cbm ?? 0), 0);
+  if (orderType === 'SEA_LCL' || orderType === 'AIR') {
+    const lcl = td as TypeDetailsLCL;
+    const totalWeight = (lcl.packages ?? []).reduce((sum, p) => sum + (p.gross_weight_kg ?? 0), 0);
+    const totalVolume = (lcl.packages ?? []).reduce((sum, p) => sum + (p.volume_cbm ?? 0), 0);
 
     return (
       <SectionCard title="Packages" icon={<Package className="w-4 h-4" />}>
-        {td.packages.length === 0
+        {(lcl.packages?.length ?? 0) === 0
           ? <EmptyState message="No packages recorded" />
           : (
             <div className="space-y-2 mb-3">
-              {td.packages.map((p, i) => (
+              {lcl.packages.map((p, i) => (
                 <div key={i} className="flex items-center justify-between py-2 border-b border-[var(--border)] last:border-0">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-[var(--text)]">{p.quantity}×</span>
@@ -1511,7 +1513,7 @@ export default function ShipmentOrderDetailPage() {
         </SectionCard>
 
         {/* Type details — containers or packages */}
-        <TypeDetailsCard order={order} />
+        <TypeDetailsCard order={order} orderType={order.order_type} />
 
         {/* Parties */}
         <PartiesCard
