@@ -351,12 +351,10 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
       const originPort = ports.find(p => p.un_code === blFormState.originCode);
       const destPort = ports.find(p => p.un_code === blFormState.destCode);
 
-      // DP-21 fix: BC documents have no on_board_date — override 4001 to 3002
-      const parsedOnBoardDate = (blParsedResult as Record<string, unknown>).parsed
-        ? ((blParsedResult as Record<string, unknown>).parsed as Record<string, unknown>).on_board_date
-        : null;
+      // DP-21 fix: BC docs should never get 4001+ status — override to 3002 (Booking Confirmed)
+      const isBookingConfirmation = (blParsedResult as Record<string, unknown>).doc_type === 'BOOKING_CONFIRMATION';
       const rawStatus = (blParsedResult as Record<string, unknown>).initial_status as number ?? 3001;
-      const effectiveStatus = (rawStatus === 4001 && !parsedOnBoardDate) ? 3002 : rawStatus;
+      const effectiveStatus = (rawStatus >= 4001 && isBookingConfirmation) ? 3002 : rawStatus;
 
       const payload: CreateFromBLPayload = {
         order_type: blFormState.orderType || (blParsedResult as Record<string, unknown>).order_type as string || 'SEA_FCL',

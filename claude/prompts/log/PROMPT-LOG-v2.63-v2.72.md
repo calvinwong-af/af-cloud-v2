@@ -1,5 +1,14 @@
 # Prompt Completion Log — v2.63–v2.72
 
+### [2026-03-03 12:30 UTC] — v2.68: DP-21 fix v2 — Status override based on doc_type
+- **Status:** Completed
+- **Tasks:**
+  - Replaced `!parsedOnBoardDate` condition with `doc_type === 'BOOKING_CONFIRMATION'` check in both BLUploadTab.tsx and CreateShipmentModal.tsx
+  - BC documents now always get 3002 (Booking Confirmed) when server returns >= 4001
+- **Files Modified:**
+  - `af-platform/src/components/shipments/BLUploadTab.tsx` — effectiveStatus logic
+  - `af-platform/src/components/shipments/CreateShipmentModal.tsx` — effectiveStatus logic
+
 ### [2026-03-03 12:00 UTC] — v2.67: DP-19 to DP-23 — Document Parser Defect Fixes
 - **Status:** Completed
 - **Tasks:**

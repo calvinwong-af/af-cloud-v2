@@ -303,9 +303,9 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
   const matches = parsedResult?.company_matches ?? [];
   const isPrepaid = (parsed?.freight_terms ?? '').toUpperCase().includes('PREPAID');
   const initialStatus = parsedResult?.initial_status ?? 3001;
-  // DP-21 fix: BC documents have no on_board_date — override 4001 (Departed) to 3002 (Booking Confirmed)
-  const parsedOnBoardDate = parsedResult?.parsed?.on_board_date;
-  const effectiveStatus = (initialStatus === 4001 && !parsedOnBoardDate)
+  // DP-21 fix: BC docs should never get 4001+ status — override to 3002 (Booking Confirmed)
+  const isBookingConfirmation = parsedResult?.doc_type === 'BOOKING_CONFIRMATION';
+  const effectiveStatus = (initialStatus >= 4001 && isBookingConfirmation)
     ? 3002
     : initialStatus;
   const orderType = parsedResult?.order_type ?? 'SEA_FCL';
