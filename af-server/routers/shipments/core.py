@@ -182,7 +182,6 @@ def _fmt_date(val) -> str:
     return s[:10] if s else ""
 
 
-@router.get("")
 async def list_shipments(
     tab: str = Query("active", description="active | completed | to_invoice | draft | cancelled | all"),
     company_id: Optional[str] = Query(None),
@@ -418,7 +417,6 @@ class CreateManualShipmentRequest(BaseModel):
     eta: str | None = None
 
 
-@router.post("")
 async def create_shipment_manual(
     body: CreateManualShipmentRequest,
     claims: Claims = Depends(require_afu_admin),

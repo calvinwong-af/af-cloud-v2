@@ -13,7 +13,11 @@ to preserve FastAPI's matching priority.
 """
 from fastapi import APIRouter
 
-from .core import router as core_router
+from .core import (
+    router as core_router,
+    list_shipments,
+    create_shipment_manual,
+)
 from .status import router as status_router
 from .bl import router as bl_router
 from .files import router as files_router
@@ -22,6 +26,14 @@ from .route_nodes import router as route_nodes_router
 from .doc_apply import router as doc_apply_router
 
 router = APIRouter()
+
+# Root-level routes (GET /api/v2/shipments, POST /api/v2/shipments) must be
+# registered directly on the package router rather than via include_router,
+# because FastAPI raises "Prefix and path cannot be both empty" when
+# include_router(core_router, prefix="") meets a route with path="".
+# Registering here is safe — main.py includes this router with a non-empty prefix.
+router.add_api_route("", list_shipments, methods=["GET"])
+router.add_api_route("", create_shipment_manual, methods=["POST"])
 
 router.include_router(core_router)
 router.include_router(status_router)
