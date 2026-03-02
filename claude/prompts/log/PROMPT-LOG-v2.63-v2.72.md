@@ -21,6 +21,26 @@
   - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — RouteCard ports prop + tooltip enrichment
   - `af-platform/src/app/actions/shipments.ts` — updated fetchPortsAction to use /api/v2/ports
 
+### [2026-03-03 08:30 UTC] — v2.65: PT-Backfill — Backfill V1 port data in PostgreSQL
+- **Status:** Completed
+- **Tasks:**
+  - Created backfill_v1_ports.py — reads nested origin/destination from Datastore ShipmentOrder, maps AFCQ→AF IDs, updates PostgreSQL shipments with origin_port, origin_terminal, dest_port, dest_terminal
+  - Supports --dry-run and --force flags; idempotent (only updates NULL port rows by default)
+  - Sample output shows first 5 updates for verification
+- **Files Modified:**
+  - `af-server/scripts/backfill_v1_ports.py` — new file
+- **Notes:** Script compiles clean. Live verification (PT-09/10/13) requires running against Datastore + PostgreSQL.
+
+### [2026-03-03 08:00 UTC] — v2.64: PT-Fix — Correct Datastore Port Code Audit + Migration Scripts
+- **Status:** Completed
+- **Tasks:**
+  - FIX 1: Rewrote audit_port_codes.py — extract_port_codes() reads from nested origin/destination objects with flat field fallback; three-category classification (STANDARD, TERMINAL SUFFIX, IATA/NON-LOCODE)
+  - FIX 2: Rewrote migrate_entity() in migrate_v1_port_codes.py — reads/writes nested origin.port_un_code and destination.port_un_code; writes terminal_id into same nested object
+- **Files Modified:**
+  - `af-server/scripts/audit_port_codes.py` — full rewrite of extraction and classification logic
+  - `af-server/scripts/migrate_v1_port_codes.py` — rewritten migrate_entity() for nested structure
+- **Notes:** Scripts compile clean. Live verification (PT-06/07/08) requires running against Datastore.
+
 ### [2026-03-03 02:30 UTC] — BL-28: Container schema merge on BL update
 - **Status:** Completed
 - **Tasks:**

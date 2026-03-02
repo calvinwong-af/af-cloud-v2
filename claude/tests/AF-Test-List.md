@@ -1,6 +1,6 @@
 # AF Platform — Test List
-**Version:** 2.40
-**Last Updated:** 02 March 2026
+**Version:** 2.45
+**Last Updated:** 03 March 2026
 
 > Retired series (MI, V2C, OF, SR, IN, SU) moved to AF-Test-Archive.md
 > Version history prior to v2.20 moved to AF-Test-Archive.md
@@ -8,6 +8,11 @@
 ## Version History (recent)
 | Version | Date | Changes |
 |---|---|---|
+| 2.45 | 03 Mar 2026 | Terminal backfill fix — 1495 V1 records updated with missing terminal_id via backfill_v1_terminals.py. Westports sub-label confirmed. |
+| 2.44 | 03 Mar 2026 | PT series complete. PT-09/10/11/12/13 YES. Backfill ran clean — 2032 V1 records updated with port data. |
+| 2.43 | 03 Mar 2026 | PT-01/02/03 YES. PT-06/07/08 YES — migration clean, 4345 updated, idempotent. PT-07 verified in Datastore Studio. |
+| 2.42 | 03 Mar 2026 | AUTH-01/02 NA — Chrome session restore overrides session cookie expiry by design. AUTH-03 YES. Root redirect fixed. |
+| 2.41 | 03 Mar 2026 | PT + AUTH-01 prompt completed by Opus. PT-01 to PT-13 moved to PENDING (ready to test). AUTH-01 series added. |
 | 2.40 | 02 Mar 2026 | MC-06 YES — containers display fixed. BL-28/29/30 added and confirmed YES. Prompt log logged as BL-28. |
 | 2.39 | 02 Mar 2026 | MC-01/02/05 YES. MC-03 YES (tasks generated). MC-06 added — containers not saved to type_details on manual create. |
 | 2.38 | 02 Mar 2026 | PG-11 YES. BL-25/26/27 added and confirmed YES. |
@@ -53,6 +58,17 @@
 
 ---
 
+## AUTH series — Keep Me Signed In
+| # | Test | Status | Notes |
+|---|---|---|---|
+| AUTH-01 | Checkbox unchecked → sign in → close browser → reopen → must sign in again | NA | Chrome "Continue where you left off" restores session cookies — browser-level behaviour, not a code bug |
+| AUTH-02 | Checkbox checked → sign in → close browser → reopen → still signed in (no login required) | NA | Same as AUTH-01 — distinction not meaningful on Chrome with session restore enabled |
+| AUTH-03 | No TypeScript build errors after auth.ts changes | YES | Confirmed |
+| AUTH-04 | Root (localhost:3000) redirects to /dashboard when session cookie present | YES | Fixed — page.tsx now checks af-session cookie before redirecting |
+| AUTH-05 | Root redirects to /login when no session cookie | YES | Confirmed after manual cookie clear |
+
+---
+
 ## DT series — Test As Encountered
 | # | Test | Status |
 |---|---|---|
@@ -78,19 +94,19 @@
 ## PT series — Port Terminal Layer (blocked until scripts run)
 | # | Test | Status | Notes |
 |---|---|---|---|
-| PT-01 | Audit script runs without error and outputs port code frequency table | PENDING | Run before migration |
-| PT-02 | Audit script correctly flags MYPKG_N as NON-STANDARD | PENDING | |
-| PT-03 | Audit script infers base code MYPKG from MYPKG_N | PENDING | |
-| PT-04 | MYPKG Port entity has terminals array with Westports + Northport entries | PENDING | After seed script |
-| PT-05 | seed_port_terminals.py is idempotent — safe to run twice | PENDING | |
-| PT-06 | migrate_v1_port_codes.py --dry-run shows expected records without writing | PENDING | |
-| PT-07 | migrate_v1_port_codes.py updates MYPKG_N to port_un_code=MYPKG + terminal_id=MYPKG_N | PENDING | |
-| PT-08 | Migration is idempotent — already-migrated records skipped | PENDING | |
-| PT-09 | V1 Northport shipment displays MYPKG with Northport terminal line in PortPair | PENDING | |
-| PT-10 | V1 Westports shipment displays MYPKG with no terminal line (default) | PENDING | |
-| PT-11 | Port name tooltip reads Port Klang (Northport), Malaysia for MYPKG_N shipment | PENDING | |
-| PT-12 | Port name tooltip reads Port Klang, Malaysia for MYPKG shipment (no terminal) | PENDING | |
-| PT-13 | Port label lookup works for all other standard port codes unchanged | PENDING | Regression |
+| PT-01 | Audit script runs without error and outputs port code frequency table | YES | 9,739 records scanned, 283 distinct codes |
+| PT-02 | Audit script correctly flags MYPKG_N as TERMINAL SUFFIX | YES | 958 occurrences flagged correctly |
+| PT-03 | Audit script infers base code MYPKG from MYPKG_N | YES | base=MYPKG shown in output |
+| PT-04 | MYPKG Port entity has terminals array with Westports + Northport entries | YES | 17 ports seeded via seed_port_terminals.py |
+| PT-05 | seed_port_terminals.py is idempotent — safe to run twice | YES | Second run: 17 upserted cleanly |
+| PT-06 | migrate_v1_port_codes.py --dry-run shows expected records without writing | YES | 4,345 to update, 0 errors |
+| PT-07 | migrate_v1_port_codes.py updates MYPKG_N to port_un_code=MYPKG + terminal_id=MYPKG_N | YES | AFCQ-003794 verified in Datastore Studio |
+| PT-08 | Migration is idempotent — already-migrated records skipped | YES | Second run: 0 updated, 5,840 skipped |
+| PT-09 | V1 Northport shipment displays MYPKG with Northport terminal line in PortPair | YES | AF-003794 confirmed |
+| PT-10 | V1 Westports shipment displays MYPKG with no terminal line (default) | YES | AF-003837 confirmed |
+| PT-11 | Port name tooltip reads Port Klang (Northport), Malaysia for MYPKG_N shipment | YES | AF-003794 confirmed |
+| PT-12 | Port name tooltip reads Port Klang, Malaysia for MYPKG shipment (no terminal) | YES | AF-003837 confirmed |
+| PT-13 | Port label lookup works for all other standard port codes unchanged | YES | AF-003837 CNSHK tooltip confirmed |
 
 ---
 

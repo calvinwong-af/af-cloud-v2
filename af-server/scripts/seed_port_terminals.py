@@ -52,7 +52,7 @@ PORTS = [
 
 UPSERT_SQL = text("""
     INSERT INTO ports (un_code, name, country, country_code, port_type, has_terminals, terminals)
-    VALUES (:un_code, :name, :country, :country_code, :port_type, :has_terminals, :terminals::jsonb)
+    VALUES (:un_code, :name, :country, :country_code, :port_type, :has_terminals, CAST(:terminals AS jsonb))
     ON CONFLICT (un_code) DO UPDATE SET
         name = EXCLUDED.name,
         country = EXCLUDED.country,

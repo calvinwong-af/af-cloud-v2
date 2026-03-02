@@ -66,52 +66,47 @@ def parse_port_code(code: str) -> tuple[str, str | None]:
 
 def migrate_entity(entity, dry_run: bool) -> str:
     """
-    Check and migrate port codes on a single entity.
+    Migrate port codes on a single entity.
+    Reads from entity["origin"]["port_un_code"] and entity["destination"]["port_un_code"].
+    Writes terminal_id into the same nested object.
     Returns: 'updated', 'skipped', or 'no_change'.
     """
     if entity.get("_migrated_port_codes"):
         return "skipped"
 
     changed = False
+    key_name = entity.key.name or entity.key.id
 
-    # Check origin
-    origin = entity.get("origin_port_un_code")
-    if origin and isinstance(origin, str):
-        base, terminal_id = parse_port_code(origin)
-        needs_update = (base != origin) or (terminal_id is not None)
-        if needs_update:
-            if dry_run:
-                key_name = entity.key.name or entity.key.id
-                t_str = f" + terminal_id={terminal_id}" if terminal_id else ""
-                print(f"    [DRY-RUN] {key_name}: origin {origin} → {base}{t_str}")
-            else:
-                entity["origin_port_un_code"] = base
-                if terminal_id:
-                    entity["origin_terminal_id"] = terminal_id
-            changed = True
+    for direction in ("origin", "destination"):
+        location = entity.get(direction)
+        if not isinstance(location, dict):
+            continue
 
-    # Check destination
-    dest = entity.get("destination_port_un_code")
-    if dest and isinstance(dest, str):
-        base, terminal_id = parse_port_code(dest)
-        needs_update = (base != dest) or (terminal_id is not None)
-        if needs_update:
-            if dry_run:
-                key_name = entity.key.name or entity.key.id
-                t_str = f" + terminal_id={terminal_id}" if terminal_id else ""
-                print(f"    [DRY-RUN] {key_name}: destination {dest} → {base}{t_str}")
-            else:
-                entity["destination_port_un_code"] = base
-                if terminal_id:
-                    entity["destination_terminal_id"] = terminal_id
-            changed = True
+        code = location.get("port_un_code")
+        if not code or not isinstance(code, str):
+            continue
 
-    if changed:
-        if not dry_run:
-            entity["_migrated_port_codes"] = True
-        return "updated"
+        base, terminal_id = parse_port_code(code)
+        needs_update = (base != code) or (terminal_id is not None)
 
-    return "no_change"
+        if not needs_update:
+            continue
+
+        if dry_run:
+            t_str = f" + terminal_id={terminal_id}" if terminal_id else ""
+            print(f"    [DRY-RUN] {key_name}: {direction}.port_un_code {code} → {base}{t_str}")
+        else:
+            location["port_un_code"] = base
+            if terminal_id:
+                location["terminal_id"] = terminal_id
+            entity[direction] = location  # write back the modified dict
+
+        changed = True
+
+    if changed and not dry_run:
+        entity["_migrated_port_codes"] = True
+
+    return "updated" if changed else "no_change"
 
 
 def main():
