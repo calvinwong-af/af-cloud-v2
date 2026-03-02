@@ -1,5 +1,37 @@
 # Prompt Completion Log — v2.73–v2.82
 
+### [2026-03-03 13:00 UTC] — v2.80: Split BLUploadTab and CreateShipmentModal into sub-module directories
+- **Status:** Completed
+- **Tasks:**
+  - Split `BLUploadTab.tsx` (1131 lines) into `_bl-upload/` subdirectory — pure structural refactor
+  - Created `_bl-upload/BLContainerTable.tsx` (124 lines): editable container rows table (container_number, type, seal, packages, weight_kg)
+  - Created `_bl-upload/BLManualFields.tsx` (488 lines): all manual form fields — route, carrier, vessel, shipper, consignee, cargo; both AWB and Sea/BC variants
+  - Created `_bl-upload/BLParseResult.tsx` (455 lines): full post-parse review — success banner, company match banners, BLManualFields, CompanyMatchSection, BLContainerTable, status badge
+  - Slimmed `BLUploadTab.tsx` (383 lines, was 1131): upload zone, parsing spinner, BLParseResult router; BLFormState and getDefaultBLFormState remain exported
+  - Split `CreateShipmentModal.tsx` (1029 lines) into `_create-shipment/` subdirectory
+  - Created `_create-shipment/_types.ts` (30 lines): OrderType, ContainerRow, PackageRow, Company, Port
+  - Created `_create-shipment/_constants.ts` (29 lines): CONTAINER_SIZES, CONTAINER_TYPES, INCOTERMS, ORDER_TYPES, PACKAGING_TYPES, BASE_STEPS
+  - Created `_create-shipment/StepOrder.tsx` (317 lines): order type selector, transaction, company combobox, cargo ready date
+  - Created `_create-shipment/StepRoute.tsx` (293 lines): origin/dest port comboboxes, terminal selector, incoterm
+  - Created `_create-shipment/StepCargo.tsx` (137 lines): cargo desc, HS code, DG checkbox; packagesOnly mode for step 4 non-FCL
+  - Created `_create-shipment/StepContainers.tsx` (69 lines): FCL container rows table
+  - Created `_create-shipment/StepReview.tsx` (113 lines): read-only summary of all entered data
+  - Slimmed `CreateShipmentModal.tsx` (530 lines, was 1029): state, step nav, tab switching, submit logic, step router
+  - Lint passes with zero errors
+- **Files Modified:**
+  - `af-platform/src/components/shipments/BLUploadTab.tsx` (rewritten, 1131→383 lines)
+  - `af-platform/src/components/shipments/_bl-upload/BLContainerTable.tsx` (new, 124 lines)
+  - `af-platform/src/components/shipments/_bl-upload/BLManualFields.tsx` (new, 488 lines)
+  - `af-platform/src/components/shipments/_bl-upload/BLParseResult.tsx` (new, 455 lines)
+  - `af-platform/src/components/shipments/CreateShipmentModal.tsx` (rewritten, 1029→530 lines)
+  - `af-platform/src/components/shipments/_create-shipment/_types.ts` (new, 30 lines)
+  - `af-platform/src/components/shipments/_create-shipment/_constants.ts` (new, 29 lines)
+  - `af-platform/src/components/shipments/_create-shipment/StepOrder.tsx` (new, 317 lines)
+  - `af-platform/src/components/shipments/_create-shipment/StepRoute.tsx` (new, 293 lines)
+  - `af-platform/src/components/shipments/_create-shipment/StepCargo.tsx` (new, 137 lines)
+  - `af-platform/src/components/shipments/_create-shipment/StepContainers.tsx` (new, 69 lines)
+  - `af-platform/src/components/shipments/_create-shipment/StepReview.tsx` (new, 113 lines)
+
 ### [2026-03-03 11:30 UTC] — v2.79: Split DocumentParseModal into doc-type plugin pattern
 - **Status:** Completed
 - **Tasks:**
