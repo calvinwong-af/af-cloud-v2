@@ -1,5 +1,21 @@
 # Prompt Completion Log — v2.73–v2.82
 
+### [2026-03-03 11:30 UTC] — v2.79: Split DocumentParseModal into doc-type plugin pattern
+- **Status:** Completed
+- **Tasks:**
+  - Split 837-line `DocumentParseModal.tsx` into 4 files — pure structural refactor, no functional changes
+  - `_doc-parsers/AWBReview.tsx` (266 lines): AWB form fields, diff badges, PortCombobox widget, confirm section
+  - `_doc-parsers/BCReview.tsx` (119 lines): BC flat field review + containers/cargo tables
+  - `_doc-parsers/BLReview.tsx` (119 lines): BL flat field review + containers/cargo tables
+  - `DocumentParseModal.tsx` (577 lines, was 837): slimmed orchestrator — phase state, file upload, company ownership, doc-type routing
+  - `AWBFormState` re-exported from `DocumentParseModal` for backward compatibility
+  - Lint passes with zero errors
+- **Files Modified:**
+  - `af-platform/src/components/shipments/DocumentParseModal.tsx` (rewritten, 837→577 lines)
+  - `af-platform/src/components/shipments/_doc-parsers/AWBReview.tsx` (new)
+  - `af-platform/src/components/shipments/_doc-parsers/BCReview.tsx` (new)
+  - `af-platform/src/components/shipments/_doc-parsers/BLReview.tsx` (new)
+
 ### [2026-03-03 10:30 UTC] — v2.78: Split shipment detail page.tsx into focused files
 - **Status:** Completed
 - **Tasks:**
