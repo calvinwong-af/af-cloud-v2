@@ -400,6 +400,57 @@ export async function getFileDownloadUrlAction(
 
 
 // ---------------------------------------------------------------------------
+// POST /api/v2/shipments/{shipmentId}/save-document-file
+// Save an uploaded doc (AWB, BC, BL) to Files after a successful apply action.
+// ---------------------------------------------------------------------------
+
+export async function saveDocumentFileAction(
+  shipmentId: string,
+  formData: FormData,
+): Promise<FilesResult<ShipmentFile>> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) {
+      return { success: false, error: 'Unauthorised' };
+    }
+
+    const idToken = await getIdToken();
+    if (!idToken) {
+      return { success: false, error: 'No session token' };
+    }
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) {
+      return { success: false, error: 'Server URL not configured' };
+    }
+
+    const url = new URL(
+      `/api/v2/shipments/${encodeURIComponent(shipmentId)}/save-document-file`,
+      serverUrl,
+    );
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${idToken}` },
+      body: formData,
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const msg = json?.detail ?? json?.msg ?? `Server responded ${res.status}`;
+      return { success: false, error: msg };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data };
+  } catch (err) {
+    console.error('[saveDocumentFileAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to save document file' };
+  }
+}
+
+
+// ---------------------------------------------------------------------------
 // Document Parse types
 // ---------------------------------------------------------------------------
 

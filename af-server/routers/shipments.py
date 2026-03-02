@@ -3007,18 +3007,22 @@ async def apply_booking_confirmation(
     set_clauses.append("booking = CAST(:booking AS jsonb)")
     params["booking"] = json.dumps(booking)
 
-    # Update route node timings
+    # Write ETD/ETA flat columns unconditionally (works for V1 shipments with no route nodes)
+    if body.etd:
+        set_clauses.append("etd = :etd")
+        params["etd"] = body.etd
+    if body.eta_pod:
+        set_clauses.append("eta = :eta")
+        params["eta"] = body.eta_pod
+
+    # Also update route node timings if nodes exist
     nodes = _parse_jsonb(row[2]) or []
     if not isinstance(nodes, list): nodes = []
     for node in nodes:
         if node.get("role") == "ORIGIN" and body.etd:
             node["scheduled_etd"] = body.etd
-            set_clauses.append("etd = :etd")
-            params["etd"] = body.etd
         if node.get("role") == "DESTINATION" and body.eta_pod:
             node["scheduled_eta"] = body.eta_pod
-            set_clauses.append("eta = :eta")
-            params["eta"] = body.eta_pod
     if nodes:
         set_clauses.append("route_nodes = CAST(:route_nodes AS jsonb)")
         params["route_nodes"] = json.dumps(nodes)
@@ -3104,6 +3108,12 @@ async def apply_awb(
     set_clauses.append("booking = CAST(:booking AS jsonb)")
     params["booking"] = json.dumps(booking)
 
+    # Write flight_date to flat etd column so route card shows correct ETD
+    if body.flight_date is not None:
+        set_clauses.append("etd = :etd")
+        params["etd"] = body.flight_date
+        # TODO: Task due-dates that depend on ETD may need recalculation — deferred (v2.73)
+
     # Merge parties
     parties = _parse_jsonb(row[2]) or {}
     if not isinstance(parties, dict): parties = {}
@@ -3134,3 +3144,66 @@ async def apply_awb(
 
     logger.info("[apply-awb] Updated %s with AWB data", shipment_id)
     return {"shipment_id": shipment_id, "status": "OK"}
+
+
+# ---------------------------------------------------------------------------
+# Save document file — standard post-apply file saving pattern
+#
+# File saving contract for document apply operations:
+#   - PATCH /bl                   → saves file inline (within the handler itself)
+#   - POST /apply-awb             → frontend calls /save-document-file after success
+#   - POST /apply-booking-confirmation → frontend calls /save-document-file after success
+# ---------------------------------------------------------------------------
+
+@router.post("/{shipment_id}/save-document-file")
+async def save_document_file(
+    shipment_id: str,
+    file: UploadFile = File(...),
+    doc_type: str = Form(...),
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    """
+    Save an uploaded AWB, BC, or BL document to GCS and create a shipment_files record.
+    Called by the frontend after applyAWBAction or applyBookingConfirmationAction succeeds.
+    doc_type must be one of: AWB, BC, BL.
+    """
+    file_bytes = await file.read()
+    file_content_type = file.content_type or "application/pdf"
+    file_original_name = file.filename or f"{doc_type}_{shipment_id}.pdf"
+
+    # Map doc_type → file tag
+    tag_map = {"AWB": "awb", "BC": "bc", "BL": "bl"}
+    tag = tag_map.get(doc_type.upper(), doc_type.lower())
+
+    # Read company_id
+    row = conn.execute(
+        text("SELECT company_id FROM shipments WHERE id = :id"),
+        {"id": shipment_id},
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    company_id = row[0] or ""
+
+    gcs_path = _resolve_gcs_path(company_id, shipment_id, file_original_name)
+
+    from google.cloud import storage as gcs_storage
+    gcs_client = gcs_storage.Client(project="cloud-accele-freight")
+    bucket = gcs_client.bucket(FILES_BUCKET_NAME)
+    _save_file_to_gcs(bucket, gcs_path, file_bytes, file_content_type)
+
+    file_record = _create_file_record(
+        conn=conn,
+        shipment_id=shipment_id,
+        company_id=company_id,
+        file_name=file_original_name,
+        gcs_path=gcs_path,
+        file_size_kb=len(file_bytes) / 1024.0,
+        file_tags=[tag],
+        visibility=True,
+        uploader_uid=claims.uid,
+        uploader_email=claims.email,
+    )
+
+    logger.info("[save-document-file] Saved %s for %s by %s", doc_type, shipment_id, claims.uid)
+    return {"status": "OK", "data": file_record}

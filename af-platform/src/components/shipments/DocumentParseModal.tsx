@@ -48,7 +48,7 @@ interface DocumentParseModalProps {
   companyId?: string | null; // If set, shipment already has an owner — hide ownership section (State A)
   ports: Port[];
   onClose: () => void;
-  onResult: (docType: DocType, data: ParsedBCData | ParsedAWBData | ParsedBL) => void;
+  onResult: (docType: DocType, data: ParsedBCData | ParsedAWBData | ParsedBL, file: File | null) => void;
   allowedTypes?: DocType[];
 }
 
@@ -338,11 +338,11 @@ export default function DocumentParseModal({
         cargo_description: awbForm.cargoDescription || null,
         hs_code: awbForm.hsCode || null,
       };
-      onResult(docType, awbPayload);
+      onResult(docType, awbPayload, file);
     } else {
-      onResult(docType, parsedData as unknown as ParsedBCData | ParsedBL);
+      onResult(docType, parsedData as unknown as ParsedBCData | ParsedBL, file);
     }
-  }, [docType, parsedData, awbForm, onResult]);
+  }, [docType, parsedData, awbForm, onResult, file]);
 
   // Company search handler — fetch on demand
   const handleCompanySearch = useCallback(async (query: string) => {

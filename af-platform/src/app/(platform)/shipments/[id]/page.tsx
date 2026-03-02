@@ -21,6 +21,7 @@ import type { ParsedBL } from '@/components/shipments/BLUpdateModal';
 import BLPartyDiffModal from '@/components/shipments/BLPartyDiffModal';
 import DocumentParseModal from '@/components/shipments/DocumentParseModal';
 import type { DocType, ParsedBCData, ParsedAWBData } from '@/app/actions/shipments-files';
+import { saveDocumentFileAction } from '@/app/actions/shipments-files';
 import { applyBookingConfirmationAction, applyAWBAction } from '@/app/actions/shipments-write';
 import RouteNodeTimeline from '@/components/shipments/RouteNodeTimeline';
 import PortPair from '@/components/shared/PortPair';
@@ -1648,7 +1649,7 @@ export default function ShipmentOrderDetailPage() {
                 ? ['AWB', 'BOOKING_CONFIRMATION']
                 : ['BOOKING_CONFIRMATION']
           }
-          onResult={async (docType: DocType, data) => {
+          onResult={async (docType: DocType, data, uploadedFile) => {
             setShowDocParseModal(false);
 
             if (docType === 'BL') {
@@ -1660,12 +1661,26 @@ export default function ShipmentOrderDetailPage() {
               if (result && result.success) {
                 loadOrder();
                 loadRouteTimings();
+                // Save the uploaded document to Files (non-critical)
+                if (uploadedFile) {
+                  const fd = new FormData();
+                  fd.append('file', uploadedFile, uploadedFile.name);
+                  fd.append('doc_type', 'BC');
+                  await saveDocumentFileAction(order.quotation_id, fd);
+                }
               }
             } else if (docType === 'AWB') {
               const result = await applyAWBAction(order.quotation_id, data as ParsedAWBData);
               if (result && result.success) {
                 loadOrder();
                 loadRouteTimings();
+                // Save the uploaded document to Files (non-critical)
+                if (uploadedFile) {
+                  const fd = new FormData();
+                  fd.append('file', uploadedFile, uploadedFile.name);
+                  fd.append('doc_type', 'AWB');
+                  await saveDocumentFileAction(order.quotation_id, fd);
+                }
               }
             }
           }}
