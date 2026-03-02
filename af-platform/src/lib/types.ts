@@ -48,6 +48,8 @@ export interface Cargo {
   description: string;
   hs_code: string | null;
   dg_classification: DGClassification | null;
+  is_dg?: boolean;
+  dg_description?: string | null;
 }
 
 // ---------------------------------------------------------------------------

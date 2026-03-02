@@ -8,6 +8,7 @@ import {
   ClipboardList, Pencil,
 } from 'lucide-react';
 import { fetchShipmentOrderDetailAction, fetchPortsAction } from '@/app/actions/shipments';
+import { patchShipmentCargoAction } from '@/app/actions/shipments-write';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
 import { formatDate } from '@/lib/utils';
 import type { ShipmentOrder } from '@/lib/types';
@@ -57,6 +58,10 @@ export default function ShipmentOrderDetailPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'files'>('overview');
   const [fileCount, setFileCount] = useState<number | null>(null);
   const [filesRefreshKey, setFilesRefreshKey] = useState(0);
+  const [isDgEditing, setIsDgEditing] = useState(false);
+  const [isDgValue, setIsDgValue] = useState(false);
+  const [dgDescription, setDgDescription] = useState('');
+  const [isSavingDg, setIsSavingDg] = useState(false);
   const [routeEtd, setRouteEtd] = useState<string | null>(null);
   const [routeEta, setRouteEta] = useState<string | null>(null);
 
@@ -279,6 +284,18 @@ export default function ShipmentOrderDetailPage() {
       </div>
 
       {/* Tab content */}
+      {/* ShipmentFilesTab is always mounted (hidden when inactive) so the file count badge populates on page load */}
+      <div style={{ display: activeTab === 'files' ? undefined : 'none' }}>
+        <ShipmentFilesTab
+          shipmentId={order.quotation_id}
+          userRole={accountType === 'AFU' ? 'AFU' : (userRole ?? 'AFC_USER')}
+          ports={ports}
+          refreshKey={filesRefreshKey}
+          onBLUpdated={loadOrder}
+          onFileCountChange={setFileCount}
+        />
+      </div>
+
       {activeTab === 'tasks' ? (
         <div className="space-y-4">
           <RouteNodeTimeline
@@ -294,16 +311,7 @@ export default function ShipmentOrderDetailPage() {
             voyageNumber={voyageNumber}
           />
         </div>
-      ) : activeTab === 'files' ? (
-        <ShipmentFilesTab
-          shipmentId={order.quotation_id}
-          userRole={accountType === 'AFU' ? 'AFU' : (userRole ?? 'AFC_USER')}
-          ports={ports}
-          refreshKey={filesRefreshKey}
-          onBLUpdated={loadOrder}
-          onFileCountChange={setFileCount}
-        />
-      ) : (
+      ) : activeTab === 'files' ? null : (
 
       /* Two-column grid for the detail cards */
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -323,6 +331,86 @@ export default function ShipmentOrderDetailPage() {
                   </div>
                 )}
                 <DataRow label="HS Code" value={order.cargo.hs_code} mono />
+
+                {/* DG status */}
+                {isDgEditing ? (
+                  <div className="mt-2 space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isDgValue}
+                        onChange={e => setIsDgValue(e.target.checked)}
+                        className="rounded border-[var(--border)]"
+                      />
+                      <span className="text-sm text-[var(--text)]">Dangerous Goods (DG)</span>
+                    </label>
+                    {isDgValue && (
+                      <textarea
+                        value={dgDescription}
+                        onChange={e => setDgDescription(e.target.value)}
+                        placeholder="DG description (optional)"
+                        rows={2}
+                        className="w-full text-sm border border-[var(--border)] rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[var(--sky)] resize-none"
+                      />
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async () => {
+                          setIsSavingDg(true);
+                          const res = await patchShipmentCargoAction(
+                            order.quotation_id,
+                            isDgValue,
+                            isDgValue ? (dgDescription || null) : null,
+                          );
+                          setIsSavingDg(false);
+                          if (res.success) {
+                            setIsDgEditing(false);
+                            loadOrder();
+                          }
+                        }}
+                        disabled={isSavingDg}
+                        className="px-3 py-1 text-xs font-medium bg-[var(--sky)] text-white rounded-lg disabled:opacity-50"
+                      >
+                        {isSavingDg ? 'Saving…' : 'Save'}
+                      </button>
+                      <button
+                        onClick={() => setIsDgEditing(false)}
+                        className="px-3 py-1 text-xs font-medium border border-[var(--border)] rounded-lg text-[var(--text-muted)]"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between mt-1">
+                    <div className="flex items-center gap-2">
+                      {order.cargo.is_dg ? (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#fef3c7', color: '#92400e' }}>
+                          DG
+                        </span>
+                      ) : (
+                        <span className="text-xs text-[var(--text-muted)]">Not DG</span>
+                      )}
+                      {order.cargo.is_dg && order.cargo.dg_description && (
+                        <span className="text-xs text-[var(--text-mid)]">{order.cargo.dg_description}</span>
+                      )}
+                    </div>
+                    {accountType === 'AFU' && (
+                      <button
+                        onClick={() => {
+                          setIsDgValue(order.cargo?.is_dg ?? false);
+                          setDgDescription(order.cargo?.dg_description ?? '');
+                          setIsDgEditing(true);
+                        }}
+                        className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
+                        title="Edit DG status"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 {order.cargo.dg_classification && (
                   <DataRow
                     label="DG Classification"

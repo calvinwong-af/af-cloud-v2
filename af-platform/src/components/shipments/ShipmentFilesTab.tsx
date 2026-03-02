@@ -39,7 +39,8 @@ interface ShipmentFilesTabProps {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function formatFileSize(kb: number): string {
+function formatFileSize(kb: number | null | undefined): string {
+  if (kb == null || isNaN(kb)) return 'Unknown';
   if (kb >= 1024) return `${(kb / 1024).toFixed(1)} MB`;
   return `${Math.round(kb)} KB`;
 }

@@ -16,8 +16,8 @@
 // AFC-M     = AcceleFreight company manager
 // Do not rename until coordinated Datastore migration with webserver rebuild.
 
-import { getDatastore } from './datastore-query';
 import type { AccountType } from './types';
+import { getDatastore } from './datastore-query';
 
 // ---------------------------------------------------------------------------
 // Session verification
@@ -60,7 +60,6 @@ export async function verifySessionAndRole(
     const cookieStore = cookies();
     const idToken = cookieStore.get('af-session')?.value;
     if (!idToken) {
-      console.error('[verifySessionAndRole] No af-session cookie found');
       return INVALID_SESSION;
     }
 
@@ -71,38 +70,29 @@ export async function verifySessionAndRole(
 
     const uid = decodedToken.uid;
     const email = decodedToken.email ?? '';
-    console.log('[verifySessionAndRole] Token verified for uid:', uid, 'email:', email);
 
-    // Fetch UserIAM for role + access check
-    const datastore = getDatastore();
-    const iamKey = datastore.key(['UserIAM', uid]);
-    const [iamEntity] = await datastore.get(iamKey);
+    // Fetch user data from af-server (PostgreSQL lookup)
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) return INVALID_SESSION;
 
-    if (!iamEntity) {
-      console.error('[verifySessionAndRole] No UserIAM entity found for uid:', uid);
-      return INVALID_SESSION;
-    }
+    const meRes = await fetch(`${serverUrl}/api/v2/users/me`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+      cache: 'no-store',
+    });
 
-    const validAccess = iamEntity.valid_access ?? false;
-    if (!validAccess) {
-      console.error('[verifySessionAndRole] valid_access=false for uid:', uid);
-      return INVALID_SESSION;
-    }
+    if (!meRes.ok) return INVALID_SESSION;
 
-    const role = iamEntity.role as string ?? null;
-    const accountType = iamEntity.account_type as AccountType ?? 'AFU';
-    console.log('[verifySessionAndRole] role:', role, 'accountType:', accountType, 'allowedRoles:', allowedRoles);
+    const meJson = await meRes.json();
+    const user = meJson.data ?? meJson;  // handle both response shapes
 
-    // Check role authorisation
-    if (!allowedRoles.includes(role)) {
-      console.error('[verifySessionAndRole] Role', role, 'not in allowedRoles:', allowedRoles);
-      return INVALID_SESSION;
-    }
+    const role = user.role as string ?? null;
+    const accountType = user.account_type as AccountType ?? 'AFU';
+    const validAccess = user.valid_access ?? false;
 
-    const cuaKey = datastore.key(['CompanyUserAccount', uid]);
-    const [cuaEntity] = await datastore.get(cuaKey);
-    const companyId = (cuaEntity?.company_id as string | null) ?? null;
-    console.log('[verifySessionAndRole] SUCCESS — companyId:', companyId);
+    if (!validAccess) return INVALID_SESSION;
+    if (!allowedRoles.includes(role)) return INVALID_SESSION;
+
+    const companyId = (user.company_id as string | null) ?? null;
 
     return {
       valid: true,

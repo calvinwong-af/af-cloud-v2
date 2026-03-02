@@ -608,6 +608,45 @@ async def create_shipment_manual(
 
 
 # ---------------------------------------------------------------------------
+# PATCH /shipments/{shipment_id}/cargo — Update DG status
+# ---------------------------------------------------------------------------
+
+class PatchCargoRequest(BaseModel):
+    is_dg: bool
+    dg_description: Optional[str] = None
+
+
+@router.patch("/{shipment_id}/cargo")
+async def update_shipment_cargo(
+    shipment_id: str,
+    body: PatchCargoRequest,
+    claims: Claims = Depends(require_afu_admin),
+    conn=Depends(get_db),
+):
+    """Update is_dg and dg_description on the shipment cargo JSON."""
+    row = conn.execute(
+        text("SELECT cargo FROM shipments WHERE id = :id AND trash = FALSE"),
+        {"id": shipment_id},
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+
+    cargo = dict(row[0]) if row[0] else {}
+    cargo["is_dg"] = body.is_dg
+    if body.dg_description is not None:
+        cargo["dg_description"] = body.dg_description
+    elif not body.is_dg:
+        cargo.pop("dg_description", None)
+
+    conn.execute(
+        text("UPDATE shipments SET cargo = :cargo, updated_at = NOW() WHERE id = :id"),
+        {"cargo": json.dumps(cargo), "id": shipment_id},
+    )
+    conn.commit()
+    return {"status": "OK", "data": {"is_dg": body.is_dg}}
+
+
+# ---------------------------------------------------------------------------
 # Delete shipment (soft + hard)
 # ---------------------------------------------------------------------------
 

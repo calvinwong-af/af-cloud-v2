@@ -136,6 +136,7 @@ export interface ShipmentListItem {
   cargo_ready_date: string | null;
   updated: string;
   issued_invoice?: boolean;
+  cargo_is_dg?: boolean;
 }
 
 export async function getShipmentListAction(
@@ -165,8 +166,6 @@ export async function getShipmentListAction(
       url.searchParams.set('offset', String(offset));
     }
 
-    console.log('[getShipmentListAction] calling:', url.toString());
-    console.log('[getShipmentListAction] token present:', !!idToken, 'token length:', idToken?.length, 'token prefix:', idToken?.substring(0, 20));
     const res = await fetch(url.toString(), {
       headers: { Authorization: `Bearer ${idToken}` },
       cache: 'no-store',

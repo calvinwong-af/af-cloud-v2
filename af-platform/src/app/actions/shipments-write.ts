@@ -282,6 +282,49 @@ export async function updateInvoicedStatusAction(
 }
 
 // ---------------------------------------------------------------------------
+// Patch Shipment Cargo (DG status)
+// ---------------------------------------------------------------------------
+
+export async function patchShipmentCargoAction(
+  shipmentId: string,
+  is_dg: boolean,
+  dg_description: string | null,
+): Promise<UpdateShipmentStatusResult> {
+  const session = await verifySessionAndRole(['AFU-ADMIN']);
+  if (!session.valid) {
+    return { success: false, error: 'Unauthorised — staff only' };
+  }
+
+  try {
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) return { success: false, error: 'No session token' };
+
+    const url = new URL(
+      `/api/v2/shipments/${encodeURIComponent(shipmentId)}/cargo`,
+      process.env.AF_SERVER_URL,
+    );
+    const res = await fetch(url.toString(), {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_dg, dg_description }),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: json?.detail ?? json?.msg ?? `Server responded ${res.status}` };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error('[patchShipmentCargoAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to update cargo' };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Delete Shipment Order
 // ---------------------------------------------------------------------------
 
