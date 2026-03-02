@@ -36,27 +36,6 @@
   - `af-platform/src/app/(platform)/dashboard/page.tsx` — added missing ShipmentOrder fields to mapper
   - `af-platform/src/app/(platform)/shipments/page.tsx` — added missing ShipmentOrder fields to mapper
 
-### [2026-03-03 06:15 UTC] — PT Series + AUTH-01: Port Terminal Layer + Keep Me Signed In
-- **Status:** Completed
-- **Tasks:**
-  - PT-01: Rewrote seed_port_terminals.py to seed PostgreSQL ports table (idempotent upsert)
-  - PT-02: Rewrote migrate_v1_port_codes.py with explicit MYPKG→MYPKG_W terminal assignment
-  - PT-03: Created ports API endpoint (routers/ports.py) with list + get, registered in main.py
-  - PT-04: Added origin_terminal/dest_terminal to list and search shipment queries in db_queries.py
-  - PT-05: Created frontend port label utility (lib/ports.ts), enriched RouteCard tooltip with getPortLabel
-  - AUTH-01: Wired keepSignedIn to Firebase setPersistence + cookie max-age (30d local / 1h session)
-- **Files Modified:**
-  - `af-server/scripts/seed_port_terminals.py` — full rewrite for PostgreSQL
-  - `af-server/scripts/migrate_v1_port_codes.py` — full rewrite with explicit terminal assignment
-  - `af-server/routers/ports.py` — new file, port lookup endpoints
-  - `af-server/main.py` — registered ports router
-  - `af-server/core/db_queries.py` — added terminal columns to list/search queries
-  - `af-platform/src/lib/ports.ts` — new file, port label utility + cache
-  - `af-platform/src/lib/auth.ts` — setPersistence + keepSignedIn param + updated token refresh
-  - `af-platform/src/app/login/page.tsx` — pass keepSignedIn to signIn
-  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — RouteCard ports prop + tooltip enrichment
-  - `af-platform/src/app/actions/shipments.ts` — updated fetchPortsAction to use /api/v2/ports
-
 ### [2026-03-03 10:00 UTC] — v2.66: DOC-PARSE — Document Parser Feature (5 prompts)
 - **Status:** Completed
 - **Tasks:**
@@ -97,7 +76,28 @@
   - `af-server/scripts/migrate_v1_port_codes.py` — rewritten migrate_entity() for nested structure
 - **Notes:** Scripts compile clean. Live verification (PT-06/07/08) requires running against Datastore.
 
-### [2026-03-03 02:30 UTC] — BL-28: Container schema merge on BL update
+### [2026-03-03 06:15 UTC] — v2.63: PT Series + AUTH-01 — Port Terminal Layer + Keep Me Signed In
+- **Status:** Completed
+- **Tasks:**
+  - PT-01: Rewrote seed_port_terminals.py to seed PostgreSQL ports table (idempotent upsert)
+  - PT-02: Rewrote migrate_v1_port_codes.py with explicit MYPKG→MYPKG_W terminal assignment
+  - PT-03: Created ports API endpoint (routers/ports.py) with list + get, registered in main.py
+  - PT-04: Added origin_terminal/dest_terminal to list and search shipment queries in db_queries.py
+  - PT-05: Created frontend port label utility (lib/ports.ts), enriched RouteCard tooltip with getPortLabel
+  - AUTH-01: Wired keepSignedIn to Firebase setPersistence + cookie max-age (30d local / 1h session)
+- **Files Modified:**
+  - `af-server/scripts/seed_port_terminals.py` — full rewrite for PostgreSQL
+  - `af-server/scripts/migrate_v1_port_codes.py` — full rewrite with explicit terminal assignment
+  - `af-server/routers/ports.py` — new file, port lookup endpoints
+  - `af-server/main.py` — registered ports router
+  - `af-server/core/db_queries.py` — added terminal columns to list/search queries
+  - `af-platform/src/lib/ports.ts` — new file, port label utility + cache
+  - `af-platform/src/lib/auth.ts` — setPersistence + keepSignedIn param + updated token refresh
+  - `af-platform/src/app/login/page.tsx` — pass keepSignedIn to signIn
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — RouteCard ports prop + tooltip enrichment
+  - `af-platform/src/app/actions/shipments.ts` — updated fetchPortsAction to use /api/v2/ports
+
+### [2026-03-03 02:30 UTC] — v2.62: BL-28 — Container schema merge on BL update
 - **Status:** Completed
 - **Tasks:**
   - PART 1: Backend merge — BL-parsed containers merged into existing type_details rows preserving container_size/quantity
