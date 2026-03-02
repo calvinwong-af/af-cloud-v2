@@ -1,12 +1,14 @@
 # Prompt Completion Log — v2.83–v2.92
 
-### [2026-03-03 17:30 UTC] — v2.83: Fix empty shipments list (routing mismatch)
+### [2026-03-03 17:30 UTC] — v2.83: Fix empty shipments list (routing mismatch + startup crash)
 - **Status:** Completed
 - **Tasks:**
-  - Root cause identified: `redirect_slashes=False` on both `FastAPI()` app and `APIRouter()` combined with `@router.get("/")` meant `GET /api/v2/shipments` (no trailing slash, as sent by platform) never matched the list endpoint — returning 200 with empty data silently
-  - Fixed `@router.get("/")` → `@router.get("")` for `list_shipments` in `af-server/routers/shipments/core.py`
-  - Fixed `@router.post("/")` → `@router.post("")` for `create_shipment_manual` in same file
-  - This was previously fixed in commit `7d62f15` but inadvertently reverted in `33fb80f` (linter changed `""` back to `"/"` while adding `redirect_slashes=False` to the router — incompatible combination)
+  - Root cause 1: `redirect_slashes=False` on both `FastAPI()` app and `APIRouter()` combined with `@router.get("/")` meant `GET /api/v2/shipments` (no trailing slash) never matched — returning 200 with empty data silently
+  - Fix attempt 1 (`ea7bf6f`): Changed `@router.get("/")` → `@router.get("")` — broke Cloud Run startup
+  - Root cause 2: `include_router(core_router, prefix="")` + `@router.get("")` (path="") → FastAPIError "Prefix and path cannot be both empty" → container fails to start
+  - Fix (`f1933df`): Removed `@router.get("")` / `@router.post("")` decorators from `list_shipments` and `create_shipment_manual` in `core.py`. Registered them directly on the package router in `__init__.py` via `router.add_api_route("", ...)`. Since `main.py` includes the package router with prefix `/api/v2/shipments`, routes resolve to `GET/POST /api/v2/shipments` exactly — no trailing slash, no redirect, no FastAPIError.
+  - Confirmed working in production: shipments list now returns data correctly
 - **Files Modified:**
   - `af-server/routers/shipments/core.py`
-- **Notes:** Stats endpoint (`/stats`) was unaffected because it has an explicit non-empty path. The list/create endpoints register at the prefix root (no additional path), which with `redirect_slashes=False` must use `""` not `"/"`.
+  - `af-server/routers/shipments/__init__.py`
+- **Notes:** Stats/search/etc were unaffected because they have explicit non-empty paths. The nested router pattern in FastAPI forbids both include prefix and route path being empty simultaneously — root-level routes must be defined at the outermost non-empty prefix level.
