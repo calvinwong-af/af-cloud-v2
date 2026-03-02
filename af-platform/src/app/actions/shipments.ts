@@ -338,20 +338,21 @@ export async function fetchCompaniesForShipmentAction(): Promise<{ company_id: s
 }
 
 // ---------------------------------------------------------------------------
-// Fetch all ports from Datastore for the shipment creation form
+// Fetch all ports from PostgreSQL for the shipment creation form + tooltips
 // ---------------------------------------------------------------------------
 
 export interface PortWithTerminals {
   un_code: string;
   name: string;
   country: string;
+  country_code: string;
   port_type: string;
   has_terminals: boolean;
   terminals: Array<{ terminal_id: string; name: string; is_default: boolean }>;
 }
 
 export async function fetchPortsAction(): Promise<PortWithTerminals[]> {
-  const session = await verifySessionAndRole(['AFU-ADMIN']);
+  const session = await verifySessionAndRole(['AFU-ADMIN', 'AFC-ADMIN', 'AFC-M']);
   if (!session.valid) return [];
 
   try {
@@ -363,7 +364,7 @@ export async function fetchPortsAction(): Promise<PortWithTerminals[]> {
     const serverUrl = process.env.AF_SERVER_URL;
     if (!serverUrl) return [];
 
-    const url = new URL('/api/v2/geography/ports', serverUrl);
+    const url = new URL('/api/v2/ports', serverUrl);
     const res = await fetch(url.toString(), {
       headers: { Authorization: `Bearer ${idToken}` },
       cache: 'no-store',
@@ -371,8 +372,7 @@ export async function fetchPortsAction(): Promise<PortWithTerminals[]> {
 
     if (!res.ok) return [];
 
-    const json = await res.json();
-    return (json.data ?? []) as PortWithTerminals[];
+    return (await res.json()) as PortWithTerminals[];
   } catch {
     return [];
   }

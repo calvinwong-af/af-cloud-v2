@@ -3,14 +3,20 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
   onIdTokenChanged,
+  setPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
   type User,
 } from "firebase/auth";
 import { getFirebaseAuth } from "./firebase";
 
-export async function signIn(email: string, password: string) {
-  const result = await signInWithEmailAndPassword(getFirebaseAuth(), email, password);
+export async function signIn(email: string, password: string, keepSignedIn: boolean = false) {
+  const auth = getFirebaseAuth();
+  await setPersistence(auth, keepSignedIn ? browserLocalPersistence : browserSessionPersistence);
+  const result = await signInWithEmailAndPassword(auth, email, password);
   const token = await result.user.getIdToken();
-  document.cookie = `af-session=${token}; path=/; max-age=3600; samesite=strict`;
+  const maxAge = keepSignedIn ? 2592000 : 3600;
+  document.cookie = `af-session=${token}; path=/; max-age=${maxAge}; samesite=strict`;
   return result;
 }
 
@@ -29,7 +35,7 @@ export function startTokenRefresh() {
   return onIdTokenChanged(getFirebaseAuth(), async (user) => {
     if (user) {
       const token = await user.getIdToken();
-      document.cookie = `af-session=${token}; path=/; max-age=3600; samesite=strict`;
+      document.cookie = `af-session=${token}; path=/; max-age=2592000; samesite=strict`;
     } else {
       document.cookie = "af-session=; path=/; max-age=0";
     }

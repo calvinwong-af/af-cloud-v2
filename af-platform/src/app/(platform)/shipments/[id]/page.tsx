@@ -20,6 +20,7 @@ import BLUpdateModal from '@/components/shipments/BLUpdateModal';
 import BLPartyDiffModal from '@/components/shipments/BLPartyDiffModal';
 import RouteNodeTimeline from '@/components/shipments/RouteNodeTimeline';
 import PortPair from '@/components/shared/PortPair';
+import { getPortLabel, type Port } from '@/lib/ports';
 import { getRouteNodesAction } from '@/app/actions/shipments-route';
 import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS, getStatusPathList } from '@/lib/types';
 
@@ -78,14 +79,19 @@ function EmptyState({ message }: { message: string }) {
 
 // ─── Route card ───────────────────────────────────────────────────────────────
 
-function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumber }: {
+function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumber, ports }: {
   order: ShipmentOrder;
   accountType: string | null;
   etd?: string | null;
   eta?: string | null;
   vesselName?: string | null;
   voyageNumber?: string | null;
+  ports: Port[];
 }) {
+  const originTerminalId = order.origin?.terminal_id ?? null;
+  const destTerminalId = order.destination?.terminal_id ?? null;
+  const originTooltip = getPortLabel(order.origin?.port_un_code, originTerminalId, ports);
+  const destTooltip = getPortLabel(order.destination?.port_un_code, destTerminalId, ports);
   return (
     <div className="bg-white border border-[var(--border)] rounded-xl p-5">
       <div className="flex items-center gap-2 mb-5">
@@ -97,12 +103,16 @@ function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumber }: {
       <PortPair
         origin={{
           port_un_code: order.origin?.port_un_code ?? null,
-          port_name: order.origin?.label ?? null,
+          terminal_id: originTerminalId,
+          terminal_name: originTerminalId ? (ports.find(p => p.un_code === order.origin?.port_un_code)?.terminals.find(t => t.terminal_id === originTerminalId)?.name ?? null) : null,
+          port_name: originTooltip || order.origin?.label || null,
           country_code: order.origin?.country_code ?? null,
         }}
         destination={{
           port_un_code: order.destination?.port_un_code ?? null,
-          port_name: order.destination?.label ?? null,
+          terminal_id: destTerminalId,
+          terminal_name: destTerminalId ? (ports.find(p => p.un_code === order.destination?.port_un_code)?.terminals.find(t => t.terminal_id === destTerminalId)?.name ?? null) : null,
+          port_name: destTooltip || order.destination?.label || null,
           country_code: order.destination?.country_code ?? null,
         }}
         viewContext={accountType === 'AFU' ? 'customer' : 'staff'}
@@ -1417,6 +1427,7 @@ export default function ShipmentOrderDetailPage() {
         eta={routeEta}
         vesselName={vesselName}
         voyageNumber={voyageNumber}
+        ports={ports as Port[]}
       />
 
       {/* BL Upload button — AFU, status >= 2001 (Confirmed+), sea shipments */}

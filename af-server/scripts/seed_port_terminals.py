@@ -1,87 +1,87 @@
 """
 scripts/seed_port_terminals.py
 
-Seeds the Port Kind with terminal support:
-- Adds terminals array + has_terminals flag to Port Klang (MYPKG)
-- Backfills has_terminals=False, terminals=[] on all other ports missing these fields
+Seeds the PostgreSQL `ports` table with port + terminal data.
+Idempotent — uses INSERT ... ON CONFLICT DO UPDATE.
 
-Idempotent — safe to run multiple times.
 Run with: python -m scripts.seed_port_terminals
 """
 
 import sys
+import json
 
 sys.path.insert(0, ".")
 
-from core.datastore import get_client
+from dotenv import load_dotenv
+load_dotenv(".env.local")
+
+from core.db import get_engine
+from sqlalchemy import text
 
 
-# Terminal definitions for Port Klang
-MYPKG_TERMINALS = [
+PORTS = [
     {
-        "terminal_id": "MYPKG_W",
-        "name": "Westports",
-        "is_default": True,
+        "un_code": "MYPKG",
+        "name": "Port Klang",
+        "country": "Malaysia",
+        "country_code": "MY",
+        "port_type": "SEA",
+        "has_terminals": True,
+        "terminals": [
+            {"terminal_id": "MYPKG_W", "name": "Westports", "is_default": True},
+            {"terminal_id": "MYPKG_N", "name": "Northport", "is_default": False},
+        ],
     },
-    {
-        "terminal_id": "MYPKG_N",
-        "name": "Northport",
-        "is_default": False,
-    },
+    {"un_code": "CNSHK", "name": "Shekou", "country": "China", "country_code": "CN", "port_type": "SEA", "has_terminals": False, "terminals": []},
+    {"un_code": "CNSHA", "name": "Shanghai", "country": "China", "country_code": "CN", "port_type": "SEA", "has_terminals": False, "terminals": []},
+    {"un_code": "CNYTN", "name": "Yantian", "country": "China", "country_code": "CN", "port_type": "SEA", "has_terminals": False, "terminals": []},
+    {"un_code": "CNNGB", "name": "Ningbo", "country": "China", "country_code": "CN", "port_type": "SEA", "has_terminals": False, "terminals": []},
+    {"un_code": "CNQZH", "name": "Quanzhou", "country": "China", "country_code": "CN", "port_type": "SEA", "has_terminals": False, "terminals": []},
+    {"un_code": "CNXMN", "name": "Xiamen", "country": "China", "country_code": "CN", "port_type": "SEA", "has_terminals": False, "terminals": []},
+    {"un_code": "CNTAO", "name": "Qingdao", "country": "China", "country_code": "CN", "port_type": "SEA", "has_terminals": False, "terminals": []},
+    {"un_code": "SGSIN", "name": "Singapore", "country": "Singapore", "country_code": "SG", "port_type": "SEA", "has_terminals": False, "terminals": []},
+    {"un_code": "THBKK", "name": "Bangkok", "country": "Thailand", "country_code": "TH", "port_type": "SEA", "has_terminals": False, "terminals": []},
+    {"un_code": "ZADUR", "name": "Durban", "country": "South Africa", "country_code": "ZA", "port_type": "SEA", "has_terminals": False, "terminals": []},
+    {"un_code": "ZACPT", "name": "Cape Town", "country": "South Africa", "country_code": "ZA", "port_type": "SEA", "has_terminals": False, "terminals": []},
+    {"un_code": "GBFXT", "name": "Felixstowe", "country": "United Kingdom", "country_code": "GB", "port_type": "SEA", "has_terminals": False, "terminals": []},
+    {"un_code": "NLRTM", "name": "Rotterdam", "country": "Netherlands", "country_code": "NL", "port_type": "SEA", "has_terminals": False, "terminals": []},
+    {"un_code": "AEJEA", "name": "Jebel Ali", "country": "United Arab Emirates", "country_code": "AE", "port_type": "SEA", "has_terminals": False, "terminals": []},
+    {"un_code": "USNYC", "name": "New York", "country": "United States", "country_code": "US", "port_type": "SEA", "has_terminals": False, "terminals": []},
+    {"un_code": "USLAX", "name": "Los Angeles", "country": "United States", "country_code": "US", "port_type": "SEA", "has_terminals": False, "terminals": []},
 ]
+
+UPSERT_SQL = text("""
+    INSERT INTO ports (un_code, name, country, country_code, port_type, has_terminals, terminals)
+    VALUES (:un_code, :name, :country, :country_code, :port_type, :has_terminals, :terminals::jsonb)
+    ON CONFLICT (un_code) DO UPDATE SET
+        name = EXCLUDED.name,
+        country = EXCLUDED.country,
+        country_code = EXCLUDED.country_code,
+        port_type = EXCLUDED.port_type,
+        has_terminals = EXCLUDED.has_terminals,
+        terminals = EXCLUDED.terminals
+""")
 
 
 def main():
-    client = get_client()
-    updated = 0
-    skipped = 0
+    engine = get_engine()
+    count = 0
 
-    # --- Seed Port Klang terminals ---
-    print("Seeding Port Klang (MYPKG) terminals...", flush=True)
-    mypkg_key = client.key("Port", "MYPKG")
-    mypkg = client.get(mypkg_key)
+    with engine.connect() as conn:
+        for port in PORTS:
+            conn.execute(UPSERT_SQL, {
+                "un_code": port["un_code"],
+                "name": port["name"],
+                "country": port["country"],
+                "country_code": port["country_code"],
+                "port_type": port["port_type"],
+                "has_terminals": port["has_terminals"],
+                "terminals": json.dumps(port["terminals"]),
+            })
+            count += 1
+        conn.commit()
 
-    if not mypkg:
-        print("  ERROR: MYPKG not found in Port Kind. Cannot seed terminals.")
-        return
-
-    existing_terminals = mypkg.get("terminals", [])
-    existing_ids = {t.get("terminal_id") for t in existing_terminals} if existing_terminals else set()
-    target_ids = {t["terminal_id"] for t in MYPKG_TERMINALS}
-
-    if existing_ids == target_ids and mypkg.get("has_terminals") is True:
-        print("  MYPKG already has correct terminals. Skipping.")
-        skipped += 1
-    else:
-        mypkg["has_terminals"] = True
-        mypkg["terminals"] = MYPKG_TERMINALS
-        client.put(mypkg)
-        print(f"  MYPKG updated: has_terminals=True, {len(MYPKG_TERMINALS)} terminals")
-        updated += 1
-
-    # --- Backfill has_terminals + terminals on all other ports ---
-    print("\nBackfilling has_terminals/terminals on remaining ports...", flush=True)
-    port_query = client.query(kind="Port")
-    for entity in port_query.fetch():
-        key_name = entity.key.name or entity.key.id
-        if key_name == "MYPKG":
-            continue  # Already handled
-
-        needs_update = False
-        if "has_terminals" not in entity:
-            entity["has_terminals"] = False
-            needs_update = True
-        if "terminals" not in entity:
-            entity["terminals"] = []
-            needs_update = True
-
-        if needs_update:
-            client.put(entity)
-            updated += 1
-        else:
-            skipped += 1
-
-    print(f"\nDone. Updated: {updated}, Skipped (already correct): {skipped}")
+    print(f"Done. {count} ports upserted to PostgreSQL.")
 
 
 if __name__ == "__main__":

@@ -89,7 +89,8 @@ def list_shipments(conn, tab: str, company_id: str | None, limit: int, offset: i
                s.origin_port, s.dest_port AS destination_port,
                s.company_id, c.name AS company_name,
                s.cargo_ready_date::text, s.updated_at::text AS updated,
-               s.issued_invoice
+               s.issued_invoice,
+               s.origin_terminal, s.dest_terminal
         FROM shipments s
         LEFT JOIN companies c ON c.id = s.company_id
         WHERE {where}
@@ -114,6 +115,8 @@ def list_shipments(conn, tab: str, company_id: str | None, limit: int, offset: i
             "cargo_ready_date": (r[11] or "")[:10] if r[11] else "",
             "updated": (r[12] or "")[:10] if r[12] else "",
             "issued_invoice": r[13] or False,
+            "origin_terminal": r[14] or None,
+            "dest_terminal": r[15] or None,
         })
 
     return items, total
@@ -133,7 +136,8 @@ def search_shipments(conn, q: str, company_id: str | None, limit: int) -> list[d
                s.company_id, c.name AS company_name,
                s.origin_port, s.dest_port AS destination_port,
                s.cargo_ready_date::text, s.updated_at::text AS updated,
-               s.issued_invoice
+               s.issued_invoice,
+               s.origin_terminal, s.dest_terminal
         FROM shipments s
         LEFT JOIN companies c ON c.id = s.company_id
         WHERE {where}
@@ -160,6 +164,8 @@ def search_shipments(conn, q: str, company_id: str | None, limit: int) -> list[d
             "cargo_ready_date": (r[11] or "")[:10] if r[11] else "",
             "updated": (r[12] or "")[:10] if r[12] else "",
             "issued_invoice": r[13] or False,
+            "origin_terminal": r[14] or None,
+            "dest_terminal": r[15] or None,
         })
 
     return items

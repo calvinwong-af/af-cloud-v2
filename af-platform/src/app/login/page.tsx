@@ -28,7 +28,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await signIn(email, password);
+      await signIn(email, password, keepSignedIn);
       router.push("/dashboard");
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code ?? "";
