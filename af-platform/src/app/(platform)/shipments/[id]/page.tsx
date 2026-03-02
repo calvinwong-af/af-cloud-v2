@@ -1638,6 +1638,7 @@ export default function ShipmentOrderDetailPage() {
       {showDocParseModal && (
         <DocumentParseModal
           shipmentId={order.quotation_id}
+          companyId={order.company_id}
           ports={ports}
           onClose={() => setShowDocParseModal(false)}
           allowedTypes={

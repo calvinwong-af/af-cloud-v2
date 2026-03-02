@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { X, Upload, FileText, Loader2, AlertCircle, Check, Plane, Ship, ClipboardList, Search, Link2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -45,6 +45,7 @@ interface Company {
 
 interface DocumentParseModalProps {
   shipmentId?: string;
+  companyId?: string | null; // If set, shipment already has an owner — hide ownership section (State A)
   ports: Port[];
   onClose: () => void;
   onResult: (docType: DocType, data: ParsedBCData | ParsedAWBData | ParsedBL) => void;
@@ -112,92 +113,64 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 // Company search widget (shared)
 // ---------------------------------------------------------------------------
 
-interface CompanyWidgetProps {
-  linkedCompanyId: string | null;
-  linkedCompanyName: string | null;
-  showSearch: boolean;
-  search: string;
-  results: Company[];
-  onShowSearch: () => void;
-  onHideSearch: () => void;
-  onSearchChange: (v: string) => void;
-  onLink: (id: string, name: string) => void;
-  onUnlink: () => void;
-  onSkip: () => void;
-}
+function PortCombobox({
+  value, onChange, options, placeholder, className,
+}: {
+  value: string;
+  onChange: (code: string) => void;
+  options: { value: string; label: string }[];
+  placeholder?: string;
+  className?: string;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
-function CompanyWidget({
-  linkedCompanyId, linkedCompanyName, showSearch, search, results,
-  onShowSearch, onHideSearch, onSearchChange, onLink, onUnlink, onSkip,
-}: CompanyWidgetProps) {
-  if (linkedCompanyId) {
-    return (
-      <div className="flex items-center justify-between border border-emerald-300 bg-emerald-50 rounded-lg p-3">
-        <div className="flex items-center gap-2">
-          <Check className="w-4 h-4 text-emerald-600" />
-          <div>
-            <p className="text-xs font-medium text-emerald-800">{linkedCompanyName ?? linkedCompanyId}</p>
-            <p className="text-[10px] text-emerald-600">{linkedCompanyId}</p>
-          </div>
-        </div>
-        <button onClick={onUnlink} className="text-emerald-400 hover:text-emerald-600"><X className="w-3.5 h-3.5" /></button>
-      </div>
-    );
-  }
+  const selectedLabel = options.find(o => o.value === value)?.label ?? '';
+  const displayText = open ? query : selectedLabel;
+  const filtered = open
+    ? options.filter(o =>
+        o.label.toLowerCase().includes(query.toLowerCase()) ||
+        o.value.toLowerCase().includes(query.toLowerCase())
+      ).slice(0, 30)
+    : [];
 
-  if (showSearch) {
-    return (
-      <div className="border border-[var(--border)] rounded-lg p-3 space-y-2 bg-[var(--surface)]">
-        <div className="flex items-center justify-between">
-          <p className="text-xs font-medium text-[var(--text-mid)]">Customer / Shipment Owner</p>
-          <button onClick={onHideSearch} className="text-[var(--text-muted)] hover:text-[var(--text)]"><X className="w-3.5 h-3.5" /></button>
-        </div>
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-muted)]" />
-          <input
-            autoFocus
-            type="text"
-            value={search}
-            onChange={e => onSearchChange(e.target.value)}
-            placeholder="Search by name or company ID..."
-            className={`${INPUT_BASE} pl-8 text-xs`}
-          />
-        </div>
-        {results.length > 0 && (
-          <div className="border border-[var(--border)] rounded-lg overflow-hidden">
-            {results.map(c => (
-              <button
-                key={c.company_id}
-                onClick={() => onLink(c.company_id, c.name)}
-                className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-[var(--sky-mist)] border-b border-[var(--border)] last:border-0"
-              >
-                <div>
-                  <p className="text-xs font-medium text-[var(--text)]">{c.name}</p>
-                  <p className="text-[10px] text-[var(--text-muted)]">{c.company_id}</p>
-                </div>
-                <Link2 className="w-3 h-3 text-[var(--sky)] flex-shrink-0" />
-              </button>
-            ))}
-          </div>
-        )}
-        {search && results.length === 0 && (
-          <p className="text-xs text-[var(--text-muted)] text-center py-1">No matches found</p>
-        )}
-        <button onClick={onSkip} className="text-xs text-[var(--text-muted)] hover:text-[var(--text)] w-full text-center py-1">
-          Skip — assign company later
-        </button>
-      </div>
-    );
-  }
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false); setQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   return (
-    <button
-      onClick={onShowSearch}
-      className="flex items-center gap-1.5 text-xs text-[var(--sky)] hover:underline"
-    >
-      <Link2 className="w-3 h-3" />
-      Assign customer / shipment owner
-    </button>
+    <div ref={wrapperRef} className="relative">
+      <input
+        type="text"
+        value={displayText}
+        placeholder={placeholder ?? 'Search...'}
+        className={className}
+        onFocus={() => { setOpen(true); setQuery(''); }}
+        onChange={e => setQuery(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); setQuery(''); } }}
+      />
+      {open && filtered.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-[var(--border)] rounded-lg shadow-lg max-h-48 overflow-y-auto">
+          {filtered.map(o => (
+            <button
+              key={o.value}
+              type="button"
+              onMouseDown={e => { e.preventDefault(); onChange(o.value); setOpen(false); setQuery(''); }}
+              className={`w-full text-left px-3 py-2 text-xs hover:bg-[var(--sky-mist)] ${o.value === value ? 'bg-[var(--sky-mist)] font-medium' : ''}`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -207,6 +180,7 @@ function CompanyWidget({
 
 export default function DocumentParseModal({
   ports,
+  companyId,
   onClose,
   onResult,
   allowedTypes,
@@ -240,7 +214,7 @@ export default function DocumentParseModal({
   };
 
   const airPorts = ports.filter(p => p.port_type?.toLowerCase().includes('air') ?? false);
-  const airPortOptions = airPorts.map(p => ({ value: p.un_code, label: `${p.name || p.un_code} (${p.un_code})` }));
+  const airPortOptions = airPorts.map(p => ({ value: p.un_code, label: `${p.un_code} — ${p.name || p.un_code}` }));
 
   const handleFile = useCallback((f: File) => {
     if (f.type !== 'application/pdf') {
@@ -492,6 +466,81 @@ export default function DocumentParseModal({
                 )}
               </div>
 
+              {/* Company ownership — State A: hidden if shipment already has owner */}
+              {!companyId && (
+                <div>
+                  <SectionLabel>Customer / Shipment Owner</SectionLabel>
+                  {linkedCompanyId ? (
+                    <div className="flex items-center justify-between border border-emerald-300 bg-emerald-50 rounded-lg p-3">
+                      <div className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-emerald-600" />
+                        <div>
+                          <p className="text-xs font-medium text-emerald-800">{linkedCompanyName ?? linkedCompanyId}</p>
+                          <p className="text-[10px] text-emerald-600">{linkedCompanyId}</p>
+                        </div>
+                      </div>
+                      <button onClick={() => { setLinkedCompanyId(null); setLinkedCompanyName(null); }} className="text-emerald-400 hover:text-emerald-600"><X className="w-3.5 h-3.5" /></button>
+                    </div>
+                  ) : (
+                    <div className="border border-amber-300 bg-amber-50 rounded-lg p-3 space-y-2">
+                      <div className="flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                        <p className="text-xs text-amber-700">No company match found. Assign an owner to this shipment:</p>
+                      </div>
+                      {showCompanySearch ? (
+                        <div className="space-y-1.5">
+                          <div className="relative">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-muted)]" />
+                            <input
+                              autoFocus
+                              type="text"
+                              value={companySearch}
+                              onChange={e => handleCompanySearch(e.target.value)}
+                              placeholder="Search by name or company ID..."
+                              className={`${INPUT_BASE} pl-8 text-xs`}
+                            />
+                          </div>
+                          {companyResults.length > 0 && (
+                            <div className="border border-[var(--border)] rounded-lg overflow-hidden bg-white">
+                              {companyResults.map(c => (
+                                <button
+                                  key={c.company_id}
+                                  onClick={() => { setLinkedCompanyId(c.company_id); setLinkedCompanyName(c.name); setShowCompanySearch(false); }}
+                                  className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-[var(--sky-mist)] border-b border-[var(--border)] last:border-0"
+                                >
+                                  <div>
+                                    <p className="text-xs font-medium text-[var(--text)]">{c.name}</p>
+                                    <p className="text-[10px] text-[var(--text-muted)]">{c.company_id}</p>
+                                  </div>
+                                  <Link2 className="w-3 h-3 text-[var(--sky)] flex-shrink-0" />
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          {companySearch && companyResults.length === 0 && (
+                            <p className="text-xs text-[var(--text-muted)] text-center py-1">No matches found</p>
+                          )}
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { setShowCompanySearch(true); setCompanySearch(''); setCompanyResults([]); }}
+                          className={`${INPUT_BASE} text-left text-xs text-[var(--text-muted)] flex items-center gap-2`}
+                        >
+                          <Search className="w-3.5 h-3.5" />
+                          Search companies...
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setShowCompanySearch(false)}
+                        className="text-xs text-amber-600 hover:text-amber-800 w-full text-center py-0.5"
+                      >
+                        Skip — assign later
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* AWB — grouped editable sections */}
               {docType === 'AWB' ? (
                 <>
@@ -501,25 +550,23 @@ export default function DocumentParseModal({
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <FieldLabel>Origin Airport</FieldLabel>
-                        <select
+                        <PortCombobox
                           value={awbForm.originIata}
-                          onChange={e => updateAwb({ originIata: e.target.value })}
+                          onChange={code => updateAwb({ originIata: code })}
+                          options={airPortOptions}
+                          placeholder="Search airport..."
                           className={`${INPUT_BASE} ${awbForm.originIata ? PREFILLED : ''}`}
-                        >
-                          <option value="">Select airport...</option>
-                          {airPortOptions.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                        </select>
+                        />
                       </div>
                       <div>
                         <FieldLabel>Dest Airport</FieldLabel>
-                        <select
+                        <PortCombobox
                           value={awbForm.destIata}
-                          onChange={e => updateAwb({ destIata: e.target.value })}
+                          onChange={code => updateAwb({ destIata: code })}
+                          options={airPortOptions}
+                          placeholder="Search airport..."
                           className={`${INPUT_BASE} ${awbForm.destIata ? PREFILLED : ''}`}
-                        >
-                          <option value="">Select airport...</option>
-                          {airPortOptions.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                        </select>
+                        />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3 mt-2">
@@ -600,23 +647,6 @@ export default function DocumentParseModal({
                     </div>
                   </div>
 
-                  {/* Company owner */}
-                  <div>
-                    <SectionLabel>Customer / Shipment Owner</SectionLabel>
-                    <CompanyWidget
-                      linkedCompanyId={linkedCompanyId}
-                      linkedCompanyName={linkedCompanyName}
-                      showSearch={showCompanySearch}
-                      search={companySearch}
-                      results={companyResults}
-                      onShowSearch={() => { setShowCompanySearch(true); setCompanySearch(''); setCompanyResults([]); }}
-                      onHideSearch={() => setShowCompanySearch(false)}
-                      onSearchChange={handleCompanySearch}
-                      onLink={(id, name) => { setLinkedCompanyId(id); setLinkedCompanyName(name); setShowCompanySearch(false); }}
-                      onUnlink={() => { setLinkedCompanyId(null); setLinkedCompanyName(null); }}
-                      onSkip={() => setShowCompanySearch(false)}
-                    />
-                  </div>
                 </>
               ) : (
                 <>
@@ -687,23 +717,6 @@ export default function DocumentParseModal({
                     </div>
                   )}
 
-                  {/* Company owner for BL/BC */}
-                  <div>
-                    <SectionLabel>Customer / Shipment Owner</SectionLabel>
-                    <CompanyWidget
-                      linkedCompanyId={linkedCompanyId}
-                      linkedCompanyName={linkedCompanyName}
-                      showSearch={showCompanySearch}
-                      search={companySearch}
-                      results={companyResults}
-                      onShowSearch={() => { setShowCompanySearch(true); setCompanySearch(''); setCompanyResults([]); }}
-                      onHideSearch={() => setShowCompanySearch(false)}
-                      onSearchChange={handleCompanySearch}
-                      onLink={(id, name) => { setLinkedCompanyId(id); setLinkedCompanyName(name); setShowCompanySearch(false); }}
-                      onUnlink={() => { setLinkedCompanyId(null); setLinkedCompanyName(null); }}
-                      onSkip={() => setShowCompanySearch(false)}
-                    />
-                  </div>
                 </>
               )}
             </div>
