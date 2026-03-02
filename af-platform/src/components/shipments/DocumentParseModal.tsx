@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { X, Upload, FileText, Loader2, AlertCircle, Check, Plane, Ship, ClipboardList, Search, Link2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -11,6 +11,12 @@ import {
   type ParsedAWBData,
 } from '@/app/actions/shipments-files';
 import type { ParsedBL } from '@/components/shipments/BLUpdateModal';
+import { AWBReview } from './_doc-parsers/AWBReview';
+import { BCReview } from './_doc-parsers/BCReview';
+import { BLReview } from './_doc-parsers/BLReview';
+
+// Re-export AWBFormState for backward compatibility
+export type { AWBFormState } from './_doc-parsers/AWBReview';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -62,25 +68,6 @@ type Phase = 'idle' | 'parsing' | 'review' | 'error';
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 
-export interface AWBFormState {
-  awbType: string;
-  mawbNumber: string;
-  hawbNumber: string;
-  originIata: string;
-  destIata: string;
-  flightNumber: string;
-  flightDate: string;
-  shipperName: string;
-  shipperAddress: string;
-  consigneeName: string;
-  consigneeAddress: string;
-  cargoDescription: string;
-  pieces: string;
-  grossWeightKg: string;
-  chargeableWeightKg: string;
-  hsCode: string;
-}
-
 // ---------------------------------------------------------------------------
 // Doc type badge config
 // ---------------------------------------------------------------------------
@@ -104,80 +91,10 @@ const sanitiseAddress = (raw: string | null | undefined): string => {
 };
 
 // Pre-filled field styling
-const PREFILLED = 'bg-[#f0f7ff] border-[#93c5fd] font-medium';
 const INPUT_BASE = 'w-full px-3 py-2 text-sm border rounded-lg text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent';
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return <p className="text-xs font-semibold text-[var(--text-mid)] mb-2">{children}</p>;
-}
-
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <label className="block text-xs font-medium text-[var(--text-mid)] mb-1">{children}</label>;
-}
-
-// ---------------------------------------------------------------------------
-// Company search widget (shared)
-// ---------------------------------------------------------------------------
-
-function PortCombobox({
-  value, onChange, options, placeholder, className,
-}: {
-  value: string;
-  onChange: (code: string) => void;
-  options: { value: string; label: string }[];
-  placeholder?: string;
-  className?: string;
-}) {
-  const [query, setQuery] = useState('');
-  const [open, setOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-
-  const selectedLabel = options.find(o => o.value === value)?.label ?? '';
-  const displayText = open ? query : selectedLabel;
-  const filtered = open
-    ? options.filter(o =>
-        o.label.toLowerCase().includes(query.toLowerCase()) ||
-        o.value.toLowerCase().includes(query.toLowerCase())
-      ).slice(0, 30)
-    : [];
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
-        setOpen(false); setQuery('');
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  return (
-    <div ref={wrapperRef} className="relative">
-      <input
-        type="text"
-        value={displayText}
-        placeholder={placeholder ?? 'Search...'}
-        className={className}
-        onFocus={() => { setOpen(true); setQuery(''); }}
-        onChange={e => setQuery(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); setQuery(''); } }}
-      />
-      {open && filtered.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-[var(--border)] rounded-lg shadow-lg max-h-48 overflow-y-auto">
-          {filtered.map(o => (
-            <button
-              key={o.value}
-              type="button"
-              onMouseDown={e => { e.preventDefault(); onChange(o.value); setOpen(false); setQuery(''); }}
-              className={`w-full text-left px-3 py-2 text-xs hover:bg-[var(--sky-mist)] ${o.value === value ? 'bg-[var(--sky-mist)] font-medium' : ''}`}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -205,7 +122,7 @@ export default function DocumentParseModal({
   const fileRef = useRef<HTMLInputElement>(null);
 
   // AWB form state (pre-filled from parsed data, user-editable)
-  const [awbForm, setAwbForm] = useState<AWBFormState>({
+  const [awbForm, setAwbForm] = useState({
     awbType: '', mawbNumber: '', hawbNumber: '',
     originIata: '', destIata: '', flightNumber: '', flightDate: '',
     shipperName: '', shipperAddress: '', consigneeName: '', consigneeAddress: '',
@@ -218,13 +135,6 @@ export default function DocumentParseModal({
   const [showCompanySearch, setShowCompanySearch] = useState(false);
   const [companySearch, setCompanySearch] = useState('');
   const [companyResults, setCompanyResults] = useState<Company[]>([]);
-
-  const updateAwb = (partial: Partial<AWBFormState>) => {
-    setAwbForm(prev => ({ ...prev, ...partial }));
-  };
-
-  const airPorts = ports.filter(p => p.port_type?.toLowerCase().includes('air') ?? false);
-  const airPortOptions = airPorts.map(p => ({ value: p.un_code, label: `${p.un_code} — ${p.name || p.un_code}` }));
 
   const handleFile = useCallback((f: File) => {
     if (f.type !== 'application/pdf') {
@@ -392,17 +302,6 @@ export default function DocumentParseModal({
     }
   }, []);
 
-  const renderField = (label: string, value: unknown) => {
-    if (value === null || value === undefined || value === '') return null;
-    const display = typeof value === 'object' ? JSON.stringify(value) : String(value);
-    return (
-      <div key={label} className="flex items-start gap-3 py-1.5">
-        <span className="text-xs text-[var(--text-secondary)] w-40 shrink-0">{label}</span>
-        <span className="text-xs text-[var(--text-primary)] break-all">{display}</span>
-      </div>
-    );
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col">
@@ -568,193 +467,35 @@ export default function DocumentParseModal({
                 </div>
               )}
 
-              {/* AWB — grouped editable sections */}
+              {/* Router: render appropriate review component based on docType */}
               {docType === 'AWB' ? (
-                <>
-                  {/* Route & Dates */}
-                  <div>
-                    <SectionLabel>Route & Dates</SectionLabel>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <FieldLabel>Origin Airport</FieldLabel>
-                        <PortCombobox
-                          value={awbForm.originIata}
-                          onChange={code => updateAwb({ originIata: code })}
-                          options={airPortOptions}
-                          placeholder="Search airport..."
-                          className={`${INPUT_BASE} ${awbForm.originIata ? PREFILLED : ''}`}
-                        />
-                      </div>
-                      <div>
-                        <FieldLabel>Dest Airport</FieldLabel>
-                        <PortCombobox
-                          value={awbForm.destIata}
-                          onChange={code => updateAwb({ destIata: code })}
-                          options={airPortOptions}
-                          placeholder="Search airport..."
-                          className={`${INPUT_BASE} ${awbForm.destIata ? PREFILLED : ''}`}
-                        />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 mt-2">
-                      <div>
-                        <FieldLabel>Flight Number</FieldLabel>
-                        <input type="text" value={awbForm.flightNumber} onChange={e => updateAwb({ flightNumber: e.target.value })} className={`${INPUT_BASE} font-mono ${awbForm.flightNumber ? PREFILLED : ''}`} />
-                      </div>
-                      <div>
-                        <FieldLabel>Flight Date</FieldLabel>
-                        <input type="date" value={awbForm.flightDate} onChange={e => updateAwb({ flightDate: e.target.value })} className={`${INPUT_BASE} ${awbForm.flightDate ? PREFILLED : ''}`} />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* AWB Numbers */}
-                  <div>
-                    <SectionLabel>AWB Numbers</SectionLabel>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <FieldLabel>MAWB Number</FieldLabel>
-                        <input type="text" value={awbForm.mawbNumber} onChange={e => updateAwb({ mawbNumber: e.target.value })} className={`${INPUT_BASE} font-mono ${awbForm.mawbNumber ? PREFILLED : ''}`} />
-                      </div>
-                      {(awbForm.awbType === 'HOUSE' || awbForm.hawbNumber) && (
-                        <div>
-                          <FieldLabel>HAWB Number</FieldLabel>
-                          <input type="text" value={awbForm.hawbNumber} onChange={e => updateAwb({ hawbNumber: e.target.value })} className={`${INPUT_BASE} font-mono ${awbForm.hawbNumber ? PREFILLED : ''}`} />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Shipper */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <SectionLabel>Shipper</SectionLabel>
-                      {currentParties?.shipper?.name && awbForm.shipperName && awbForm.shipperName !== currentParties.shipper.name && (
-                        <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 rounded">Differs from current</span>
-                      )}
-                    </div>
-                    <div>
-                      <FieldLabel>Name</FieldLabel>
-                      <input type="text" value={awbForm.shipperName} onChange={e => updateAwb({ shipperName: e.target.value })} className={`${INPUT_BASE} ${awbForm.shipperName ? PREFILLED : ''}`} />
-                    </div>
-                    <div className="mt-2">
-                      <FieldLabel>Address</FieldLabel>
-                      <textarea value={awbForm.shipperAddress} onChange={e => updateAwb({ shipperAddress: e.target.value })} rows={2} className={`${INPUT_BASE} resize-none ${awbForm.shipperAddress ? PREFILLED : ''}`} />
-                    </div>
-                  </div>
-
-                  {/* Consignee */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <SectionLabel>Consignee</SectionLabel>
-                      {currentParties?.consignee?.name && awbForm.consigneeName && awbForm.consigneeName !== currentParties.consignee.name && (
-                        <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 rounded">Differs from current</span>
-                      )}
-                    </div>
-                    <div>
-                      <FieldLabel>Name</FieldLabel>
-                      <input type="text" value={awbForm.consigneeName} onChange={e => updateAwb({ consigneeName: e.target.value })} className={`${INPUT_BASE} ${awbForm.consigneeName ? PREFILLED : ''}`} />
-                    </div>
-                    <div className="mt-2">
-                      <FieldLabel>Address</FieldLabel>
-                      <textarea value={awbForm.consigneeAddress} onChange={e => updateAwb({ consigneeAddress: e.target.value })} rows={2} className={`${INPUT_BASE} resize-none ${awbForm.consigneeAddress ? PREFILLED : ''}`} />
-                    </div>
-                  </div>
-
-                  {/* Cargo */}
-                  <div>
-                    <SectionLabel>Cargo</SectionLabel>
-                    <div>
-                      <FieldLabel>Description</FieldLabel>
-                      <textarea value={awbForm.cargoDescription} onChange={e => updateAwb({ cargoDescription: e.target.value })} rows={2} className={`${INPUT_BASE} resize-none ${awbForm.cargoDescription ? PREFILLED : ''}`} />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 mt-2">
-                      <div>
-                        <FieldLabel>Pieces</FieldLabel>
-                        <input type="text" value={awbForm.pieces} onChange={e => updateAwb({ pieces: e.target.value })} className={`${INPUT_BASE} ${awbForm.pieces ? PREFILLED : ''}`} />
-                      </div>
-                      <div>
-                        <FieldLabel>Gross Weight (kg)</FieldLabel>
-                        <input type="text" value={awbForm.grossWeightKg} onChange={e => updateAwb({ grossWeightKg: e.target.value })} className={`${INPUT_BASE} ${awbForm.grossWeightKg ? PREFILLED : ''}`} />
-                      </div>
-                      <div>
-                        <FieldLabel>Chargeable Weight (kg)</FieldLabel>
-                        <input type="text" value={awbForm.chargeableWeightKg} onChange={e => updateAwb({ chargeableWeightKg: e.target.value })} className={`${INPUT_BASE} ${awbForm.chargeableWeightKg ? PREFILLED : ''}`} />
-                      </div>
-                    </div>
-                  </div>
-
-                </>
+                <AWBReview
+                  formState={awbForm}
+                  setFormState={setAwbForm}
+                  currentParties={currentParties}
+                  ports={ports}
+                  isApplying={isApplying}
+                  applyError={applyError}
+                  onConfirm={handleApply}
+                />
+              ) : docType === 'BOOKING_CONFIRMATION' ? (
+                <BCReview
+                  formState={parsedData}
+                  setFormState={setParsedData}
+                  ports={ports}
+                  isApplying={isApplying}
+                  applyError={applyError}
+                  onConfirm={handleApply}
+                />
               ) : (
-                <>
-                  {/* BL / BC — existing flat field view */}
-                  <div className="border border-[var(--border)] rounded-lg p-4 divide-y divide-[var(--border)]">
-                    {Object.entries(parsedData).map(([key, value]) => {
-                      if (key === 'containers' || key === 'cargo_items') return null;
-                      const label = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-                      return renderField(label, value);
-                    })}
-                  </div>
-
-                  {/* Containers table */}
-                  {Array.isArray(parsedData.containers) && parsedData.containers.length > 0 && (
-                    <div>
-                      <h3 className="text-xs font-medium text-[var(--text-primary)] mb-2">Containers</h3>
-                      <div className="border border-[var(--border)] rounded-lg overflow-hidden">
-                        <table className="w-full text-xs">
-                          <thead className="bg-[var(--surface)]">
-                            <tr>
-                              {Object.keys(parsedData.containers[0] as Record<string, unknown>).map((k) => (
-                                <th key={k} className="px-3 py-2 text-left font-medium text-[var(--text-secondary)]">
-                                  {k.replace(/_/g, ' ')}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(parsedData.containers as Record<string, unknown>[]).map((c, i) => (
-                              <tr key={i} className="border-t border-[var(--border)]">
-                                {Object.values(c).map((v, j) => (
-                                  <td key={j} className="px-3 py-2 text-[var(--text-primary)]">{v != null ? String(v) : '-'}</td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Cargo items table */}
-                  {Array.isArray(parsedData.cargo_items) && parsedData.cargo_items.length > 0 && (
-                    <div>
-                      <h3 className="text-xs font-medium text-[var(--text-primary)] mb-2">Cargo Items</h3>
-                      <div className="border border-[var(--border)] rounded-lg overflow-hidden">
-                        <table className="w-full text-xs">
-                          <thead className="bg-[var(--surface)]">
-                            <tr>
-                              {Object.keys(parsedData.cargo_items[0] as Record<string, unknown>).map((k) => (
-                                <th key={k} className="px-3 py-2 text-left font-medium text-[var(--text-secondary)]">
-                                  {k.replace(/_/g, ' ')}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(parsedData.cargo_items as Record<string, unknown>[]).map((c, i) => (
-                              <tr key={i} className="border-t border-[var(--border)]">
-                                {Object.values(c).map((v, j) => (
-                                  <td key={j} className="px-3 py-2 text-[var(--text-primary)]">{v != null ? String(v) : '-'}</td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-
-                </>
+                <BLReview
+                  formState={parsedData}
+                  setFormState={setParsedData}
+                  ports={ports}
+                  isApplying={isApplying}
+                  applyError={applyError}
+                  onConfirm={handleApply}
+                />
               )}
             </div>
           )}
