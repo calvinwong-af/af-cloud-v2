@@ -25,6 +25,7 @@ app = FastAPI(
     # Disable docs in production via env var
     docs_url="/docs",
     redoc_url="/redoc",
+    redirect_slashes=False,
 )
 
 # ---------------------------------------------------------------------------
