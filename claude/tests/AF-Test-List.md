@@ -1,5 +1,5 @@
 # AF Platform — Test List
-**Version:** 2.39
+**Version:** 2.40
 **Last Updated:** 02 March 2026
 
 > Retired series (MI, V2C, OF, SR, IN, SU) moved to AF-Test-Archive.md
@@ -8,6 +8,7 @@
 ## Version History (recent)
 | Version | Date | Changes |
 |---|---|---|
+| 2.40 | 02 Mar 2026 | MC-06 YES — containers display fixed. BL-28/29/30 added and confirmed YES. Prompt log logged as BL-28. |
 | 2.39 | 02 Mar 2026 | MC-01/02/05 YES. MC-03 YES (tasks generated). MC-06 added — containers not saved to type_details on manual create. |
 | 2.38 | 02 Mar 2026 | PG-11 YES. BL-25/26/27 added and confirmed YES. |
 | 2.37 | 02 Mar 2026 | UI-01 added to pending — Files tab count badge, LOW priority. |
@@ -42,7 +43,6 @@
 
 | Series | Test | Notes |
 |---|---|---|
-| MC-06 | Containers saved to type_details on manual create (FCL) | AF-003872 shows "Details not available" despite 1×20GP DRY entered in review. Bug — type_details not written on POST. |
 | DS-03 | datastore-query.ts still imported by users module | LOW — expected, users not yet on PostgreSQL |
 | BUG2-02 | Exception flag visible as separate amber indicator on mobile card | Test during mobile UX pass |
 | VD-03 | Route card — vessel name only shown when voyage missing | Test on any shipment with BL but no voyage |
@@ -145,6 +145,9 @@
 | BL-25 | BL upload — port of loading matched and saved to Route card | YES | AF-003837 CNSHK confirmed |
 | BL-26 | BL upload — port of discharge matched and saved to Route card | YES | AF-003837 MYPKG confirmed |
 | BL-27 | Port codes persist on Route card after page reload (no re-upload needed) | YES | AF-003837 confirmed |
+| BL-28 | BL update — container number saved and displayed in Containers card | YES | AF-003837 SEGU6868838 confirmed |
+| BL-29 | BL update — seal number saved and displayed in Containers card | YES | AF-003837 YMAV438141 confirmed |
+| BL-30 | Containers card hint text hidden once container numbers are present | YES | AF-003837 confirmed — hint absent after BL update |
 
 ### BL Upload Tab — Party Fields (BU series)
 | # | Test | Status | Notes |
@@ -317,9 +320,10 @@
 |---|---|---|---|
 | MC-01 | POST /api/v2/shipments creates shipment — row in PostgreSQL | YES | AF-003872 created successfully |
 | MC-02 | Created shipment navigates to detail page immediately | YES | AF-003872 — redirected to /shipments/AF-003872 |
-| MC-03 | Created shipment has shipment_workflows row with auto-generated tasks | YES | AF-003872 — 7 tasks generated (EXW IMPORT SEA FCL): Origin Haulage, Freight Booking, Export Customs, POL, POD, Import Customs, Dest Haulage |
+| MC-03 | Created shipment has shipment_workflows row with auto-generated tasks | YES | AF-003872 — 7 tasks generated (EXW IMPORT SEA FCL) |
 | MC-04 | createShipmentOrderAction() imports no legacy lib functions | YES | Code review confirmed |
-| MC-05 | createShipmentOrderAction() returns correct shipment_id from server | YES | AF-003872 — correct sequence ID returned and navigated to |
+| MC-05 | createShipmentOrderAction() returns correct shipment_id from server | YES | AF-003872 — correct sequence ID returned |
+| MC-06 | Containers card displays correctly on manually created SEA_FCL shipment | YES | AF-003872 — 20GP DRY x 1 confirmed |
 
 ### Shipment Delete
 | # | Test | Status | Notes |

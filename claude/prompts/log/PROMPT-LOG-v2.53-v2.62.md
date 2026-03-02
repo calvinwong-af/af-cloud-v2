@@ -1,5 +1,19 @@
 # Prompt Completion Log — v2.53–v2.62
 
+### [2026-03-03 04:00 UTC] — BL-28: Container schema merge on BL update
+- **Status:** Completed
+- **Tasks:**
+  - PART 1 (Backend): Changed update_from_bl() containers block from replace to merge — preserves container_size/quantity from creation schema, adds container_number/seal_number from BL parse
+  - PART 2 (Frontend): Extended TypeDetailsCard SEA_FCL branch to render both schemas — container_number and seal_number shown as sub-rows when present, legacy container_numbers[]/seal_numbers[] arrays also rendered
+  - Extended ContainerDetail type with optional container_number + seal_number fields
+  - Hint text "Container and seal numbers assigned at booking" now conditional — hidden once any container_number present
+- **Files Modified:**
+  - `af-server/routers/shipments.py` — update_from_bl containers merge logic
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — TypeDetailsCard container row rendering
+  - `af-platform/src/lib/types.ts` — ContainerDetail optional fields
+- **Tests Confirmed:** BL-28 YES (SEGU6868838), BL-29 YES (YMAV438141), BL-30 YES (hint hidden), MC-06 YES (20GP DRY x 1)
+- **Handover:** AF-Handover-Notes-v2_35.md. Test list v2.40.
+
 ### [2026-03-03 02:00 UTC] — MC-06: TypeDetailsCard order type inference fix
 - **Status:** Completed
 - **Tasks:**
