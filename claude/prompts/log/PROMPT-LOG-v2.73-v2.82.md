@@ -1,5 +1,19 @@
 # Prompt Completion Log — v2.73–v2.82
 
+### [2026-03-03 07:30 UTC] — v2.75: Test list modularization
+- **Status:** Completed
+- **Tasks:**
+  - Created `claude/tests/AF-Test-Master.md` — series registry dashboard with 24 rows + totals (239/193/38/12/2)
+  - Created `claude/tests/series/` directory with 24 individual series files (DP, DT, VD, PP, DS, BUG2, MB, AUTH, PT, BL, BU, TL, TS, TV, GS, AC, PG, BUG1, EP, TI, LV, MC, SD, LO)
+  - Deleted `claude/tests/AF-Test-List.md` (fully superseded)
+  - `AF-Test-Archive.md` untouched
+  - Updated `claude/PROMPT-LOG.md` with v2.75 entry
+- **Files Modified:**
+  - `claude/tests/AF-Test-Master.md` (new)
+  - `claude/tests/series/*.md` (24 new files)
+  - `claude/tests/AF-Test-List.md` (deleted)
+  - `claude/PROMPT-LOG.md`
+
 ### [2026-03-03 07:00 UTC] — v2.74: File tag display labels (formatTagLabel)
 - **Status:** Completed
 - **Tasks:**
