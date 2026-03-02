@@ -61,6 +61,17 @@ function formatDate(iso: string): string {
   }
 }
 
+const KNOWN_ACRONYMS = new Set(['bl', 'hbl', 'awb', 'mawb', 'hawb', 'bc', 'po', 'do']);
+
+function formatTagLabel(tag: string): string {
+  const lower = tag.toLowerCase();
+  if (KNOWN_ACRONYMS.has(lower)) return lower.toUpperCase();
+  return lower
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
 const TAG_COLORS: Record<string, string> = {
   bl: 'bg-blue-100 text-blue-700',
   hbl: 'bg-indigo-100 text-indigo-700',
@@ -250,7 +261,7 @@ export default function ShipmentFilesTab({ shipmentId, userRole, ports, onBLUpda
               <div className="flex items-center gap-1 flex-shrink-0">
                 {(file.file_tags ?? []).map(tag => (
                   <span key={tag} className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${tagStyle(tag)}`}>
-                    {tag}
+                    {formatTagLabel(tag)}
                   </span>
                 ))}
               </div>
@@ -494,7 +505,7 @@ function UploadModal({
                         : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--sky)]'
                     }`}
                   >
-                    {tag.tag_label || name}
+                    {tag.tag_label || formatTagLabel(name)}
                   </button>
                 );
               })}
