@@ -35,6 +35,6 @@ steps:
       - managed
       - --allow-unauthenticated
       - --set-env-vars
-      - AF_SERVER_URL=https://api.accelefreight.com,GOOGLE_CLOUD_PROJECT_ID=cloud-accele-freight
+      - AF_SERVER_URL=https://af-server-667020632236.asia-northeast1.run.app,GOOGLE_CLOUD_PROJECT_ID=cloud-accele-freight
 images:
   - asia-northeast1-docker.pkg.dev/cloud-accele-freight/af-platform/af-platform:latest
