@@ -1,5 +1,20 @@
 # Prompt Completion Log — v2.73–v2.82
 
+### [2026-03-03 10:30 UTC] — v2.78: Split shipment detail page.tsx into focused files
+- **Status:** Completed
+- **Tasks:**
+  - Split 1759-line (78KB) `page.tsx` into 3 focused files — pure structural refactor, no functional changes
+  - `_components.tsx` (1243 lines): all sub-components (SectionCard, DataRow, EmptyState, RouteCard, TypeDetailsCard, StatusCard, PartiesCard, EditPartiesModal, CompanyReassignModal), helpers (hasPartyDiff, truncate), and constants (STATUS_STYLES, NODE_LABELS, SUB_LABELS)
+  - `_doc-handler.ts` (84 lines): `createDocResultHandler()` factory — extracted inline onResult callback for AWB/BC/BL doc apply logic
+  - `page.tsx` (496 lines): slimmed shell — state, data loading, layout, tab routing, modal JSX only
+  - `STATUS_STYLES` exported from `_components.tsx` and re-imported in `page.tsx`
+  - `flagExceptionAction` preserved as lazy dynamic import inside `StatusCard`
+  - Lint passes with zero errors
+- **Files Modified:**
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` (rewritten, 1759→496 lines)
+  - `af-platform/src/app/(platform)/shipments/[id]/_components.tsx` (new)
+  - `af-platform/src/app/(platform)/shipments/[id]/_doc-handler.ts` (new)
+
 ### [2026-03-03 09:00 UTC] — v2.77: Split routers/shipments.py into package
 - **Status:** Completed
 - **Tasks:**
