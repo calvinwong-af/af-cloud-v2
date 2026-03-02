@@ -213,7 +213,8 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
     } else {
       setOriginTerminalId('');
     }
-  }, [originCode, activePorts]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [originCode, orderType]);
 
   useEffect(() => {
     const port = activePorts.find(p => p.un_code === destCode);
@@ -223,7 +224,8 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
     } else {
       setDestTerminalId('');
     }
-  }, [destCode, activePorts]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [destCode, orderType]);
 
   // ── Validation ──
   function validateStep(): string | null {

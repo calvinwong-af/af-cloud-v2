@@ -181,7 +181,12 @@ function ShipmentActionsMenu({
           onClick={() => {
             if (!open && buttonRef.current) {
               const rect = buttonRef.current.getBoundingClientRect();
-              setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+              const menuHeight = 220; // approx height of menu incl delete items
+              const spaceBelow = window.innerHeight - rect.bottom;
+              const top = spaceBelow < menuHeight
+                ? rect.top - menuHeight - 4
+                : rect.bottom + 4;
+              setMenuPos({ top, right: window.innerWidth - rect.right });
             }
             setOpen((v) => !v);
           }}
@@ -642,9 +647,15 @@ function ShipmentRow({
         <StatusIcon order={order} />
       </td>
 
-      {/* Order type — icon only */}
+      {/* Order type — icon only, with DG indicator */}
       <td className="px-4 py-3 text-center">
-        <OrderTypeIcon type={order.order_type} />
+        <div className="flex items-center justify-center gap-1.5">
+          <OrderTypeIcon type={order.order_type} />
+          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+          {((order as any).cargo_is_dg === true) && (
+            <span title="Dangerous Goods" className="text-[10px] font-bold px-1 py-0.5 rounded" style={{ background: '#fef3c7', color: '#92400e', lineHeight: 1 }}>DG</span>
+          )}
+        </div>
       </td>
 
       {/* Incoterm */}

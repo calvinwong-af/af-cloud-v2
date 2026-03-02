@@ -13,6 +13,20 @@ Items identified during development/testing that are not urgent but should be ad
 
 ---
 
+## PLANNED PROMPTS
+
+| Prompt | Item | Scope | Notes |
+|---|---|---|---|
+| v2.77 | shipments.py modularisation | af-server | ✅ Complete — 10-file package verified, shipments.py deleted, smoke tests passed |
+| v2.78 | page.tsx split | af-platform | Split 78KB page into page.tsx shell + _components.tsx + _doc-handler.ts. Pure structural split. |
+| v2.79 | DocumentParseModal split — doc type plugin pattern | af-platform | ✅ Complete — 4-file plugin pattern verified, lint clean, DP-48 preserved as-is |
+| v2.80 | BLUploadTab + BLUpdateModal + CreateShipmentModal split | af-platform | Modal/form group split. BLUpdateModal (34KB) and ShipmentTasks (31KB) also candidates. |
+| v2.81 | User migration — Datastore → PostgreSQL | af-server + core | Migrate UserAccount, UserIAM, CompanyUserAccount, UserRolesTable, AFUserAccount to PostgreSQL. Rewrite core/auth.py. Remove google-cloud-datastore dependency entirely. |
+| v2.82 | Bug fixes — Files tab + AWB diff + company search | af-platform | (1) File size showing NaN KB in Files tab. (2) Files tab badge not pre-populated on page load — only updates after tab is opened. (3) DP-48: AWB diff not shown on Parties card after apply. (4) Company/Shipment Owner section rendering twice in DocumentParseModal — amber banner (State C) in orchestrator AND grey search field in review component. Ownership section should only render in the orchestrator, not inside BCReview/AWBReview/BLReview. Regression from v2.79 split. |
+| v2.83 | API Contract Document | af-server + af-platform | Dedicated session — read schema, models, and types; draft canonical object definitions for Shipment, User, Company, Parties. Output: claude/other/AF-API-Contract.md. Required before AI agent phase. |
+
+---
+
 ## DEFERRED (by design)
 
 | # | Item | Context | Notes |

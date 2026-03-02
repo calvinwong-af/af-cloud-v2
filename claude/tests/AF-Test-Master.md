@@ -10,7 +10,7 @@
 
 | Series | Description | Total | YES | PENDING | DEFERRED | NA | Status | File |
 |---|---|---|---|---|---|---|---|---|
-| DP | Document Parser | 47 | 17 | 26 | 0 | 0 | 🔵 Active | series/DP-document-parse.md |
+| DP | Document Parser | 48 | 22 | 22 | 0 | 0 | 🔵 Active | series/DP-document-parse.md |
 | DT | DateTime Inputs | 16 | 1 | 15 | 0 | 0 | 🔵 Active | series/DT-datetime.md |
 | VD | Vessel Display | 7 | 5 | 2 | 0 | 0 | 🔵 Active | series/VD-vessel-display.md |
 | PP | Port Pair Display | 9 | 8 | 1 | 0 | 0 | 🔵 Active | series/PP-port-pair.md |

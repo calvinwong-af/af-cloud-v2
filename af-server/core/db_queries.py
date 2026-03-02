@@ -20,12 +20,10 @@ def get_shipment_stats(conn, company_id: str | None = None) -> dict:
     row = conn.execute(text(f"""
         SELECT
             COUNT(*) FILTER (WHERE
-                s.status IN (3001, 3002, 4001, 4002)
-                OR (s.status = 2001 AND s.migrated_from_v1 = FALSE)
+                s.status IN (2001, 3001, 3002, 4001, 4002)
             ) AS active,
             COUNT(*) FILTER (WHERE
                 s.status = 5001
-                OR (s.status = 2001 AND s.migrated_from_v1 = TRUE)
             ) AS completed,
             COUNT(*) FILTER (WHERE
                 s.status = 5001 AND s.issued_invoice = FALSE
@@ -55,9 +53,9 @@ def get_shipment_stats(conn, company_id: str | None = None) -> dict:
 def _tab_where(tab: str) -> str:
     """Return the WHERE clause fragment for a tab filter."""
     if tab == "active":
-        return "(s.status IN (3001, 3002, 4001, 4002) OR (s.status = 2001 AND s.migrated_from_v1 = FALSE))"
+        return "s.status IN (2001, 3001, 3002, 4001, 4002)"
     if tab == "completed":
-        return "(s.status = 5001 OR (s.status = 2001 AND s.migrated_from_v1 = TRUE))"
+        return "s.status = 5001"
     if tab == "to_invoice":
         return "(s.status = 5001 AND s.issued_invoice = FALSE)"
     if tab == "draft":
@@ -90,7 +88,8 @@ def list_shipments(conn, tab: str, company_id: str | None, limit: int, offset: i
                s.company_id, c.name AS company_name,
                s.cargo_ready_date::text, s.updated_at::text AS updated,
                s.issued_invoice,
-               s.origin_terminal, s.dest_terminal
+               s.origin_terminal, s.dest_terminal,
+               (s.cargo->>'is_dg')::boolean AS cargo_is_dg
         FROM shipments s
         LEFT JOIN companies c ON c.id = s.company_id
         WHERE {where}
@@ -117,6 +116,7 @@ def list_shipments(conn, tab: str, company_id: str | None, limit: int, offset: i
             "issued_invoice": r[13] or False,
             "origin_terminal": r[14] or None,
             "dest_terminal": r[15] or None,
+            "cargo_is_dg": r[16] or False,
         })
 
     return items, total
