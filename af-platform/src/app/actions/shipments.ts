@@ -65,9 +65,39 @@ export async function fetchShipmentOrderDetailAction(
       return { success: false, error: 'Not found' };
     }
 
+    // Build Location objects from flat port fields returned by PostgreSQL API
+    const originPortCode: string = data.origin_port_un_code || data.origin_port || '';
+    const destPortCode: string = data.destination_port_un_code || data.dest_port || '';
+
+    const originLocation = originPortCode
+      ? {
+          type: 'PORT' as const,
+          port_un_code: originPortCode,
+          terminal_id: data.origin_terminal_id ?? data.origin_terminal ?? null,
+          city_id: null,
+          address: null,
+          country_code: null,
+          label: originPortCode,
+        }
+      : (data.origin ?? null);
+
+    const destLocation = destPortCode
+      ? {
+          type: 'PORT' as const,
+          port_un_code: destPortCode,
+          terminal_id: data.destination_terminal_id ?? data.dest_terminal ?? null,
+          city_id: null,
+          address: null,
+          country_code: null,
+          label: destPortCode,
+        }
+      : (data.destination ?? null);
+
     // Normalize fields that the PostgreSQL API doesn't include but the UI expects
     const normalized: ShipmentOrder = {
       ...data,
+      origin: originLocation,
+      destination: destLocation,
       customs_clearance: data.customs_clearance ?? [],
       files: data.files ?? [],
       related_orders: data.related_orders ?? [],

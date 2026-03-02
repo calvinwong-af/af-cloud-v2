@@ -1579,6 +1579,7 @@ export default function ShipmentOrderDetailPage() {
           onSuccess={() => {
             setShowBLModal(false);
             loadOrder();
+            loadRouteTimings();
           }}
         />
       )}

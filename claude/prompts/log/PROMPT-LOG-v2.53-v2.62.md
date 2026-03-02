@@ -1,5 +1,15 @@
 # Prompt Completion Log — v2.53–v2.62
 
+### [2026-03-02 23:00 UTC] — BL Port Save Fix: origin/destination assembly + ETD refresh
+- **Status:** Completed
+- **Tasks:**
+  - TASK 1: Built Location objects from flat port fields (origin_port_un_code, dest_port) in fetchShipmentOrderDetailAction
+  - TASK 2: Added loadRouteTimings() call to BLUpdateModal onSuccess so ETD updates in Route card
+- **Files Modified:**
+  - `af-platform/src/app/actions/shipments.ts` — origin/destination Location assembly
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — loadRouteTimings in BL onSuccess
+- **Notes:** No server or DB changes. Port codes now display in Route card after BL upload. ETD refreshes without full page reload.
+
 ### [2026-03-02 22:00 UTC] — BL Update Modal: Port Selection (Option B)
 - **Status:** Completed
 - **Tasks:**
