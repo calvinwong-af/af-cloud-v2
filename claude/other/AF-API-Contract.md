@@ -1,7 +1,7 @@
 # AcceleFreight — AF Server V2 API Contract
 **Base URL:** `https://af-server-667020632236.asia-northeast1.run.app/api/v2` (prod) · `http://localhost:8000/api/v2` (local)  
 **Auth:** Firebase ID token — `Authorization: Bearer <token>` on all protected routes  
-**Version:** Contract v1.1 — 03 March 2026  
+**Version:** Contract v1.2 — 03 March 2026  
 **Status:** Living document — update when endpoints change
 
 ---
@@ -1125,98 +1125,165 @@ All fields optional — only provided fields are updated.
 ## 4. Users
 
 Base path: `/api/v2/users`  
-**Status:** v2.81 in progress — implementation replacing stub
+**Status:** Complete — implemented in v2.81. `_build_claims` in `auth.py` now reads from the PostgreSQL `users` table on every authenticated request (single keyed lookup by UID).
 
-### 4.1 List Users
+### User Record Shape
 
-#### `GET /users`
-Auth: `require_afu_admin`
+All user endpoints return this shape:
 
-Returns all users across the platform.
-
-**Response:** _(shape TBC after v2.81 completes)_
 ```json
 {
-  "status": "OK",
-  "data": [
-    {
-      "uid": "firebase_uid_abc",
-      "email": "user@company.com",
-      "first_name": "John",
-      "last_name": "Doe",
-      "account_type": "AFC",
-      "role": "AFC-M",
-      "company_id": "AFC-000412",
-      "company_name": "Acme Corp Sdn Bhd",
-      "valid_access": true,
-      "created_at": "2024-06-01T08:00:00+00:00",
-      "updated_at": "2026-02-15T09:00:00+00:00"
-    }
-  ],
-  "msg": "N users"
+  "uid": "firebase_uid_abc",
+  "email": "user@company.com",
+  "first_name": "John",
+  "last_name": "Doe",
+  "phone_number": "+60 12 345 6789",
+  "account_type": "AFC",
+  "role": "AFC-M",
+  "company_id": "AFC-000412",
+  "company_name": "Acme Corp Sdn Bhd",
+  "valid_access": true,
+  "validated": false,
+  "last_login": null,
+  "created_at": "2024-06-01T08:00:00+00:00"
 }
 ```
 
-### 4.2 Get Current User
+`company_name` is resolved from `companies.short_name` (falls back to `companies.name`). `validated` is `email_validated` from the `users` table.
+
+---
+
+### 4.1 Get Current User
 
 #### `GET /users/me`
 Auth: `require_auth`
 
-Returns the profile of the currently authenticated user.
+Returns the profile of the currently authenticated user. This is also the endpoint called by `verifySessionAndRole` in af-platform on every protected page load.
+
+**Response:**
+```json
+{ "status": "OK", "data": <UserRecord> }
+```
+
+---
+
+### 4.2 List Users
+
+#### `GET /users`
+Auth: `require_afu_admin`
+
+Returns all users ordered AFU first, then alphabetical by last name.
+
+**Response:**
+```json
+{ "status": "OK", "data": [ <UserRecord>, ... ] }
+```
+
+---
 
 ### 4.3 Create User
 
 #### `POST /users`
 Auth: `require_afu_admin`
 
-Creates a Firebase Auth user + inserts into `users` PostgreSQL table.
+Creates a Firebase Auth user and inserts into the `users` PostgreSQL table. User is active (`valid_access=TRUE`) by default.
 
 **Request body:**
 ```json
 {
   "email": "newuser@company.com",
+  "password": "InitialPassword123!",
   "first_name": "Jane",
   "last_name": "Smith",
+  "phone_number": "+60 12 345 6789",
   "account_type": "AFC",
   "role": "AFC-M",
-  "company_id": "AFC-000412",
-  "temp_password": "ChangeMe123!"
+  "company_id": "AFC-000412"
 }
 ```
+
+`phone_number` and `company_id` are optional.
+
+**Response:**
+```json
+{ "status": "OK", "data": { "uid": "firebase_uid_abc" } }
+```
+
+**Errors:**
+- `409` — email already registered in Firebase Auth
+- `400` — weak password or invalid email
+
+---
 
 ### 4.4 Update User
 
 #### `PATCH /users/{uid}`
 Auth: `require_afu_admin`
 
-Update role, access status, or profile fields.
-
-### 4.5 Deactivate User
-
-#### `PATCH /users/{uid}/access`
-Auth: `require_afu_admin`
+All fields optional — only provided fields are updated. Syncs `display_name` and `disabled` flag to Firebase Auth automatically.
 
 **Request body:**
 ```json
-{ "valid_access": false }
+{
+  "first_name": "Jane",
+  "last_name": "Smith",
+  "phone_number": "+60 12 345 6789",
+  "role": "AFC-ADMIN",
+  "valid_access": true,
+  "company_id": "AFC-000413"
+}
 ```
 
-### 4.6 Reset Password
+⚠️ Setting `valid_access: false` disables the Firebase Auth account immediately — the user cannot log in on their next request.
+
+**Response:** `{ "status": "OK" }`
+
+---
+
+### 4.5 Delete User
+
+#### `DELETE /users/{uid}`
+Auth: `require_afu_admin`
+
+Permanently deletes the user from Firebase Auth and the `users` table. Non-fatal if the Firebase Auth user is already gone.
+
+**Response:** `{ "status": "OK" }`
+
+---
+
+### 4.6 Reset Password (Admin Set)
 
 #### `POST /users/{uid}/reset-password`
 Auth: `require_afu_admin`
+
+Sets a new password directly via Firebase Auth Admin SDK. Minimum 8 characters.
 
 **Request body:**
 ```json
 { "new_password": "NewSecure456!" }
 ```
 
-### 4.7 Delete User
+**Response:** `{ "status": "OK" }`
 
-#### `DELETE /users/{uid}`
+**Errors:**
+- `400` — password too short or too weak
+- `404` — user not found in Firebase Auth
+
+---
+
+### 4.7 Send Password Reset Email
+
+#### `POST /users/{uid}/send-reset-email`
 Auth: `require_afu_admin`
 
-Hard delete from Firebase Auth + `users` table.
+Sends a Firebase password reset email to the user's registered address via the Firebase Identity Toolkit REST API. Requires `FIREBASE_API_KEY` env var on the server.
+
+**Response:** `{ "status": "OK" }`
+
+**Errors:**
+- `404` — user not found in Firebase Auth
+- `400` — user has no email address
+- `502` — Firebase REST API call failed
 
 ---
 
@@ -1401,7 +1468,7 @@ Planned endpoints:
 
 | Item | Detail | Target |
 |---|---|---|
-| Users router | Full implementation in v2.81 — shape above is provisional | v2.81 |
+| Users router | ✅ Complete — implemented v2.81, `_build_claims` migrated to PostgreSQL | Done |
 | DG cargo | `Cargo.is_dg` vs `dg_classification` mismatch from V1 migration | v2.82 |
 | Invoice endpoints | No endpoints defined yet — V1 reads still from Datastore | Future |
 | Quotation endpoints | Not yet built for V2 | Future |
@@ -1461,15 +1528,15 @@ Quick reference — which auth level each endpoint requires:
 | `GET /companies/{id}` | `require_auth` |
 | `POST /companies` | `require_afu_admin` |
 | `PATCH /companies/{id}` | `require_afu` |
-| `GET /users` | `require_afu_admin` |
 | `GET /users/me` | `require_auth` |
+| `GET /users` | `require_afu_admin` |
 | `POST /users` | `require_afu_admin` |
 | `PATCH /users/{uid}` | `require_afu_admin` |
-| `PATCH /users/{uid}/access` | `require_afu_admin` |
-| `POST /users/{uid}/reset-password` | `require_afu_admin` |
 | `DELETE /users/{uid}` | `require_afu_admin` |
+| `POST /users/{uid}/reset-password` | `require_afu_admin` |
+| `POST /users/{uid}/send-reset-email` | `require_afu_admin` |
 
 ---
 
-*Last updated: 03 March 2026 — Contract v1.1*  
-*Next update: After v2.81 completes (User shape finalised)*
+*Last updated: 03 March 2026 — Contract v1.2*  
+*Next update: After v2.83 debug session resolves (shipments list empty issue)*
