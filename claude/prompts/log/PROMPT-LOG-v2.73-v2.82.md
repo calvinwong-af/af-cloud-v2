@@ -1,5 +1,20 @@
 # Prompt Completion Log — v2.73–v2.82
 
+### [2026-03-03 09:00 UTC] — v2.77: Split routers/shipments.py into package
+- **Status:** Completed
+- **Tasks:**
+  - Split 118 KB / 3209-line `routers/shipments.py` into `routers/shipments/` package (10 files)
+  - Created: `__init__.py`, `_helpers.py`, `_prompts.py`, `core.py`, `status.py`, `bl.py`, `files.py`, `tasks.py`, `route_nodes.py`, `doc_apply.py`
+  - Deleted `routers/shipments.py`; import path unchanged (`from routers import shipments` / `shipments.router`)
+  - `_helpers.py` = all shared utilities + constants; `_prompts.py` = AI prompt strings only
+  - `get_file_tags` placed in `core.py` (before `get_shipment`) to preserve route priority over `/{shipment_id}`
+  - `generate_tasks` alias fix: `from logic.incoterm_tasks import generate_tasks as generate_incoterm_tasks`
+  - Root path routes changed `""` → `"/"` (list_shipments, create_shipment_manual) to satisfy FastAPI include_router constraint; redirect_slashes=True handles non-slash requests transparently
+  - 29 routes registered; all compile clean; router import verified
+- **Files Modified:**
+  - `af-server/routers/shipments.py` (deleted)
+  - `af-server/routers/shipments/` (10 new files)
+
 ### [2026-03-03 08:00 UTC] — v2.76: AWB apply UX: diff indicator, files tab refresh, loading state
 - **Status:** Completed
 - **Tasks:**

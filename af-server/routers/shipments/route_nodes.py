@@ -1,0 +1,310 @@
+"""
+routers/shipments/route_nodes.py
+
+Route node endpoints and helpers: derive, enrich, assign sequences,
+GET/PUT/PATCH route-nodes.
+"""
+
+import json
+import logging
+from datetime import datetime, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import text
+
+from core.auth import Claims, require_auth
+from core.db import get_db
+from core.exceptions import NotFoundError
+from core import db_queries
+
+from ._helpers import _parse_jsonb, _log_system_action_pg
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Route node helpers
+# ---------------------------------------------------------------------------
+
+def _derive_route_nodes(shipment_data: dict) -> list[dict]:
+    """
+    Derive display-only route nodes from origin/destination port codes.
+    Used when route_nodes is empty on existing shipments.
+    """
+    nodes = []
+    origin_code = shipment_data.get("origin_port_un_code") or shipment_data.get("origin_port") or ""
+    dest_code = shipment_data.get("destination_port_un_code") or shipment_data.get("dest_port") or ""
+
+    if origin_code:
+        nodes.append({
+            "port_un_code": origin_code,
+            "port_name": origin_code,
+            "sequence": 1,
+            "role": "ORIGIN",
+            "scheduled_eta": None,
+            "actual_eta": None,
+            "scheduled_etd": shipment_data.get("etd"),
+            "actual_etd": None,
+        })
+
+    if dest_code:
+        nodes.append({
+            "port_un_code": dest_code,
+            "port_name": dest_code,
+            "sequence": 2 if origin_code else 1,
+            "role": "DESTINATION",
+            "scheduled_eta": shipment_data.get("eta"),
+            "actual_eta": None,
+            "scheduled_etd": None,
+            "actual_etd": None,
+        })
+
+    return nodes
+
+
+def _enrich_route_nodes(conn, nodes: list[dict]) -> list[dict]:
+    """Enrich route nodes with port details from ports table if available."""
+    if not nodes:
+        return nodes
+
+    port_codes = [n.get("port_un_code") for n in nodes if n.get("port_un_code")]
+    if not port_codes:
+        return nodes
+
+    # Batch-fetch port records
+    placeholders = ", ".join(f":p{i}" for i in range(len(port_codes)))
+    params = {f"p{i}": code for i, code in enumerate(port_codes)}
+
+    rows = conn.execute(text(f"""
+        SELECT un_code, name, country_code, port_type
+        FROM ports
+        WHERE un_code IN ({placeholders})
+    """), params).fetchall()
+
+    port_map = {}
+    for r in rows:
+        port_map[r[0]] = {"port_name": r[1] or "", "country": r[2] or "", "port_type": r[3] or ""}
+
+    for node in nodes:
+        port = port_map.get(node.get("port_un_code", ""))
+        if port:
+            node["port_name"] = port["port_name"] or node.get("port_name", "")
+            node["country"] = port["country"]
+            node["port_type"] = port["port_type"]
+
+    return nodes
+
+
+def _assign_sequences(nodes: list[dict]) -> list[dict]:
+    """Auto-assign sequence numbers: ORIGIN=1, TRANSHIP=2..N-1, DESTINATION=N."""
+    # Sort: ORIGIN first, then TRANSHIP in order, then DESTINATION
+    role_order = {"ORIGIN": 0, "TRANSHIP": 1, "DESTINATION": 2}
+    nodes.sort(key=lambda n: (role_order.get(n.get("role", ""), 1), n.get("sequence", 0)))
+
+    for i, node in enumerate(nodes):
+        node["sequence"] = i + 1
+
+    return nodes
+
+
+# ---------------------------------------------------------------------------
+# GET /shipments/{shipment_id}/route-nodes
+# ---------------------------------------------------------------------------
+
+@router.get("/{shipment_id}/route-nodes")
+async def get_route_nodes(
+    shipment_id: str,
+    claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
+):
+    """Get route nodes for a shipment. Derives from ports if not yet saved."""
+    shipment_data = db_queries.get_shipment_by_id(conn, shipment_id)
+    if not shipment_data:
+        raise NotFoundError(f"Shipment {shipment_id} not found")
+
+    # AFC users can only see their own company's shipments
+    if claims.is_afc() and shipment_data.get("company_id") != claims.company_id:
+        raise NotFoundError(f"Shipment {shipment_id} not found")
+
+    nodes = _parse_jsonb(shipment_data.get("route_nodes")) or []
+
+    # Derive from origin/destination if no saved route nodes
+    if not nodes:
+        nodes = _derive_route_nodes(shipment_data)
+
+    # Enrich with port details
+    nodes = _enrich_route_nodes(conn, nodes)
+
+    return {
+        "shipment_id": shipment_id,
+        "route_nodes": nodes,
+        "derived": not bool(shipment_data.get("route_nodes")),
+    }
+
+
+# ---------------------------------------------------------------------------
+# PUT /shipments/{shipment_id}/route-nodes
+# ---------------------------------------------------------------------------
+
+class RouteNodeInput(BaseModel):
+    port_un_code: str
+    port_name: str
+    role: str
+    scheduled_eta: Optional[str] = None
+    actual_eta: Optional[str] = None
+    scheduled_etd: Optional[str] = None
+    actual_etd: Optional[str] = None
+
+
+@router.put("/{shipment_id}/route-nodes")
+async def save_route_nodes(
+    shipment_id: str,
+    nodes: list[RouteNodeInput],
+    claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
+):
+    """Replace route nodes array on a shipment. AFU + AFC Admin/Manager only."""
+    # Permission check
+    if claims.is_afc():
+        if claims.role not in ("AFC-ADMIN", "AFC-M"):
+            raise HTTPException(status_code=403, detail="Only admin/manager can update route nodes")
+
+    # Verify shipment exists
+    row = conn.execute(text("""
+        SELECT id FROM shipments WHERE id = :id
+    """), {"id": shipment_id}).fetchone()
+
+    if not row:
+        raise NotFoundError(f"Shipment {shipment_id} not found")
+
+    # Validate roles
+    roles = [n.role for n in nodes]
+    if roles.count("ORIGIN") != 1:
+        raise HTTPException(status_code=400, detail="Exactly one ORIGIN node required")
+    if roles.count("DESTINATION") != 1:
+        raise HTTPException(status_code=400, detail="Exactly one DESTINATION node required")
+    for r in roles:
+        if r not in ("ORIGIN", "TRANSHIP", "DESTINATION"):
+            raise HTTPException(status_code=400, detail=f"Invalid role: {r}")
+
+    # Build node dicts and assign sequences
+    node_dicts = [n.dict() for n in nodes]
+    node_dicts = _assign_sequences(node_dicts)
+
+    # Sync flat ETD/ETA from ORIGIN and DESTINATION nodes
+    flat_etd = None
+    flat_eta = None
+    for nd in node_dicts:
+        if nd["role"] == "ORIGIN" and nd.get("scheduled_etd"):
+            flat_etd = nd["scheduled_etd"]
+        if nd["role"] == "DESTINATION" and nd.get("scheduled_eta"):
+            flat_eta = nd["scheduled_eta"]
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    set_clauses = ["route_nodes = CAST(:route_nodes AS jsonb)", "updated_at = :now"]
+    params: dict = {"route_nodes": json.dumps(node_dicts), "now": now, "id": shipment_id}
+
+    if flat_etd is not None:
+        set_clauses.append("etd = :etd")
+        params["etd"] = flat_etd
+    if flat_eta is not None:
+        set_clauses.append("eta = :eta")
+        params["eta"] = flat_eta
+
+    conn.execute(text(f"""
+        UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
+    """), params)
+
+    # Enrich for response
+    node_dicts = _enrich_route_nodes(conn, node_dicts)
+
+    # Log
+    _log_system_action_pg(conn, "ROUTE_NODES_UPDATED", shipment_id, claims.uid, claims.email)
+
+    return {
+        "shipment_id": shipment_id,
+        "route_nodes": node_dicts,
+    }
+
+
+# ---------------------------------------------------------------------------
+# PATCH /shipments/{shipment_id}/route-nodes/{sequence}
+# ---------------------------------------------------------------------------
+
+class RouteNodeTimingUpdate(BaseModel):
+    scheduled_eta: Optional[str] = None
+    actual_eta: Optional[str] = None
+    scheduled_etd: Optional[str] = None
+    actual_etd: Optional[str] = None
+
+
+@router.patch("/{shipment_id}/route-nodes/{sequence}")
+async def update_route_node_timing(
+    shipment_id: str,
+    sequence: int,
+    body: RouteNodeTimingUpdate,
+    claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
+):
+    """Update timing on a single route node by sequence number."""
+    # Permission check
+    if claims.is_afc():
+        if claims.role not in ("AFC-ADMIN", "AFC-M"):
+            raise HTTPException(status_code=403, detail="Only admin/manager can update route nodes")
+
+    row = conn.execute(text("""
+        SELECT route_nodes FROM shipments WHERE id = :id
+    """), {"id": shipment_id}).fetchone()
+
+    if not row:
+        raise NotFoundError(f"Shipment {shipment_id} not found")
+
+    nodes = _parse_jsonb(row[0]) or []
+    if not nodes:
+        raise HTTPException(status_code=400, detail="No route nodes saved — use PUT to initialize first")
+
+    # Find node by sequence
+    target = None
+    for nd in nodes:
+        if nd.get("sequence") == sequence:
+            target = nd
+            break
+
+    if target is None:
+        raise NotFoundError(f"Route node with sequence {sequence} not found")
+
+    # Apply timing updates
+    if body.scheduled_eta is not None:
+        target["scheduled_eta"] = body.scheduled_eta
+    if body.actual_eta is not None:
+        target["actual_eta"] = body.actual_eta
+    if body.scheduled_etd is not None:
+        target["scheduled_etd"] = body.scheduled_etd
+    if body.actual_etd is not None:
+        target["actual_etd"] = body.actual_etd
+
+    # Build update
+    set_clauses = ["route_nodes = CAST(:route_nodes AS jsonb)", "updated_at = :now"]
+    params: dict = {"route_nodes": json.dumps(nodes), "now": datetime.now(timezone.utc).isoformat(), "id": shipment_id}
+
+    # Sync flat fields if ORIGIN or DESTINATION
+    if target.get("role") == "ORIGIN" and body.scheduled_etd is not None:
+        set_clauses.append("etd = :etd")
+        params["etd"] = body.scheduled_etd
+    if target.get("role") == "DESTINATION" and body.scheduled_eta is not None:
+        set_clauses.append("eta = :eta")
+        params["eta"] = body.scheduled_eta
+
+    conn.execute(text(f"""
+        UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
+    """), params)
+
+    return {
+        "shipment_id": shipment_id,
+        "node": target,
+    }
