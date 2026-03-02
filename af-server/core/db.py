@@ -55,3 +55,16 @@ def get_db():
         except Exception:
             conn.rollback()
             raise
+
+
+def get_db_direct():
+    """Return a raw synchronous connection for use outside FastAPI dependency injection.
+
+    Caller is responsible for closing the connection:
+        conn = get_db_direct()
+        try:
+            ...
+        finally:
+            conn.close()
+    """
+    return get_engine().connect()

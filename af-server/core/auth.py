@@ -50,7 +50,7 @@ def _get_firebase_app() -> firebase_admin.App:
 
 
 # ---------------------------------------------------------------------------
-# Claims model — what we extract from the verified Firebase token + Datastore
+# Claims model — what we extract from the verified Firebase token + PostgreSQL
 # ---------------------------------------------------------------------------
 
 class Claims(BaseModel):
@@ -62,7 +62,7 @@ class Claims(BaseModel):
     name: Optional[str]         = None
 
     class Config:
-        # pydantic v1 — allow extra fields from Datastore without error
+        # pydantic v1 — allow extra fields without error
         extra = "ignore"
 
     # Convenience helpers
@@ -122,73 +122,45 @@ async def _build_claims(decoded_token: dict) -> Claims:
     """
     Build a Claims object from the verified Firebase token.
 
-    The Firebase token itself carries the uid and email. Role and account_type
-    come from Datastore (UserIAM + UserAccount Kinds) — same logic as V1 but
-    done here in the server rather than in the external auth service.
-
-    Note: For now we read these from the token's custom claims if present
-    (set by Firebase Admin when a user is created/updated via createUserAction).
-    Full Datastore lookup is added when the users router is wired up.
+    The Firebase token carries uid and email. Role, account_type, company_id,
+    and valid_access are read from the PostgreSQL users table (single keyed lookup).
     """
-    from core.datastore import get_client
+    from sqlalchemy import text
+    from core.db import get_db_direct
 
     uid = decoded_token.get("uid")
     email = decoded_token.get("email", "")
 
-    # --- Read UserIAM and UserAccount from Datastore ---
-    client = get_client()
+    conn = get_db_direct()
+    try:
+        row = conn.execute(
+            text("""
+                SELECT account_type, role, company_id, valid_access,
+                       first_name, last_name
+                FROM users
+                WHERE uid = :uid
+            """),
+            {"uid": uid},
+        ).fetchone()
+    finally:
+        conn.close()
 
-    # UserIAM — role, account_type, valid_access, company_id
-    iam_key = client.key("UserIAM", uid)
-    iam = client.get(iam_key)
-
-    # UserAccount — account_type (primary source, per v2.10 fix)
-    account_key = client.key("UserAccount", uid)
-    account = client.get(account_key)
-
-    if not iam:
+    if not row or not row.valid_access:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account not found or access revoked",
         )
 
-    # valid_access gate — same as V1
-    if not iam.get("valid_access", False):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account access has been revoked",
-        )
-
-    # account_type: UserAccount is primary, UserIAM is fallback (v2.10 bug fix)
-    account_type = (
-        (account.get("account_type") if account else None)
-        or iam.get("account_type")
-        or ""
-    )
-
-    role = iam.get("role", "")
-
-    # CompanyUserAccount is the primary source of company_id for AFC users
-    cua_key = client.key("CompanyUserAccount", uid)
-    cua = client.get(cua_key)
-    company_id = (
-        (cua.get("company_id") if cua else None)
-        or iam.get("company_id")
-        or (account.get("company_id") if account else None)
-    )
-
-    name = (
-        (account.get("name") if account else None)
-        or iam.get("name")
-        or decoded_token.get("name")
-    )
+    name = None
+    if row.first_name or row.last_name:
+        name = f"{row.first_name or ''} {row.last_name or ''}".strip() or None
 
     return Claims(
         uid=uid,
         email=email,
-        account_type=account_type,
-        role=role,
-        company_id=company_id,
+        account_type=row.account_type,
+        role=row.role,
+        company_id=row.company_id,
         name=name,
     )
 

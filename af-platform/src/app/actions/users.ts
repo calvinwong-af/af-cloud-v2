@@ -1,9 +1,7 @@
 'use server';
 
 import { getUsers, type UserRecord } from '@/lib/users';
-import { verifySessionAndRole, logAction } from '@/lib/auth-server';
-import { getDatastore } from '@/lib/datastore-query';
-import { getFirebaseAdmin } from '@/lib/firebase-admin';
+import { verifySessionAndRole } from '@/lib/auth-server';
 
 // ---------------------------------------------------------------------------
 // Lightweight current-user profile (for display — no role gate)
@@ -38,39 +36,31 @@ export async function getCurrentUserProfileAction(): Promise<UserProfile> {
     const idToken = cookieStore.get('af-session')?.value;
     if (!idToken) return emptyProfile;
 
-    const admin = getFirebaseAdmin();
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
-    const uid = decodedToken.uid;
+    const url = new URL('/api/v2/users/me', process.env.AF_SERVER_URL);
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${idToken}` },
+      cache: 'no-store',
+    });
 
-    const datastore = getDatastore();
-    const [[iamEntity], [userAccountEntity], [cuaEntity]] = await Promise.all([
-      datastore.get(datastore.key(['UserIAM', uid])),
-      datastore.get(datastore.key(['UserAccount', uid])),
-      datastore.get(datastore.key(['CompanyUserAccount', uid])),
-    ]);
+    if (!res.ok) return emptyProfile;
 
-    const companyId = (cuaEntity?.company_id as string) ?? null;
-
-    // Resolve company name if company_id exists
-    let companyName: string | null = null;
-    if (companyId) {
-      const [companyEntity] = await datastore.get(datastore.key(['Company', companyId]));
-      companyName = (companyEntity?.name as string) ?? (companyEntity?.short_name as string) ?? null;
-    }
+    const json = await res.json();
+    const d = json.data;
+    if (!d) return emptyProfile;
 
     return {
-      uid,
-      role: (iamEntity?.role as string) ?? null,
-      account_type: (userAccountEntity?.account_type as string) ?? (iamEntity?.account_type as string) ?? null,
-      first_name: (userAccountEntity?.first_name as string) ?? null,
-      last_name: (userAccountEntity?.last_name as string) ?? null,
-      email: (userAccountEntity?.email as string) ?? decodedToken.email ?? null,
-      phone_number: (userAccountEntity?.phone_number as string) ?? null,
-      company_id: companyId,
-      company_name: companyName,
-      valid_access: Boolean(iamEntity?.valid_access),
-      last_login: (iamEntity?.last_login as string) ?? null,
-      created_at: (userAccountEntity?.created as string) ?? null,
+      uid: d.uid ?? null,
+      role: d.role ?? null,
+      account_type: d.account_type ?? null,
+      first_name: d.first_name ?? null,
+      last_name: d.last_name ?? null,
+      email: d.email ?? null,
+      phone_number: d.phone_number ?? null,
+      company_id: d.company_id ?? null,
+      company_name: d.company_name ?? null,
+      valid_access: Boolean(d.valid_access),
+      last_login: d.last_login ?? null,
+      created_at: d.created_at ?? null,
     };
   } catch {
     return emptyProfile;
@@ -84,6 +74,52 @@ type ActionResult<T> =
 export async function fetchUsersAction(): Promise<UserRecord[]> {
   return getUsers();
 }
+
+// ---------------------------------------------------------------------------
+// Shared: get idToken from session cookie
+// ---------------------------------------------------------------------------
+
+async function getIdToken(): Promise<string | null> {
+  const { cookies } = await import('next/headers');
+  const cookieStore = cookies();
+  return cookieStore.get('af-session')?.value ?? null;
+}
+
+async function callServer(
+  method: string,
+  path: string,
+  idToken: string,
+  body?: unknown,
+): Promise<{ ok: boolean; status: number; data: unknown }> {
+  const url = new URL(`/api/v2${path}`, process.env.AF_SERVER_URL);
+  const res = await fetch(url.toString(), {
+    method,
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    cache: 'no-store',
+  });
+  let data: unknown = null;
+  try {
+    data = await res.json();
+  } catch {
+    // non-JSON response
+  }
+  return { ok: res.ok, status: res.status, data };
+}
+
+function serverError(resp: { status: number; data: unknown }): string {
+  if (resp.data && typeof resp.data === 'object' && 'detail' in resp.data) {
+    return String((resp.data as Record<string, unknown>).detail);
+  }
+  return `Server responded ${resp.status}`;
+}
+
+// ---------------------------------------------------------------------------
+// Create user
+// ---------------------------------------------------------------------------
 
 export interface CreateUserInput {
   email: string;
@@ -100,11 +136,8 @@ export async function createUserAction(
   input: CreateUserInput
 ): Promise<ActionResult<{ uid: string }>> {
   try {
-    // Auth — only AFU-ADMIN (internal staff admin) can create users
     const session = await verifySessionAndRole(['AFU-ADMIN']);
-    if (!session.valid) {
-      return { success: false, error: 'Unauthorised' };
-    }
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
 
     // Validate inputs
     if (!input.email?.trim()) return { success: false, error: 'Email is required' };
@@ -116,196 +149,34 @@ export async function createUserAction(
     if (input.account_type === 'AFC' && !input.company_id)
       return { success: false, error: 'Company is required for customer accounts' };
 
-    const admin = getFirebaseAdmin();
-    const datastore = getDatastore();
-    const now = new Date().toISOString();
+    const idToken = await getIdToken();
+    if (!idToken) return { success: false, error: 'No session token' };
 
-    // 1. Create Firebase Auth user
-    const firebaseUser = await admin.auth().createUser({
+    const resp = await callServer('POST', '/users', idToken, {
       email: input.email.trim().toLowerCase(),
       password: input.password,
-      displayName: `${input.first_name.trim()} ${input.last_name.trim()}`,
-    });
-    const uid = firebaseUser.uid;
-
-    // 2. Create UserAccount entity
-    const userAccountKey = datastore.key(['UserAccount', uid]);
-    await datastore.save({
-      key: userAccountKey,
-      data: {
-        uid,
-        email: input.email.trim().toLowerCase(),
-        first_name: input.first_name.trim(),
-        last_name: input.last_name.trim(),
-        phone_number: input.phone_number?.trim() || null,
-        account_type: input.account_type,
-        email_validated: false,
-        status: true,
-        user: session.email,
-        created: now,
-        updated: now,
-      },
+      first_name: input.first_name.trim(),
+      last_name: input.last_name.trim(),
+      phone_number: input.phone_number?.trim() || null,
+      account_type: input.account_type,
+      role: input.role,
+      company_id: input.company_id || null,
     });
 
-    // 3. Create UserIAM entity
-    const iamKey = datastore.key(['UserIAM', uid]);
-    await datastore.save({
-      key: iamKey,
-      data: {
-        uid,
-        role: input.role,
-        account_type: input.account_type,
-        valid_access: true,
-        active: true,
-        user: session.email,
-        updated: now,
-      },
-    });
+    if (!resp.ok) return { success: false, error: serverError(resp) };
 
-    // 4. Create CompanyUserAccount if AFC (customer)
-    if (input.account_type === 'AFC' && input.company_id) {
-      const cuaKey = datastore.key(['CompanyUserAccount', uid]);
-      await datastore.save({
-        key: cuaKey,
-        data: {
-          uid,
-          company_id: input.company_id,
-          company_key: datastore.key(['Company', input.company_id]),
-          user: session.email,
-          updated: now,
-        },
-      });
-    }
-
-    // 5. Log the action
-    await logAction({
-      uid: session.uid,
-      email: session.email,
-      account_type: session.account_type,
-      action: 'USER_CREATE',
-      entity_kind: 'UserAccount',
-      entity_id: uid,
-      after: { email: input.email, account_type: input.account_type, role: input.role },
-      success: true,
-    });
-
-    return { success: true, data: { uid } };
+    const uid = (resp.data as Record<string, unknown> | null)?.['data'] as { uid: string } | undefined;
+    return { success: true, data: { uid: uid?.uid ?? '' } };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[createUserAction]', message);
-
-    // Firebase Auth error codes — surface meaningful messages
-    if (message.includes('email-already-exists')) {
-      return { success: false, error: 'An account with this email already exists' };
-    }
-    if (message.includes('invalid-email')) {
-      return { success: false, error: 'Invalid email address' };
-    }
-    if (message.includes('weak-password')) {
-      return { success: false, error: 'Password is too weak' };
-    }
-
     return { success: false, error: 'Failed to create user. Please try again.' };
   }
 }
 
-export async function deactivateUserAction(
-  targetUid: string
-): Promise<ActionResult<void>> {
-  try {
-    const session = await verifySessionAndRole(['AFU-ADMIN']);
-    if (!session.valid) return { success: false, error: 'Unauthorised' };
-    if (!targetUid) return { success: false, error: 'Invalid user ID' };
-    if (targetUid === session.uid)
-      return { success: false, error: 'You cannot deactivate your own account' };
-
-    const admin = getFirebaseAdmin();
-    const datastore = getDatastore();
-    const now = new Date().toISOString();
-
-    // 1. Disable Firebase Auth account
-    await admin.auth().updateUser(targetUid, { disabled: true });
-
-    // 2. Set valid_access: false on UserIAM
-    const iamKey = datastore.key(['UserIAM', targetUid]);
-    const [iamEntity] = await datastore.get(iamKey);
-    if (iamEntity) {
-      await datastore.save({
-        key: iamKey,
-        data: { ...iamEntity, valid_access: false, active: false, updated: now },
-      });
-    }
-
-    // 3. Set status: false on UserAccount
-    const accountKey = datastore.key(['UserAccount', targetUid]);
-    const [accountEntity] = await datastore.get(accountKey);
-    if (accountEntity) {
-      await datastore.save({
-        key: accountKey,
-        data: { ...accountEntity, status: false, updated: now },
-      });
-    }
-
-    await logAction({
-      uid: session.uid,
-      email: session.email,
-      account_type: session.account_type,
-      action: 'USER_DEACTIVATE',
-      entity_kind: 'UserAccount',
-      entity_id: targetUid,
-      success: true,
-    });
-
-    return { success: true, data: undefined };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[deactivateUserAction]', message);
-    return { success: false, error: 'Failed to deactivate user. Please try again.' };
-  }
-}
-
-export async function deleteUserAction(
-  targetUid: string
-): Promise<ActionResult<void>> {
-  try {
-    const session = await verifySessionAndRole(['AFU-ADMIN']);
-    if (!session.valid) return { success: false, error: 'Unauthorised' };
-    if (!targetUid) return { success: false, error: 'Invalid user ID' };
-    if (targetUid === session.uid)
-      return { success: false, error: 'You cannot delete your own account' };
-
-    const admin = getFirebaseAdmin();
-    const datastore = getDatastore();
-
-    // 1. Delete Firebase Auth account
-    await admin.auth().deleteUser(targetUid);
-
-    // 2. Delete all Datastore entities for this user
-    const keys = [
-      datastore.key(['UserAccount', targetUid]),
-      datastore.key(['UserIAM', targetUid]),
-      datastore.key(['CompanyUserAccount', targetUid]),
-      datastore.key(['UserDashboard', targetUid]),
-    ];
-    await datastore.delete(keys);
-
-    await logAction({
-      uid: session.uid,
-      email: session.email,
-      account_type: session.account_type,
-      action: 'USER_DELETE_PERMANENT',
-      entity_kind: 'UserAccount',
-      entity_id: targetUid,
-      success: true,
-    });
-
-    return { success: true, data: undefined };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[deleteUserAction]', message);
-    return { success: false, error: 'Failed to delete user. Please try again.' };
-  }
-}
+// ---------------------------------------------------------------------------
+// Update user
+// ---------------------------------------------------------------------------
 
 export interface UpdateUserInput {
   first_name?: string;
@@ -325,111 +196,11 @@ export async function updateUserAction(
     if (!session.valid) return { success: false, error: 'Unauthorised' };
     if (!targetUid) return { success: false, error: 'Invalid user ID' };
 
-    const datastore = getDatastore();
-    const now = new Date().toISOString();
+    const idToken = await getIdToken();
+    if (!idToken) return { success: false, error: 'No session token' };
 
-    // Update UserAccount (name, phone)
-    if (input.first_name !== undefined || input.last_name !== undefined || input.phone_number !== undefined) {
-      const accountKey = datastore.key(['UserAccount', targetUid]);
-      const [accountEntity] = await datastore.get(accountKey);
-      if (accountEntity) {
-        const updated = {
-          ...accountEntity,
-          ...(input.first_name !== undefined && { first_name: input.first_name.trim() }),
-          ...(input.last_name !== undefined && { last_name: input.last_name.trim() }),
-          ...(input.phone_number !== undefined && { phone_number: input.phone_number.trim() || null }),
-          updated: now,
-        };
-        await datastore.save({ key: accountKey, data: updated });
-
-        // Sync displayName in Firebase Auth
-        if (input.first_name !== undefined || input.last_name !== undefined) {
-          const admin = getFirebaseAdmin();
-          const firstName = input.first_name?.trim() ?? accountEntity.first_name ?? '';
-          const lastName = input.last_name?.trim() ?? accountEntity.last_name ?? '';
-          await admin.auth().updateUser(targetUid, {
-            displayName: `${firstName} ${lastName}`.trim(),
-          });
-        }
-      }
-    }
-
-    // Update CompanyUserAccount (company assignment — AFC users only)
-    if (input.company_id !== undefined) {
-      const cuaKey = datastore.key(['CompanyUserAccount', targetUid]);
-      const [cuaEntity] = await datastore.get(cuaKey);
-      const companyKey = input.company_id
-        ? datastore.key(['Company', input.company_id])
-        : null;
-
-      if (cuaEntity) {
-        // Update existing record
-        await datastore.save({
-          key: cuaKey,
-          data: {
-            ...cuaEntity,
-            company_id: input.company_id || null,
-            company_key: companyKey,
-            updated: now,
-          },
-        });
-      } else if (input.company_id) {
-        // Create new CompanyUserAccount if one doesn't exist
-        await datastore.save({
-          key: cuaKey,
-          data: {
-            uid: targetUid,
-            company_id: input.company_id,
-            company_key: companyKey,
-            user: session.email,
-            updated: now,
-          },
-        });
-      }
-    }
-
-    // Update UserIAM (role, valid_access)
-    if (input.role !== undefined || input.valid_access !== undefined) {
-      const iamKey = datastore.key(['UserIAM', targetUid]);
-      const [iamEntity] = await datastore.get(iamKey);
-      if (iamEntity) {
-        const updated = {
-          ...iamEntity,
-          ...(input.role !== undefined && { role: input.role }),
-          ...(input.valid_access !== undefined && {
-            valid_access: input.valid_access,
-            active: input.valid_access,
-          }),
-          updated: now,
-        };
-        await datastore.save({ key: iamKey, data: updated });
-
-        // Re-enabling access: re-enable Firebase Auth + restore UserAccount status
-        if (input.valid_access === true) {
-          const admin = getFirebaseAdmin();
-          await admin.auth().updateUser(targetUid, { disabled: false });
-          const accountKey = datastore.key(['UserAccount', targetUid]);
-          const [accountEntity] = await datastore.get(accountKey);
-          if (accountEntity && !accountEntity.status) {
-            await datastore.save({
-              key: accountKey,
-              data: { ...accountEntity, status: true, updated: now },
-            });
-          }
-        }
-      }
-    }
-
-    await logAction({
-      uid: session.uid,
-      email: session.email,
-      account_type: session.account_type,
-      action: 'USER_UPDATE',
-      entity_kind: 'UserAccount',
-      entity_id: targetUid,
-      after: input as unknown as Record<string, unknown>,
-      success: true,
-    });
+    const resp = await callServer('PATCH', `/users/${targetUid}`, idToken, input);
+    if (!resp.ok) return { success: false, error: serverError(resp) };
 
     return { success: true, data: undefined };
   } catch (err) {
@@ -439,68 +210,65 @@ export async function updateUserAction(
   }
 }
 
-export async function reactivateUserAction(
-  targetUid: string
-): Promise<ActionResult<void>> {
-  return updateUserAction(targetUid, { valid_access: true });
-}
+// ---------------------------------------------------------------------------
+// Deactivate / reactivate user
+// ---------------------------------------------------------------------------
 
-export async function sendPasswordResetEmailAction(
+export async function deactivateUserAction(
   targetUid: string
 ): Promise<ActionResult<void>> {
   try {
     const session = await verifySessionAndRole(['AFU-ADMIN']);
     if (!session.valid) return { success: false, error: 'Unauthorised' };
     if (!targetUid) return { success: false, error: 'Invalid user ID' };
+    if (targetUid === session.uid)
+      return { success: false, error: 'You cannot deactivate your own account' };
 
-    const admin = getFirebaseAdmin();
+    return updateUserAction(targetUid, { valid_access: false });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[deactivateUserAction]', message);
+    return { success: false, error: 'Failed to deactivate user. Please try again.' };
+  }
+}
 
-    // Fetch email from Firebase Auth
-    const userRecord = await admin.auth().getUser(targetUid);
-    if (!userRecord.email) return { success: false, error: 'User has no email address' };
+export async function reactivateUserAction(
+  targetUid: string
+): Promise<ActionResult<void>> {
+  return updateUserAction(targetUid, { valid_access: true });
+}
 
-    const apiKey = process.env.FIREBASE_API_KEY ?? process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+// ---------------------------------------------------------------------------
+// Delete user
+// ---------------------------------------------------------------------------
 
-    if (!apiKey) {
-      return { success: false, error: 'Server configuration error: missing API key' };
-    }
+export async function deleteUserAction(
+  targetUid: string
+): Promise<ActionResult<void>> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+    if (!targetUid) return { success: false, error: 'Invalid user ID' };
+    if (targetUid === session.uid)
+      return { success: false, error: 'You cannot delete your own account' };
 
-    const res = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requestType: 'PASSWORD_RESET',
-          email: userRecord.email,
-        }),
-      }
-    );
+    const idToken = await getIdToken();
+    if (!idToken) return { success: false, error: 'No session token' };
 
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}));
-      console.error('[sendPasswordResetEmailAction] Firebase error:', errBody);
-      return { success: false, error: 'Failed to send reset email. Please try again.' };
-    }
-
-    await logAction({
-      uid: session.uid,
-      email: session.email,
-      account_type: session.account_type,
-      action: 'USER_SEND_RESET_EMAIL',
-      entity_kind: 'UserAccount',
-      entity_id: targetUid,
-      after: { target_email: userRecord.email },
-      success: true,
-    });
+    const resp = await callServer('DELETE', `/users/${targetUid}`, idToken);
+    if (!resp.ok) return { success: false, error: serverError(resp) };
 
     return { success: true, data: undefined };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[sendPasswordResetEmailAction]', message);
-    return { success: false, error: 'Failed to send reset email. Please try again.' };
+    console.error('[deleteUserAction]', message);
+    return { success: false, error: 'Failed to delete user. Please try again.' };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Reset password
+// ---------------------------------------------------------------------------
 
 export async function resetPasswordAction(
   targetUid: string,
@@ -513,18 +281,13 @@ export async function resetPasswordAction(
     if (!newPassword || newPassword.length < 8)
       return { success: false, error: 'Password must be at least 8 characters' };
 
-    const admin = getFirebaseAdmin();
-    await admin.auth().updateUser(targetUid, { password: newPassword });
+    const idToken = await getIdToken();
+    if (!idToken) return { success: false, error: 'No session token' };
 
-    await logAction({
-      uid: session.uid,
-      email: session.email,
-      account_type: session.account_type,
-      action: 'USER_RESET_PASSWORD',
-      entity_kind: 'UserAccount',
-      entity_id: targetUid,
-      success: true,
+    const resp = await callServer('POST', `/users/${targetUid}/reset-password`, idToken, {
+      new_password: newPassword,
     });
+    if (!resp.ok) return { success: false, error: serverError(resp) };
 
     return { success: true, data: undefined };
   } catch (err) {
@@ -533,5 +296,31 @@ export async function resetPasswordAction(
     if (message.includes('weak-password'))
       return { success: false, error: 'Password is too weak. Use at least 8 characters.' };
     return { success: false, error: 'Failed to reset password. Please try again.' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Send password reset email
+// ---------------------------------------------------------------------------
+
+export async function sendPasswordResetEmailAction(
+  targetUid: string
+): Promise<ActionResult<void>> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+    if (!targetUid) return { success: false, error: 'Invalid user ID' };
+
+    const idToken = await getIdToken();
+    if (!idToken) return { success: false, error: 'No session token' };
+
+    const resp = await callServer('POST', `/users/${targetUid}/send-reset-email`, idToken);
+    if (!resp.ok) return { success: false, error: serverError(resp) };
+
+    return { success: true, data: undefined };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[sendPasswordResetEmailAction]', message);
+    return { success: false, error: 'Failed to send reset email. Please try again.' };
   }
 }

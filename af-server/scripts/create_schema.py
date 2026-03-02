@@ -123,6 +123,25 @@ CREATE TABLE IF NOT EXISTS file_tags (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS users (
+    uid                 TEXT        PRIMARY KEY,
+    email               TEXT        NOT NULL UNIQUE,
+    first_name          TEXT        NOT NULL DEFAULT '',
+    last_name           TEXT        NOT NULL DEFAULT '',
+    phone_number        TEXT,
+    account_type        TEXT        NOT NULL DEFAULT 'AFC',
+    role                TEXT        NOT NULL DEFAULT '',
+    company_id          TEXT,
+    valid_access        BOOLEAN     NOT NULL DEFAULT TRUE,
+    email_validated     BOOLEAN     NOT NULL DEFAULT FALSE,
+    last_login          TEXT,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_users_account_type ON users(account_type);
+CREATE INDEX IF NOT EXISTS idx_users_company_id   ON users(company_id);
+CREATE INDEX IF NOT EXISTS idx_users_email        ON users(email);
+
 CREATE TABLE IF NOT EXISTS system_logs (
     id                  BIGSERIAL   PRIMARY KEY,
     action              TEXT        NOT NULL,
