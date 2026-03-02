@@ -1,5 +1,33 @@
 # Prompt Completion Log — v2.73–v2.82
 
+### [2026-03-03 16:30 UTC] — v2.82: verifySessionAndRole → af-server, DG edits, bug fixes
+- **Status:** Partial (Bugs 3 and 4 deferred)
+- **Tasks:**
+  - Priority 1: `auth-server.ts` — `verifySessionAndRole` now calls `GET /api/v2/users/me` on af-server instead of reading Datastore; removed all debug console.log lines from hot auth path; kept `logAction()` unchanged (still uses Datastore)
+  - Priority 2: `cloudbuild.yaml` — restored `AF_SERVER_URL=https://api.accelefreight.com` (was pointing to internal Cloud Run URL)
+  - Priority 3: Removed 2 debug `console.log` lines from `getShipmentListAction` in `actions/shipments.ts`
+  - Bug 1: `formatFileSize` null guard in `ShipmentFilesTab.tsx` — fixes NaN KB for files with missing `file_size`
+  - Bug 2: `ShipmentFilesTab` always mounted (with CSS hidden when inactive) so `onFileCountChange` fires on page load — fixes files tab badge pre-population
+  - Bug 3: Deferred — AWB/BL party diff investigation requires further analysis of apply flow
+  - Bug 4: Deferred — cannot reproduce duplicate company section from code review; needs runtime testing
+  - Bug 5: `migrate_005_remove_mypkg_n.py` — migration script to delete MYPKG_N standalone port and update any referencing shipments
+  - Bug 6: DG indicator in Cargo SectionCard — shows amber DG badge when `cargo.is_dg` is true
+  - Bug 7: Inline DG edit in Cargo section — toggle `is_dg` + `dg_description` textarea, saves via new `PATCH /api/v2/shipments/{id}/cargo` endpoint (af-server); AFU-only
+  - DG Feature: Added `cargo_is_dg?: boolean` to `ShipmentListItem` and `Cargo` interfaces; server-side already returns the field correctly
+  - New af-server endpoint: `PATCH /{shipment_id}/cargo` in `routers/shipments/core.py`
+  - New platform action: `patchShipmentCargoAction` in `shipments-write.ts`
+- **Files Modified:**
+  - `af-platform/src/lib/auth-server.ts`
+  - `af-platform/cloudbuild.yaml`
+  - `af-platform/src/app/actions/shipments.ts`
+  - `af-platform/src/app/actions/shipments-write.ts`
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx`
+  - `af-platform/src/components/shipments/ShipmentFilesTab.tsx`
+  - `af-platform/src/lib/types.ts`
+  - `af-server/routers/shipments/core.py`
+  - `af-server/migrate_005_remove_mypkg_n.py` (new)
+- **Notes:** Bugs 3 (AWB diff) and 4 (duplicate company) deferred to v2.83. Bug 5 script created but not run — needs to be executed against production DB. `logAction()` still uses Datastore (separate migration deferred to v2.83+).
+
 ### [2026-03-03 14:30 UTC] — v2.81: Migrate user data from Datastore to PostgreSQL
 - **Status:** Completed
 - **Tasks:**
