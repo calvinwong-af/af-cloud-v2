@@ -1,5 +1,16 @@
 # Prompt Completion Log — v2.53–v2.62
 
+### [2026-03-03 02:00 UTC] — MC-06: TypeDetailsCard order type inference fix
+- **Status:** Completed
+- **Tasks:**
+  - Updated TypeDetailsCard to accept `orderType` prop instead of reading missing `td.type`
+  - Updated call site to pass `order.order_type`
+  - Added `type` field to `type_details` JSONB in `create_shipment_manual` backend
+  - Fixed TypeScript build error with discriminated union narrowing via type assertions
+- **Files Modified:**
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — TypeDetailsCard signature, type checks, call site
+  - `af-server/routers/shipments.py` — type_details write in create_shipment_manual
+
 ### [2026-03-02 23:00 UTC] — BL Port Save Fix: origin/destination assembly + ETD refresh
 - **Status:** Completed
 - **Tasks:**
