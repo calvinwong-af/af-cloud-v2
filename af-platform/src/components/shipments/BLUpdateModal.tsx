@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   Upload, CheckCircle, AlertTriangle, X, Loader2, Ship, Plus,
 } from 'lucide-react';
@@ -48,8 +48,18 @@ export interface ParsedBL {
   cargo_items: BLCargoItem[] | null;
 }
 
+interface Port {
+  un_code: string;
+  name: string;
+  country: string;
+  port_type: string;
+  has_terminals: boolean;
+  terminals: Array<{ terminal_id: string; name: string; is_default: boolean }>;
+}
+
 interface Props {
   shipmentId: string;
+  ports: Port[];
   onClose: () => void;
   onSuccess: () => void;
   initialParsed?: ParsedBL | null;
@@ -102,9 +112,170 @@ function normaliseDateToISO(raw: string | null | undefined): string {
 const inputBase = 'w-full px-3 py-2 text-sm border rounded-lg text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent';
 const prefilled = 'bg-[#f0f7ff] border-[#93c5fd] font-medium';
 
+// ─── Combobox ─────────────────────────────────────────────────────────────────
+
+function Combobox({ value, onChange, options, placeholder }: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string; sublabel?: string }[];
+  placeholder?: string;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [highlighted, setHighlighted] = useState<number>(-1);
+  const ref = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!value) setQuery('');
+  }, [value]);
+
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setHighlighted(-1);
+        const selected = options.find(o => o.value === value);
+        setQuery(selected?.label ?? '');
+      }
+    }
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [value, options]);
+
+  useEffect(() => {
+    if (highlighted >= 0 && listRef.current) {
+      const item = listRef.current.children[highlighted] as HTMLElement;
+      item?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [highlighted]);
+
+  const filtered = query.trim().length === 0
+    ? options.slice(0, 80)
+    : options.filter(o =>
+        o.label.toLowerCase().includes(query.toLowerCase()) ||
+        o.value.toLowerCase().includes(query.toLowerCase()) ||
+        (o.sublabel ?? '').toLowerCase().includes(query.toLowerCase())
+      ).slice(0, 80);
+
+  const selectedLabel = options.find(o => o.value === value)?.label ?? '';
+  const inputValue = open ? query : selectedLabel;
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!open) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter') {
+        setQuery('');
+        setOpen(true);
+        setHighlighted(0);
+        e.preventDefault();
+      }
+      return;
+    }
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setHighlighted(h => Math.min(h + 1, filtered.length - 1));
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setHighlighted(h => Math.max(h - 1, 0));
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (highlighted >= 0 && filtered[highlighted]) {
+          const chosen = filtered[highlighted];
+          onChange(chosen.value);
+          setQuery(chosen.label);
+          setOpen(false);
+          setHighlighted(-1);
+        }
+        break;
+      case 'Escape':
+        setOpen(false);
+        setHighlighted(-1);
+        {
+          const selected = options.find(o => o.value === value);
+          setQuery(selected?.label ?? '');
+        }
+        break;
+      case 'Tab':
+        setOpen(false);
+        setHighlighted(-1);
+        break;
+    }
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <input
+        type="text"
+        value={inputValue}
+        onChange={e => {
+          setQuery(e.target.value);
+          setOpen(true);
+          setHighlighted(0);
+          if (e.target.value === '') onChange('');
+        }}
+        onFocus={() => {
+          setQuery('');
+          setOpen(true);
+          setHighlighted(-1);
+        }}
+        onMouseDown={() => {
+          if (!open) {
+            setQuery('');
+            setOpen(true);
+            setHighlighted(-1);
+          }
+        }}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        autoComplete="off"
+        className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent"
+      />
+      {open && filtered.length > 0 && (
+        <div
+          ref={listRef}
+          className="absolute z-50 w-full mt-1 bg-white border border-[var(--border)] rounded-lg shadow-lg max-h-56 overflow-y-auto"
+        >
+          {filtered.map((o, i) => (
+            <div
+              key={o.value}
+              onMouseDown={e => {
+                e.preventDefault();
+                onChange(o.value);
+                setQuery(o.label);
+                setOpen(false);
+                setHighlighted(-1);
+              }}
+              onMouseEnter={() => setHighlighted(i)}
+              className={`px-3 py-2 text-sm cursor-pointer ${
+                i === highlighted
+                  ? 'bg-[var(--sky-mist)]'
+                  : o.value === value
+                  ? 'bg-[var(--sky-pale)]'
+                  : 'hover:bg-[var(--sky-mist)]'
+              }`}
+            >
+              <div className="text-[var(--text)]">{o.label}</div>
+              {o.sublabel && <div className="text-xs text-[var(--text-muted)]">{o.sublabel}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+      {open && filtered.length === 0 && query.trim().length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-[var(--border)] rounded-lg shadow-lg px-3 py-2 text-sm text-[var(--text-muted)]">
+          No results for &quot;{query}&quot;
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function BLUpdateModal({ shipmentId, onClose, onSuccess, initialParsed, skipFileSave }: Props) {
+export default function BLUpdateModal({ shipmentId, ports, onClose, onSuccess, initialParsed, skipFileSave }: Props) {
   const hasInitial = !!initialParsed;
   const [phase, setPhase] = useState<Phase>(hasInitial ? 'preview' : 'upload');
   const [error, setError] = useState<string | null>(null);
@@ -128,6 +299,16 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess, initialP
   const [notifyPartyName, setNotifyPartyName] = useState(initialParsed?.notify_party_name ?? '');
   const [containers, setContainers] = useState<BLContainer[]>(initialParsed?.containers ?? []);
   const [cargoItems, setCargoItems] = useState<BLCargoItem[]>(initialParsed?.cargo_items ?? []);
+  const [originPortCode, setOriginPortCode] = useState<string>('');
+  const [destPortCode, setDestPortCode] = useState<string>('');
+
+  const seaPortOptions = ports
+    .filter(p => !p.port_type?.toLowerCase().includes('air'))
+    .map(p => ({
+      value: p.un_code,
+      label: p.name || p.un_code,
+      sublabel: `${p.un_code}${p.country ? ' · ' + p.country : ''}`,
+    }));
 
   const handleFile = useCallback(async (file: File) => {
     setPhase('parsing');
@@ -150,8 +331,12 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess, initialP
         return;
       }
 
-      const data = result.data as { parsed: ParsedBL };
-      const p = data.parsed;
+      const fullResult = result.data as {
+        parsed: ParsedBL;
+        origin_un_code: string | null;
+        destination_un_code: string | null;
+      };
+      const p = fullResult.parsed;
       setParsed(p);
 
       // Pre-fill form — carrier_agent falls back to carrier for backward compat
@@ -167,6 +352,8 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess, initialP
       setNotifyPartyName(p.notify_party_name ?? '');
       setContainers(p.containers ?? []);
       setCargoItems(p.cargo_items ?? []);
+      setOriginPortCode(fullResult.origin_un_code ?? '');
+      setDestPortCode(fullResult.destination_un_code ?? '');
 
       setPhase('preview');
     } catch (err) {
@@ -192,6 +379,8 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess, initialP
       if (consigneeName)     formData.append('consignee_name',    consigneeName);
       if (consigneeAddress)  formData.append('consignee_address', consigneeAddress);
       if (notifyPartyName)   formData.append('notify_party_name', notifyPartyName);
+      if (originPortCode) formData.append('origin_port', originPortCode);
+      if (destPortCode)   formData.append('dest_port',   destPortCode);
       // Raw parsed BL values (for bl_document storage — never edited)
       if (parsed?.shipper_name)      formData.append('bl_shipper_name',      parsed.shipper_name);
       if (parsed?.shipper_address)   formData.append('bl_shipper_address',   parsed.shipper_address);
@@ -234,6 +423,7 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess, initialP
     }
   }, [shipmentId, waybillNumber, carrierAgent, vesselName, voyageNumber, etd,
     shipperName, shipperAddress, consigneeName, consigneeAddress, notifyPartyName,
+    originPortCode, destPortCode,
     containers, cargoItems, blFile, parsed, onSuccess, skipFileSave]);
 
   return (
@@ -348,6 +538,43 @@ export default function BLUpdateModal({ shipmentId, onClose, onSuccess, initialP
             <div>
               <FieldLabel>ETD (On Board Date)</FieldLabel>
               <DateTimeInput value={etd} onChange={setEtd} className={`${inputBase} w-56 ${etd ? prefilled : ''}`} />
+            </div>
+
+            {/* Ports */}
+            <div>
+              <SectionLabel>Ports</SectionLabel>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <FieldLabel>Port of Loading (Origin)</FieldLabel>
+                  <Combobox
+                    value={originPortCode}
+                    onChange={setOriginPortCode}
+                    options={seaPortOptions}
+                    placeholder="Search port..."
+                  />
+                  {originPortCode && (() => {
+                    const found = ports.find(pt => pt.un_code === originPortCode);
+                    return found ? (
+                      <p className="text-xs text-[var(--text-muted)] mt-1">{found.un_code} · {found.country}</p>
+                    ) : null;
+                  })()}
+                </div>
+                <div>
+                  <FieldLabel>Port of Discharge (Destination)</FieldLabel>
+                  <Combobox
+                    value={destPortCode}
+                    onChange={setDestPortCode}
+                    options={seaPortOptions}
+                    placeholder="Search port..."
+                  />
+                  {destPortCode && (() => {
+                    const found = ports.find(pt => pt.un_code === destPortCode);
+                    return found ? (
+                      <p className="text-xs text-[var(--text-muted)] mt-1">{found.un_code} · {found.country}</p>
+                    ) : null;
+                  })()}
+                </div>
+              </div>
             </div>
 
             {/* Shipper */}

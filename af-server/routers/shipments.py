@@ -2146,6 +2146,8 @@ async def update_from_bl(
     force_update: Optional[str] = Form(None),
     containers: Optional[str] = Form(None),
     cargo_items: Optional[str] = Form(None),
+    origin_port: Optional[str] = Form(None),
+    dest_port: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
@@ -2267,6 +2269,12 @@ async def update_from_bl(
         if cargo_items_list:
             type_details["cargo_items"] = cargo_items_list
 
+    # Port updates — only write if provided and non-empty
+    if origin_port and origin_port.strip():
+        flat_updates["origin_port"] = origin_port.strip().upper()
+    if dest_port and dest_port.strip():
+        flat_updates["dest_port"] = dest_port.strip().upper()
+
     # Build UPDATE statement
     set_clauses = [
         "booking = CAST(:booking AS jsonb)",
@@ -2287,6 +2295,12 @@ async def update_from_bl(
     if "etd" in flat_updates:
         set_clauses.append("etd = :etd_flat")
         params["etd_flat"] = flat_updates["etd"]
+    if "origin_port" in flat_updates:
+        set_clauses.append("origin_port = :origin_port")
+        params["origin_port"] = flat_updates["origin_port"]
+    if "dest_port" in flat_updates:
+        set_clauses.append("dest_port = :dest_port")
+        params["dest_port"] = flat_updates["dest_port"]
 
     # Unblock export clearance if waybill set
     if waybill_number:
@@ -2338,6 +2352,8 @@ async def update_from_bl(
             "parties": parties,
             "bl_document": bl_doc,
             "etd": flat_updates.get("etd"),
+            "origin_port": flat_updates.get("origin_port"),
+            "dest_port": flat_updates.get("dest_port"),
         },
         "msg": "Shipment updated from BL",
     }

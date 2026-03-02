@@ -8,7 +8,7 @@ import {
   Container, Weight, Activity, ChevronDown, ChevronRight, Pencil, X,
   ClipboardList, Clock,
 } from 'lucide-react';
-import { fetchShipmentOrderDetailAction, fetchStatusHistoryAction, fetchCompaniesForShipmentAction, reassignShipmentCompanyAction } from '@/app/actions/shipments';
+import { fetchShipmentOrderDetailAction, fetchStatusHistoryAction, fetchCompaniesForShipmentAction, reassignShipmentCompanyAction, fetchPortsAction } from '@/app/actions/shipments';
 import type { StatusHistoryEntry } from '@/app/actions/shipments';
 import { updateShipmentStatusAction, updateInvoicedStatusAction, updatePartiesAction } from '@/app/actions/shipments-write';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
@@ -1216,6 +1216,7 @@ export default function ShipmentOrderDetailPage() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [showCompanyModal, setShowCompanyModal] = useState(false);
   const [showBLModal, setShowBLModal] = useState(false);
+  const [ports, setPorts] = useState<{ un_code: string; name: string; country: string; port_type: string; has_terminals: boolean; terminals: Array<{ terminal_id: string; name: string; is_default: boolean }> }[]>([]);
   const [diffParty, setDiffParty] = useState<'shipper' | 'consignee' | null>(null);
   const [showEditParties, setShowEditParties] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'files'>('overview');
@@ -1246,11 +1247,13 @@ export default function ShipmentOrderDetailPage() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const [, profile] = await Promise.all([
+      const [, profile, , portsResult] = await Promise.all([
         loadOrder(),
         getCurrentUserProfileAction(),
         loadRouteTimings(),
+        fetchPortsAction(),
       ]);
+      setPorts(portsResult);
       setAccountType(profile.account_type);
       setUserRole(profile.role ?? null);
       setLoading(false);
@@ -1450,6 +1453,7 @@ export default function ShipmentOrderDetailPage() {
         <ShipmentFilesTab
           shipmentId={order.quotation_id}
           userRole={accountType === 'AFU' ? 'AFU' : (userRole ?? 'AFC_USER')}
+          ports={ports}
           onBLUpdated={loadOrder}
         />
       ) : (
@@ -1570,6 +1574,7 @@ export default function ShipmentOrderDetailPage() {
       {showBLModal && (
         <BLUpdateModal
           shipmentId={order.quotation_id}
+          ports={ports}
           onClose={() => setShowBLModal(false)}
           onSuccess={() => {
             setShowBLModal(false);

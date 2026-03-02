@@ -1,5 +1,24 @@
 # Prompt Completion Log — v2.53–v2.62
 
+### [2026-03-02 22:00 UTC] — BL Update Modal: Port Selection (Option B)
+- **Status:** Completed
+- **Tasks:**
+  - Added Port interface and Combobox component to BLUpdateModal.tsx
+  - Added originPortCode/destPortCode state, seaPortOptions derived at render time
+  - Pre-fill ports from parseBLAction result (origin_un_code, destination_un_code)
+  - Added Ports section in preview phase (after ETD, before Shipper) with sea port Combobox selectors
+  - Added origin_port/dest_port to handleUpdate formData
+  - Updated detail page ([id]/page.tsx) to fetch ports via fetchPortsAction and pass to BLUpdateModal + ShipmentFilesTab
+  - Updated ShipmentFilesTab to accept and forward ports prop
+  - Added origin_port/dest_port Form params to update_from_bl endpoint in shipments.py
+  - Added flat_updates for ports + set_clauses + response fields
+- **Files Modified:**
+  - `af-platform/src/components/shipments/BLUpdateModal.tsx` — Combobox, Port interface, port state/UI/formData
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — fetchPortsAction, ports state, pass to modals
+  - `af-platform/src/components/shipments/ShipmentFilesTab.tsx` — Port interface, ports prop passthrough
+  - `af-server/routers/shipments.py` — origin_port/dest_port in update_from_bl
+- **Notes:** Sea ports filtered (excludes airports). Combobox copied from CreateShipmentModal (self-contained). No changes to parseBLAction or updateShipmentFromBLAction.
+
 ### [2026-03-02 21:00 UTC] — BL Update 500 Fix: file_tags CAST jsonb → TEXT[] native
 - **Status:** Completed
 - **Tasks:**
