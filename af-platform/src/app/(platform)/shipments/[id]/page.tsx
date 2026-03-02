@@ -10,7 +10,8 @@ import {
 import { fetchShipmentOrderDetailAction, fetchPortsAction } from '@/app/actions/shipments';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
 import { formatDate } from '@/lib/utils';
-import type { ShipmentOrder, Port } from '@/lib/types';
+import type { ShipmentOrder } from '@/lib/types';
+import type { Port } from '@/lib/ports';
 import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS } from '@/lib/types';
 import ShipmentTasks from '@/components/shipments/ShipmentTasks';
 import ShipmentFilesTab from '@/components/shipments/ShipmentFilesTab';

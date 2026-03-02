@@ -46,7 +46,7 @@ def _batch_get(ds, keys: list) -> dict:
     return results
 
 
-def run(dry_run: bool):
+def run(dry_run: bool, afu_only: bool = False):
     from core.datastore import get_client
     from core.db import get_engine
     from sqlalchemy import text
@@ -81,6 +81,10 @@ def run(dry_run: bool):
     unique_accounts = list(acct_by_email.values())
     logger.info("%d unique accounts after email deduplication", len(unique_accounts))
 
+    if afu_only:
+        unique_accounts = [a for a in unique_accounts if (a.get("account_type") or "").strip() == "AFU"]
+        logger.info("AFU-only mode: %d AFU accounts to migrate", len(unique_accounts))
+
     # --- Batch fetch UserIAM and CompanyUserAccount ---
     uids = [a.key.name or str(a.key.id) for a in unique_accounts]
     logger.info("Fetching UserIAM + CompanyUserAccount for %d users...", len(uids))
@@ -111,12 +115,20 @@ def run(dry_run: bool):
                 account_type = (acct.get("account_type") or "AFC").strip()
                 email_validated = bool(acct.get("email_validated", False))
 
-                # Normalize created_at to ISO string
+                # Normalize created_at — handle DatetimeWithNanoseconds from Datastore
+                from datetime import datetime, timezone
                 created_raw = acct.get("created") or acct.get("created_at")
-                if created_raw and hasattr(created_raw, "isoformat"):
-                    created_at = created_raw.isoformat()
-                elif created_raw:
-                    created_at = str(created_raw)
+                if created_raw is not None:
+                    try:
+                        # Convert any datetime-like (including DatetimeWithNanoseconds) to plain datetime
+                        created_at = datetime(
+                            created_raw.year, created_raw.month, created_raw.day,
+                            created_raw.hour, created_raw.minute, created_raw.second,
+                            min(created_raw.microsecond, 999999),
+                            tzinfo=timezone.utc
+                        )
+                    except Exception:
+                        created_at = None
                 else:
                     created_at = None
 
@@ -156,6 +168,7 @@ def run(dry_run: bool):
                     inserted += 1
                     continue
 
+                conn.execute(text("SAVEPOINT sp_user"))
                 conn.execute(text("""
                     INSERT INTO users (
                         uid, email, first_name, last_name, phone_number,
@@ -165,7 +178,7 @@ def run(dry_run: bool):
                         :uid, :email, :first_name, :last_name, :phone_number,
                         :account_type, :role, :company_id, :valid_access,
                         :email_validated, :last_login,
-                        COALESCE(:created_at::timestamptz, NOW()), NOW()
+                        COALESCE(:created_at, NOW()), NOW()
                     )
                     ON CONFLICT (uid) DO UPDATE SET
                         email           = EXCLUDED.email,
@@ -184,6 +197,7 @@ def run(dry_run: bool):
                 inserted += 1
 
             except Exception as e:
+                conn.execute(text("ROLLBACK TO SAVEPOINT sp_user"))
                 logger.error("Error migrating uid=%s email=%s: %s", uid, email, e)
                 errors += 1
 
@@ -201,12 +215,13 @@ def run(dry_run: bool):
 def main():
     parser = argparse.ArgumentParser(description="Migrate users from Datastore to PostgreSQL")
     parser.add_argument("--dry-run", action="store_true", help="Preview without writing to DB")
+    parser.add_argument("--afu-only", action="store_true", help="Migrate only AFU (staff) accounts")
     args = parser.parse_args()
 
     if args.dry_run:
         logger.info("=== DRY RUN — no changes will be written to PostgreSQL ===")
 
-    run(dry_run=args.dry_run)
+    run(dry_run=args.dry_run, afu_only=args.afu_only)
 
 
 if __name__ == "__main__":
