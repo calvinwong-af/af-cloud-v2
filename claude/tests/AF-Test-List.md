@@ -1,5 +1,5 @@
 # AF Platform — Test List
-**Version:** 2.45
+**Version:** 2.47
 **Last Updated:** 03 March 2026
 
 > Retired series (MI, V2C, OF, SR, IN, SU) moved to AF-Test-Archive.md
@@ -8,6 +8,8 @@
 ## Version History (recent)
 | Version | Date | Changes |
 |---|---|---|
+| 2.47 | 03 Mar 2026 | DOC-PARSE series added (DP-01 to DP-18). Airport seed, unified document parser, BC + AWB apply endpoints. |
+| 2.46 | 03 Mar 2026 | UI-01 YES — Files tab count badge implemented. MB-13 moved to PENDING (Cloud Run domain mapping check). |
 | 2.45 | 03 Mar 2026 | Terminal backfill fix — 1495 V1 records updated with missing terminal_id via backfill_v1_terminals.py. Westports sub-label confirmed. |
 | 2.44 | 03 Mar 2026 | PT series complete. PT-09/10/11/12/13 YES. Backfill ran clean — 2032 V1 records updated with port data. |
 | 2.43 | 03 Mar 2026 | PT-01/02/03 YES. PT-06/07/08 YES — migration clean, 4345 updated, idempotent. PT-07 verified in Datastore Studio. |
@@ -54,7 +56,36 @@
 | VD-06 | Non-TRACKED task card — no vessel info shown | Test as encountered |
 | VD-07 | Non-POL TRACKED task card — no vessel info shown | Test as encountered |
 | PP-06 | Route card — ETA shown below destination port code | Deferred — ETA not synced from task scheduled_start |
-| UI-01 | Files tab label shows file count badge e.g. Files (3) | LOW — add after port BL prompt done |
+
+---
+
+## DP series — Document Parser (DOC-PARSE feature)
+| # | Test | Status | Notes |
+|---|---|---|---|
+| DP-01 | seed_airports.py runs clean — airports upserted to PostgreSQL | YES | 97 airports upserted clean |
+| DP-02 | KUL resolves to label in PortPair/RouteCard (was raw code) | YES | AF-003866 — Kuala Lumpur International Airport, Malaysia confirmed |
+| DP-03 | MUC resolves to label in PortPair/RouteCard (was raw code) | YES | AF-003866 — Munich Airport, Germany confirmed |
+| DP-04 | POST /api/v2/ai/parse-document — BL PDF returns doc_type=BL | PENDING | Use any BL PDF |
+| DP-05 | POST /api/v2/ai/parse-document — AWB PDF returns doc_type=AWB | PENDING | Use PAMAE2603001 |
+| DP-06 | POST /api/v2/ai/parse-document — BC PDF returns doc_type=BOOKING_CONFIRMATION | PENDING | Use SATPKL26023350-E |
+| DP-07 | AWB parse — hawb_number populated for HOUSE AWB | PENDING | PAMAE2603001 |
+| DP-08 | AWB parse — mawb_number null for HOUSE AWB (only hawb present) | PENDING | PAMAE2603001 |
+| DP-09 | BC parse — booking_reference populated | PENDING | SATPKL26023350-E → SATPKL26023350-E |
+| DP-10 | BC parse — vessel_name populated | PENDING | ESL Busan |
+| DP-11 | BC parse — etd populated as YYYY-MM-DD | PENDING | 2026-02-26 |
+| DP-12 | DocumentParseModal opens via Upload Document button | PENDING | AFU on any shipment >= Confirmed |
+| DP-19 | New Shipment modal — Upload tab label updated from "Upload BL" to "Upload Document" | PENDING | Cosmetic + scope fix — tab should accept BL/AWB/BC |
+| DP-20 | New Shipment modal — drop zone text updated from "Drop your Bill of Lading here" to generic document copy | PENDING | Follows from DP-19 |
+| DP-21 | BC parse on new shipment — initial status should be Booking Confirmed (3002), not Departed (4001) | PENDING | ETD 20/02/2026 is in the past — status logic using on_board_date, not etd |
+| DP-22 | New Shipment modal — Shipment Type fields (order_type, transaction_type, incoterm) must be editable inline before confirm | PENDING | Currently shown as read-only badges with "adjustable after creation" note — needs to be dropdowns |
+| DP-23 | BC parse — transaction_type should default to EXPORT (not IMPORT) | PENDING | BC context implies export; import is wrong default for most BC uploads |
+| DP-13 | DocumentParseModal — doc type badge shows after parse | PENDING | BL=blue, AWB=sky, BC=teal |
+| DP-14 | Upload Document button visible on AIR shipments (new) | PENDING | AF-003866 |
+| DP-15 | apply-booking-confirmation — booking_reference saved to shipment | PENDING | |
+| DP-16 | apply-booking-confirmation — Route card updates with pol/pod after apply | PENDING | |
+| DP-17 | apply-awb — hawb_number + mawb_number saved to shipment | PENDING | |
+| DP-18 | apply-awb — origin/dest airport codes update Route card | PENDING | AF-003866 |
+
 
 ---
 
@@ -118,6 +149,7 @@
 | MB-03 | Cargo ready date shown on mobile shipment card | DEFERRED | |
 | MB-04 | Status pill renders correctly on mobile (all statuses) | DEFERRED | |
 | MB-05 | V1 badge renders on mobile card | YES | Confirmed 01 Mar 2026 |
+| MB-13 | SSL certificate valid on all platform domains | YES | barbara.accelefreight.com dead mapping deleted. auth/appv2/api all green. |
 | MB-06 | Order type shown on mobile card | DEFERRED | |
 | MB-07 | Shipment detail page renders correctly on mobile | DEFERRED | |
 | MB-08 | Tasks tab usable on mobile | DEFERRED | |

@@ -351,10 +351,17 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
       const originPort = ports.find(p => p.un_code === blFormState.originCode);
       const destPort = ports.find(p => p.un_code === blFormState.destCode);
 
+      // DP-21 fix: BC documents have no on_board_date — override 4001 to 3002
+      const parsedOnBoardDate = (blParsedResult as Record<string, unknown>).parsed
+        ? ((blParsedResult as Record<string, unknown>).parsed as Record<string, unknown>).on_board_date
+        : null;
+      const rawStatus = (blParsedResult as Record<string, unknown>).initial_status as number ?? 3001;
+      const effectiveStatus = (rawStatus === 4001 && !parsedOnBoardDate) ? 3002 : rawStatus;
+
       const payload: CreateFromBLPayload = {
-        order_type: (blParsedResult as Record<string, unknown>).order_type as string ?? 'SEA_FCL',
-        transaction_type: 'IMPORT',
-        incoterm_code: 'CNF',
+        order_type: blFormState.orderType || (blParsedResult as Record<string, unknown>).order_type as string || 'SEA_FCL',
+        transaction_type: blFormState.transactionType || 'IMPORT',
+        incoterm_code: blFormState.incotermCode || 'CNF',
         company_id: blFormState.linkedCompanyId,
         origin_port_un_code: blFormState.originCode || null,
         origin_terminal_id: blFormState.originTerminalId || null,
@@ -365,7 +372,7 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
         cargo_description: blFormState.cargoDescription || null,
         cargo_weight_kg: blFormState.cargoWeight ? parseFloat(blFormState.cargoWeight) : null,
         etd: blFormState.etd || null,
-        initial_status: (blParsedResult as Record<string, unknown>).initial_status as number ?? 3001,
+        initial_status: effectiveStatus,
         carrier: blFormState.carrier || null,
         waybill_number: blFormState.waybillNumber || null,
         vessel_name: blFormState.vesselName || null,
@@ -908,7 +915,7 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
                   : 'text-[var(--text-muted)] border-transparent hover:text-[var(--text)] hover:border-[var(--border)]'
               }`}
             >
-              Upload BL
+              Upload Document
             </button>
           </div>
         </div>

@@ -1,5 +1,21 @@
 # Prompt Completion Log — v2.63–v2.72
 
+### [2026-03-03 12:00 UTC] — v2.67: DP-19 to DP-23 — Document Parser Defect Fixes
+- **Status:** Completed
+- **Tasks:**
+  - DP-19: Updated copy/labels in BLUploadTab and CreateShipmentModal ("Upload Document", "Analysing document...")
+  - DP-20: Extended BLFormState with orderType/transactionType/incotermCode; replaced static badges with editable dropdowns
+  - DP-21: Status override logic (4001→3002 when no on_board_date) in both BLUploadTab and CreateShipmentModal
+  - DP-22: Wired new BLFormState fields into CreateFromBLPayload in CreateShipmentModal
+  - DP-23: Default EXPORT for BC documents, added doc_type to ParseBLResult
+  - Build fixes: Added missing fields to toShipmentOrder in dashboard + shipments pages, fixed TypeScript narrowing in DocumentParseModal
+- **Files Modified:**
+  - `af-platform/src/components/shipments/BLUploadTab.tsx` — copy, dropdowns, status override, BC defaults
+  - `af-platform/src/components/shipments/CreateShipmentModal.tsx` — copy, payload wiring, status override
+  - `af-platform/src/components/shipments/DocumentParseModal.tsx` — fixed TS narrowing error
+  - `af-platform/src/app/(platform)/dashboard/page.tsx` — added missing ShipmentOrder fields to mapper
+  - `af-platform/src/app/(platform)/shipments/page.tsx` — added missing ShipmentOrder fields to mapper
+
 ### [2026-03-03 06:15 UTC] — PT Series + AUTH-01: Port Terminal Layer + Keep Me Signed In
 - **Status:** Completed
 - **Tasks:**
@@ -20,6 +36,26 @@
   - `af-platform/src/app/login/page.tsx` — pass keepSignedIn to signIn
   - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — RouteCard ports prop + tooltip enrichment
   - `af-platform/src/app/actions/shipments.ts` — updated fetchPortsAction to use /api/v2/ports
+
+### [2026-03-03 10:00 UTC] — v2.66: DOC-PARSE — Document Parser Feature (5 prompts)
+- **Status:** Completed
+- **Tasks:**
+  - Prompt 1: Created seed_airports.py — 97 airports with IATA codes, port_type='AIR', idempotent upsert
+  - Prompt 2: Created routers/ai.py — POST /api/v2/ai/parse-document with 2-step Claude API (classify → extract), registered in main.py
+  - Prompt 3: Created DocumentParseModal.tsx + parseDocumentAction in shipments-files.ts with full type definitions
+  - Prompt 4: Replaced Upload BL button with Upload Document button on detail page, wired DocumentParseModal with BL/BC/AWB handlers
+  - Prompt 5: Added apply-booking-confirmation + apply-awb endpoints to shipments router, schema migration script, TypeScript type updates
+- **Files Modified:**
+  - `af-server/scripts/seed_airports.py` — new file, 97 airports
+  - `af-server/routers/ai.py` — new file, parse-document endpoint
+  - `af-server/main.py` — registered ai router
+  - `af-server/routers/shipments.py` — added apply-booking-confirmation + apply-awb endpoints
+  - `af-server/scripts/add_document_parse_columns.py` — new file, schema migration
+  - `af-platform/src/app/actions/shipments-files.ts` — parseDocumentAction + types
+  - `af-platform/src/app/actions/shipments-write.ts` — applyBookingConfirmationAction + applyAWBAction
+  - `af-platform/src/components/shipments/DocumentParseModal.tsx` — new file
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — Upload Document button + modal wiring
+  - `af-platform/src/lib/types.ts` — booking_reference, hawb_number, mawb_number, awb_type fields
 
 ### [2026-03-03 08:30 UTC] — v2.65: PT-Backfill — Backfill V1 port data in PostgreSQL
 - **Status:** Completed

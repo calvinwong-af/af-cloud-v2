@@ -293,6 +293,12 @@ export interface ShipmentOrder {
   // Exception flag (v2.18)
   exception: ShipmentException | null;
 
+  // Document parse fields
+  booking_reference: string | null;
+  hawb_number: string | null;
+  mawb_number: string | null;
+  awb_type: 'HOUSE' | 'MASTER' | 'DIRECT' | null;
+
   // Admin
   tracking_id: string | null;
   files: string[];

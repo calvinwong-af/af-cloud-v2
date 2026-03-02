@@ -795,3 +795,128 @@ export async function updatePartiesAction(
     return { success: false, error: 'Failed to update parties' };
   }
 }
+
+
+// ---------------------------------------------------------------------------
+// Apply Booking Confirmation
+// ---------------------------------------------------------------------------
+
+export async function applyBookingConfirmationAction(
+  shipmentId: string,
+  data: {
+    booking_reference?: string | null;
+    carrier?: string | null;
+    vessel_name?: string | null;
+    voyage_number?: string | null;
+    pol_code?: string | null;
+    pod_code?: string | null;
+    etd?: string | null;
+    eta_pod?: string | null;
+    containers?: { size: string; quantity: number }[] | null;
+    cargo_description?: string | null;
+    hs_code?: string | null;
+    cargo_weight_kg?: number | null;
+  },
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) return { success: false, error: 'No session token' };
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) return { success: false, error: 'Server URL not configured' };
+
+    const res = await fetch(
+      `${serverUrl}/api/v2/shipments/${encodeURIComponent(shipmentId)}/apply-booking-confirmation`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+        cache: 'no-store',
+      },
+    );
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const msg = json?.detail ?? `Server responded ${res.status}`;
+      return { success: false, error: msg };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error('[applyBookingConfirmationAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to apply booking confirmation' };
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// Apply AWB
+// ---------------------------------------------------------------------------
+
+export async function applyAWBAction(
+  shipmentId: string,
+  data: {
+    awb_type?: string | null;
+    hawb_number?: string | null;
+    mawb_number?: string | null;
+    shipper_name?: string | null;
+    shipper_address?: string | null;
+    consignee_name?: string | null;
+    consignee_address?: string | null;
+    notify_party?: string | null;
+    origin_iata?: string | null;
+    dest_iata?: string | null;
+    flight_number?: string | null;
+    flight_date?: string | null;
+    pieces?: number | null;
+    gross_weight_kg?: number | null;
+    chargeable_weight_kg?: number | null;
+    cargo_description?: string | null;
+    hs_code?: string | null;
+  },
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) return { success: false, error: 'No session token' };
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) return { success: false, error: 'Server URL not configured' };
+
+    const res = await fetch(
+      `${serverUrl}/api/v2/shipments/${encodeURIComponent(shipmentId)}/apply-awb`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+        cache: 'no-store',
+      },
+    );
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const msg = json?.detail ?? `Server responded ${res.status}`;
+      return { success: false, error: msg };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error('[applyAWBAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to apply AWB data' };
+  }
+}

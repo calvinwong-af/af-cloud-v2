@@ -17,7 +17,11 @@ import type { ShipmentOrder, ShipmentOrderStatus, TypeDetailsFCL, TypeDetailsLCL
 import ShipmentTasks from '@/components/shipments/ShipmentTasks';
 import ShipmentFilesTab from '@/components/shipments/ShipmentFilesTab';
 import BLUpdateModal from '@/components/shipments/BLUpdateModal';
+import type { ParsedBL } from '@/components/shipments/BLUpdateModal';
 import BLPartyDiffModal from '@/components/shipments/BLPartyDiffModal';
+import DocumentParseModal from '@/components/shipments/DocumentParseModal';
+import type { DocType, ParsedBCData, ParsedAWBData } from '@/app/actions/shipments-files';
+import { applyBookingConfirmationAction, applyAWBAction } from '@/app/actions/shipments-write';
 import RouteNodeTimeline from '@/components/shipments/RouteNodeTimeline';
 import PortPair from '@/components/shared/PortPair';
 import { getPortLabel, type Port } from '@/lib/ports';
@@ -1264,10 +1268,13 @@ export default function ShipmentOrderDetailPage() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [showCompanyModal, setShowCompanyModal] = useState(false);
   const [showBLModal, setShowBLModal] = useState(false);
+  const [showDocParseModal, setShowDocParseModal] = useState(false);
+  const [docParseBLData, setDocParseBLData] = useState<ParsedBL | null>(null);
   const [ports, setPorts] = useState<{ un_code: string; name: string; country: string; port_type: string; has_terminals: boolean; terminals: Array<{ terminal_id: string; name: string; is_default: boolean }> }[]>([]);
   const [diffParty, setDiffParty] = useState<'shipper' | 'consignee' | null>(null);
   const [showEditParties, setShowEditParties] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'files'>('overview');
+  const [fileCount, setFileCount] = useState<number | null>(null);
   const [routeEtd, setRouteEtd] = useState<string | null>(null);
   const [routeEta, setRouteEta] = useState<string | null>(null);
 
@@ -1430,15 +1437,15 @@ export default function ShipmentOrderDetailPage() {
         ports={ports as Port[]}
       />
 
-      {/* BL Upload button — AFU, status >= 2001 (Confirmed+), sea shipments */}
-      {accountType === 'AFU' && order.status >= 2001 && ['SEA_FCL', 'SEA_LCL'].includes(order.order_type) && (
+      {/* Upload Document button — AFU, status >= 2001 (Confirmed+) */}
+      {accountType === 'AFU' && order.status >= 2001 && (
         <div className="flex justify-end">
           <button
-            onClick={() => setShowBLModal(true)}
+            onClick={() => setShowDocParseModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--sky)] border border-[var(--sky)] rounded-lg hover:bg-[var(--sky-mist)] transition-colors"
           >
             <Upload className="w-3.5 h-3.5" />
-            Upload BL
+            Upload Document
           </button>
         </div>
       )}
@@ -1479,6 +1486,13 @@ export default function ShipmentOrderDetailPage() {
         >
           <FileText className="w-3.5 h-3.5" />
           Files
+          {(fileCount !== null ? fileCount : 0) > 0 && (
+            <span className={`ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold leading-none ${
+              activeTab === 'files' ? 'bg-[var(--sky)] text-white' : 'bg-[var(--surface)] text-[var(--text-muted)] border border-[var(--border)]'
+            }`}>
+              {fileCount}
+            </span>
+          )}
         </button>
       </div>
 
@@ -1504,6 +1518,7 @@ export default function ShipmentOrderDetailPage() {
           userRole={accountType === 'AFU' ? 'AFU' : (userRole ?? 'AFC_USER')}
           ports={ports}
           onBLUpdated={loadOrder}
+          onFileCountChange={setFileCount}
         />
       ) : (
 
@@ -1619,17 +1634,56 @@ export default function ShipmentOrderDetailPage() {
         />
       )}
 
+      {/* Document Parse modal */}
+      {showDocParseModal && (
+        <DocumentParseModal
+          shipmentId={order.quotation_id}
+          ports={ports}
+          onClose={() => setShowDocParseModal(false)}
+          allowedTypes={
+            ['SEA_FCL', 'SEA_LCL'].includes(order.order_type)
+              ? ['BL', 'BOOKING_CONFIRMATION']
+              : order.order_type === 'AIR'
+                ? ['AWB', 'BOOKING_CONFIRMATION']
+                : ['BOOKING_CONFIRMATION']
+          }
+          onResult={async (docType: DocType, data) => {
+            setShowDocParseModal(false);
+
+            if (docType === 'BL') {
+              // Open BLUpdateModal pre-populated with parsed data
+              setDocParseBLData(data as ParsedBL);
+              setShowBLModal(true);
+            } else if (docType === 'BOOKING_CONFIRMATION') {
+              const result = await applyBookingConfirmationAction(order.quotation_id, data as ParsedBCData);
+              if (result && result.success) {
+                loadOrder();
+                loadRouteTimings();
+              }
+            } else if (docType === 'AWB') {
+              const result = await applyAWBAction(order.quotation_id, data as ParsedAWBData);
+              if (result && result.success) {
+                loadOrder();
+                loadRouteTimings();
+              }
+            }
+          }}
+        />
+      )}
+
       {/* BL Update modal */}
       {showBLModal && (
         <BLUpdateModal
           shipmentId={order.quotation_id}
           ports={ports}
-          onClose={() => setShowBLModal(false)}
+          onClose={() => { setShowBLModal(false); setDocParseBLData(null); }}
           onSuccess={() => {
             setShowBLModal(false);
+            setDocParseBLData(null);
             loadOrder();
             loadRouteTimings();
           }}
+          initialParsed={docParseBLData}
         />
       )}
 

@@ -2810,3 +2810,191 @@ async def update_route_node_timing(
         "shipment_id": shipment_id,
         "node": target,
     }
+
+
+# ---------------------------------------------------------------------------
+# Apply Booking Confirmation
+# ---------------------------------------------------------------------------
+
+class ApplyBookingConfirmationRequest(BaseModel):
+    booking_reference: str | None = None
+    carrier: str | None = None
+    vessel_name: str | None = None
+    voyage_number: str | None = None
+    pol_code: str | None = None
+    pod_code: str | None = None
+    etd: str | None = None
+    eta_pod: str | None = None
+    containers: list | None = None
+    cargo_description: str | None = None
+    hs_code: str | None = None
+    cargo_weight_kg: float | None = None
+
+
+@router.post("/{shipment_id}/apply-booking-confirmation")
+async def apply_booking_confirmation(
+    shipment_id: str,
+    body: ApplyBookingConfirmationRequest,
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    # Read current shipment
+    row = conn.execute(text("""
+        SELECT id, booking, route_nodes FROM shipments WHERE id = :id
+    """), {"id": shipment_id}).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Build SET clauses
+    set_clauses = ["updated_at = :now"]
+    params: dict = {"id": shipment_id, "now": now}
+
+    if body.booking_reference is not None:
+        set_clauses.append("booking_reference = :booking_reference")
+        params["booking_reference"] = body.booking_reference
+
+    if body.pol_code:
+        set_clauses.append("origin_port = :origin_port")
+        params["origin_port"] = body.pol_code
+
+    if body.pod_code:
+        set_clauses.append("dest_port = :dest_port")
+        params["dest_port"] = body.pod_code
+
+    # Merge into booking JSONB
+    booking = json.loads(row[1]) if row[1] else {}
+    if body.vessel_name is not None:
+        booking["vessel_name"] = body.vessel_name
+    if body.voyage_number is not None:
+        booking["voyage_number"] = body.voyage_number
+    if body.carrier is not None:
+        booking["carrier"] = body.carrier
+    set_clauses.append("booking = CAST(:booking AS jsonb)")
+    params["booking"] = json.dumps(booking)
+
+    # Update route node timings
+    nodes = json.loads(row[2]) if row[2] else []
+    for node in nodes:
+        if node.get("role") == "ORIGIN" and body.etd:
+            node["scheduled_etd"] = body.etd
+            set_clauses.append("etd = :etd")
+            params["etd"] = body.etd
+        if node.get("role") == "DESTINATION" and body.eta_pod:
+            node["scheduled_eta"] = body.eta_pod
+            set_clauses.append("eta = :eta")
+            params["eta"] = body.eta_pod
+    if nodes:
+        set_clauses.append("route_nodes = CAST(:route_nodes AS jsonb)")
+        params["route_nodes"] = json.dumps(nodes)
+
+    conn.execute(text(f"""
+        UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
+    """), params)
+
+    logger.info("[apply-bc] Updated %s with booking confirmation data", shipment_id)
+    return {"shipment_id": shipment_id, "status": "OK"}
+
+
+# ---------------------------------------------------------------------------
+# Apply AWB
+# ---------------------------------------------------------------------------
+
+class ApplyAWBRequest(BaseModel):
+    awb_type: str | None = None
+    hawb_number: str | None = None
+    mawb_number: str | None = None
+    shipper_name: str | None = None
+    shipper_address: str | None = None
+    consignee_name: str | None = None
+    consignee_address: str | None = None
+    notify_party: str | None = None
+    origin_iata: str | None = None
+    dest_iata: str | None = None
+    flight_number: str | None = None
+    flight_date: str | None = None
+    pieces: int | None = None
+    gross_weight_kg: float | None = None
+    chargeable_weight_kg: float | None = None
+    cargo_description: str | None = None
+    hs_code: str | None = None
+
+
+@router.post("/{shipment_id}/apply-awb")
+async def apply_awb(
+    shipment_id: str,
+    body: ApplyAWBRequest,
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    # Read current shipment
+    row = conn.execute(text("""
+        SELECT id, booking, parties FROM shipments WHERE id = :id
+    """), {"id": shipment_id}).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    set_clauses = ["updated_at = :now"]
+    params: dict = {"id": shipment_id, "now": now}
+
+    if body.origin_iata:
+        set_clauses.append("origin_port = :origin_port")
+        params["origin_port"] = body.origin_iata
+
+    if body.dest_iata:
+        set_clauses.append("dest_port = :dest_port")
+        params["dest_port"] = body.dest_iata
+
+    if body.hawb_number is not None:
+        set_clauses.append("hawb_number = :hawb_number")
+        params["hawb_number"] = body.hawb_number
+
+    if body.mawb_number is not None:
+        set_clauses.append("mawb_number = :mawb_number")
+        params["mawb_number"] = body.mawb_number
+
+    if body.awb_type is not None:
+        set_clauses.append("awb_type = :awb_type")
+        params["awb_type"] = body.awb_type
+
+    # Merge flight info into booking JSONB
+    booking = json.loads(row[1]) if row[1] else {}
+    if body.flight_number is not None:
+        booking["flight_number"] = body.flight_number
+    if body.flight_date is not None:
+        booking["flight_date"] = body.flight_date
+    set_clauses.append("booking = CAST(:booking AS jsonb)")
+    params["booking"] = json.dumps(booking)
+
+    # Merge parties
+    parties = json.loads(row[2]) if row[2] else {}
+    if body.shipper_name is not None or body.shipper_address is not None:
+        shipper = parties.get("shipper") or {}
+        if body.shipper_name is not None:
+            shipper["name"] = body.shipper_name
+        if body.shipper_address is not None:
+            shipper["address"] = body.shipper_address
+        parties["shipper"] = shipper
+    if body.consignee_name is not None or body.consignee_address is not None:
+        consignee = parties.get("consignee") or {}
+        if body.consignee_name is not None:
+            consignee["name"] = body.consignee_name
+        if body.consignee_address is not None:
+            consignee["address"] = body.consignee_address
+        parties["consignee"] = consignee
+    if body.notify_party is not None:
+        notify = parties.get("notify_party") or {}
+        notify["name"] = body.notify_party
+        parties["notify_party"] = notify
+    set_clauses.append("parties = CAST(:parties AS jsonb)")
+    params["parties"] = json.dumps(parties)
+
+    conn.execute(text(f"""
+        UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
+    """), params)
+
+    logger.info("[apply-awb] Updated %s with AWB data", shipment_id)
+    return {"shipment_id": shipment_id, "status": "OK"}

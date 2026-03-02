@@ -397,3 +397,124 @@ export async function getFileDownloadUrlAction(
     return { success: false, error: 'Failed to get download URL' };
   }
 }
+
+
+// ---------------------------------------------------------------------------
+// Document Parse types
+// ---------------------------------------------------------------------------
+
+export type DocType = 'BL' | 'AWB' | 'BOOKING_CONFIRMATION' | 'UNKNOWN';
+export type ParseConfidence = 'HIGH' | 'MEDIUM' | 'LOW';
+
+export interface ParsedBCData {
+  booking_reference: string | null;
+  carrier: string | null;
+  vessel_name: string | null;
+  voyage_number: string | null;
+  pol_name: string | null;
+  pol_code: string | null;
+  pod_name: string | null;
+  pod_code: string | null;
+  etd: string | null;
+  eta_pol: string | null;
+  eta_pod: string | null;
+  cut_off_date: string | null;
+  containers: { size: string; quantity: number }[];
+  cargo_description: string | null;
+  hs_code: string | null;
+  cargo_weight_kg: number | null;
+  booking_party: string | null;
+  shipper: string | null;
+}
+
+export interface ParsedAWBData {
+  awb_type: 'HOUSE' | 'MASTER' | 'DIRECT';
+  hawb_number: string | null;
+  mawb_number: string | null;
+  shipper_name: string | null;
+  shipper_address: string | null;
+  consignee_name: string | null;
+  consignee_address: string | null;
+  notify_party: string | null;
+  origin_iata: string | null;
+  dest_iata: string | null;
+  flight_number: string | null;
+  flight_date: string | null;
+  pieces: number | null;
+  gross_weight_kg: number | null;
+  chargeable_weight_kg: number | null;
+  cargo_description: string | null;
+  hs_code: string | null;
+}
+
+export interface ParseDocumentResult {
+  success: boolean;
+  doc_type?: DocType;
+  confidence?: ParseConfidence;
+  data?: ParsedBCData | ParsedAWBData | Record<string, unknown>;
+  error?: string;
+}
+
+
+// ---------------------------------------------------------------------------
+// POST /api/v2/ai/parse-document
+// ---------------------------------------------------------------------------
+
+export async function parseDocumentAction(
+  fileBase64: string,
+  fileName: string,
+  hint?: 'BL' | 'AWB' | 'BOOKING_CONFIRMATION',
+): Promise<ParseDocumentResult> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) {
+      return { success: false, error: 'Unauthorised' };
+    }
+
+    const idToken = await getIdToken();
+    if (!idToken) {
+      return { success: false, error: 'No session token' };
+    }
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) {
+      return { success: false, error: 'Server URL not configured' };
+    }
+
+    const res = await fetch(`${serverUrl}/api/v2/ai/parse-document`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        file_base64: fileBase64,
+        file_name: fileName,
+        hint: hint ?? null,
+      }),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const msg = json?.detail ?? json?.msg ?? `Server responded ${res.status}`;
+      return { success: false, error: msg };
+    }
+
+    const json = await res.json();
+
+    if (json.status === 'ERROR') {
+      return { success: false, error: json.msg ?? 'Parse failed' };
+    }
+
+    return {
+      success: true,
+      doc_type: json.doc_type,
+      confidence: json.confidence,
+      data: json.data,
+    };
+  } catch (err) {
+    console.error('[parseDocumentAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to parse document' };
+  }
+}

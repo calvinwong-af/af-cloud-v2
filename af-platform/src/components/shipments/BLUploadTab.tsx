@@ -56,6 +56,7 @@ interface ParsedBL {
 interface ParseBLResult {
   parsed: ParsedBL;
   order_type: string;
+  doc_type?: string; // 'BL' | 'AWB' | 'BOOKING_CONFIRMATION' | 'UNKNOWN'
   origin_un_code: string | null;
   origin_parsed_label: string | null;
   destination_un_code: string | null;
@@ -95,6 +96,9 @@ export interface BLFormState {
   companyMatchDismissed: boolean;
   originParsedLabel: string | null;
   destParsedLabel: string | null;
+  orderType: string;
+  transactionType: string;
+  incotermCode: string;
 }
 
 export function getDefaultBLFormState(): BLFormState {
@@ -120,6 +124,9 @@ export function getDefaultBLFormState(): BLFormState {
     companyMatchDismissed: false,
     originParsedLabel: null,
     destParsedLabel: null,
+    orderType: 'SEA_FCL',
+    transactionType: 'IMPORT',
+    incotermCode: 'CNF',
   };
 }
 
@@ -178,6 +185,8 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
       onParsed(data);
 
       // Pre-fill form state
+      // DP-23 fix: default to EXPORT for BC, keep IMPORT for BL/AWB
+      const isBC = data.doc_type === 'BOOKING_CONFIRMATION';
       const originPort = ports.find(p => p.un_code === data.origin_un_code);
       const destPort = ports.find(p => p.un_code === data.destination_un_code);
       const newState: BLFormState = {
@@ -202,6 +211,9 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
         companyMatchDismissed: false,
         originParsedLabel: data.origin_parsed_label ?? null,
         destParsedLabel: data.destination_parsed_label ?? null,
+        orderType: data.order_type ?? 'SEA_FCL',
+        transactionType: isBC ? 'EXPORT' : 'IMPORT',
+        incotermCode: 'CNF',
       };
       onFormChange(newState);
       checkReady(newState);
@@ -246,7 +258,7 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
         >
           <Upload className="w-10 h-10 text-[var(--text-muted)]" />
           <p className="text-sm text-[var(--text-mid)] text-center">
-            Drop your Bill of Lading here — PDF or image — or <span className="text-[var(--sky)] font-medium">browse to upload</span>
+            Drop your shipping document here — PDF or image — or <span className="text-[var(--sky)] font-medium">browse to upload</span>
           </p>
           <p className="text-xs text-[var(--text-muted)]">PDF, PNG, JPG, WEBP</p>
         </div>
@@ -280,7 +292,7 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-16">
         <Loader2 className="w-8 h-8 text-[var(--sky)] animate-spin" />
-        <p className="text-sm text-[var(--text-mid)]">Parsing Bill of Lading...</p>
+        <p className="text-sm text-[var(--text-mid)]">Analysing document...</p>
         <p className="text-xs text-[var(--text-muted)]">This may take a few seconds</p>
       </div>
     );
@@ -291,6 +303,11 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
   const matches = parsedResult?.company_matches ?? [];
   const isPrepaid = (parsed?.freight_terms ?? '').toUpperCase().includes('PREPAID');
   const initialStatus = parsedResult?.initial_status ?? 3001;
+  // DP-21 fix: BC documents have no on_board_date — override 4001 (Departed) to 3002 (Booking Confirmed)
+  const parsedOnBoardDate = parsedResult?.parsed?.on_board_date;
+  const effectiveStatus = (initialStatus === 4001 && !parsedOnBoardDate)
+    ? 3002
+    : initialStatus;
   const orderType = parsedResult?.order_type ?? 'SEA_FCL';
   const containers = parsed?.containers ?? [];
 
@@ -299,7 +316,7 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
       {/* Success banner */}
       <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-700">
         <CheckCircle className="w-4 h-4 flex-shrink-0" />
-        <span>BL parsed successfully — review extracted details below</span>
+        <span>Document parsed successfully — review extracted details below</span>
       </div>
 
       {/* Prepaid hint */}
@@ -310,14 +327,45 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
         </div>
       )}
 
-      {/* Shipment Type badges */}
+      {/* Shipment Type */}
       <div>
         <SectionLabel>Shipment Type</SectionLabel>
-        <div className="flex gap-2">
-          <Badge>{orderType === 'SEA_FCL' ? 'Sea FCL' : orderType === 'SEA_LCL' ? 'Sea LCL' : orderType}</Badge>
-          <Badge>IMPORT</Badge>
-          <Badge>CNF</Badge>
-          <span className="text-[10px] text-[var(--text-muted)] self-center ml-1">adjustable after creation</span>
+        <div className="grid grid-cols-3 gap-2">
+          <div>
+            <FieldLabel>Order Type</FieldLabel>
+            <select
+              value={formState.orderType}
+              onChange={e => update({ orderType: e.target.value })}
+              className={inputBase}
+            >
+              <option value="SEA_FCL">Sea FCL</option>
+              <option value="SEA_LCL">Sea LCL</option>
+              <option value="AIR">Air</option>
+            </select>
+          </div>
+          <div>
+            <FieldLabel>Transaction</FieldLabel>
+            <select
+              value={formState.transactionType}
+              onChange={e => update({ transactionType: e.target.value })}
+              className={inputBase}
+            >
+              <option value="IMPORT">IMPORT</option>
+              <option value="EXPORT">EXPORT</option>
+            </select>
+          </div>
+          <div>
+            <FieldLabel>Incoterm</FieldLabel>
+            <select
+              value={formState.incotermCode}
+              onChange={e => update({ incotermCode: e.target.value })}
+              className={inputBase}
+            >
+              {['EXW','FCA','FAS','FOB','CFR','CNF','CIF','CPT','CIP','DAP','DPU','DDP'].map(i => (
+                <option key={i} value={i}>{i}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -414,7 +462,7 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
             />
           </div>
           <div>
-            <FieldLabel>Waybill / BL No.</FieldLabel>
+            <FieldLabel>Booking Ref / BL No.</FieldLabel>
             <input
               type="text"
               value={formState.waybillNumber}
@@ -616,10 +664,10 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
       <div>
         <SectionLabel>Initial Status</SectionLabel>
         <div className="flex items-center gap-2">
-          <Badge>{initialStatus} {STATUS_LABELS[initialStatus] ?? 'Unknown'}</Badge>
+          <Badge>{effectiveStatus} {STATUS_LABELS[effectiveStatus] ?? 'Unknown'}</Badge>
           {formState.etd && (
             <span className="text-xs text-[var(--text-muted)]">
-              — vessel {initialStatus >= 4001 ? 'departed' : 'departs'} {new Date(formState.etd).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+              — vessel {effectiveStatus >= 4001 ? 'departed' : 'departs'} {new Date(formState.etd).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
             </span>
           )}
         </div>

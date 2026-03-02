@@ -33,6 +33,7 @@ interface ShipmentFilesTabProps {
   userRole: string; // AFU | AFC_ADMIN | AFC_MANAGER | AFC_USER
   ports: Port[];
   onBLUpdated?: () => void; // called after a BL re-parse update is confirmed
+  onFileCountChange?: (count: number) => void; // called when file list loads or changes
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -81,7 +82,7 @@ const canToggleVisibility = (role: string) => isAFU(role);
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function ShipmentFilesTab({ shipmentId, userRole, ports, onBLUpdated }: ShipmentFilesTabProps) {
+export default function ShipmentFilesTab({ shipmentId, userRole, ports, onBLUpdated, onFileCountChange }: ShipmentFilesTabProps) {
   const [files, setFiles] = useState<ShipmentFile[]>([]);
   const [tags, setTags] = useState<FileTag[]>([]);
   const [loading, setLoading] = useState(true);
@@ -98,10 +99,11 @@ export default function ShipmentFilesTab({ shipmentId, userRole, ports, onBLUpda
     if (!result) return;
     if (result.success) {
       setFiles(result.data);
+      onFileCountChange?.(result.data.length);
     } else {
       setError(result.error);
     }
-  }, [shipmentId]);
+  }, [shipmentId, onFileCountChange]);
 
   const loadTags = useCallback(async () => {
     const result = await getFileTagsAction();
@@ -131,9 +133,13 @@ export default function ShipmentFilesTab({ shipmentId, userRole, ports, onBLUpda
     const result = await deleteShipmentFileAction(shipmentId, fileId);
     if (!result) return;
     if (result.success) {
-      setFiles(prev => prev.filter(f => f.file_id !== fileId));
+      setFiles(prev => {
+        const updated = prev.filter(f => f.file_id !== fileId);
+        onFileCountChange?.(updated.length);
+        return updated;
+      });
     }
-  }, [shipmentId]);
+  }, [shipmentId, onFileCountChange]);
 
   const handleVisibilityToggle = useCallback(async (file: ShipmentFile) => {
     const result = await updateShipmentFileAction(shipmentId, file.file_id, {
