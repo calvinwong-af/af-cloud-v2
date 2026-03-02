@@ -2258,7 +2258,27 @@ async def update_from_bl(
         except (ValueError, TypeError):
             containers_list = None
         if containers_list:
-            type_details["containers"] = containers_list
+            existing = type_details.get("containers") or []
+            merged = []
+            for i, bl_c in enumerate(containers_list):
+                existing_row = existing[i] if i < len(existing) else {}
+                merged_row = dict(existing_row)
+                if bl_c.get("container_number"):
+                    merged_row["container_number"] = bl_c["container_number"]
+                if bl_c.get("seal_number"):
+                    merged_row["seal_number"] = bl_c["seal_number"]
+                if bl_c.get("container_type"):
+                    merged_row["container_type"] = bl_c["container_type"]
+                merged.append(merged_row)
+            for bl_c in containers_list[len(existing):]:
+                merged.append({
+                    "container_number": bl_c.get("container_number"),
+                    "container_type": bl_c.get("container_type"),
+                    "seal_number": bl_c.get("seal_number"),
+                    "container_size": None,
+                    "quantity": 1,
+                })
+            type_details["containers"] = merged
 
     # Cargo items — replace array if provided and non-empty (LCL shipments)
     if cargo_items is not None:

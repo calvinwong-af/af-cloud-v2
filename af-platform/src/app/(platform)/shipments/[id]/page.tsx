@@ -139,20 +139,56 @@ function TypeDetailsCard({ order, orderType }: { order: ShipmentOrder; orderType
           ? <EmptyState message="No containers recorded" />
           : (
             <div className="space-y-2">
-              {fcl.containers.map((c, i) => (
-                <div key={i} className="flex items-center justify-between py-2 border-b border-[var(--border)] last:border-0">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 bg-[var(--surface)] border border-[var(--border)] rounded text-xs font-mono font-semibold text-[var(--text-mid)]">
-                      {c.container_size}
-                    </span>
-                    <span className="text-sm text-[var(--text-mid)]">{c.container_type}</span>
+              {fcl.containers.map((c, i) => {
+                const containerNum = c.container_number ?? null;
+                const sealNum = c.seal_number ?? null;
+                const legacyNums = c.container_numbers ?? [];
+                const legacySeals = c.seal_numbers ?? [];
+                return (
+                  <div key={i} className="py-2 border-b border-[var(--border)] last:border-0">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {c.container_size && (
+                          <span className="px-2 py-0.5 bg-[var(--surface)] border border-[var(--border)] rounded text-xs font-mono font-semibold text-[var(--text-mid)]">
+                            {c.container_size}
+                          </span>
+                        )}
+                        <span className="text-sm text-[var(--text-mid)]">{c.container_type}</span>
+                      </div>
+                      {c.quantity && <span className="text-sm font-semibold text-[var(--text)]">x {c.quantity}</span>}
+                    </div>
+                    {containerNum && (
+                      <div className="mt-1.5 flex items-center justify-between text-xs">
+                        <span className="text-[var(--text-muted)]">Container No.</span>
+                        <span className="font-mono text-[var(--text)]">{containerNum}</span>
+                      </div>
+                    )}
+                    {sealNum && (
+                      <div className="mt-0.5 flex items-center justify-between text-xs">
+                        <span className="text-[var(--text-muted)]">Seal No.</span>
+                        <span className="font-mono text-[var(--text)]">{sealNum}</span>
+                      </div>
+                    )}
+                    {legacyNums.map((n, j) => (
+                      <div key={j} className="mt-1.5 flex items-center justify-between text-xs">
+                        <span className="text-[var(--text-muted)]">Container No.</span>
+                        <span className="font-mono text-[var(--text)]">{n}</span>
+                      </div>
+                    ))}
+                    {legacySeals.map((s, j) => (
+                      <div key={j} className="mt-0.5 flex items-center justify-between text-xs">
+                        <span className="text-[var(--text-muted)]">Seal No.</span>
+                        <span className="font-mono text-[var(--text)]">{s}</span>
+                      </div>
+                    ))}
                   </div>
-                  <span className="text-sm font-semibold text-[var(--text)]">× {c.quantity}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
-        <p className="text-xs text-[var(--text-muted)] mt-3">Container and seal numbers assigned at booking.</p>
+        {fcl.containers.every(c => !c.container_number && (!c.container_numbers || c.container_numbers.length === 0)) && (
+          <p className="text-xs text-[var(--text-muted)] mt-3">Container and seal numbers assigned at booking.</p>
+        )}
       </SectionCard>
     );
   }

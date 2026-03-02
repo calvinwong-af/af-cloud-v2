@@ -67,6 +67,8 @@ export interface ContainerDetail {
   quantity: number;
   container_numbers: string[];
   seal_numbers: string[];
+  container_number?: string | null;   // BL-enriched
+  seal_number?: string | null;        // BL-enriched
 }
 
 export interface TypeDetailsFCL {
