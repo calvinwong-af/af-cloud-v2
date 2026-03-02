@@ -1,5 +1,26 @@
 # Prompt Completion Log — v2.73–v2.82
 
+### [2026-03-03 14:30 UTC] — v2.81: Migrate user data from Datastore to PostgreSQL
+- **Status:** Completed
+- **Tasks:**
+  - `af-server/core/db.py`: added `get_db_direct()` for sync queries outside FastAPI DI
+  - `af-server/core/auth.py`: rewrote `_build_claims()` — single keyed PostgreSQL SELECT on `users` table replaces 3 Datastore reads
+  - `af-server/routers/users.py`: full implementation replacing stub — GET /me (any auth), GET /users (AFU-ADMIN), POST /users, PATCH /users/{uid}, DELETE /users/{uid}, POST /users/{uid}/reset-password, POST /users/{uid}/send-reset-email
+  - `af-server/scripts/create_schema.py`: added `users` table DDL + 3 indexes
+  - `af-server/scripts/migrate_users.py`: new migration script — reads Datastore UserAccount+UserIAM+CompanyUserAccount, upserts to PostgreSQL; AFU-priority email deduplication; --dry-run flag
+  - `af-platform/src/lib/users.ts`: rewritten — calls GET /api/v2/users; zero Datastore imports
+  - `af-platform/src/app/actions/users.ts`: all write actions call af-server endpoints; getCurrentUserProfileAction calls GET /api/v2/users/me; zero Datastore imports
+  - DS-03 closes: datastore-query.ts no longer imported by any users module
+  - Lint passes with zero errors
+- **Files Modified:**
+  - `af-server/core/db.py`
+  - `af-server/core/auth.py`
+  - `af-server/routers/users.py` (rewritten from stub)
+  - `af-server/scripts/create_schema.py`
+  - `af-server/scripts/migrate_users.py` (new)
+  - `af-platform/src/lib/users.ts` (rewritten)
+  - `af-platform/src/app/actions/users.ts` (rewritten)
+
 ### [2026-03-03 13:00 UTC] — v2.80: Split BLUploadTab and CreateShipmentModal into sub-module directories
 - **Status:** Completed
 - **Tasks:**
