@@ -1160,7 +1160,17 @@ async def parse_bl(
             "total_weight_kg": parsed.get("cargo_weight_kg"),
             "total_packages": None,
             "delivery_status": None,
-            "containers": parsed.get("containers"),
+            "containers": [
+                {
+                    "container_number": c.get("container_number"),
+                    "container_type": c.get("size"),
+                    "seal_number": None,
+                    "packages": str(c.get("quantity")) if c.get("quantity") else None,
+                    "weight_kg": c.get("gross_weight_kg"),
+                }
+                for c in (parsed.get("containers") or [])
+                if isinstance(c, dict)
+            ],
             "cargo_items": None,
         }
         order_type = "SEA_FCL"

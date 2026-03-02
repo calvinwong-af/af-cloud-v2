@@ -5,6 +5,17 @@ import { Upload, CheckCircle, AlertTriangle, Link2, X, Loader2, Search } from 'l
 import { DateTimeInput } from '@/components/shared/DateInput';
 import TerminalSelector from '@/components/shared/TerminalSelector';
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function sanitiseErrorMessage(raw: string | null | undefined): string {
+  if (!raw) return 'Document parsing failed — please try again or enter details manually';
+  if (raw.includes('overloaded_error') || raw.includes('529'))
+    return 'Service temporarily busy — please try again in a moment';
+  if (raw.includes('ANTHROPIC_API_KEY'))
+    return 'Document parsing is not available — contact support';
+  return 'Document parsing failed — please try again or enter details manually';
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Port {
@@ -226,7 +237,7 @@ export default function BLUploadTab({ ports, companies = [], onParsed, parsedRes
         return;
       }
       if (!result.success) {
-        setError(result.error ?? 'Failed to parse document');
+        setError(sanitiseErrorMessage(result.error));
         setPhase('upload');
         return;
       }
