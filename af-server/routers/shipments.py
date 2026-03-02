@@ -64,6 +64,12 @@ router = APIRouter()
 # Helper: parse JSONB values that may come back as str or dict
 # ---------------------------------------------------------------------------
 
+# BEST PRACTICE: Always use _parse_jsonb() when reading JSONB columns from PostgreSQL rows.
+# SQLAlchemy + psycopg2 may return JSONB as an already-parsed dict or list — never as a raw
+# string — depending on driver version and column type registration. Calling json.loads()
+# directly on a JSONB column value will raise TypeError at runtime.
+# CORRECT:   val = _parse_jsonb(row[n]) or {}
+# INCORRECT: val = json.loads(row[n]) if row[n] else {}
 def _parse_jsonb(val):
     """Parse a JSONB value from the database (may already be dict or str)."""
     if val is None:
@@ -2990,7 +2996,8 @@ async def apply_booking_confirmation(
         params["dest_port"] = body.pod_code
 
     # Merge into booking JSONB
-    booking = json.loads(row[1]) if row[1] else {}
+    booking = _parse_jsonb(row[1]) or {}
+    if not isinstance(booking, dict): booking = {}
     if body.vessel_name is not None:
         booking["vessel_name"] = body.vessel_name
     if body.voyage_number is not None:
@@ -3001,7 +3008,8 @@ async def apply_booking_confirmation(
     params["booking"] = json.dumps(booking)
 
     # Update route node timings
-    nodes = json.loads(row[2]) if row[2] else []
+    nodes = _parse_jsonb(row[2]) or []
+    if not isinstance(nodes, list): nodes = []
     for node in nodes:
         if node.get("role") == "ORIGIN" and body.etd:
             node["scheduled_etd"] = body.etd
@@ -3087,7 +3095,8 @@ async def apply_awb(
         params["awb_type"] = body.awb_type
 
     # Merge flight info into booking JSONB
-    booking = json.loads(row[1]) if row[1] else {}
+    booking = _parse_jsonb(row[1]) or {}
+    if not isinstance(booking, dict): booking = {}
     if body.flight_number is not None:
         booking["flight_number"] = body.flight_number
     if body.flight_date is not None:
@@ -3096,7 +3105,8 @@ async def apply_awb(
     params["booking"] = json.dumps(booking)
 
     # Merge parties
-    parties = json.loads(row[2]) if row[2] else {}
+    parties = _parse_jsonb(row[2]) or {}
+    if not isinstance(parties, dict): parties = {}
     if body.shipper_name is not None or body.shipper_address is not None:
         shipper = parties.get("shipper") or {}
         if body.shipper_name is not None:
