@@ -423,8 +423,14 @@ export default function ShipmentOrderDetailPage() {
           shipmentId={order.quotation_id}
           companyId={order.company_id}
           currentParties={{
-            shipper: order.parties?.shipper ?? undefined,
-            consignee: order.parties?.consignee ?? undefined,
+            shipper: order.parties?.shipper ? {
+              name: order.parties.shipper.name ?? undefined,
+              address: order.parties.shipper.address ?? undefined,
+            } : undefined,
+            consignee: order.parties?.consignee ? {
+              name: order.parties.consignee.name ?? undefined,
+              address: order.parties.consignee.address ?? undefined,
+            } : undefined,
           }}
           ports={ports}
           onClose={() => setShowDocParseModal(false)}
