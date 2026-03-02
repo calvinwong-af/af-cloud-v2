@@ -1,5 +1,16 @@
 # Prompt Completion Log — v2.63–v2.72
 
+### [2026-03-03 UTC] — v2.71: DOC-PARSE UX refinements: port combobox + company ownership
+- **Status:** Completed
+- **Tasks:**
+  - Fix 1: Port/airport dropdowns now use `CODE — Name` format; all `<select>` replaced with `PortCombobox` (searchable, filtered, outside-click close) in BLUploadTab (4 dropdowns: AWB origin/dest airports, sea origin/dest ports) and DocumentParseModal (2 AWB airport dropdowns)
+  - Fix 2: Context-aware company ownership — DocumentParseModal adds `companyId` prop for State A (hide section when shipment already has owner); State C amber widget moved to TOP of review form; BLUploadTab State C amber banner at top with inline search + skip; State B match card stays near consignee
+  - API contract: `companyId` passed from shipments detail page `order.company_id`
+- **Files Modified:**
+  - `af-platform/src/components/shipments/BLUploadTab.tsx` — PortCombobox, port label format, State C banner, companyBannerSkipped state
+  - `af-platform/src/components/shipments/DocumentParseModal.tsx` — PortCombobox, port label format, companyId prop, company widget restructured to top
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — companyId prop passed to DocumentParseModal
+
 ### [2026-03-02 UTC] — v2.70: DOC-PARSE UX fixes + AWB redesign
 - **Status:** Completed
 - **Tasks:**
