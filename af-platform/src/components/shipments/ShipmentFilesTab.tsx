@@ -32,6 +32,7 @@ interface ShipmentFilesTabProps {
   shipmentId: string;
   userRole: string; // AFU | AFC_ADMIN | AFC_MANAGER | AFC_USER
   ports: Port[];
+  refreshKey?: number; // increment to trigger a files reload (e.g. after document apply)
   onBLUpdated?: () => void; // called after a BL re-parse update is confirmed
   onFileCountChange?: (count: number) => void; // called when file list loads or changes
 }
@@ -93,7 +94,7 @@ const canToggleVisibility = (role: string) => isAFU(role);
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function ShipmentFilesTab({ shipmentId, userRole, ports, onBLUpdated, onFileCountChange }: ShipmentFilesTabProps) {
+export default function ShipmentFilesTab({ shipmentId, userRole, ports, refreshKey, onBLUpdated, onFileCountChange }: ShipmentFilesTabProps) {
   const [files, setFiles] = useState<ShipmentFile[]>([]);
   const [tags, setTags] = useState<FileTag[]>([]);
   const [loading, setLoading] = useState(true);
@@ -130,6 +131,16 @@ export default function ShipmentFilesTab({ shipmentId, userRole, ports, onBLUpda
     }
     load();
   }, [loadFiles, loadTags]);
+
+  // Reload files when refreshKey changes (e.g. after document apply from parent)
+  const isFirstRefreshRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRefreshRender.current) {
+      isFirstRefreshRender.current = false;
+      return;
+    }
+    loadFiles();
+  }, [refreshKey, loadFiles]);
 
   const handleDownload = useCallback(async (fileId: number) => {
     const result = await getFileDownloadUrlAction(shipmentId, fileId);

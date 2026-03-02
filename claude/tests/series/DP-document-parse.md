@@ -1,7 +1,7 @@
 # DP — Document Parser
 **Series:** DP
 **Status:** 🔵 Active
-**Total:** 40 | **YES:** 17 | **PENDING:** 19 | **DEFERRED:** 0 | **NA:** 0
+**Total:** 47 | **YES:** 17 | **PENDING:** 26 | **DEFERRED:** 0 | **NA:** 0
 **Last Updated:** 03 March 2026
 
 ---
@@ -50,6 +50,13 @@
 | DP-38 | apply-booking-confirmation — ETD/ETA updates on route card | PENDING | Requires v2.73 |
 | DP-39 | After AWB apply — Files tab updates without manual page reload | PENDING | Requires v2.73 |
 | DP-40 | After BC apply — Files tab updates without manual page reload | PENDING | Requires v2.73 |
+| DP-41 | AWB apply — amber diff badge shown when parsed shipper differs from current | PENDING | |
+| DP-42 | AWB apply — no diff badge when parsed shipper matches current | PENDING | |
+| DP-43 | DocumentParseModal — "Applying..." spinner shown on Use This Data click | PENDING | |
+| DP-44 | DocumentParseModal — modal non-dismissible during apply (X + Cancel disabled) | PENDING | |
+| DP-45 | DocumentParseModal — success state shown briefly before close | PENDING | Green check ~800ms |
+| DP-46 | Files tab badge updates immediately after AWB apply (no page reload) | PENDING | |
+| DP-47 | Files tab badge updates immediately after BC apply (no page reload) | PENDING | |
 
 ---
 

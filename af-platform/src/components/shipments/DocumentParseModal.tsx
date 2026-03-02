@@ -43,12 +43,18 @@ interface Company {
   name: string;
 }
 
+interface CurrentParties {
+  shipper?: { name?: string; address?: string };
+  consignee?: { name?: string; address?: string };
+}
+
 interface DocumentParseModalProps {
   shipmentId?: string;
   companyId?: string | null; // If set, shipment already has an owner — hide ownership section (State A)
+  currentParties?: CurrentParties; // Existing shipment parties — used to show diff badge on AWB review
   ports: Port[];
   onClose: () => void;
-  onResult: (docType: DocType, data: ParsedBCData | ParsedAWBData | ParsedBL, file: File | null) => void;
+  onResult: (docType: DocType, data: ParsedBCData | ParsedAWBData | ParsedBL, file: File | null) => Promise<{ ok: boolean; error?: string } | void>;
   allowedTypes?: DocType[];
 }
 
@@ -181,6 +187,7 @@ function PortCombobox({
 export default function DocumentParseModal({
   ports,
   companyId,
+  currentParties,
   onClose,
   onResult,
   allowedTypes,
@@ -192,6 +199,9 @@ export default function DocumentParseModal({
   const [confidence, setConfidence] = useState<ParseConfidence | null>(null);
   const [parsedData, setParsedData] = useState<Record<string, unknown> | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [applySuccess, setApplySuccess] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // AWB form state (pre-filled from parsed data, user-editable)
@@ -314,35 +324,52 @@ export default function DocumentParseModal({
     }
   }, [file, allowedTypes]);
 
-  const handleUseData = useCallback(() => {
+  const handleApply = useCallback(async () => {
     if (!docType || !parsedData) return;
 
-    if (docType === 'AWB') {
-      // Pass AWBFormState values (not raw parsed data)
-      const awbPayload: ParsedAWBData = {
-        awb_type: (awbForm.awbType || 'DIRECT') as 'HOUSE' | 'MASTER' | 'DIRECT',
-        hawb_number: awbForm.hawbNumber || null,
-        mawb_number: awbForm.mawbNumber || null,
-        shipper_name: awbForm.shipperName || null,
-        shipper_address: awbForm.shipperAddress || null,
-        consignee_name: awbForm.consigneeName || null,
-        consignee_address: awbForm.consigneeAddress || null,
-        notify_party: null,
-        origin_iata: awbForm.originIata || null,
-        dest_iata: awbForm.destIata || null,
-        flight_number: awbForm.flightNumber || null,
-        flight_date: awbForm.flightDate || null,
-        pieces: awbForm.pieces ? parseInt(awbForm.pieces, 10) : null,
-        gross_weight_kg: awbForm.grossWeightKg ? parseFloat(awbForm.grossWeightKg) : null,
-        chargeable_weight_kg: awbForm.chargeableWeightKg ? parseFloat(awbForm.chargeableWeightKg) : null,
-        cargo_description: awbForm.cargoDescription || null,
-        hs_code: awbForm.hsCode || null,
-      };
-      onResult(docType, awbPayload, file);
-    } else {
+    const awbPayload: ParsedAWBData = {
+      awb_type: (awbForm.awbType || 'DIRECT') as 'HOUSE' | 'MASTER' | 'DIRECT',
+      hawb_number: awbForm.hawbNumber || null,
+      mawb_number: awbForm.mawbNumber || null,
+      shipper_name: awbForm.shipperName || null,
+      shipper_address: awbForm.shipperAddress || null,
+      consignee_name: awbForm.consigneeName || null,
+      consignee_address: awbForm.consigneeAddress || null,
+      notify_party: null,
+      origin_iata: awbForm.originIata || null,
+      dest_iata: awbForm.destIata || null,
+      flight_number: awbForm.flightNumber || null,
+      flight_date: awbForm.flightDate || null,
+      pieces: awbForm.pieces ? parseInt(awbForm.pieces, 10) : null,
+      gross_weight_kg: awbForm.grossWeightKg ? parseFloat(awbForm.grossWeightKg) : null,
+      chargeable_weight_kg: awbForm.chargeableWeightKg ? parseFloat(awbForm.chargeableWeightKg) : null,
+      cargo_description: awbForm.cargoDescription || null,
+      hs_code: awbForm.hsCode || null,
+    };
+
+    if (docType === 'BL') {
+      // BL: no loading state — parent will close this modal and open BLUpdateModal
       onResult(docType, parsedData as unknown as ParsedBCData | ParsedBL, file);
+      return;
     }
-  }, [docType, parsedData, awbForm, onResult, file]);
+
+    setIsApplying(true);
+    setApplyError(null);
+    try {
+      const payload = docType === 'AWB' ? awbPayload : parsedData as unknown as ParsedBCData;
+      const result = await onResult(docType, payload, file);
+      if (!result || result.ok) {
+        setApplySuccess(true);
+        setTimeout(() => onClose(), 800);
+      } else {
+        setApplyError(result.error ?? 'Apply failed — please try again');
+        setIsApplying(false);
+      }
+    } catch {
+      setApplyError('Apply failed — please try again');
+      setIsApplying(false);
+    }
+  }, [docType, parsedData, awbForm, onResult, file, onClose]);
 
   // Company search handler — fetch on demand
   const handleCompanySearch = useCallback(async (query: string) => {
@@ -382,13 +409,13 @@ export default function DocumentParseModal({
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">Upload Document</h2>
-          <button onClick={onClose} className="p-1 rounded hover:bg-[var(--surface-hover)]">
+          <button onClick={isApplying ? undefined : onClose} disabled={isApplying} className="p-1 rounded hover:bg-[var(--surface-hover)] disabled:opacity-30">
             <X className="w-4 h-4 text-[var(--text-secondary)]" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div className={`flex-1 overflow-y-auto px-5 py-4 ${isApplying ? 'opacity-50 pointer-events-none' : ''}`}>
           {/* Idle / Upload phase */}
           {phase === 'idle' && (
             <>
@@ -600,7 +627,12 @@ export default function DocumentParseModal({
 
                   {/* Shipper */}
                   <div>
-                    <SectionLabel>Shipper</SectionLabel>
+                    <div className="flex items-center gap-2 mb-2">
+                      <SectionLabel>Shipper</SectionLabel>
+                      {currentParties?.shipper?.name && awbForm.shipperName && awbForm.shipperName !== currentParties.shipper.name && (
+                        <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 rounded">Differs from current</span>
+                      )}
+                    </div>
                     <div>
                       <FieldLabel>Name</FieldLabel>
                       <input type="text" value={awbForm.shipperName} onChange={e => updateAwb({ shipperName: e.target.value })} className={`${INPUT_BASE} ${awbForm.shipperName ? PREFILLED : ''}`} />
@@ -613,7 +645,12 @@ export default function DocumentParseModal({
 
                   {/* Consignee */}
                   <div>
-                    <SectionLabel>Consignee</SectionLabel>
+                    <div className="flex items-center gap-2 mb-2">
+                      <SectionLabel>Consignee</SectionLabel>
+                      {currentParties?.consignee?.name && awbForm.consigneeName && awbForm.consigneeName !== currentParties.consignee.name && (
+                        <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 rounded">Differs from current</span>
+                      )}
+                    </div>
                     <div>
                       <FieldLabel>Name</FieldLabel>
                       <input type="text" value={awbForm.consigneeName} onChange={e => updateAwb({ consigneeName: e.target.value })} className={`${INPUT_BASE} ${awbForm.consigneeName ? PREFILLED : ''}`} />
@@ -744,9 +781,14 @@ export default function DocumentParseModal({
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-[var(--border)]">
+          {applyError && (
+            <p className="text-xs text-red-600 mr-auto">{applyError}</p>
+          )}
+
           <button
-            onClick={onClose}
-            className="px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] border border-[var(--border)] rounded-lg hover:bg-[var(--surface)]"
+            onClick={isApplying ? undefined : onClose}
+            disabled={isApplying}
+            className="px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] border border-[var(--border)] rounded-lg hover:bg-[var(--surface)] disabled:opacity-30"
           >
             Cancel
           </button>
@@ -761,14 +803,31 @@ export default function DocumentParseModal({
             </button>
           )}
 
-          {phase === 'review' && (
+          {phase === 'review' && !applySuccess && (
             <button
-              onClick={handleUseData}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[var(--sky)] rounded-lg hover:bg-[var(--sky-deep)]"
+              onClick={handleApply}
+              disabled={isApplying}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[var(--sky)] rounded-lg hover:bg-[var(--sky-deep)] disabled:opacity-60"
             >
-              <Check className="w-3.5 h-3.5" />
-              Use This Data
+              {isApplying ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Applying...
+                </>
+              ) : (
+                <>
+                  <Check className="w-3.5 h-3.5" />
+                  Use This Data
+                </>
+              )}
             </button>
+          )}
+
+          {applySuccess && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-600">
+              <Check className="w-3.5 h-3.5" />
+              Applied successfully
+            </div>
           )}
         </div>
       </div>

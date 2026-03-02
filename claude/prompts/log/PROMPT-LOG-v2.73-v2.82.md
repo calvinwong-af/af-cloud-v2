@@ -1,5 +1,20 @@
 # Prompt Completion Log — v2.73–v2.82
 
+### [2026-03-03 08:00 UTC] — v2.76: AWB apply UX: diff indicator, files tab refresh, loading state
+- **Status:** Completed
+- **Tasks:**
+  - Issue 1: Added `currentParties` prop to DocumentParseModal; amber "Differs from current" badge shown next to Shipper/Consignee in AWB review when parsed name differs from shipment's current party
+  - Issue 2: Added `refreshKey` prop + skip-first-render `useEffect` to ShipmentFilesTab; `filesRefreshKey` state in page.tsx incremented after successful file save; `router.refresh()` called after apply
+  - Issue 3: Added `isApplying/applyError/applySuccess` state to DocumentParseModal; content dimmed + pointer-events-none while applying; X button disabled; 800ms success state before auto-close; error shown in footer for retry
+  - Updated DP series test file: added DP-41–DP-47, counts 40→47 total, 19→26 PENDING
+  - Updated AF-Test-Master.md DP row and TOTAL row
+- **Files Modified:**
+  - `af-platform/src/components/shipments/DocumentParseModal.tsx`
+  - `af-platform/src/components/shipments/ShipmentFilesTab.tsx`
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx`
+  - `claude/tests/series/DP-document-parse.md`
+  - `claude/tests/AF-Test-Master.md`
+
 ### [2026-03-03 07:30 UTC] — v2.75: Test list modularization
 - **Status:** Completed
 - **Tasks:**

@@ -1276,6 +1276,7 @@ export default function ShipmentOrderDetailPage() {
   const [showEditParties, setShowEditParties] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'files'>('overview');
   const [fileCount, setFileCount] = useState<number | null>(null);
+  const [filesRefreshKey, setFilesRefreshKey] = useState(0);
   const [routeEtd, setRouteEtd] = useState<string | null>(null);
   const [routeEta, setRouteEta] = useState<string | null>(null);
 
@@ -1518,6 +1519,7 @@ export default function ShipmentOrderDetailPage() {
           shipmentId={order.quotation_id}
           userRole={accountType === 'AFU' ? 'AFU' : (userRole ?? 'AFC_USER')}
           ports={ports}
+          refreshKey={filesRefreshKey}
           onBLUpdated={loadOrder}
           onFileCountChange={setFileCount}
         />
@@ -1640,6 +1642,10 @@ export default function ShipmentOrderDetailPage() {
         <DocumentParseModal
           shipmentId={order.quotation_id}
           companyId={order.company_id}
+          currentParties={{
+            shipper: order.parties?.shipper,
+            consignee: order.parties?.consignee,
+          }}
           ports={ports}
           onClose={() => setShowDocParseModal(false)}
           allowedTypes={
@@ -1650,38 +1656,56 @@ export default function ShipmentOrderDetailPage() {
                 : ['BOOKING_CONFIRMATION']
           }
           onResult={async (docType: DocType, data, uploadedFile) => {
-            setShowDocParseModal(false);
-
             if (docType === 'BL') {
-              // Open BLUpdateModal pre-populated with parsed data
+              // BL: close this modal and open BLUpdateModal — no loading state needed
+              setShowDocParseModal(false);
               setDocParseBLData(data as ParsedBL);
               setShowBLModal(true);
-            } else if (docType === 'BOOKING_CONFIRMATION') {
+              return;
+            }
+
+            if (docType === 'BOOKING_CONFIRMATION') {
               const result = await applyBookingConfirmationAction(order.quotation_id, data as ParsedBCData);
-              if (result && result.success) {
-                loadOrder();
-                loadRouteTimings();
-                // Save the uploaded document to Files (non-critical)
-                if (uploadedFile) {
-                  const fd = new FormData();
-                  fd.append('file', uploadedFile, uploadedFile.name);
-                  fd.append('doc_type', 'BC');
-                  await saveDocumentFileAction(order.quotation_id, fd);
+              if (!result || !result.success) {
+                return { ok: false, error: result?.error ?? 'Apply failed' };
+              }
+              await Promise.all([loadOrder(), loadRouteTimings()]);
+              router.refresh();
+              // Save the uploaded document to Files (non-critical)
+              if (uploadedFile) {
+                const fd = new FormData();
+                fd.append('file', uploadedFile, uploadedFile.name);
+                fd.append('doc_type', 'BC');
+                const saveResult = await saveDocumentFileAction(order.quotation_id, fd);
+                if (!saveResult || !saveResult.success) {
+                  console.error('[DocumentParse] BC file save failed:', saveResult?.error);
+                } else {
+                  setFilesRefreshKey(k => k + 1);
                 }
               }
-            } else if (docType === 'AWB') {
+              return { ok: true };
+            }
+
+            if (docType === 'AWB') {
               const result = await applyAWBAction(order.quotation_id, data as ParsedAWBData);
-              if (result && result.success) {
-                loadOrder();
-                loadRouteTimings();
-                // Save the uploaded document to Files (non-critical)
-                if (uploadedFile) {
-                  const fd = new FormData();
-                  fd.append('file', uploadedFile, uploadedFile.name);
-                  fd.append('doc_type', 'AWB');
-                  await saveDocumentFileAction(order.quotation_id, fd);
+              if (!result || !result.success) {
+                return { ok: false, error: result?.error ?? 'Apply failed' };
+              }
+              await Promise.all([loadOrder(), loadRouteTimings()]);
+              router.refresh();
+              // Save the uploaded document to Files (non-critical)
+              if (uploadedFile) {
+                const fd = new FormData();
+                fd.append('file', uploadedFile, uploadedFile.name);
+                fd.append('doc_type', 'AWB');
+                const saveResult = await saveDocumentFileAction(order.quotation_id, fd);
+                if (!saveResult || !saveResult.success) {
+                  console.error('[DocumentParse] AWB file save failed:', saveResult?.error);
+                } else {
+                  setFilesRefreshKey(k => k + 1);
                 }
               }
+              return { ok: true };
             }
           }}
         />
