@@ -811,6 +811,57 @@ The carrier_agent field is the party issuing the BL — may be a carrier, NVOCC,
 }"""
 
 
+_CLASSIFY_PROMPT_LOCAL = """You are a freight document classifier. Examine the document and identify the document type.
+Reply with ONLY a JSON object (no markdown, no explanation):
+{"doc_type": "BL"|"AWB"|"BOOKING_CONFIRMATION"|"UNKNOWN", "confidence": "HIGH"|"MEDIUM"|"LOW"}"""
+
+_BC_EXTRACTION_PROMPT_LOCAL = """You are a freight booking confirmation parser. Extract all available fields from this booking confirmation document.
+Reply with ONLY a JSON object (no markdown, no preamble):
+{
+  "booking_reference": "string or null",
+  "carrier": "string or null",
+  "vessel_name": "string or null",
+  "voyage_number": "string or null",
+  "pol_name": "string or null",
+  "pol_code": "string or null",
+  "pod_name": "string or null",
+  "pod_code": "string or null",
+  "etd": "YYYY-MM-DD or null",
+  "eta_pol": "YYYY-MM-DD or null",
+  "eta_pod": "YYYY-MM-DD or null",
+  "cut_off_date": "YYYY-MM-DD or null",
+  "containers": [{"size": "string", "quantity": "integer"}],
+  "cargo_description": "string or null",
+  "hs_code": "string or null",
+  "cargo_weight_kg": "number or null",
+  "booking_party": "string or null",
+  "shipper": "string or null"
+}"""
+
+_AWB_EXTRACTION_PROMPT_LOCAL = """You are an air waybill parser. Extract all available fields from this Air Waybill (AWB) document.
+Determine if this is a House AWB (HAWB) or Master AWB (MAWB) or a direct AWB (MAWB only, no HAWB).
+Reply with ONLY a JSON object (no markdown, no preamble):
+{
+  "awb_type": "HOUSE or MASTER or DIRECT",
+  "hawb_number": "string or null",
+  "mawb_number": "string or null",
+  "shipper_name": "string or null",
+  "shipper_address": "string or null",
+  "consignee_name": "string or null",
+  "consignee_address": "string or null",
+  "notify_party": "string or null",
+  "origin_iata": "string or null",
+  "dest_iata": "string or null",
+  "flight_number": "string or null",
+  "flight_date": "YYYY-MM-DD or null",
+  "pieces": "integer or null",
+  "gross_weight_kg": "number or null",
+  "chargeable_weight_kg": "number or null",
+  "cargo_description": "string or null",
+  "hs_code": "string or null"
+}"""
+
+
 _PORT_ALIASES: dict[str, str] = {
     "PORT KELANG":     "MYPKG",
     "KELANG":          "MYPKG",
@@ -1024,94 +1075,134 @@ async def parse_bl(
     # Call Claude API
     import anthropic
     client_ai = anthropic.Anthropic(api_key=api_key)
+    file_b64 = base64.b64encode(file_bytes).decode()
 
-    try:
+    def _call_claude_local(prompt: str, max_tokens: int = 512) -> str:
+        """Call Claude with the uploaded file and a prompt. Returns raw text."""
         if media_type == "application/pdf":
-            message = client_ai.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=4096,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "document",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media_type,
-                                "data": base64.b64encode(file_bytes).decode(),
-                            },
-                        },
-                        {"type": "text", "text": _BL_EXTRACTION_PROMPT},
-                    ],
-                }],
-            )
+            content = [
+                {"type": "document", "source": {"type": "base64", "media_type": media_type, "data": file_b64}},
+                {"type": "text", "text": prompt},
+            ]
         else:
-            message = client_ai.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=4096,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media_type,
-                                "data": base64.b64encode(file_bytes).decode(),
-                            },
-                        },
-                        {"type": "text", "text": _BL_EXTRACTION_PROMPT},
-                    ],
-                }],
-            )
-    except Exception as e:
-        logger.error("Claude API call failed: %s", e)
-        raise HTTPException(status_code=502, detail=f"AI parsing failed: {str(e)}")
+            content = [
+                {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": file_b64}},
+                {"type": "text", "text": prompt},
+            ]
+        msg = client_ai.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": content}],
+        )
+        return msg.content[0].text if msg.content else ""
 
-    # Parse response
-    raw_text = message.content[0].text if message.content else ""
-    # Strip any markdown code fences if present
-    raw_text = raw_text.strip()
-    if raw_text.startswith("```"):
-        raw_text = raw_text.split("\n", 1)[1] if "\n" in raw_text else raw_text[3:]
-    if raw_text.endswith("```"):
-        raw_text = raw_text[:-3].strip()
-    if raw_text.startswith("json"):
-        raw_text = raw_text[4:].strip()
+    def _strip_fences(text: str) -> str:
+        text = text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        if text.startswith("json"):
+            text = text[4:]
+        return text.strip()
+
+    # --- Step 1: Classify ---
+    try:
+        raw_classify = _call_claude_local(_CLASSIFY_PROMPT_LOCAL, max_tokens=64)
+        classify_json = json.loads(_strip_fences(raw_classify))
+        doc_type = classify_json.get("doc_type", "UNKNOWN")
+        if doc_type not in ("BL", "AWB", "BOOKING_CONFIRMATION"):
+            doc_type = "BL"
+        logger.info("[parse-bl] Classified as %s", doc_type)
+    except Exception as e:
+        logger.warning("[parse-bl] Classification failed (%s) — defaulting to BL", e)
+        doc_type = "BL"
+
+    # --- Step 2: Extract based on doc_type ---
+    extraction_prompt = {
+        "BL": _BL_EXTRACTION_PROMPT,
+        "BOOKING_CONFIRMATION": _BC_EXTRACTION_PROMPT_LOCAL,
+        "AWB": _AWB_EXTRACTION_PROMPT_LOCAL,
+    }[doc_type]
 
     try:
+        raw_text = _call_claude_local(extraction_prompt, max_tokens=4096)
+        raw_text = _strip_fences(raw_text)
         parsed = json.loads(raw_text)
     except json.JSONDecodeError:
         logger.error("Failed to parse Claude response as JSON: %s", raw_text[:500])
         raise HTTPException(status_code=502, detail="AI returned invalid JSON")
+    except Exception as e:
+        logger.error("Claude API call failed: %s", e)
+        raise HTTPException(status_code=502, detail=f"AI parsing failed: {str(e)}")
 
-    # Derive fields
-
-    # Order type: containers = FCL, otherwise check delivery_status
-    containers = parsed.get("containers") or []
-    delivery_status = (parsed.get("delivery_status") or "").upper()
-    if containers and len(containers) > 0:
+    # --- Step 3: Post-process per doc_type ---
+    if doc_type == "BOOKING_CONFIRMATION":
+        pol = (parsed.get("pol_code") or parsed.get("pol_name") or "").strip()
+        pod = (parsed.get("pod_code") or parsed.get("pod_name") or "").strip()
+        parsed_for_response = {
+            "waybill_number": parsed.get("booking_reference"),
+            "booking_number": parsed.get("booking_reference"),
+            "carrier_agent": parsed.get("carrier"),
+            "carrier": parsed.get("carrier"),
+            "vessel_name": parsed.get("vessel_name"),
+            "voyage_number": parsed.get("voyage_number"),
+            "port_of_loading": pol,
+            "port_of_discharge": pod,
+            "on_board_date": parsed.get("etd"),
+            "freight_terms": None,
+            "shipper_name": parsed.get("shipper") or parsed.get("booking_party"),
+            "shipper_address": None,
+            "consignee_name": None,
+            "consignee_address": None,
+            "notify_party_name": None,
+            "cargo_description": parsed.get("cargo_description"),
+            "total_weight_kg": parsed.get("cargo_weight_kg"),
+            "total_packages": None,
+            "delivery_status": None,
+            "containers": parsed.get("containers"),
+            "cargo_items": None,
+        }
         order_type = "SEA_FCL"
-    elif "LCL" in delivery_status:
-        order_type = "SEA_LCL"
-    else:
-        order_type = "SEA_FCL"
+        initial_status = STATUS_BOOKING_CONFIRMED  # BC always means vessel not yet departed
+        origin_parsed_label = pol or None
+        destination_parsed_label = pod or None
+        origin_un_code = _match_port_un_code(conn, pol) if pol else None
+        destination_un_code = _match_port_un_code(conn, pod) if pod else None
+        company_matches = []
 
-    # Port matching
-    origin_parsed_label = (parsed.get("port_of_loading") or "").strip()
-    destination_parsed_label = (parsed.get("port_of_discharge") or "").strip()
-    origin_un_code = _match_port_un_code(conn, origin_parsed_label)
-    destination_un_code = _match_port_un_code(conn, destination_parsed_label)
+    elif doc_type == "AWB":
+        parsed_for_response = parsed  # Keep AWB fields as-is
+        order_type = "AIR"
+        initial_status = STATUS_BOOKING_CONFIRMED
+        origin_iata = (parsed.get("origin_iata") or "").strip().upper()
+        dest_iata = (parsed.get("dest_iata") or "").strip().upper()
+        origin_un_code = origin_iata or None
+        destination_un_code = dest_iata or None
+        origin_parsed_label = origin_iata or None
+        destination_parsed_label = dest_iata or None
+        company_matches = _match_company(conn, parsed.get("consignee_name") or "")
 
-    # Initial status
-    initial_status = _determine_initial_status(parsed.get("on_board_date"))
-
-    # Company matching
-    company_matches = _match_company(conn, parsed.get("consignee_name") or "")
+    else:  # BL
+        parsed_for_response = parsed
+        containers = parsed.get("containers") or []
+        delivery_status = (parsed.get("delivery_status") or "").upper()
+        if containers and len(containers) > 0:
+            order_type = "SEA_FCL"
+        elif "LCL" in delivery_status:
+            order_type = "SEA_LCL"
+        else:
+            order_type = "SEA_FCL"
+        origin_parsed_label = (parsed.get("port_of_loading") or "").strip()
+        destination_parsed_label = (parsed.get("port_of_discharge") or "").strip()
+        origin_un_code = _match_port_un_code(conn, origin_parsed_label)
+        destination_un_code = _match_port_un_code(conn, destination_parsed_label)
+        initial_status = _determine_initial_status(parsed.get("on_board_date"))
+        company_matches = _match_company(conn, parsed.get("consignee_name") or "")
 
     return {
-        "parsed": parsed,
-        "doc_type": "BL",
+        "parsed": parsed_for_response,
+        "doc_type": doc_type,
         "order_type": order_type,
         "origin_un_code": origin_un_code,
         "origin_parsed_label": origin_parsed_label or None,
@@ -1152,6 +1243,14 @@ class CreateFromBLRequest(BaseModel):
     notify_party_name: str | None = None
     containers: list | None = None
     customer_reference: str | None = None
+    # AWB-specific fields
+    mawb_number: str | None = None
+    hawb_number: str | None = None
+    awb_type: str | None = None
+    flight_number: str | None = None
+    flight_date: str | None = None
+    pieces: int | None = None
+    chargeable_weight_kg: float | None = None
 
 
 @router.post("/create-from-bl")
@@ -1202,12 +1301,16 @@ async def create_from_bl(
         "dg_un_number": None,
     }
 
-    booking = {
+    booking: dict = {
         "carrier": body.carrier,
         "booking_reference": body.waybill_number,
         "vessel_name": body.vessel_name,
         "voyage_number": body.voyage_number,
     }
+    if body.flight_number is not None:
+        booking["flight_number"] = body.flight_number
+    if body.flight_date is not None:
+        booking["flight_date"] = body.flight_date
 
     parties = {}
     if body.shipper_name:
@@ -1227,9 +1330,16 @@ async def create_from_bl(
 
     creator = {"uid": claims.uid, "email": claims.email}
 
-    # Type details for containers
+    # Type details for containers / air
     type_details = None
-    if body.containers:
+    if body.order_type == "AIR":
+        type_details = {
+            "type": "AIR",
+            "packages": [],
+            "chargeable_weight": body.chargeable_weight_kg,
+            "pieces": body.pieces,
+        }
+    elif body.containers:
         type_details = {"containers": body.containers}
 
     # Insert into shipments table
@@ -1241,6 +1351,7 @@ async def create_from_bl(
             cargo, type_details, booking, parties, bl_document,
             exception_data, route_nodes, trash,
             cargo_ready_date, etd, eta, creator,
+            hawb_number, mawb_number, awb_type,
             migrated_from_v1, created_at, updated_at
         ) VALUES (
             :id, :countid, :company_id, :order_type, :transaction_type, :incoterm_code,
@@ -1249,6 +1360,7 @@ async def create_from_bl(
             CAST(:cargo AS jsonb), CAST(:type_details AS jsonb), CAST(:booking AS jsonb), CAST(:parties AS jsonb), NULL,
             NULL, NULL, FALSE,
             NULL, :etd, NULL, CAST(:creator AS jsonb),
+            :hawb_number, :mawb_number, :awb_type,
             FALSE, :now, :now
         )
     """), {
@@ -1271,6 +1383,9 @@ async def create_from_bl(
         "parties": json.dumps(parties),
         "creator": json.dumps(creator),
         "etd": body.etd,
+        "hawb_number": body.hawb_number,
+        "mawb_number": body.mawb_number,
+        "awb_type": body.awb_type,
     })
 
     # Auto-generate tasks

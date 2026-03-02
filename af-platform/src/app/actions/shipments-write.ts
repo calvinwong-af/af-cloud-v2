@@ -610,6 +610,14 @@ export interface CreateFromBLPayload {
     weight_kg: number | null;
   }> | null;
   customer_reference: string | null;
+  // AWB-specific
+  mawb_number?: string | null;
+  hawb_number?: string | null;
+  awb_type?: string | null;
+  flight_number?: string | null;
+  flight_date?: string | null;
+  pieces?: number | null;
+  chargeable_weight_kg?: number | null;
 }
 
 type CreateFromBLResult =

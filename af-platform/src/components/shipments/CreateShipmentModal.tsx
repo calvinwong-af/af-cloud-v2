@@ -351,10 +351,16 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
       const originPort = ports.find(p => p.un_code === blFormState.originCode);
       const destPort = ports.find(p => p.un_code === blFormState.destCode);
 
-      // DP-21 fix: BC docs should never get 4001+ status — override to 3002 (Booking Confirmed)
-      const isBookingConfirmation = (blParsedResult as Record<string, unknown>).doc_type === 'BOOKING_CONFIRMATION';
+      // BC docs should never get 4001+ status — override to 3002 (Booking Confirmed)
+      const docType = (blParsedResult as Record<string, unknown>).doc_type as string | undefined;
+      const isBookingConfirmation = docType === 'BOOKING_CONFIRMATION';
+      const isAWB = docType === 'AWB';
       const rawStatus = (blParsedResult as Record<string, unknown>).initial_status as number ?? 3001;
       const effectiveStatus = (rawStatus >= 4001 && isBookingConfirmation) ? 3002 : rawStatus;
+
+      // For AWB, use flightDate as etd and mawbNumber as waybill_number
+      const resolvedEtd = isAWB ? (blFormState.flightDate || null) : (blFormState.etd || null);
+      const resolvedWaybill = isAWB ? (blFormState.mawbNumber || blFormState.waybillNumber || null) : (blFormState.waybillNumber || null);
 
       const payload: CreateFromBLPayload = {
         order_type: blFormState.orderType || (blParsedResult as Record<string, unknown>).order_type as string || 'SEA_FCL',
@@ -369,19 +375,27 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
         destination_label: destPort?.name ?? (blFormState.destCode || null),
         cargo_description: blFormState.cargoDescription || null,
         cargo_weight_kg: blFormState.cargoWeight ? parseFloat(blFormState.cargoWeight) : null,
-        etd: blFormState.etd || null,
+        etd: resolvedEtd,
         initial_status: effectiveStatus,
         carrier: blFormState.carrier || null,
-        waybill_number: blFormState.waybillNumber || null,
-        vessel_name: blFormState.vesselName || null,
-        voyage_number: blFormState.voyageNumber || null,
+        waybill_number: resolvedWaybill,
+        vessel_name: isAWB ? null : (blFormState.vesselName || null),
+        voyage_number: isAWB ? null : (blFormState.voyageNumber || null),
         shipper_name: blFormState.shipperName || null,
         shipper_address: blFormState.shipperAddress || null,
         consignee_name: blFormState.consigneeName || null,
         consignee_address: blFormState.consigneeAddress || null,
         notify_party_name: blFormState.notifyPartyName || null,
-        containers: (parsed?.containers as CreateFromBLPayload['containers']) ?? null,
+        containers: isAWB ? null : ((parsed?.containers as CreateFromBLPayload['containers']) ?? null),
         customer_reference: blFormState.customerReference || null,
+        // AWB-specific
+        mawb_number: isAWB ? (blFormState.mawbNumber || null) : null,
+        hawb_number: isAWB ? (blFormState.hawbNumber || null) : null,
+        awb_type: isAWB ? (blFormState.awbType || null) : null,
+        flight_number: isAWB ? (blFormState.flightNumber || null) : null,
+        flight_date: isAWB ? (blFormState.flightDate || null) : null,
+        pieces: isAWB && blFormState.pieces ? parseInt(blFormState.pieces, 10) : null,
+        chargeable_weight_kg: isAWB && blFormState.chargeableWeightKg ? parseFloat(blFormState.chargeableWeightKg) : null,
       };
 
       const result = await createShipmentFromBLAction(payload);
@@ -935,6 +949,7 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
             <>
               <BLUploadTab
                 ports={ports}
+                companies={companies}
                 onParsed={(result) => setBLParsedResult(result as unknown as Record<string, unknown>)}
                 parsedResult={blParsedResult as never}
                 onConfirmReady={setBLConfirmReady}
