@@ -8,6 +8,9 @@
   - Fix 3: AWB form in BLUploadTab — airport dropdowns (port_type=AIR), flight/AWB number fields, sanitised pre-fill; CreateFromBLPayload + CreateFromBLRequest extended with AWB fields; CreateShipmentModal maps AWB fields to payload
   - Fix 4: sanitiseAddress helper applied to all address pre-fill in BLUploadTab and DocumentParseModal
   - Fix 5: DocumentParseModal AWB review redesigned — AWBFormState, grouped editable sections (Route & Dates, AWB Numbers, Shipper, Consignee, Cargo); Use This Data passes form state values to applyAWBAction
+  - Fix 6: "Not this company" in BLUploadTab shows inline company search widget; DocumentParseModal adds Customer/Shipment Owner section
+  - Fix 7: BC→BL container remapping in shipments.py (size→container_type, gross_weight_kg→weight_kg)
+  - Fix 8: sanitiseErrorMessage helper in BLUploadTab + DocumentParseModal — maps overloaded/missing-key to user-friendly strings
   - Fix 6: "Not this company" in BLUploadTab shows inline company search widget; DocumentParseModal adds Customer/Shipment Owner section with async fetchCompaniesForShipmentAction search
 - **Files Modified:**
   - `af-server/routers/shipments.py` — added prompts, classify+extract refactor, CreateFromBLRequest AWB fields, INSERT updated
