@@ -1,5 +1,15 @@
 # Prompt Completion Log — v2.73–v2.82
 
+### [2026-03-03 07:00 UTC] — v2.74: File tag display labels (formatTagLabel)
+- **Status:** Completed
+- **Tasks:**
+  - Added `KNOWN_ACRONYMS` set and `formatTagLabel()` helper in `ShipmentFilesTab.tsx`
+  - Applied to file list row tag badges: `bl` → `BL`, `awb` → `AWB`, `packing_list` → `Packing List`, etc.
+  - Applied to `UploadModal` and `EditTagsModal` tag selector buttons (falls back to `formatTagLabel(name)` when `tag_label` absent)
+  - Display-only fix — stored tag values in DB/payloads/state remain lowercase
+- **Files Modified:**
+  - `af-platform/src/components/shipments/ShipmentFilesTab.tsx`
+
 ### [2026-03-03 06:30 UTC] — v2.73: Apply AWB/BC: ETD write + file save + consistency sweep
 - **Status:** Completed
 - **Tasks:**
