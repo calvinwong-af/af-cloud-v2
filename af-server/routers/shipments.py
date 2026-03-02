@@ -1111,6 +1111,7 @@ async def parse_bl(
 
     return {
         "parsed": parsed,
+        "doc_type": "BL",
         "order_type": order_type,
         "origin_un_code": origin_un_code,
         "origin_parsed_label": origin_parsed_label or None,

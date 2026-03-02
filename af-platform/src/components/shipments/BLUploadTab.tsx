@@ -317,6 +317,17 @@ export default function BLUploadTab({ ports, onParsed, parsedResult, onConfirmRe
       <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-700">
         <CheckCircle className="w-4 h-4 flex-shrink-0" />
         <span>Document parsed successfully — review extracted details below</span>
+        {parsedResult?.doc_type && parsedResult.doc_type !== 'UNKNOWN' && (
+          <span className={`ml-auto inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide ${
+            parsedResult.doc_type === 'BOOKING_CONFIRMATION'
+              ? 'bg-teal-100 text-teal-700'
+              : parsedResult.doc_type === 'AWB'
+              ? 'bg-sky-100 text-sky-700'
+              : 'bg-blue-100 text-blue-700'
+          }`}>
+            {parsedResult.doc_type === 'BOOKING_CONFIRMATION' ? 'BC' : parsedResult.doc_type}
+          </span>
+        )}
       </div>
 
       {/* Prepaid hint */}

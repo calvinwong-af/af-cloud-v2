@@ -1,5 +1,16 @@
 # Prompt Completion Log — v2.63–v2.72
 
+### [2026-03-03 13:00 UTC] — v2.69: DP-21 true fix — Add doc_type to parse-bl response + badge
+- **Status:** Completed
+- **Tasks:**
+  - Backend: Added `"doc_type": "BL"` to parse-bl endpoint return dict in shipments.py
+  - Frontend: Added doc_type pill badge (BL/AWB/BC) to success banner in BLUploadTab.tsx
+  - API contract verified: server returns doc_type → action passes through → frontend type already has doc_type?
+  - Existing v2.74 effectiveStatus override now works correctly (isBookingConfirmation = false for BL uploads)
+- **Files Modified:**
+  - `af-server/routers/shipments.py` — added `"doc_type": "BL"` to parse_bl return
+  - `af-platform/src/components/shipments/BLUploadTab.tsx` — doc_type badge in success banner
+
 ### [2026-03-03 12:30 UTC] — v2.68: DP-21 fix v2 — Status override based on doc_type
 - **Status:** Completed
 - **Tasks:**
