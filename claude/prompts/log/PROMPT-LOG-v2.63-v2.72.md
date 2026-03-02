@@ -1,5 +1,16 @@
 # Prompt Completion Log — v2.63–v2.72
 
+### [2026-03-03 UTC] — v2.72: HOTFIX — json.loads() on JSONB dict + v2.71 UX work
+- **Status:** Completed
+- **Tasks:**
+  - Task 1: Fixed `apply_awb` — replaced `json.loads(row[1/2])` with `_parse_jsonb()` + isinstance guards for booking and parties JSONB columns
+  - Task 2: Fixed `apply_booking_confirmation` — replaced `json.loads(row[1/2])` with `_parse_jsonb()` for booking and nodes
+  - Task 3: Full sweep confirmed — no remaining bare `json.loads(row[...])` calls on DB columns
+  - Task 4: Added BEST PRACTICE comment above `_parse_jsonb()` documenting correct pattern
+  - Fix 1 + Fix 2 (port combobox + company ownership): already completed in v2.71
+- **Files Modified:**
+  - `af-server/routers/shipments.py` — 4 json.loads fixes + best practice comment
+
 ### [2026-03-03 UTC] — v2.71: DOC-PARSE UX refinements: port combobox + company ownership
 - **Status:** Completed
 - **Tasks:**
