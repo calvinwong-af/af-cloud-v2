@@ -1,5 +1,21 @@
 # Prompt Completion Log — v2.63–v2.72
 
+### [2026-03-02 UTC] — v2.70: DOC-PARSE UX fixes + AWB redesign
+- **Status:** Completed
+- **Tasks:**
+  - Fix 1: Doc type badge uses full labels (Bill of Lading / Air Waybill / Booking Confirmation) in BLUploadTab + DocumentParseModal already correct
+  - Fix 2: parse_bl endpoint adds classification step — classifies before extraction, chooses correct prompt (BL/BC/AWB), maps BC fields to BL shape, BC always returns STATUS_BOOKING_CONFIRMED, AWB returns order_type=AIR
+  - Fix 3: AWB form in BLUploadTab — airport dropdowns (port_type=AIR), flight/AWB number fields, sanitised pre-fill; CreateFromBLPayload + CreateFromBLRequest extended with AWB fields; CreateShipmentModal maps AWB fields to payload
+  - Fix 4: sanitiseAddress helper applied to all address pre-fill in BLUploadTab and DocumentParseModal
+  - Fix 5: DocumentParseModal AWB review redesigned — AWBFormState, grouped editable sections (Route & Dates, AWB Numbers, Shipper, Consignee, Cargo); Use This Data passes form state values to applyAWBAction
+  - Fix 6: "Not this company" in BLUploadTab shows inline company search widget; DocumentParseModal adds Customer/Shipment Owner section with async fetchCompaniesForShipmentAction search
+- **Files Modified:**
+  - `af-server/routers/shipments.py` — added prompts, classify+extract refactor, CreateFromBLRequest AWB fields, INSERT updated
+  - `af-platform/src/app/actions/shipments-write.ts` — CreateFromBLPayload extended with AWB fields
+  - `af-platform/src/components/shipments/BLUploadTab.tsx` — full rewrite with AWB form, sanitise, company search
+  - `af-platform/src/components/shipments/DocumentParseModal.tsx` — AWB grouped editable redesign, sanitise, company widget
+  - `af-platform/src/components/shipments/CreateShipmentModal.tsx` — AWB create payload, companies prop passed to BLUploadTab
+
 ### [2026-03-03 13:00 UTC] — v2.69: DP-21 true fix — Add doc_type to parse-bl response + badge
 - **Status:** Completed
 - **Tasks:**
