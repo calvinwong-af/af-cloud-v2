@@ -59,7 +59,10 @@ export async function verifySessionAndRole(
     const { cookies } = await import('next/headers');
     const cookieStore = cookies();
     const idToken = cookieStore.get('af-session')?.value;
-    if (!idToken) return INVALID_SESSION;
+    if (!idToken) {
+      console.error('[verifySessionAndRole] No af-session cookie found');
+      return INVALID_SESSION;
+    }
 
     // Verify with Firebase Admin SDK
     const { getFirebaseAdmin } = await import('./firebase-admin');
@@ -68,26 +71,38 @@ export async function verifySessionAndRole(
 
     const uid = decodedToken.uid;
     const email = decodedToken.email ?? '';
+    console.log('[verifySessionAndRole] Token verified for uid:', uid, 'email:', email);
 
     // Fetch UserIAM for role + access check
     const datastore = getDatastore();
     const iamKey = datastore.key(['UserIAM', uid]);
     const [iamEntity] = await datastore.get(iamKey);
 
-    if (!iamEntity) return INVALID_SESSION;
+    if (!iamEntity) {
+      console.error('[verifySessionAndRole] No UserIAM entity found for uid:', uid);
+      return INVALID_SESSION;
+    }
 
     const validAccess = iamEntity.valid_access ?? false;
-    if (!validAccess) return INVALID_SESSION;
+    if (!validAccess) {
+      console.error('[verifySessionAndRole] valid_access=false for uid:', uid);
+      return INVALID_SESSION;
+    }
 
     const role = iamEntity.role as string ?? null;
     const accountType = iamEntity.account_type as AccountType ?? 'AFU';
+    console.log('[verifySessionAndRole] role:', role, 'accountType:', accountType, 'allowedRoles:', allowedRoles);
 
     // Check role authorisation
-    if (!allowedRoles.includes(role)) return INVALID_SESSION;
+    if (!allowedRoles.includes(role)) {
+      console.error('[verifySessionAndRole] Role', role, 'not in allowedRoles:', allowedRoles);
+      return INVALID_SESSION;
+    }
 
     const cuaKey = datastore.key(['CompanyUserAccount', uid]);
     const [cuaEntity] = await datastore.get(cuaKey);
     const companyId = (cuaEntity?.company_id as string | null) ?? null;
+    console.log('[verifySessionAndRole] SUCCESS — companyId:', companyId);
 
     return {
       valid: true,

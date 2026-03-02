@@ -34,5 +34,7 @@ steps:
       - --platform
       - managed
       - --allow-unauthenticated
+      - --set-env-vars
+      - AF_SERVER_URL=https://api.accelefreight.com
 images:
   - asia-northeast1-docker.pkg.dev/cloud-accele-freight/af-platform/af-platform:latest
