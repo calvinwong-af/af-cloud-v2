@@ -93,22 +93,7 @@ def list_shipments(conn, tab: str, company_id: str | None, limit: int, offset: i
         FROM shipments s
         LEFT JOIN companies c ON c.id = s.company_id
         WHERE {where}
-        ORDER BY
-            CASE
-                WHEN s.status IN (3001, 3002, 4001, 4002)
-                     OR (s.status = 2001 AND s.migrated_from_v1 = FALSE) THEN 0
-                ELSE 1
-            END ASC,
-            CASE s.status
-                WHEN 4002 THEN 0
-                WHEN 4001 THEN 1
-                WHEN 3002 THEN 2
-                WHEN 3001 THEN 3
-                WHEN 2001 THEN 4
-                ELSE 5
-            END ASC,
-            s.cargo_ready_date DESC NULLS LAST,
-            s.countid DESC
+        ORDER BY s.countid DESC
         LIMIT :limit OFFSET :offset
     """), params).fetchall()
 
@@ -153,22 +138,7 @@ def search_shipments(conn, q: str, company_id: str | None, limit: int) -> list[d
         LEFT JOIN companies c ON c.id = s.company_id
         WHERE {where}
           AND (s.id ILIKE :q OR c.name ILIKE :q OR s.origin_port ILIKE :q OR s.dest_port ILIKE :q)
-        ORDER BY
-            CASE
-                WHEN s.status IN (3001, 3002, 4001, 4002)
-                     OR (s.status = 2001 AND s.migrated_from_v1 = FALSE) THEN 0
-                ELSE 1
-            END ASC,
-            CASE s.status
-                WHEN 4002 THEN 0
-                WHEN 4001 THEN 1
-                WHEN 3002 THEN 2
-                WHEN 3001 THEN 3
-                WHEN 2001 THEN 4
-                ELSE 5
-            END ASC,
-            s.cargo_ready_date DESC NULLS LAST,
-            s.countid DESC
+        ORDER BY s.countid DESC
         LIMIT :limit
     """), params).fetchall()
 

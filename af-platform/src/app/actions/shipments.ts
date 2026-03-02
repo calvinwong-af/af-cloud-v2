@@ -94,10 +94,13 @@ export async function fetchShipmentOrderDetailAction(
       : (data.destination ?? null);
 
     // Normalize fields that the PostgreSQL API doesn't include but the UI expects
+    // data_version is always 2 from PostgreSQL — use migrated_from_v1 to distinguish true native V2
+    const isNativeV2 = data.migrated_from_v1 === false || data.migrated_from_v1 === null;
     const normalized: ShipmentOrder = {
       ...data,
       origin: originLocation,
       destination: destLocation,
+      data_version: isNativeV2 ? 2 : 1,
       customs_clearance: data.customs_clearance ?? [],
       files: data.files ?? [],
       related_orders: data.related_orders ?? [],
