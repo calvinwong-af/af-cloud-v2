@@ -426,7 +426,15 @@ export async function reparseDocumentFileAction(
       }
 
       const parseJson = await parseRes.json();
-      return { success: true, docType: 'BL', data: parseJson };
+      // Inject resolved port codes into the parsed object — same pattern as parseBLDocumentAction
+      const parsed = (parseJson.parsed && typeof parseJson.parsed === 'object')
+        ? { ...parseJson.parsed }
+        : { ...parseJson };
+      if (parseJson.origin_un_code) parsed.pol_code = parseJson.origin_un_code;
+      if (parseJson.destination_un_code) parsed.pod_code = parseJson.destination_un_code;
+      // Return the flat parsed object (not the wrapper) so DocumentParseModal useEffect
+      // does not need to unwrap — parsedData will have pol_code/pod_code at the top level
+      return { success: true, docType: 'BL', data: parsed };
     }
 
     // AWB and BC use the AI parse-document endpoint (JSON with base64)

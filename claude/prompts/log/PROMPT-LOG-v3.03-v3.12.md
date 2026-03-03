@@ -1,5 +1,19 @@
 # Prompt Completion Log — v3.03–v3.12
 
+### [2026-03-04 15:00 UTC] — v3.10: BL Apply Completeness — Packaging, LCL Container/Seal, Terminal, Cargo Description
+- **Status:** Completed
+- **Tasks:**
+  - Fix 1: Normalised `cargo_items` into `type_details.packages` for Packages card rendering; added `cargo_description` + `total_weight_kg` form params to `update_from_bl`; wrote to `cargo` JSONB; added fields to `_doc-handler.ts` FormData
+  - Fix 2: Added `lcl_container_number` + `lcl_seal_number` to BL extraction prompt, `update_from_bl` form params, `_doc-handler.ts`, and BLReview UI (Container Reference section for LCL)
+  - Fix 3A: Added `origin_terminal` + `dest_terminal` form params to `update_from_bl` + SET clauses
+  - Fix 3B: Uncommented terminal lines in `_doc-handler.ts`
+  - Fix 3C (DP-69): Always clear terminal on port change in BLReview — removed conditional `!newPort?.has_terminals` guard for both POL and POD
+- **Files Modified:**
+  - `af-server/routers/shipments/bl.py`
+  - `af-server/routers/shipments/_prompts.py`
+  - `af-platform/src/app/(platform)/shipments/[id]/_doc-handler.ts`
+  - `af-platform/src/components/shipments/_doc-parsers/BLReview.tsx`
+
 ### [2026-03-04 13:00 UTC] — v3.09: Persistent Parsed Parties Diff (DP-48 / UI-10)
 - **Status:** Completed
 - **Tasks:**

@@ -424,8 +424,19 @@ export default function ShipmentFilesTab({ shipmentId, userRole, ports, refreshK
               if (blData.consignee_name) formData.append('consignee_name', String(blData.consignee_name));
               if (blData.consignee_address) formData.append('consignee_address', String(blData.consignee_address));
               if (blData.notify_party_name) formData.append('notify_party_name', String(blData.notify_party_name));
-              if (blData.port_of_loading) formData.append('bl_port_of_loading', String(blData.port_of_loading));
-              if (blData.port_of_discharge) formData.append('bl_port_of_discharge', String(blData.port_of_discharge));
+              if (blData.pol_code) formData.append('origin_port', String(blData.pol_code));
+              if (blData.pod_code) formData.append('dest_port', String(blData.pod_code));
+              if (blData.pol_terminal) formData.append('origin_terminal', String(blData.pol_terminal));
+              if (blData.pod_terminal) formData.append('dest_terminal', String(blData.pod_terminal));
+              if (blData.cargo_description) formData.append('cargo_description', String(blData.cargo_description));
+              if (blData.total_weight_kg) formData.append('total_weight_kg', String(blData.total_weight_kg));
+              if (blData.lcl_container_number) formData.append('lcl_container_number', String(blData.lcl_container_number));
+              if (blData.lcl_seal_number) formData.append('lcl_seal_number', String(blData.lcl_seal_number));
+              // Raw parsed values → stored in bl_document for diff tracking
+              if (blData.shipper_name) formData.append('bl_shipper_name', String(blData.shipper_name));
+              if (blData.shipper_address) formData.append('bl_shipper_address', String(blData.shipper_address));
+              if (blData.consignee_name) formData.append('bl_consignee_name', String(blData.consignee_name));
+              if (blData.consignee_address) formData.append('bl_consignee_address', String(blData.consignee_address));
               if (Array.isArray(blData.containers) && blData.containers.length > 0) {
                 formData.append('containers', JSON.stringify(blData.containers));
               }

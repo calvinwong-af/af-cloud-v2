@@ -138,17 +138,9 @@ export default function DocumentParseModal({
   });
 
   // Pre-fill BL/BC parsedData from initialParsedData on mount (reparse flow)
-  // For BL, reparseDocumentFileAction returns the full /parse-bl response which nests
-  // BL fields inside a `parsed` property — extract it if present.
   useEffect(() => {
     if ((initialDocType === 'BL' || initialDocType === 'BOOKING_CONFIRMATION') && initialParsedData) {
-      const data = initialParsedData;
-      // /parse-bl wraps BL fields in a `parsed` key — unwrap if present
-      if (data.parsed && typeof data.parsed === 'object' && !Array.isArray(data.parsed)) {
-        setParsedData(data.parsed as Record<string, unknown>);
-      } else {
-        setParsedData(data);
-      }
+      setParsedData(initialParsedData);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialDocType]);

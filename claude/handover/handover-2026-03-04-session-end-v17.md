@@ -38,8 +38,8 @@ Three-fix prompt covering UI-11, UI-12, UI-13, and the terminal write-through (p
 
 | Suite | Total | YES | PENDING | FAIL | NA |
 |---|---|---|---|---|---|
-| DP | 70 | 66 | 1 | 1 | 1 |
-| All series | 274 | 245 | 20 | 1 | 3 |
+| DP | 77 | 66 | 7 | 2 | 1 |
+| All series | 281 | 245 | 27 | 2 | 3 |
 
 **Overall: 245/274 passing**
 

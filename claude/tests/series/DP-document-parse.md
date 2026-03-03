@@ -1,7 +1,7 @@
 # DP — Document Parser
 **Series:** DP
 **Status:** 🔵 Active
-**Total:** 70 | **YES:** 66 | **PENDING:** 1 | **DEFERRED:** 0 | **NA:** 1 | **FAIL:** 1
+**Total:** 77 | **YES:** 66 | **PENDING:** 7 | **DEFERRED:** 0 | **NA:** 1 | **FAIL:** 2
 **Last Updated:** 03 March 2026 (Session 15)
 
 ---
@@ -80,6 +80,13 @@
 | DP-68 | Terminal selector appears for MYPKG in BCReview | YES | Session 17 — confirmed terminal selector present for MYPKG |
 | DP-69 | Changing port to one without terminals clears terminal field | FAIL | Session 17 — BUG: switching away from a terminal port fails to clear terminal state — tracked as UI-13 |
 | DP-70 | Production parse endpoint — no 500 on Cloud Run after v3.08 fix | YES | Session 17 — confirmed working after ANTHROPIC_API_KEY added to af-server env vars |
+| DP-71 | apply-bl (LCL) — Packages card shows normalised line items (qty, weight, volume) after apply | PENDING | v3.10 — cargo_items normalised into type_details.packages |
+| DP-72 | apply-bl — cargo description updates on detail page after apply | PENDING | v3.10 — cargo_description written to cargo JSONB |
+| DP-73 | apply-bl — cargo weight updates after apply | PENDING | v3.10 — total_weight_kg written to cargo JSONB |
+| DP-74 | apply-bl (LCL) — Container Reference section shown in BLReview when lcl_container_number parsed | PENDING | v3.10 — new BLReview section for LCL container/seal |
+| DP-75 | apply-bl (LCL) — container + seal written as flat fields in type_details after apply | PENDING | v3.10 — type_details.container_number + seal_number for LCL |
+| DP-76 | apply-bl — terminal written to shipment when terminal port selected in BLReview | PENDING | v3.10 — origin_terminal/dest_terminal now accepted by backend |
+| DP-77 | BLUpdateModal (legacy Read File flow) — port fields resolve correctly | FAIL | Session 17 — BUG: port fields blank in legacy dialog — tracked as UI-14 (low priority, dialog will be removed) |
 
 ---
 
@@ -87,6 +94,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 2.72 | 04 Mar 2026 | Session 17 — DP-71–76 added as PENDING (v3.10 BL apply completeness); total updated to 76 |
 | 2.71 | 04 Mar 2026 | Session 17 — DP-66, 67, 68 YES; DP-69 FAIL (UI-13); total 66 YES |
 | 2.70 | 03 Mar 2026 | Session 17 — DP-63, 64, 65, 70 YES; total 62 YES |
 | 2.69 | 03 Mar 2026 | Session 17 — DP-63–70 added as PENDING; total updated to 70 |
