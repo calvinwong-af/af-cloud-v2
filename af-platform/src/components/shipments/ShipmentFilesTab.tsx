@@ -410,7 +410,7 @@ export default function ShipmentFilesTab({ shipmentId, userRole, ports, refreshK
               const result = await applyBookingConfirmationAction(shipmentId, data as ParsedBCData);
               if (!result?.success) return { ok: false, error: result?.error };
             } else if (docType === 'BL') {
-              const blData = data as Record<string, unknown>;
+              const blData = data as unknown as Record<string, unknown>;
               const formData = new FormData();
               if (blData.waybill_number) formData.append('waybill_number', String(blData.waybill_number));
               if (blData.carrier_agent ?? blData.carrier) formData.append('carrier_agent', String(blData.carrier_agent ?? blData.carrier));
