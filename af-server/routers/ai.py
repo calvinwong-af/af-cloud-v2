@@ -154,14 +154,15 @@ def _strip_code_fences(text: str) -> str:
     return text.strip()
 
 
-def _call_claude(api_key: str, file_base64: str, prompt: str) -> str:
-    """Send a PDF to Claude and return the text response."""
+async def _call_claude_async(api_key: str, file_base64: str, prompt: str) -> str:
+    """Send a PDF to Claude asynchronously and return the text response."""
     import anthropic
 
-    client = anthropic.Anthropic(api_key=api_key)
-    response = client.messages.create(
+    client = anthropic.AsyncAnthropic(api_key=api_key)
+    response = await client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=4096,
+        timeout=30.0,
         messages=[{
             "role": "user",
             "content": [
@@ -189,6 +190,8 @@ async def parse_document(
     req: ParseDocumentRequest,
     claims: Claims = Depends(require_auth),
 ):
+    import anthropic as _anthropic
+
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
@@ -199,7 +202,7 @@ async def parse_document(
 
     if not doc_type:
         try:
-            raw = _call_claude(api_key, req.file_base64, _CLASSIFY_PROMPT)
+            raw = await _call_claude_async(api_key, req.file_base64, _CLASSIFY_PROMPT)
             classify_json = json.loads(_strip_code_fences(raw))
             doc_type = classify_json.get("doc_type", "UNKNOWN")
             confidence = classify_json.get("confidence", "LOW")
@@ -207,6 +210,9 @@ async def parse_document(
         except json.JSONDecodeError:
             logger.warning("[parse-document] Classification JSON parse failed: %s", raw[:200])
             return {"status": "ERROR", "msg": "Claude classification response was not valid JSON", "raw": raw[:500]}
+        except _anthropic.APITimeoutError:
+            logger.error("[parse-document] Claude API timeout after 30s (classification)")
+            raise HTTPException(status_code=503, detail="Document parsing timed out — please try again")
         except Exception as e:
             logger.error("[parse-document] Classification failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Document classification failed: {e}")
@@ -218,12 +224,15 @@ async def parse_document(
     extraction_prompt = _EXTRACTION_PROMPTS[doc_type]
 
     try:
-        raw = _call_claude(api_key, req.file_base64, extraction_prompt)
+        raw = await _call_claude_async(api_key, req.file_base64, extraction_prompt)
         data = json.loads(_strip_code_fences(raw))
         logger.info("[parse-document] Extracted %d fields for %s", len(data), doc_type)
     except json.JSONDecodeError:
         logger.warning("[parse-document] Extraction JSON parse failed: %s", raw[:200])
         return {"status": "ERROR", "msg": "Claude response was not valid JSON", "raw": raw[:500]}
+    except _anthropic.APITimeoutError:
+        logger.error("[parse-document] Claude API timeout after 30s")
+        raise HTTPException(status_code=503, detail="Document parsing timed out — please try again")
     except Exception as e:
         logger.error("[parse-document] Extraction failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Document extraction failed: {e}")

@@ -83,6 +83,29 @@
   - `af-platform/src/components/shipments/ShipmentOrderTable.tsx`
   - `af-server/routers/shipments/bl.py`
 
+### [2026-03-04 03:15 UTC] — v2.92: Files Tab Fixes + Diagnostic Log Cleanup
+- **Status:** Completed
+- **Tasks:**
+  - Issue 1: Added `user` field mapping in `_file_row_to_dict` — maps `uploaded_by_email` (or `uploaded_by_uid` fallback) to `user` so frontend shows uploader email instead of "Unknown"
+  - Issue 2: Added `PARSED_DOC_TAGS` set (`bl`, `awb`, `bc`) and updated "Read file again" button condition to use `.some(t => PARSED_DOC_TAGS.has(t))` instead of `.includes('bl')`
+  - Issue 3: Removed two `console.info` diagnostic lines from `_doc-handler.ts` (BC and AWB file save). Kept all `console.error` lines.
+  - Issue 3b: Updated `doc_apply.py` module docstring to reflect current file saving contract (frontend calls `/files` not `/save-document-file`)
+- **Files Modified:**
+  - `af-server/routers/shipments/_helpers.py`
+  - `af-platform/src/components/shipments/ShipmentFilesTab.tsx`
+  - `af-platform/src/app/(platform)/shipments/[id]/_doc-handler.ts`
+  - `af-server/routers/shipments/doc_apply.py`
+
+### [2026-03-04 TBC] — v2.91: Async Claude API Fix
+- **Status:** Completed
+- **Tasks:**
+  - Replaced sync `_call_claude` with async `_call_claude_async` using `anthropic.AsyncAnthropic` + `await` — uvicorn event loop no longer blocked during Claude API calls
+  - Added `timeout=30.0` on `client.messages.create()` — prevents indefinite hanging under API degradation
+  - Added `APITimeoutError` handling in both classify and extract blocks — returns HTTP 503 with clean message instead of hanging
+  - Removed old sync `_call_claude` function entirely — no dead code
+- **Files Modified:**
+  - `af-server/routers/ai.py`
+
 ### [2026-03-04 01:30 UTC] — v2.90: File Save Deep Fix
 - **Status:** Completed
 - **Tasks:**
@@ -94,3 +117,14 @@
   - `af-server/routers/shipments/doc_apply.py`
   - `af-platform/src/app/(platform)/shipments/[id]/_doc-handler.ts`
   - `af-platform/src/components/shipments/CreateShipmentModal.tsx`
+
+### [2026-03-04 03:00 UTC] — v2.91: Async Claude API Fix
+- **Status:** Completed
+- **Tasks:**
+  - Replaced synchronous `_call_claude()` with async `_call_claude_async()` using `anthropic.AsyncAnthropic` — no longer blocks the uvicorn event loop
+  - Added 30-second explicit timeout to Claude API calls via `timeout=30.0` parameter
+  - Added `anthropic.APITimeoutError` catch in both classify and extract blocks — returns clean HTTP 503 instead of hanging
+  - Removed old synchronous `_call_claude` function entirely
+- **Files Modified:**
+  - `af-server/routers/ai.py`
+- **Notes:** Both call sites (classify + extract) now use `await _call_claude_async()`. Under normal API conditions, parse completes without blocking. Under degradation, fails fast at 30s with a user-friendly 503.

@@ -64,6 +64,7 @@ function formatDate(iso: string): string {
 }
 
 const KNOWN_ACRONYMS = new Set(['bl', 'hbl', 'awb', 'mawb', 'hawb', 'bc', 'po', 'do']);
+const PARSED_DOC_TAGS = new Set(['bl', 'awb', 'bc']);
 
 function formatTagLabel(tag: string): string {
   const lower = tag.toLowerCase();
@@ -285,7 +286,7 @@ export default function ShipmentFilesTab({ shipmentId, userRole, ports, refreshK
 
               {/* Actions */}
               <div className="flex items-center gap-1 flex-shrink-0">
-                {isAFU(userRole) && (file.file_tags ?? []).includes('bl') && (
+                {isAFU(userRole) && (file.file_tags ?? []).some(t => PARSED_DOC_TAGS.has(t)) && (
                   <button
                     onClick={() => handleReparse(file.file_id)}
                     disabled={reparsingFileId !== null}

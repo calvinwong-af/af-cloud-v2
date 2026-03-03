@@ -5,9 +5,12 @@ Document apply endpoints: apply booking confirmation, apply AWB,
 save document file.
 
 File saving contract for document apply operations:
-  - PATCH /bl                   → saves file inline (within the handler itself)
-  - POST /apply-awb             → frontend calls /save-document-file after success
-  - POST /apply-booking-confirmation → frontend calls /save-document-file after success
+  - PATCH /bl                         → saves file inline (within the handler itself)
+  - POST /apply-awb                   → frontend calls POST /files after success
+  - POST /apply-booking-confirmation  → frontend calls POST /files after success
+
+Note: /save-document-file endpoint is retained for compatibility but is no
+longer called by the frontend as of v2.90.
 """
 
 import json

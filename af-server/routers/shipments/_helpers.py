@@ -79,6 +79,7 @@ def _file_row_to_dict(row) -> dict:
             d["file_tags"] = []
     else:
         d["file_tags"] = []
+    d["user"] = d.get("uploaded_by_email") or d.get("uploaded_by_uid") or "Unknown"
     d["created"] = str(d.get("created_at") or "")
     d["updated"] = str(d.get("updated_at") or "")
     return d

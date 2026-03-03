@@ -46,7 +46,6 @@ export function createDocResultHandler(params: {
       router.refresh();
       // Save the uploaded document to Files using the proven upload endpoint
       if (uploadedFile) {
-        console.info('[DocumentParse] BC file save: name=%s size=%d type=%s', uploadedFile.name, uploadedFile.size, uploadedFile.type);
         const fd = new FormData();
         fd.append('file', uploadedFile, uploadedFile.name);
         fd.append('file_tags', JSON.stringify(['bc']));
@@ -71,7 +70,6 @@ export function createDocResultHandler(params: {
       router.refresh();
       // Save the uploaded document to Files using the proven upload endpoint
       if (uploadedFile) {
-        console.info('[DocumentParse] AWB file save: name=%s size=%d type=%s', uploadedFile.name, uploadedFile.size, uploadedFile.type);
         const fd = new FormData();
         fd.append('file', uploadedFile, uploadedFile.name);
         fd.append('file_tags', JSON.stringify(['awb']));
