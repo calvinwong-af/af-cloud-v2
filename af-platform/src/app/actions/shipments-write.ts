@@ -902,6 +902,54 @@ export async function updateShipmentPortAction(
 
 
 // ---------------------------------------------------------------------------
+// Update Incoterm
+// ---------------------------------------------------------------------------
+
+export async function updateIncotermAction(
+  shipmentId: string,
+  incoterm_code: string | null,
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) return { success: false, error: 'No session token' };
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) return { success: false, error: 'Server URL not configured' };
+
+    const url = new URL(
+      `/api/v2/shipments/${encodeURIComponent(shipmentId)}/incoterm`,
+      serverUrl,
+    );
+    const res = await fetch(url.toString(), {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ incoterm_code }),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const msg = json?.detail ?? `Server responded ${res.status}`;
+      return { success: false, error: msg };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error('[updateIncotermAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to update incoterm' };
+  }
+}
+
+
+// ---------------------------------------------------------------------------
 // Apply Booking Confirmation
 // ---------------------------------------------------------------------------
 

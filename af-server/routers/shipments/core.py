@@ -711,6 +711,42 @@ async def update_shipment_port(
 
 
 # ---------------------------------------------------------------------------
+# Update incoterm
+# ---------------------------------------------------------------------------
+
+class UpdateIncotermRequest(BaseModel):
+    incoterm_code: str | None = None  # None to clear
+
+
+@router.patch("/{shipment_id}/incoterm")
+async def update_incoterm(
+    shipment_id: str,
+    body: UpdateIncotermRequest,
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    """Update incoterm on a shipment. AFU only."""
+    row = conn.execute(text("""
+        SELECT id FROM shipments WHERE id = :id
+    """), {"id": shipment_id}).fetchone()
+
+    if not row:
+        raise NotFoundError(f"Shipment {shipment_id} not found")
+
+    conn.execute(text("""
+        UPDATE shipments SET incoterm_code = :incoterm_code, updated_at = :now
+        WHERE id = :id
+    """), {
+        "incoterm_code": body.incoterm_code,
+        "now": datetime.now(timezone.utc).isoformat(),
+        "id": shipment_id,
+    })
+
+    _log_system_action_pg(conn, "INCOTERM_UPDATED", shipment_id, claims.uid, claims.email)
+    return {"status": "OK", "msg": "Incoterm updated"}
+
+
+# ---------------------------------------------------------------------------
 # Delete shipment (soft + hard)
 # ---------------------------------------------------------------------------
 

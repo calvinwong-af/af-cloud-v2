@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useRef, useEffect } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -60,16 +61,85 @@ function str(v: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
+// PortCombobox widget
+// ---------------------------------------------------------------------------
+
+function PortCombobox({
+  value, onChange, options, placeholder, className,
+}: {
+  value: string;
+  onChange: (code: string) => void;
+  options: { value: string; label: string }[];
+  placeholder?: string;
+  className?: string;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const selectedLabel = options.find(o => o.value === value)?.label ?? '';
+  const displayText = open ? query : selectedLabel;
+  const filtered = open
+    ? options.filter(o =>
+        o.label.toLowerCase().includes(query.toLowerCase()) ||
+        o.value.toLowerCase().includes(query.toLowerCase())
+      ).slice(0, 30)
+    : [];
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false); setQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <input
+        type="text"
+        value={displayText}
+        placeholder={placeholder ?? 'Search...'}
+        className={className}
+        onFocus={() => { setOpen(true); setQuery(''); }}
+        onChange={e => setQuery(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); setQuery(''); } }}
+      />
+      {open && filtered.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-[var(--border)] rounded-lg shadow-lg max-h-48 overflow-y-auto">
+          {filtered.map(o => (
+            <button
+              key={o.value}
+              type="button"
+              onMouseDown={e => { e.preventDefault(); onChange(o.value); setOpen(false); setQuery(''); }}
+              className={`w-full text-left px-3 py-2 text-xs hover:bg-[var(--sky-mist)] ${o.value === value ? 'bg-[var(--sky-mist)] font-medium' : ''}`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // BLReview component
 // ---------------------------------------------------------------------------
 
 export function BLReview({
   formState,
   setFormState,
+  ports,
 }: BLReviewProps) {
   const update = (key: string, value: unknown) => {
     setFormState({ ...formState, [key]: value });
   };
+
+  const seaPorts = ports.filter(p => !p.port_type?.toLowerCase().includes('air'));
+  const seaPortOptions = seaPorts.map(p => ({ value: p.un_code, label: `${p.un_code} — ${p.name || p.un_code}` }));
 
   const containers = (Array.isArray(formState.containers) ? formState.containers : []) as BLContainer[];
   const cargoItems = (Array.isArray(formState.cargo_items) ? formState.cargo_items : []) as BLCargoItem[];
@@ -139,11 +209,33 @@ export function BLReview({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <FieldLabel>Port of Loading</FieldLabel>
-            <input type="text" value={str(formState.port_of_loading)} onChange={e => update('port_of_loading', e.target.value)} className={`${INPUT_BASE} ${str(formState.port_of_loading) ? PREFILLED : ''}`} />
+            <PortCombobox
+              value={str(formState.pol_code)}
+              onChange={code => update('pol_code', code)}
+              options={seaPortOptions}
+              placeholder="Search port..."
+              className={`${INPUT_BASE} ${str(formState.pol_code) ? PREFILLED : ''}`}
+            />
+            {str(formState.port_of_loading) && (
+              <p className={`text-[11px] mt-0.5 italic ${str(formState.pol_code) ? 'text-[var(--text-muted)]' : 'text-amber-600'}`}>
+                Parsed: &ldquo;{str(formState.port_of_loading)}&rdquo;{!str(formState.pol_code) && ' — not matched, select manually'}
+              </p>
+            )}
           </div>
           <div>
             <FieldLabel>Port of Discharge</FieldLabel>
-            <input type="text" value={str(formState.port_of_discharge)} onChange={e => update('port_of_discharge', e.target.value)} className={`${INPUT_BASE} ${str(formState.port_of_discharge) ? PREFILLED : ''}`} />
+            <PortCombobox
+              value={str(formState.pod_code)}
+              onChange={code => update('pod_code', code)}
+              options={seaPortOptions}
+              placeholder="Search port..."
+              className={`${INPUT_BASE} ${str(formState.pod_code) ? PREFILLED : ''}`}
+            />
+            {str(formState.port_of_discharge) && (
+              <p className={`text-[11px] mt-0.5 italic ${str(formState.pod_code) ? 'text-[var(--text-muted)]' : 'text-amber-600'}`}>
+                Parsed: &ldquo;{str(formState.port_of_discharge)}&rdquo;{!str(formState.pod_code) && ' — not matched, select manually'}
+              </p>
+            )}
           </div>
         </div>
       </div>

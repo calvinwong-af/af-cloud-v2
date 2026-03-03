@@ -14,3 +14,27 @@
   - `af-platform/src/components/shipments/_create-shipment/StepRoute.tsx`
   - `af-platform/src/components/shipments/_bl-upload/BLManualFields.tsx`
   - `af-platform/src/components/shipments/CreateShipmentModal.tsx`
+
+### [2026-03-04 11:00 UTC] — v3.04: Incoterm Edit on Shipment Details + Badge Consistency
+- **Status:** Completed
+- **Tasks:**
+  - Change 1: Added `PATCH /{shipment_id}/incoterm` endpoint to `core.py` — AFU only, updates incoterm_code column
+  - Change 2: Added `updateIncotermAction` server action to `shipments-write.ts` following `updateShipmentPortAction` pattern
+  - Change 3: Added `IncotermEditModal` component to `_components.tsx` — select dropdown with EXW export block, wired into RouteCard via pencil icon; disabled for Completed/Cancelled shipments
+  - Change 4: Replaced plain grey incoterm pill in `PortPair.tsx` with colour-coded `IncotermPill` component matching `INCOTERM_COLORS` from `ShipmentOrderTable.tsx`, added `onEditIncoterm` prop + pencil button
+- **Files Modified:**
+  - `af-server/routers/shipments/core.py`
+  - `af-platform/src/app/actions/shipments-write.ts`
+  - `af-platform/src/app/(platform)/shipments/[id]/_components.tsx`
+  - `af-platform/src/components/shared/PortPair.tsx`
+
+### [2026-03-04 12:00 UTC] — v3.05: Port Combobox Fix — BLReview + BCReview
+- **Status:** Completed
+- **Tasks:**
+  - Change 1: Added searchable `PortCombobox` to `BLReview.tsx` — sea ports only, introduces `pol_code`/`pod_code` formState keys, shows parsed label hint with amber "not matched" warning
+  - Change 2: Replaced readOnly POL/POD inputs in `BCReview.tsx` with searchable `PortCombobox` — same pattern as BLReview, parsed name shown as hint
+  - Change 3: Added port validation guard in `DocumentParseModal.tsx` — blocks apply for BL/BC if `pol_code` or `pod_code` missing, shows inline error message
+- **Files Modified:**
+  - `af-platform/src/components/shipments/_doc-parsers/BLReview.tsx`
+  - `af-platform/src/components/shipments/_doc-parsers/BCReview.tsx`
+  - `af-platform/src/components/shipments/DocumentParseModal.tsx`

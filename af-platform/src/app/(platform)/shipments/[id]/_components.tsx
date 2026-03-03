@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { fetchStatusHistoryAction, fetchCompaniesForShipmentAction, reassignShipmentCompanyAction } from '@/app/actions/shipments';
 import type { StatusHistoryEntry } from '@/app/actions/shipments';
-import { updateShipmentStatusAction, updateInvoicedStatusAction, updatePartiesAction, updateShipmentPortAction } from '@/app/actions/shipments-write';
+import { updateShipmentStatusAction, updateInvoicedStatusAction, updatePartiesAction, updateShipmentPortAction, updateIncotermAction } from '@/app/actions/shipments-write';
 import { formatDate } from '@/lib/utils';
 import type { ShipmentOrder, ShipmentOrderStatus, TypeDetailsFCL, TypeDetailsLCL } from '@/lib/types';
 import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, getStatusPathList } from '@/lib/types';
@@ -184,6 +184,95 @@ function PortEditModal({
   );
 }
 
+const INCOTERMS = ['EXW', 'FCA', 'FAS', 'FOB', 'CFR', 'CNF', 'CIF', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP'];
+
+function IncotermEditModal({
+  currentIncoterm,
+  transactionType,
+  shipmentId,
+  onSaved,
+  onClose,
+}: {
+  currentIncoterm: string;
+  transactionType?: string;
+  shipmentId: string;
+  onSaved: () => void;
+  onClose: () => void;
+}) {
+  const [selected, setSelected] = useState(currentIncoterm);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const availableIncoterms = INCOTERMS.filter(code => {
+    if (transactionType === 'EXPORT' && code === 'EXW') return false;
+    return true;
+  });
+
+  async function handleSave() {
+    if (selected === currentIncoterm) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await updateIncotermAction(shipmentId, selected || null);
+      if (!result) { setError('No response'); setSaving(false); return; }
+      if (!result.success) { setError(result.error); setSaving(false); return; }
+      onSaved();
+      onClose();
+    } catch {
+      setError('Failed to update incoterm');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-xs mx-4">
+        <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
+          <h3 className="text-sm font-semibold text-[var(--text)]">Edit Incoterm</h3>
+          <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text)]">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-4">
+          <select
+            value={selected}
+            onChange={e => setSelected(e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent"
+          >
+            {availableIncoterms.map(i => (
+              <option key={i} value={i}>{i}</option>
+            ))}
+          </select>
+
+          {error && (
+            <div className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 p-4 border-t border-[var(--border)]">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={selected === currentIncoterm || saving}
+            className="px-4 py-2 text-sm font-medium text-white bg-[var(--sky)] rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2"
+          >
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumber, ports, onPortUpdated }: {
   order: ShipmentOrder;
   accountType: string | null;
@@ -195,6 +284,8 @@ export function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumb
   onPortUpdated?: () => void;
 }) {
   const [editingPort, setEditingPort] = useState<'origin' | 'destination' | null>(null);
+  const [editingIncoterm, setEditingIncoterm] = useState(false);
+  const isTerminal = order.status === 5001 || order.status === -1;
   const filteredPorts = order.order_type === 'AIR'
     ? ports.filter(p => p.port_type?.toLowerCase().includes('air'))
     : ports.filter(p => !p.port_type?.toLowerCase().includes('air'));
@@ -234,6 +325,7 @@ export function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumb
         size="lg"
         vesselName={vesselName}
         voyageNumber={voyageNumber}
+        onEditIncoterm={isAfu && onPortUpdated && !isTerminal ? () => setEditingIncoterm(true) : undefined}
         originAction={isAfu && onPortUpdated ? (
           <button
             onClick={() => setEditingPort(editingPort === 'origin' ? null : 'origin')}
@@ -273,6 +365,15 @@ export function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumb
           shipmentId={order.quotation_id}
           onSaved={() => { setEditingPort(null); onPortUpdated(); }}
           onClose={() => setEditingPort(null)}
+        />
+      )}
+      {editingIncoterm && onPortUpdated && (
+        <IncotermEditModal
+          currentIncoterm={order.incoterm_code || 'FOB'}
+          transactionType={order.transaction_type}
+          shipmentId={order.quotation_id}
+          onSaved={() => { setEditingIncoterm(false); onPortUpdated(); }}
+          onClose={() => setEditingIncoterm(false)}
         />
       )}
     </div>

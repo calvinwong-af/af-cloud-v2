@@ -301,6 +301,16 @@ export default function DocumentParseModal({
   const handleApply = useCallback(async () => {
     if (!docType || !parsedData) return;
 
+    // Validate port selection for BL and BC before apply
+    if (docType === 'BL' || docType === 'BOOKING_CONFIRMATION') {
+      const polCode = parsedData.pol_code as string | undefined;
+      const podCode = parsedData.pod_code as string | undefined;
+      if (!polCode || !podCode) {
+        setApplyError('Please select a Port of Loading and Port of Discharge before applying.');
+        return;
+      }
+    }
+
     const awbPayload: ParsedAWBData = {
       awb_type: (awbForm.awbType || 'DIRECT') as 'HOUSE' | 'MASTER' | 'DIRECT',
       hawb_number: awbForm.hawbNumber || null,

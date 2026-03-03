@@ -1,4 +1,4 @@
-import { Ship, Plane } from 'lucide-react';
+import { Ship, Plane, Pencil } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
@@ -30,6 +30,43 @@ interface PortPairProps {
   voyageNumber?: string | null;
   originAction?: React.ReactNode;
   destAction?: React.ReactNode;
+  onEditIncoterm?: () => void;
+}
+
+const INCOTERM_COLORS: Record<string, { bg: string; text: string }> = {
+  EXW: { bg: '#fef3c7', text: '#92400e' },
+  FCA: { bg: '#ede9fe', text: '#5b21b6' },
+  FAS: { bg: '#f3e8ff', text: '#7c3aed' },
+  FOB: { bg: '#dbeafe', text: '#1d4ed8' },
+  CFR: { bg: '#cffafe', text: '#0e7490' },
+  CNF: { bg: '#cffafe', text: '#0e7490' },
+  CIF: { bg: '#e0f2fe', text: '#0369a1' },
+  CPT: { bg: '#d1fae5', text: '#065f46' },
+  CIP: { bg: '#dcfce7', text: '#166534' },
+  DAT: { bg: '#fce7f3', text: '#9d174d' },
+  DPU: { bg: '#fce7f3', text: '#9d174d' },
+  DAP: { bg: '#fee2e2', text: '#991b1b' },
+  DDP: { bg: '#fecaca', text: '#7f1d1d' },
+};
+
+function IncotermPill({ code }: { code: string }) {
+  const upper = code.toUpperCase();
+  const colors = INCOTERM_COLORS[upper];
+  if (colors) {
+    return (
+      <span
+        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-semibold"
+        style={{ background: colors.bg, color: colors.text }}
+      >
+        {upper}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 bg-[var(--surface)] border border-[var(--border)] rounded text-xs font-mono font-semibold text-[var(--text-mid)]">
+      {upper}
+    </span>
+  );
 }
 
 export default function PortPair({
@@ -45,6 +82,7 @@ export default function PortPair({
   voyageNumber,
   originAction,
   destAction,
+  onEditIncoterm,
 }: PortPairProps) {
   const originLabel = viewContext === 'staff' ? 'POL' : 'Origin';
   const destLabel = viewContext === 'staff' ? 'POD' : 'Destination';
@@ -166,9 +204,16 @@ export default function PortPair({
       {incoterm && (
         <div className={`${isLg ? 'mt-4 pt-4' : 'mt-2 pt-2'} border-t border-[var(--border)] flex items-center gap-2`}>
           <span className="text-xs text-[var(--text-muted)]">Incoterm</span>
-          <span className="px-2 py-0.5 bg-[var(--surface)] border border-[var(--border)] rounded text-xs font-mono font-semibold text-[var(--text-mid)]">
-            {incoterm}
-          </span>
+          <IncotermPill code={incoterm} />
+          {onEditIncoterm && (
+            <button
+              onClick={onEditIncoterm}
+              className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
+              title="Edit incoterm"
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+          )}
         </div>
       )}
     </div>
