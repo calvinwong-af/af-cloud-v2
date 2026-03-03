@@ -373,3 +373,55 @@ async def send_reset_email(
 
     _log_user_action(conn, "USER_SEND_RESET_EMAIL", uid, claims.uid, claims.email)
     return {"status": "OK"}
+
+
+# ---------------------------------------------------------------------------
+# PATCH /users/{uid}/promote-to-staff — promote AFC user to AFU (AFU-ADMIN only)
+# ---------------------------------------------------------------------------
+
+_VALID_AFU_ROLES = ["AFU-ADMIN", "AFU-STAFF", "AFU-OPS"]
+
+
+class PromoteToStaffRequest(BaseModel):
+    role: str  # must be one of AFU-ADMIN, AFU-STAFF, AFU-OPS
+
+
+@router.patch("/{uid}/promote-to-staff")
+async def promote_to_staff(
+    uid: str,
+    body: PromoteToStaffRequest,
+    claims: Claims = Depends(require_afu_admin),
+    conn=Depends(get_db),
+):
+    """Promote a customer (AFC) user to an internal staff (AFU) account."""
+    if body.role not in _VALID_AFU_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid role. Must be one of: {', '.join(_VALID_AFU_ROLES)}",
+        )
+
+    # Fetch current user
+    row = conn.execute(
+        text("SELECT uid, account_type FROM users WHERE uid = :uid"),
+        {"uid": uid},
+    ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if row.account_type == "AFU":
+        raise HTTPException(status_code=400, detail="User is already a staff account")
+
+    # Update: set account_type to AFU, assign new role, clear company_id
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        text("""
+            UPDATE users
+            SET account_type = 'AFU', role = :role, company_id = NULL, updated_at = :updated_at
+            WHERE uid = :uid
+        """),
+        {"role": body.role, "updated_at": now, "uid": uid},
+    )
+
+    _log_user_action(conn, "USER_PROMOTE_TO_STAFF", uid, claims.uid, claims.email)
+    return {"status": "OK"}

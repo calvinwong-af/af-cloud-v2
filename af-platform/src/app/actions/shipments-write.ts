@@ -849,6 +849,59 @@ export async function updatePartiesAction(
 
 
 // ---------------------------------------------------------------------------
+// Update Shipment Port (origin or destination)
+// ---------------------------------------------------------------------------
+
+export interface UpdateShipmentPortInput {
+  field: 'origin_port_un_code' | 'destination_port_un_code';
+  port_un_code: string;
+}
+
+export async function updateShipmentPortAction(
+  shipmentId: string,
+  input: UpdateShipmentPortInput
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) return { success: false, error: 'No session token' };
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) return { success: false, error: 'Server URL not configured' };
+
+    const url = new URL(
+      `/api/v2/shipments/${encodeURIComponent(shipmentId)}/port`,
+      serverUrl,
+    );
+    const res = await fetch(url.toString(), {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const msg = json?.detail ?? `Server responded ${res.status}`;
+      return { success: false, error: msg };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error('[updateShipmentPortAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to update port' };
+  }
+}
+
+
+// ---------------------------------------------------------------------------
 // Apply Booking Confirmation
 // ---------------------------------------------------------------------------
 

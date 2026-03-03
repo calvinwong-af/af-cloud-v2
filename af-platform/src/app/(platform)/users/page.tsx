@@ -9,6 +9,7 @@ import type { UserRecord } from "@/lib/users";
 import { UserTable } from "@/components/users/UserTable";
 import { CreateUserModal } from '@/components/users/CreateUserModal';
 import { EditUserModal } from '@/components/users/EditUserModal';
+import { PromoteToStaffModal } from '@/components/users/PromoteToStaffModal';
 
 type FilterTab = "all" | "afc" | "afu";
 
@@ -63,6 +64,8 @@ export default function UsersPage() {
   const [search, setSearch] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingUser, setEditingUser] = useState<UserRecord | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  const [promotingUser, setPromotingUser] = useState<UserRecord | null>(null);
 
   async function fetchUsers() {
     setLoading(true);
@@ -83,6 +86,7 @@ export default function UsersPage() {
         router.replace('/dashboard');
         return;
       }
+      setCurrentUserRole(profile.role);
       setAuthorized(true);
       fetchUsers();
     });
@@ -233,6 +237,14 @@ export default function UsersPage() {
         user={editingUser}
         onClose={() => setEditingUser(null)}
         onUpdated={() => { setEditingUser(null); fetchUsers(); }}
+        currentUserRole={currentUserRole ?? undefined}
+        onPromoteToStaff={(user) => setPromotingUser(user)}
+      />
+
+      <PromoteToStaffModal
+        user={promotingUser}
+        onClose={() => setPromotingUser(null)}
+        onPromoted={() => { setPromotingUser(null); setEditingUser(null); fetchUsers(); }}
       />
     </div>
   );

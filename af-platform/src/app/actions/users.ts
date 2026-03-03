@@ -303,6 +303,43 @@ export async function resetPasswordAction(
 // Send password reset email
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Promote customer to staff
+// ---------------------------------------------------------------------------
+
+export interface PromoteToStaffInput {
+  role: 'AFU-ADMIN' | 'AFU-STAFF' | 'AFU-OPS';
+}
+
+export async function promoteToStaffAction(
+  targetUid: string,
+  input: PromoteToStaffInput
+): Promise<ActionResult<void>> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+    if (!targetUid) return { success: false, error: 'Invalid user ID' };
+
+    const idToken = await getIdToken();
+    if (!idToken) return { success: false, error: 'No session token' };
+
+    const resp = await callServer('PATCH', `/users/${targetUid}/promote-to-staff`, idToken, {
+      role: input.role,
+    });
+    if (!resp.ok) return { success: false, error: serverError(resp) };
+
+    return { success: true, data: undefined };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[promoteToStaffAction]', message);
+    return { success: false, error: 'Failed to promote user. Please try again.' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Send password reset email
+// ---------------------------------------------------------------------------
+
 export async function sendPasswordResetEmailAction(
   targetUid: string
 ): Promise<ActionResult<void>> {

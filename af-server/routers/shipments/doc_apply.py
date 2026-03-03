@@ -158,7 +158,7 @@ async def apply_awb(
 ):
     # Read current shipment
     row = conn.execute(text("""
-        SELECT id, booking, parties FROM shipments WHERE id = :id
+        SELECT id, booking, parties, type_details, cargo FROM shipments WHERE id = :id
     """), {"id": shipment_id}).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Shipment not found")
@@ -202,7 +202,6 @@ async def apply_awb(
     if body.flight_date is not None:
         set_clauses.append("etd = :etd")
         params["etd"] = body.flight_date
-        # TODO: Task due-dates that depend on ETD may need recalculation — deferred (v2.73)
 
     # Merge parties
     parties = _parse_jsonb(row[2]) or {}
@@ -227,6 +226,27 @@ async def apply_awb(
         parties["notify_party"] = notify
     set_clauses.append("parties = CAST(:parties AS jsonb)")
     params["parties"] = json.dumps(parties)
+
+    # Merge cargo fields (pieces, weight, description, hs_code) into type_details + cargo JSONB
+    type_details = _parse_jsonb(row[3]) or {}
+    if not isinstance(type_details, dict): type_details = {}
+    if body.pieces is not None:
+        type_details["pieces"] = body.pieces
+    if body.chargeable_weight_kg is not None:
+        type_details["chargeable_weight"] = body.chargeable_weight_kg
+    set_clauses.append("type_details = CAST(:type_details AS jsonb)")
+    params["type_details"] = json.dumps(type_details)
+
+    cargo = _parse_jsonb(row[4]) or {}
+    if not isinstance(cargo, dict): cargo = {}
+    if body.gross_weight_kg is not None:
+        cargo["weight_kg"] = body.gross_weight_kg
+    if body.cargo_description is not None:
+        cargo["description"] = body.cargo_description
+    if body.hs_code is not None:
+        cargo["hs_code"] = body.hs_code
+    set_clauses.append("cargo = CAST(:cargo AS jsonb)")
+    params["cargo"] = json.dumps(cargo)
 
     conn.execute(text(f"""
         UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id

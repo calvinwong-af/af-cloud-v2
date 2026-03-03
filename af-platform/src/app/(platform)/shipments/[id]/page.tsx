@@ -222,6 +222,7 @@ export default function ShipmentOrderDetailPage() {
         vesselName={vesselName}
         voyageNumber={voyageNumber}
         ports={ports as Port[]}
+        onPortUpdated={() => { loadOrder(); loadRouteTimings(); }}
       />
 
       {/* Upload Document button — AFU, status >= 2001 (Confirmed+) */}

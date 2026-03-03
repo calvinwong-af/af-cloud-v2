@@ -645,6 +645,72 @@ async def update_shipment_cargo(
 
 
 # ---------------------------------------------------------------------------
+# PATCH /shipments/{shipment_id}/port — Update origin or destination port
+# ---------------------------------------------------------------------------
+
+_VALID_PORT_FIELDS = ["origin_port_un_code", "destination_port_un_code"]
+
+
+class UpdatePortRequest(BaseModel):
+    field: str   # 'origin_port_un_code' or 'destination_port_un_code'
+    port_un_code: str
+
+
+@router.patch("/{shipment_id}/port")
+async def update_shipment_port(
+    shipment_id: str,
+    body: UpdatePortRequest,
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    """Update origin or destination port code on a shipment."""
+    if body.field not in _VALID_PORT_FIELDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid field. Must be one of: {', '.join(_VALID_PORT_FIELDS)}",
+        )
+    if not body.port_un_code.strip():
+        raise HTTPException(status_code=400, detail="port_un_code is required")
+
+    port_code = body.port_un_code.strip().upper()
+
+    row = conn.execute(
+        text("SELECT id, route_nodes FROM shipments WHERE id = :id AND trash = FALSE"),
+        {"id": shipment_id},
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Map field name to flat column
+    col = "origin_port" if body.field == "origin_port_un_code" else "dest_port"
+
+    conn.execute(
+        text(f"UPDATE shipments SET {col} = :port, updated_at = :now WHERE id = :id"),
+        {"port": port_code, "now": now, "id": shipment_id},
+    )
+
+    # Also update the corresponding route node if present
+    nodes = _parse_jsonb(row[1]) or []
+    if isinstance(nodes, list):
+        node_role = "ORIGIN" if body.field == "origin_port_un_code" else "DESTINATION"
+        changed = False
+        for node in nodes:
+            if node.get("role") == node_role:
+                node["port_un_code"] = port_code
+                changed = True
+        if changed:
+            conn.execute(
+                text("UPDATE shipments SET route_nodes = CAST(:rn AS jsonb) WHERE id = :id"),
+                {"rn": json.dumps(nodes), "id": shipment_id},
+            )
+
+    _log_system_action_pg(conn, "SHIPMENT_PORT_UPDATED", shipment_id, claims.uid, claims.email)
+    return {"status": "OK"}
+
+
+# ---------------------------------------------------------------------------
 # Delete shipment (soft + hard)
 # ---------------------------------------------------------------------------
 

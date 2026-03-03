@@ -1,7 +1,7 @@
 # DP — Document Parser
 **Series:** DP
 **Status:** 🔵 Active
-**Total:** 48 | **YES:** 22 | **PENDING:** 22 | **DEFERRED:** 0 | **NA:** 0
+**Total:** 48 | **YES:** 29 | **PENDING:** 15 | **DEFERRED:** 0 | **NA:** 0
 **Last Updated:** 03 March 2026
 
 ---
@@ -13,7 +13,7 @@
 | DP-01 | seed_airports.py runs clean — airports upserted to PostgreSQL | YES | 97 airports upserted |
 | DP-02 | KUL resolves to label in PortPair/RouteCard | YES | AF-003866 — Kuala Lumpur International Airport confirmed |
 | DP-03 | MUC resolves to label in PortPair/RouteCard | YES | AF-003866 — Munich Airport, Germany confirmed |
-| DP-04 | POST /api/v2/ai/parse-document — BL PDF returns doc_type=BL | PENDING | Use any BL PDF |
+| DP-04 | POST /api/v2/ai/parse-document — BL PDF returns doc_type=BL | YES | AF-003874 confirmed |
 | DP-05 | POST /api/v2/ai/parse-document — AWB PDF returns doc_type=AWB | YES | PAMAE2603001 confirmed |
 | DP-06 | POST /api/v2/ai/parse-document — BC PDF returns doc_type=BOOKING_CONFIRMATION | PENDING | Use AYN1317670 |
 | DP-07 | AWB parse — hawb_number populated for HOUSE AWB | YES | PAMAE2603001 confirmed |
@@ -33,14 +33,14 @@
 | DP-21 | BC parse on new shipment — initial status Booking Confirmed (3002) | YES | AYN1317670 confirmed |
 | DP-22 | New Shipment modal — order_type/transaction_type/incoterm editable | YES | Confirmed |
 | DP-23 | BC parse — transaction_type defaults to EXPORT | YES | Confirmed |
-| DP-24 | BC parse — containers populated (type, number, weight) | PENDING | AYN1317670 — 3 containers expected |
+| DP-24 | BC parse — containers populated (type, number, weight) | YES | AF-003874 — 2× 40'HQ with container numbers and seal numbers confirmed |
 | DP-25 | AWB parse — friendly error shown on API overload | PENDING | Mock or trigger overload |
-| DP-26 | Port/Airport dropdown — format is CODE — Name | PENDING | Check BLUploadTab + DocumentParseModal |
-| DP-27 | Port/Airport dropdown — searchable by code or name | PENDING | Type "SGN" or "Tan Son" |
-| DP-28 | Port/Airport dropdown — selecting option sets correct code value | PENDING | Verify payload on Confirm & Create |
-| DP-29 | DocumentParseModal — ownership section hidden when shipment has company_id | PENDING | AF-003861 has BEDI SPORTS |
-| DP-30 | DocumentParseModal — State B match card shown when consignee matches | PENDING | Parse BL with known consignee |
-| DP-31 | DocumentParseModal — State C amber banner shown when no match | PENDING | Parse doc with unknown company |
+| DP-26 | Port/Airport dropdown — format is CODE — Name | YES | Confirmed on AWB parse — PEK/KUL shown as CODE — Name |
+| DP-27 | Port/Airport dropdown — searchable by code or name | YES | Confirmed — search field working in dropdown |
+| DP-28 | Port/Airport dropdown — selecting option sets correct code value | YES | Confirmed — ADD saved correctly after manual selection override of parsed PEK |
+| DP-29 | DocumentParseModal — ownership section hidden when shipment has company_id | YES | AF-003874 — ownership section hidden, MB AUTOMATION assigned correctly |
+| DP-30 | DocumentParseModal — State B match card shown when consignee matches | YES | AWB parse — Universal Zentury Holdings matched as AFC-0005 |
+| DP-31 | DocumentParseModal — State C amber banner shown when no match | YES | Confirmed — company search shown after "Not this company" with Skip option |
 | DP-32 | BLUploadTab — State C amber banner shown when no consignee match | PENDING | Upload doc with unknown company |
 | DP-33 | Context menu flips upward when row near bottom of viewport | YES | MCP fix — 03 Mar 2026 |
 | DP-34 | AWB result view — grouped sections (Route, AWB Numbers, Shipper, Consignee, Cargo) | YES | AF-003861 confirmed |

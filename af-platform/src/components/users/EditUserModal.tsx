@@ -10,7 +10,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Loader2, Eye, EyeOff, RefreshCw, ShieldCheck } from 'lucide-react';
+import { X, Loader2, Eye, EyeOff, RefreshCw, ShieldCheck, ArrowUpCircle } from 'lucide-react';
 import { updateUserAction, resetPasswordAction, reactivateUserAction } from '@/app/actions/users';
 import { fetchCompaniesAction } from '@/app/actions/companies';
 import type { UserRecord } from '@/lib/users';
@@ -23,9 +23,11 @@ interface EditUserModalProps {
   user: UserRecord | null;
   onClose: () => void;
   onUpdated: () => void;
+  currentUserRole?: string;
+  onPromoteToStaff?: (user: UserRecord) => void;
 }
 
-export function EditUserModal({ user, onClose, onUpdated }: EditUserModalProps) {
+export function EditUserModal({ user, onClose, onUpdated, currentUserRole, onPromoteToStaff }: EditUserModalProps) {
   const [tab, setTab] = useState<'details' | 'password'>('details');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -223,6 +225,17 @@ export function EditUserModal({ user, onClose, onUpdated }: EditUserModalProps) 
                   </div>
                 )}
               </div>
+
+              {/* Promote to Staff button — only for AFC users when current user is AFU-ADMIN */}
+              {u.account_type === 'AFC' && currentUserRole === 'AFU-ADMIN' && onPromoteToStaff && (
+                <button
+                  onClick={() => onPromoteToStaff(u)}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50 transition-colors"
+                >
+                  <ArrowUpCircle className="w-4 h-4" />
+                  Promote to Staff
+                </button>
+              )}
             </>
           )}
 

@@ -4,11 +4,11 @@ import { useState, useEffect, useRef } from 'react';
 import {
   MapPin, Package, Users, AlertTriangle, Loader2,
   Container, Weight, Activity, ChevronDown, ChevronRight, Pencil, X,
-  Clock,
+  Clock, Check,
 } from 'lucide-react';
 import { fetchStatusHistoryAction, fetchCompaniesForShipmentAction, reassignShipmentCompanyAction } from '@/app/actions/shipments';
 import type { StatusHistoryEntry } from '@/app/actions/shipments';
-import { updateShipmentStatusAction, updateInvoicedStatusAction, updatePartiesAction } from '@/app/actions/shipments-write';
+import { updateShipmentStatusAction, updateInvoicedStatusAction, updatePartiesAction, updateShipmentPortAction } from '@/app/actions/shipments-write';
 import { formatDate } from '@/lib/utils';
 import type { ShipmentOrder, ShipmentOrderStatus, TypeDetailsFCL, TypeDetailsLCL } from '@/lib/types';
 import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, getStatusPathList } from '@/lib/types';
@@ -70,7 +70,104 @@ export function EmptyState({ message }: { message: string }) {
 
 // ─── Route card ───────────────────────────────────────────────────────────────
 
-export function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumber, ports }: {
+function PortEditPopover({
+  currentCode,
+  ports,
+  field,
+  shipmentId,
+  onSaved,
+  onClose,
+}: {
+  currentCode: string;
+  ports: Port[];
+  field: 'origin_port_un_code' | 'destination_port_un_code';
+  shipmentId: string;
+  onSaved: () => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [selected, setSelected] = useState(currentCode);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const filtered = query.trim()
+    ? ports.filter(p =>
+        p.un_code.toLowerCase().includes(query.toLowerCase()) ||
+        p.name.toLowerCase().includes(query.toLowerCase())
+      ).slice(0, 20)
+    : [];
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose]);
+
+  async function handleSave() {
+    if (!selected || selected === currentCode) { onClose(); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await updateShipmentPortAction(shipmentId, { field, port_un_code: selected });
+      if (!result) { setError('No response'); setSaving(false); return; }
+      if (!result.success) { setError(result.error); setSaving(false); return; }
+      onSaved();
+    } catch {
+      setError('Failed to update port');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div ref={wrapperRef} className="absolute z-50 top-full mt-1 left-0 bg-white border border-[var(--border)] rounded-lg shadow-lg p-3 w-64">
+      <input
+        autoFocus
+        type="text"
+        value={query}
+        onChange={e => setQuery(e.target.value)}
+        placeholder="Search port..."
+        className="w-full px-2.5 py-1.5 text-xs border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[var(--sky)] mb-1"
+      />
+      {filtered.length > 0 && (
+        <div className="max-h-36 overflow-y-auto mb-2 border border-[var(--border)] rounded-md">
+          {filtered.map(p => (
+            <button
+              key={p.un_code}
+              onClick={() => { setSelected(p.un_code); setQuery(p.un_code); }}
+              className={`w-full text-left px-2.5 py-1.5 text-xs hover:bg-[var(--sky-mist)] ${p.un_code === selected ? 'bg-[var(--sky-mist)] font-medium' : ''}`}
+            >
+              <span className="font-mono font-semibold">{p.un_code}</span>
+              <span className="text-[var(--text-muted)] ml-1.5">{p.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {selected && selected !== currentCode && (
+        <div className="text-[10px] text-[var(--text-muted)] mb-2">
+          {currentCode} → <span className="font-semibold text-[var(--text)]">{selected}</span>
+        </div>
+      )}
+      {error && <p className="text-[10px] text-red-600 mb-1">{error}</p>}
+      <div className="flex items-center justify-end gap-1.5">
+        <button onClick={onClose} className="px-2 py-1 text-[10px] text-[var(--text-muted)] hover:text-[var(--text)] rounded">Cancel</button>
+        <button
+          onClick={handleSave}
+          disabled={saving || !selected || selected === currentCode}
+          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium text-white rounded disabled:opacity-50"
+          style={{ background: 'var(--sky)' }}
+        >
+          {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+          Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumber, ports, onPortUpdated }: {
   order: ShipmentOrder;
   accountType: string | null;
   etd?: string | null;
@@ -78,11 +175,14 @@ export function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumb
   vesselName?: string | null;
   voyageNumber?: string | null;
   ports: Port[];
+  onPortUpdated?: () => void;
 }) {
+  const [editingPort, setEditingPort] = useState<'origin' | 'destination' | null>(null);
   const originTerminalId = order.origin?.terminal_id ?? null;
   const destTerminalId = order.destination?.terminal_id ?? null;
   const originTooltip = getPortLabel(order.origin?.port_un_code, originTerminalId, ports);
   const destTooltip = getPortLabel(order.destination?.port_un_code, destTerminalId, ports);
+  const isAfu = accountType === 'AFU';
   return (
     <div className="bg-white border border-[var(--border)] rounded-xl p-5">
       <div className="flex items-center gap-2 mb-5">
@@ -91,30 +191,79 @@ export function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumb
         </span>
         <h2 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Route</h2>
       </div>
-      <PortPair
-        origin={{
-          port_un_code: order.origin?.port_un_code ?? null,
-          terminal_id: originTerminalId,
-          terminal_name: originTerminalId ? (ports.find(p => p.un_code === order.origin?.port_un_code)?.terminals.find(t => t.terminal_id === originTerminalId)?.name ?? null) : null,
-          port_name: originTooltip || order.origin?.label || null,
-          country_code: order.origin?.country_code ?? null,
-        }}
-        destination={{
-          port_un_code: order.destination?.port_un_code ?? null,
-          terminal_id: destTerminalId,
-          terminal_name: destTerminalId ? (ports.find(p => p.un_code === order.destination?.port_un_code)?.terminals.find(t => t.terminal_id === destTerminalId)?.name ?? null) : null,
-          port_name: destTooltip || order.destination?.label || null,
-          country_code: order.destination?.country_code ?? null,
-        }}
-        viewContext={accountType === 'AFU' ? 'customer' : 'staff'}
-        etd={etd}
-        eta={eta}
-        incoterm={order.incoterm_code}
-        orderType={order.order_type}
-        size="lg"
-        vesselName={vesselName}
-        voyageNumber={voyageNumber}
-      />
+      <div className="relative">
+        <PortPair
+          origin={{
+            port_un_code: order.origin?.port_un_code ?? null,
+            terminal_id: originTerminalId,
+            terminal_name: originTerminalId ? (ports.find(p => p.un_code === order.origin?.port_un_code)?.terminals.find(t => t.terminal_id === originTerminalId)?.name ?? null) : null,
+            port_name: originTooltip || order.origin?.label || null,
+            country_code: order.origin?.country_code ?? null,
+          }}
+          destination={{
+            port_un_code: order.destination?.port_un_code ?? null,
+            terminal_id: destTerminalId,
+            terminal_name: destTerminalId ? (ports.find(p => p.un_code === order.destination?.port_un_code)?.terminals.find(t => t.terminal_id === destTerminalId)?.name ?? null) : null,
+            port_name: destTooltip || order.destination?.label || null,
+            country_code: order.destination?.country_code ?? null,
+          }}
+          viewContext={isAfu ? 'customer' : 'staff'}
+          etd={etd}
+          eta={eta}
+          incoterm={order.incoterm_code}
+          orderType={order.order_type}
+          size="lg"
+          vesselName={vesselName}
+          voyageNumber={voyageNumber}
+        />
+        {/* Edit pencil icons — AFU only */}
+        {isAfu && onPortUpdated && (
+          <>
+            <div className="absolute top-0 left-0" style={{ marginTop: '18px', marginLeft: '-4px' }}>
+              <div className="relative inline-block">
+                <button
+                  onClick={() => setEditingPort(editingPort === 'origin' ? null : 'origin')}
+                  className="p-1 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--sky)] transition-colors"
+                  title="Edit origin port"
+                >
+                  <Pencil className="w-3 h-3" />
+                </button>
+                {editingPort === 'origin' && (
+                  <PortEditPopover
+                    currentCode={order.origin?.port_un_code ?? ''}
+                    ports={ports}
+                    field="origin_port_un_code"
+                    shipmentId={order.quotation_id}
+                    onSaved={() => { setEditingPort(null); onPortUpdated(); }}
+                    onClose={() => setEditingPort(null)}
+                  />
+                )}
+              </div>
+            </div>
+            <div className="absolute top-0 right-0" style={{ marginTop: '18px', marginRight: '-4px' }}>
+              <div className="relative inline-block">
+                <button
+                  onClick={() => setEditingPort(editingPort === 'destination' ? null : 'destination')}
+                  className="p-1 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--sky)] transition-colors"
+                  title="Edit destination port"
+                >
+                  <Pencil className="w-3 h-3" />
+                </button>
+                {editingPort === 'destination' && (
+                  <PortEditPopover
+                    currentCode={order.destination?.port_un_code ?? ''}
+                    ports={ports}
+                    field="destination_port_un_code"
+                    shipmentId={order.quotation_id}
+                    onSaved={() => { setEditingPort(null); onPortUpdated(); }}
+                    onClose={() => setEditingPort(null)}
+                  />
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

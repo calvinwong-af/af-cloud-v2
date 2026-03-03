@@ -40,7 +40,20 @@ Already underway via the `/ai` router in af-server.
 | BC document parsing | 🔵 Active | apply-booking-confirmation working |
 | Task auto-generation from incoterm | Planned | v2.83+ |
 
-### Phase 2 — Network Discovery
+### Phase 2 — Carrier Tracking Integration
+Agents that automatically fetch live shipment status from carrier systems and update the platform.
+
+| Capability | Description |
+|---|---|
+| Carrier tracking sync | Given a shipment's booking ref + carrier, agent calls carrier API or scrapes tracking page → extracts vessel name, voyage, ETD, ETA, container status → proposes update to matching shipment record |
+| Status advancement | If carrier data indicates vessel has departed or arrived, agent proposes status advancement (e.g. Booking Confirmed → Departed) for staff confirmation |
+| Multi-carrier support | Priority carriers for AF customer base: Yang Ming, ONE, Evergreen, Hapag-Lloyd, CMA CGM, Maersk. Integration approach per carrier: (1) official API if available, (2) Dagang Net / MyTRADELINK for Malaysia port calls, (3) third-party aggregator (Shipsgo / Project44 / Portcast) as single-API fallback across 100+ carriers |
+
+**Reference:** Yang Ming tracking — https://www.yangming.com/en/esolution/cargo_tracking
+
+**Recommended approach:** Evaluate a single aggregator API (Portcast is Malaysia-based and SEA-focused) before building per-carrier integrations. One integration covers the full carrier set.
+
+### Phase 3 — Network Discovery
 Agents that learn AcceleFreight's operational network from real interactions.
 
 | Capability | Description |
@@ -48,7 +61,7 @@ Agents that learn AcceleFreight's operational network from real interactions.
 | Location mapping | Encounter unfamiliar address → resolve via Google Maps API → propose as verified location record (tagged `source: agent, status: pending_review`) |
 | Supplier discovery | Inbound email from unknown sender → extract signals (domain, signature, context, attachments) → infer supplier relationship → propose draft company record for staff confirmation |
 
-### Phase 3 — Email Intelligence
+### Phase 4 — Email Intelligence
 Monitor operational inbox and extract structured data automatically.
 
 | Capability | Description |
@@ -56,7 +69,7 @@ Monitor operational inbox and extract structured data automatically.
 | Supplier email ingestion | Gmail API monitors inbox → agent identifies shipment-related emails → extracts ETD, vessel, reference numbers → proposes updates to matching shipment |
 | New contact extraction | Agent identifies new contact details in email thread → proposes addition to company contact records |
 
-### Phase 4 — Autonomous Workflow
+### Phase 5 — Autonomous Workflow
 Agents that take action based on shipment state changes.
 
 | Capability | Description |
