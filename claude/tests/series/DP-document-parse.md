@@ -1,7 +1,7 @@
 # DP — Document Parser
 **Series:** DP
 **Status:** 🔵 Active
-**Total:** 62 | **YES:** 57 | **PENDING:** 2 | **DEFERRED:** 0 | **NA:** 1
+**Total:** 70 | **YES:** 66 | **PENDING:** 1 | **DEFERRED:** 0 | **NA:** 1 | **FAIL:** 1
 **Last Updated:** 03 March 2026 (Session 15)
 
 ---
@@ -57,7 +57,7 @@
 | DP-45 | DocumentParseModal — success state shown briefly before close | YES | Confirmed |
 | DP-46 | Files tab badge updates immediately after AWB apply (no page reload) | YES | Confirmed |
 | DP-47 | Files tab badge updates immediately after BC apply (no page reload) | YES | Session 14 — Files badge shows 1 immediately after BC apply on AF-003843 |
-| DP-48 | AWB diff badge — shown in parser dialog but NOT on shipment details page | PENDING | TODO-AWB-01: dialog shows correctly; details page missing — fix alongside v2.78 (Opus) |
+| DP-48 | AWB diff badge — shown in parser dialog but NOT on shipment details page | YES | Session 17 — v3.09 — amber diff badge shown next to CONSIGNEE on Parties card after AWB apply on AF-003864 |
 | DP-49 | Packages card shows pieces + weight after AWB create | YES | Session 10 — 1× PACKAGE row with gross weight shown correctly |
 | DP-50 | Chargeable weight shown on AIR shipment after AWB create | YES | Session 10 — Pieces + Chargeable shown in totals footer |
 | DP-51 | Port edit modal shows only airports for AIR shipments | YES | Session 10 — sea ports excluded, airports only confirmed |
@@ -72,6 +72,14 @@
 | DP-60 | apply-awb — status advances to Booking Confirmed (3002) on Path A shipment (FCA import) | YES | Session 17 — inferred from DP-55/57 (import booking-relevant path confirmed); token issue resolved via LOCAL_DEV_SKIP_AUTH |
 | DP-61 | apply-awb — status advances based on flight_date on Path B shipment (FCA export, past date → 4001) | YES | v3.03 — Session 15 — confirmed via AIR FCA EXPORT shipment with past flight_date → status 4001 |
 | DP-62 | EXW blocked from incoterm selector when transaction_type=EXPORT | YES | v3.03 — Session 15 — confirmed via create shipment modal |
+| DP-63 | BL "Use This Data" applies directly — no BLUpdateModal opens | YES | Session 17 — confirmed BL apply goes direct, no legacy modal |
+| DP-64 | apply-bl via new flow — vessel, BL No, ETD, ports, parties all update | YES | Session 17 — confirmed all fields update on detail page after BL apply |
+| DP-65 | apply-bl via new flow — BL file appears in Files tab | YES | Session 17 — confirmed BL file saved to Files tab after apply |
+| DP-66 | Files tab reparse still opens BLUpdateModal (legacy flow unaffected) | YES | Session 17 — confirmed — Read File on Files tab opens old BLUpdateModal as expected |
+| DP-67 | Terminal selector appears for MYPKG in BLReview | YES | Session 17 — confirmed terminal selector present for MYPKG |
+| DP-68 | Terminal selector appears for MYPKG in BCReview | YES | Session 17 — confirmed terminal selector present for MYPKG |
+| DP-69 | Changing port to one without terminals clears terminal field | FAIL | Session 17 — BUG: switching away from a terminal port fails to clear terminal state — tracked as UI-13 |
+| DP-70 | Production parse endpoint — no 500 on Cloud Run after v3.08 fix | YES | Session 17 — confirmed working after ANTHROPIC_API_KEY added to af-server env vars |
 
 ---
 
@@ -79,6 +87,10 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 2.71 | 04 Mar 2026 | Session 17 — DP-66, 67, 68 YES; DP-69 FAIL (UI-13); total 66 YES |
+| 2.70 | 03 Mar 2026 | Session 17 — DP-63, 64, 65, 70 YES; total 62 YES |
+| 2.69 | 03 Mar 2026 | Session 17 — DP-63–70 added as PENDING; total updated to 70 |
+| 2.68 | 03 Mar 2026 | Session 17 — DP-48 YES (diff badge on detail page confirmed); total 58 YES |
 | 2.67 | 03 Mar 2026 | Session 17 — DP-42 YES (no diff badge on match confirmed); total 57 YES |
 | 2.66 | 03 Mar 2026 | Session 17 — DP-55, DP-60 YES (inferred); total 56 YES |
 | 2.65 | 03 Mar 2026 | Session 17 — DP-59 YES (inferred); total 54 YES |

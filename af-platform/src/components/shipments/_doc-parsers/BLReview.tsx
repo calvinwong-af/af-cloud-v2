@@ -212,9 +212,8 @@ export function BLReview({
             <PortCombobox
               value={str(formState.pol_code)}
               onChange={code => {
-                const newPort = seaPorts.find(p => p.un_code === code);
                 update('pol_code', code);
-                if (!newPort?.has_terminals) update('pol_terminal', '');
+                update('pol_terminal', '');
               }}
               options={seaPortOptions}
               placeholder="Search port..."
@@ -249,9 +248,8 @@ export function BLReview({
             <PortCombobox
               value={str(formState.pod_code)}
               onChange={code => {
-                const newPort = seaPorts.find(p => p.un_code === code);
                 update('pod_code', code);
-                if (!newPort?.has_terminals) update('pod_terminal', '');
+                update('pod_terminal', '');
               }}
               options={seaPortOptions}
               placeholder="Search port..."
@@ -360,6 +358,23 @@ export function BLReview({
           <button onClick={addContainer} className="mt-1.5 flex items-center gap-1 text-xs text-[var(--sky)] hover:underline">
             <Plus className="w-3 h-3" /> Add row
           </button>
+        </div>
+      )}
+
+      {/* LCL Container & Seal — shown when no FCL containers but BL has a container ref */}
+      {containers.length === 0 && (str(formState.lcl_container_number) || str(formState.lcl_seal_number)) && (
+        <div>
+          <SectionLabel>Container Reference</SectionLabel>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <FieldLabel>Container No.</FieldLabel>
+              <input type="text" value={str(formState.lcl_container_number)} onChange={e => update('lcl_container_number', e.target.value)} className={`${INPUT_BASE} font-mono ${str(formState.lcl_container_number) ? PREFILLED : ''}`} />
+            </div>
+            <div>
+              <FieldLabel>Seal No.</FieldLabel>
+              <input type="text" value={str(formState.lcl_seal_number)} onChange={e => update('lcl_seal_number', e.target.value)} className={`${INPUT_BASE} font-mono ${str(formState.lcl_seal_number) ? PREFILLED : ''}`} />
+            </div>
+          </div>
         </div>
       )}
 

@@ -42,6 +42,10 @@ export function createDocResultHandler(params: {
       if (s(bl.consignee_name))              formData.append('consignee_name',       s(bl.consignee_name));
       if (s(bl.consignee_address))           formData.append('consignee_address',    s(bl.consignee_address));
       if (s(bl.notify_party_name))           formData.append('notify_party_name',    s(bl.notify_party_name));
+      if (s(bl.cargo_description))           formData.append('cargo_description',    s(bl.cargo_description));
+      if (s(bl.total_weight_kg))             formData.append('total_weight_kg',      s(bl.total_weight_kg));
+      if (s(bl.lcl_container_number))        formData.append('lcl_container_number', s(bl.lcl_container_number));
+      if (s(bl.lcl_seal_number))             formData.append('lcl_seal_number',      s(bl.lcl_seal_number));
       // Raw parsed values → stored in bl_document for diff tracking
       if (s(bl.shipper_name))                formData.append('bl_shipper_name',      s(bl.shipper_name));
       if (s(bl.shipper_address))             formData.append('bl_shipper_address',   s(bl.shipper_address));
@@ -49,9 +53,8 @@ export function createDocResultHandler(params: {
       if (s(bl.consignee_address))           formData.append('bl_consignee_address', s(bl.consignee_address));
       if (s(bl.pol_code))                    formData.append('origin_port',          s(bl.pol_code));
       if (s(bl.pod_code))                    formData.append('dest_port',            s(bl.pod_code));
-      // pol_terminal / pod_terminal: not yet accepted by server — uncomment when endpoint updated
-      // if (s(bl.pol_terminal))             formData.append('origin_terminal',      s(bl.pol_terminal));
-      // if (s(bl.pod_terminal))             formData.append('dest_terminal',        s(bl.pod_terminal));
+      if (s(bl.pol_terminal))                formData.append('origin_terminal',      s(bl.pol_terminal));
+      if (s(bl.pod_terminal))                formData.append('dest_terminal',        s(bl.pod_terminal));
       const containers = bl.containers as Array<Record<string, unknown>> | null;
       if (containers?.length)
         formData.append('containers', JSON.stringify(containers));

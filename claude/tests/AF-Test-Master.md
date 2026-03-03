@@ -10,7 +10,7 @@
 
 | Series | Description | Total | YES | PENDING | DEFERRED | NA | Status | File |
 |---|---|---|---|---|---|---|---|---|
-| DP | Document Parser | 62 | 57 | 2 | 0 | 1 | 🔵 Active | series/DP-document-parse.md |
+| DP | Document Parser | 70 | 66 | 1 | 0 | 1 | 🔵 Active | series/DP-document-parse.md |
 | FILE | File Upload & Management | 6 | 6 | 0 | 0 | 0 | ✅ Complete | series/FILE-file-upload.md |
 | DT | DateTime Inputs | 16 | 1 | 15 | 0 | 0 | 🔵 Active | series/DT-datetime.md |
 | VD | Vessel Display | 7 | 5 | 2 | 0 | 0 | 🔵 Active | series/VD-vessel-display.md |
@@ -35,7 +35,7 @@
 | MC | Manual Shipment Create | 6 | 6 | 0 | 0 | 0 | ✅ Complete | series/MC-manual-create.md |
 | SD | Shipment Delete | 3 | 3 | 0 | 0 | 0 | ✅ Complete | series/SD-shipment-delete.md |
 | LO | Loading State UI | 5 | 5 | 0 | 0 | 0 | ✅ Complete | series/LO-loading-state.md |
-| **TOTAL** | | **266** | **236** | **21** | **12** | **3** | | |
+| **TOTAL** | | **274** | **245** | **20** | **12** | **3** | | |
 
 ---
 

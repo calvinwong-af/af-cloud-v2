@@ -7,6 +7,7 @@ BL parsing, shipment creation from BL, BL update, and parties update endpoints.
 import base64
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -505,8 +506,14 @@ async def update_from_bl(
     force_update: Optional[str] = Form(None),
     containers: Optional[str] = Form(None),
     cargo_items: Optional[str] = Form(None),
+    cargo_description: Optional[str] = Form(None),
+    total_weight_kg: Optional[str] = Form(None),
+    lcl_container_number: Optional[str] = Form(None),
+    lcl_seal_number: Optional[str] = Form(None),
     origin_port: Optional[str] = Form(None),
     dest_port: Optional[str] = Form(None),
+    origin_terminal: Optional[str] = Form(None),
+    dest_terminal: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
@@ -525,7 +532,7 @@ async def update_from_bl(
     # Load shipment
     row = conn.execute(text("""
         SELECT id, company_id, booking, parties, bl_document, type_details, trash,
-               incoterm_code, transaction_type
+               incoterm_code, transaction_type, cargo
         FROM shipments WHERE id = :id
     """), {"id": shipment_id}).fetchone()
 
@@ -648,12 +655,71 @@ async def update_from_bl(
             cargo_items_list = None
         if cargo_items_list:
             type_details["cargo_items"] = cargo_items_list
+            # Normalise into packages format for Packages card
+            packages = []
+            for item in cargo_items_list:
+                qty_str = str(item.get("quantity") or "").strip()
+                qty_num = 1
+                pkg_type = "Package"
+                if qty_str:
+                    m = re.match(r"(\d+)\s*(.*)", qty_str)
+                    if m:
+                        qty_num = int(m.group(1))
+                        pkg_type = m.group(2).strip().rstrip("(S)s").strip() or "Package"
+                weight_str = str(item.get("gross_weight") or "").strip()
+                weight_kg = None
+                if weight_str:
+                    m2 = re.search(r"[\d.]+", weight_str)
+                    if m2:
+                        try:
+                            weight_kg = float(m2.group())
+                        except ValueError:
+                            pass
+                measurement_str = str(item.get("measurement") or "").strip()
+                volume_cbm = None
+                if measurement_str:
+                    m3 = re.search(r"[\d.]+", measurement_str)
+                    if m3:
+                        try:
+                            volume_cbm = float(m3.group())
+                        except ValueError:
+                            pass
+                packages.append({
+                    "packaging_type": pkg_type or "Package",
+                    "quantity": qty_num,
+                    "gross_weight_kg": weight_kg,
+                    "volume_cbm": volume_cbm,
+                })
+            if packages:
+                type_details["packages"] = packages
+
+    # Write cargo description and weight to cargo JSONB
+    cargo_jsonb = _parse_jsonb(row[9]) or {}
+    if not isinstance(cargo_jsonb, dict):
+        cargo_jsonb = {}
+    if cargo_description is not None and cargo_description.strip():
+        cargo_jsonb["description"] = cargo_description.strip()
+    if total_weight_kg is not None:
+        try:
+            cargo_jsonb["weight_kg"] = float(total_weight_kg)
+        except (ValueError, TypeError):
+            pass
+
+    # LCL — store single consolidation container + seal as flat fields in type_details
+    if lcl_container_number is not None and lcl_container_number.strip():
+        type_details["container_number"] = lcl_container_number.strip()
+    if lcl_seal_number is not None and lcl_seal_number.strip():
+        type_details["seal_number"] = lcl_seal_number.strip()
 
     # Port updates — only write if provided and non-empty
     if origin_port and origin_port.strip():
         flat_updates["origin_port"] = origin_port.strip().upper()
     if dest_port and dest_port.strip():
         flat_updates["dest_port"] = dest_port.strip().upper()
+    if origin_terminal is not None:
+        flat_updates["origin_terminal"] = origin_terminal or None
+    if dest_terminal is not None:
+        flat_updates["dest_terminal"] = dest_terminal or None
 
     # Build UPDATE statement
     set_clauses = [
@@ -661,6 +727,7 @@ async def update_from_bl(
         "parties = CAST(:parties AS jsonb)",
         "bl_document = CAST(:bl_document AS jsonb)",
         "type_details = CAST(:type_details AS jsonb)",
+        "cargo = CAST(:cargo AS jsonb)",
         "updated_at = :now",
     ]
     params: dict = {
@@ -668,6 +735,7 @@ async def update_from_bl(
         "parties": json.dumps(parties),
         "bl_document": json.dumps(bl_doc) if bl_doc else None,
         "type_details": json.dumps(type_details) if type_details else None,
+        "cargo": json.dumps(cargo_jsonb),
         "now": now,
         "id": shipment_id,
     }
@@ -681,6 +749,12 @@ async def update_from_bl(
     if "dest_port" in flat_updates:
         set_clauses.append("dest_port = :dest_port")
         params["dest_port"] = flat_updates["dest_port"]
+    if "origin_terminal" in flat_updates:
+        set_clauses.append("origin_terminal = :origin_terminal")
+        params["origin_terminal"] = flat_updates["origin_terminal"]
+    if "dest_terminal" in flat_updates:
+        set_clauses.append("dest_terminal = :dest_terminal")
+        params["dest_terminal"] = flat_updates["dest_terminal"]
 
     # Unblock export clearance if waybill set
     if waybill_number:

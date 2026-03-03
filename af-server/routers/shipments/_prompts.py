@@ -9,7 +9,7 @@ _BL_EXTRACTION_PROMPT = """You are extracting structured data from a Bill of Lad
 Return ONLY valid JSON, no preamble, no markdown, no code fences.
 Use null for any field not present.
 
-For containers: extract container details if present (FCL shipments). Set to null if no container numbers are found (LCL/loose cargo).
+For containers: extract container details if present (FCL shipments). Set to null if no container numbers are found (LCL/loose cargo). For LCL shipments where a consolidation container number is shown, put it in lcl_container_number not in containers.
 For cargo_items: extract individual cargo line items for LCL/loose cargo shipments (pallets, cartons, etc.). Set to null if the BL only lists containers.
 
 The carrier_agent field is the party issuing the BL — may be a carrier, NVOCC, co-loader, or freight forwarder acting as agent.
@@ -49,7 +49,9 @@ The carrier_agent field is the party issuing the BL — may be a carrier, NVOCC,
       "gross_weight": "string or null — e.g. 2190.00 kg",
       "measurement": "string or null — e.g. 2.1600 M3"
     }
-  ]
+  ],
+  "lcl_container_number": "string or null — for LCL/consolidation shipments, the container number of the consolidation box",
+  "lcl_seal_number": "string or null — seal number of the LCL consolidation container"
 }"""
 
 
