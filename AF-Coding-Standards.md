@@ -408,4 +408,29 @@ const data = result.data as unknown as Record<string, unknown>;
 
 ---
 
+---
+
+## 16. Port Alias Map — Fix As Encountered
+
+**Rule:** The `_PORT_ALIASES` dict in `af-server/routers/shipments/_helpers.py` maps free-text port names (as extracted by Claude) to UN codes. The UN codes in this map must exactly match the `un_code` values in the `ports` table — not assumed IATA/LOCODE standards.
+
+**When a port fails to pre-select in BLReview/BCReview combobox:**
+1. Check the server log for `[port_match] Alias hit: 'PORT NAME' -> XXXXX`
+2. Search the combobox manually for that port — note the actual `un_code` shown
+3. Update `_PORT_ALIASES` to use the correct code from the database
+4. Do NOT batch-audit all alias entries speculatively — fix as encountered only
+
+**Example fix:**
+```python
+# Wrong — CNNBO not in ports table
+"NINGBO": "CNNBO",
+
+# Correct — CNNGB is the actual un_code in the ports table
+"NINGBO": "CNNGB",
+```
+
+**Do not assume standard LOCODE values** — the ports table is the source of truth.
+
+---
+
 *Last updated: 03 Mar 2026 — v3.06 session*

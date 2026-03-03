@@ -48,3 +48,14 @@
   - AWB unchanged (uses IATA codes directly)
 - **Files Modified:**
   - `af-server/routers/ai.py`
+
+### [2026-03-03 15:00 UTC] — v3.07: Terminal Selector in BLReview + BCReview Port Combobox
+- **Status:** Completed
+- **Tasks:**
+  - Added conditional terminal `<select>` dropdown below POL and POD comboboxes in BLReview.tsx — appears only when selected port has `has_terminals: true` and non-empty `terminals` array
+  - Added same terminal selector pattern to BCReview.tsx
+  - Port change handler clears `pol_terminal`/`pod_terminal` when switching to a port without terminals
+  - Terminal selector uses `INPUT_BASE` + `PREFILLED` styling consistent with other fields
+- **Files Modified:**
+  - `af-platform/src/components/shipments/_doc-parsers/BLReview.tsx`
+  - `af-platform/src/components/shipments/_doc-parsers/BCReview.tsx`

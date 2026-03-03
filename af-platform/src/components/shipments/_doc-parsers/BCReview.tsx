@@ -190,7 +190,11 @@ export function BCReview({
             <FieldLabel>POL</FieldLabel>
             <PortCombobox
               value={str(formState.pol_code)}
-              onChange={code => update('pol_code', code)}
+              onChange={code => {
+                const newPort = seaPorts.find(p => p.un_code === code);
+                update('pol_code', code);
+                if (!newPort?.has_terminals) update('pol_terminal', '');
+              }}
               options={seaPortOptions}
               placeholder="Search port..."
               className={`${INPUT_BASE} ${str(formState.pol_code) ? PREFILLED : ''}`}
@@ -200,12 +204,34 @@ export function BCReview({
                 Parsed: &ldquo;{str(formState.pol_name)}&rdquo;{!str(formState.pol_code) && ' — not matched, select manually'}
               </p>
             )}
+            {(() => {
+              const selectedPort = seaPorts.find(p => p.un_code === str(formState.pol_code));
+              if (!selectedPort?.has_terminals || !selectedPort.terminals.length) return null;
+              return (
+                <div className="mt-1.5">
+                  <select
+                    value={str(formState.pol_terminal)}
+                    onChange={e => update('pol_terminal', e.target.value)}
+                    className={`${INPUT_BASE} ${str(formState.pol_terminal) ? PREFILLED : ''}`}
+                  >
+                    <option value="">Select terminal...</option>
+                    {selectedPort.terminals.map(t => (
+                      <option key={t.terminal_id} value={t.terminal_id}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })()}
           </div>
           <div>
             <FieldLabel>POD</FieldLabel>
             <PortCombobox
               value={str(formState.pod_code)}
-              onChange={code => update('pod_code', code)}
+              onChange={code => {
+                const newPort = seaPorts.find(p => p.un_code === code);
+                update('pod_code', code);
+                if (!newPort?.has_terminals) update('pod_terminal', '');
+              }}
               options={seaPortOptions}
               placeholder="Search port..."
               className={`${INPUT_BASE} ${str(formState.pod_code) ? PREFILLED : ''}`}
@@ -215,6 +241,24 @@ export function BCReview({
                 Parsed: &ldquo;{str(formState.pod_name)}&rdquo;{!str(formState.pod_code) && ' — not matched, select manually'}
               </p>
             )}
+            {(() => {
+              const selectedPort = seaPorts.find(p => p.un_code === str(formState.pod_code));
+              if (!selectedPort?.has_terminals || !selectedPort.terminals.length) return null;
+              return (
+                <div className="mt-1.5">
+                  <select
+                    value={str(formState.pod_terminal)}
+                    onChange={e => update('pod_terminal', e.target.value)}
+                    className={`${INPUT_BASE} ${str(formState.pod_terminal) ? PREFILLED : ''}`}
+                  >
+                    <option value="">Select terminal...</option>
+                    {selectedPort.terminals.map(t => (
+                      <option key={t.terminal_id} value={t.terminal_id}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })()}
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3 mt-2">
