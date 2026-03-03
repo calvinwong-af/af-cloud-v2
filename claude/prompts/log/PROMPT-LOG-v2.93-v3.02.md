@@ -118,13 +118,4 @@
 ---
 
 ### [Session 14] — v3.03: Incoterm-Aware Status Logic + EXW Export Block
-- **Status:** Draft written — in PROMPT-DRAFT-v3.03.md, run after v3.02
-- **Scope:**
-  - Add `_is_booking_relevant(incoterm, transaction_type)` helper
-  - Auto-advance status on BL/AWB apply based on incoterm classification
-  - Hard block EXW export in UI incoterm dropdown
-- **Files to Modify:**
-  - `af-server/routers/shipments/_helpers.py`
-  - `af-server/routers/shipments/bl.py`
-  - `af-server/routers/shipments/doc_apply.py`
-  - Frontend incoterm dropdown component
+- **Status:** Completed — see `PROMPT-LOG-v3.03-v3.12.md`
