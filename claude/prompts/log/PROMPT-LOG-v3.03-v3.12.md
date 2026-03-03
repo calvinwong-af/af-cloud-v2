@@ -1,5 +1,16 @@
 # Prompt Completion Log — v3.03–v3.12
 
+### [2026-03-04 17:00 UTC] — v3.11: BL Reparse Port Resolution (UI-15 + UI-16)
+- **Status:** Completed
+- **Tasks:**
+  - Fix 1 (UI-16): Injected `pol_code`/`pod_code` from `origin_un_code`/`destination_un_code` into flat parsed object in `reparseDocumentFileAction` — matches `parseBLDocumentAction` pattern
+  - Fix 2 (UI-15): Updated reparse `onResult` BL handler in `ShipmentFilesTab.tsx` — sends `origin_port`/`dest_port` (matching `_doc-handler.ts` key names), added terminals, cargo_description, total_weight_kg, lcl_container_number, lcl_seal_number, and bl_shipper/consignee diff-tracking fields
+  - Fix 3: Simplified `DocumentParseModal.tsx` useEffect — removed stale `data.parsed` unwrap logic (now handled upstream in reparseDocumentFileAction)
+- **Files Modified:**
+  - `af-platform/src/app/actions/shipments-files.ts`
+  - `af-platform/src/components/shipments/ShipmentFilesTab.tsx`
+  - `af-platform/src/components/shipments/DocumentParseModal.tsx`
+
 ### [2026-03-04 15:00 UTC] — v3.10: BL Apply Completeness — Packaging, LCL Container/Seal, Terminal, Cargo Description
 - **Status:** Completed
 - **Tasks:**
