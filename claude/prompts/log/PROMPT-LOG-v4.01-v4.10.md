@@ -1,0 +1,29 @@
+# Prompt Completion Log — v4.01–v4.10
+
+### [2026-03-04 23:00 UTC] — v4.01: Geography Phase 1 — States, Cities, Haulage Areas + Port Resolution + Maps
+- **Status:** Completed
+- **Tasks:**
+  - **Section A:** Created `states`, `cities`, `haulage_areas` tables + lat/lng on `ports`. Seed data for 16 Malaysian states + 70 cities with coordinates. Full CRUD endpoints in `geography.py` (states read-only, cities CRUD, haulage areas CRUD, port coordinate editing). 10-min cache on states/cities. Admin geography page with 4 tabs (States, Cities, Haulage Areas, Ports) at `/geography`.
+  - **Section B:** Port resolution via Claude API — `POST /ports/resolve` calls Claude to identify unknown port codes, `POST /ports/confirm` inserts into ports table. Resolution modal UI in Geography admin and available for document parse flows.
+  - **Section C:** Added `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` and `GOOGLE_MAPS_API_KEY` to env files. Installed `@vis.gl/react-google-maps`.
+  - **Section D:** Created 4 map components — `MapProvider`, `PortMarkerMap`, `RouteMap`, `DashboardMap`. Integrated: geography admin modals show map preview, shipment detail page shows route map card, dashboard shows map with active shipment markers. All gracefully degrade when Maps API key is `PENDING`.
+  - **Section E:** API contract already updated (v1.4) with all geography endpoints.
+- **Files Modified:**
+  - `af-server/routers/geography.py` (full rewrite — states, cities, haulage areas, port resolution endpoints)
+  - `af-server/migrations/004_geography_tables.sql` (new — schema + seed data)
+  - `af-platform/src/lib/types.ts` (State, City, HaulageArea interfaces)
+  - `af-platform/src/lib/ports.ts` (added lat/lng to Port interface)
+  - `af-platform/src/lib/geography.ts` (new — fetch functions)
+  - `af-platform/src/app/actions/geography.ts` (new — all geography server actions)
+  - `af-platform/src/app/(platform)/geography/page.tsx` (new — admin page)
+  - `af-platform/src/app/(platform)/geography/_components.tsx` (new — all tab components)
+  - `af-platform/src/components/maps/MapProvider.tsx` (new)
+  - `af-platform/src/components/maps/PortMarkerMap.tsx` (new)
+  - `af-platform/src/components/maps/RouteMap.tsx` (new)
+  - `af-platform/src/components/maps/DashboardMap.tsx` (new)
+  - `af-platform/src/components/maps/ShipmentRouteMapCard.tsx` (new)
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` (added route map card)
+  - `af-platform/src/app/(platform)/dashboard/page.tsx` (added dashboard map + ports fetch)
+  - `af-platform/.env.local.example` (added NEXT_PUBLIC_GOOGLE_MAPS_API_KEY)
+  - `af-platform/package.json` (added @vis.gl/react-google-maps)
+- **Notes:** Google Maps API key is `PENDING` — all map components render graceful placeholders. Run `004_geography_tables.sql` against PostgreSQL before testing geography endpoints.

@@ -117,6 +117,40 @@ export type TypeDetails =
   | TypeDetailsCrossBorder;
 
 // ---------------------------------------------------------------------------
+// Geography — States, Cities, Haulage Areas
+// ---------------------------------------------------------------------------
+
+export interface State {
+  state_code: string;
+  name: string;
+  country_code: string;
+  is_active: boolean;
+}
+
+export interface City {
+  city_id: number;
+  name: string;
+  state_code: string;
+  state_name?: string;
+  lat: number | null;
+  lng: number | null;
+  is_active: boolean;
+}
+
+export interface HaulageArea {
+  area_id: number;
+  area_code: string;
+  area_name: string;
+  port_un_code: string;
+  state_code: string | null;
+  city_id: number | null;
+  city_name?: string | null;
+  lat: number | null;
+  lng: number | null;
+  is_active: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Parties (Section 3.9) — snapshot + reference approach
 // ---------------------------------------------------------------------------
 

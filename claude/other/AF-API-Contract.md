@@ -1340,7 +1340,302 @@ Auth: `require_auth`
 
 Returns single port. Same shape as list item above.
 
-### 5.3 List Countries
+### 5.3 States
+
+#### `GET /geography/states`
+Auth: `require_auth`  
+10-minute in-memory cache on server.
+
+**Response:**
+```json
+{
+  "status": "OK",
+  "data": [
+    {
+      "state_code": "MY-SGR",
+      "name": "Selangor",
+      "country_code": "MY",
+      "is_active": true
+    }
+  ]
+}
+```
+
+#### `GET /geography/states/{state_code}`
+Auth: `require_auth`
+
+Returns single state. Same shape as list item above.
+
+---
+
+### 5.4 Cities
+
+#### `GET /geography/cities`
+Auth: `require_auth`  
+Query params: `state_code` (optional, e.g. `?state_code=MY-SGR`)  
+10-minute in-memory cache on server.
+
+**Response:**
+```json
+{
+  "status": "OK",
+  "data": [
+    {
+      "city_id": 1,
+      "name": "Shah Alam",
+      "state_code": "MY-SGR",
+      "state_name": "Selangor",
+      "lat": 3.073050,
+      "lng": 101.518200,
+      "is_active": true
+    }
+  ]
+}
+```
+
+#### `GET /geography/cities/{city_id}`
+Auth: `require_auth`
+
+Returns single city. Same shape as list item above.
+
+#### `POST /geography/cities`
+Auth: `require_afu`  
+AFC users receive 403.
+
+**Request body:**
+```json
+{
+  "name": "Shah Alam",
+  "state_code": "MY-SGR",
+  "lat": 3.073050,
+  "lng": 101.518200
+}
+```
+`lat` and `lng` are optional.
+
+**Response:** `{ "status": "OK", "data": <City> }`
+
+#### `PATCH /geography/cities/{city_id}`
+Auth: `require_afu`  
+AFC users receive 403.  
+All fields optional — only provided fields updated.
+
+**Request body:**
+```json
+{
+  "name": "Shah Alam",
+  "is_active": true,
+  "lat": 3.073050,
+  "lng": 101.518200
+}
+```
+
+**Response:** `{ "status": "OK", "data": <City> }`
+
+---
+
+### 5.5 Haulage Areas
+
+#### `GET /geography/haulage-areas`
+Auth: `require_auth`  
+Query params: `port_un_code` (optional), `state_code` (optional)  
+No cache.
+
+**Response:**
+```json
+{
+  "status": "OK",
+  "data": [
+    {
+      "area_id": 1,
+      "area_code": "KL035",
+      "area_name": "Klang / Shah Alam",
+      "port_un_code": "MYPKG",
+      "state_code": "MY-SGR",
+      "city_id": 1,
+      "city_name": "Shah Alam",
+      "lat": 3.073050,
+      "lng": 101.518200,
+      "is_active": true
+    }
+  ]
+}
+```
+
+#### `GET /geography/haulage-areas/{area_id}`
+Auth: `require_auth`
+
+Returns single haulage area. Same shape as list item above.
+
+#### `POST /geography/haulage-areas`
+Auth: `require_afu`  
+AFC users receive 403.
+
+**Request body:**
+```json
+{
+  "area_code": "KL035",
+  "area_name": "Klang / Shah Alam",
+  "port_un_code": "MYPKG",
+  "state_code": "MY-SGR",
+  "city_id": 1,
+  "lat": null,
+  "lng": null
+}
+```
+`state_code`, `city_id`, `lat`, `lng` are optional.  
+`area_code` is stored uppercase. Combination of `(area_code, port_un_code)` must be unique — returns 400 if duplicate.
+
+**Response:** `{ "status": "OK", "data": <HaulageArea> }`
+
+#### `PATCH /geography/haulage-areas/{area_id}`
+Auth: `require_afu`  
+AFC users receive 403.  
+All fields optional.
+
+**Request body:**
+```json
+{
+  "area_code": "KL035",
+  "area_name": "Klang / Shah Alam",
+  "port_un_code": "MYPKG",
+  "state_code": "MY-SGR",
+  "city_id": 1,
+  "lat": 3.073050,
+  "lng": 101.518200,
+  "is_active": true
+}
+```
+
+**Response:** `{ "status": "OK", "data": <HaulageArea> }`
+
+#### `DELETE /geography/haulage-areas/{area_id}`
+Auth: `require_afu`  
+AFC users receive 403.  
+Soft delete only — sets `is_active = false`.
+
+**Response:** `{ "status": "OK", "data": { "area_id": 1, "is_active": false } }`
+
+---
+
+### 5.6 Port Resolution (AI-Assisted)
+
+#### `POST /geography/ports/resolve`
+Auth: `require_afu`  
+AFC users receive 403.
+
+Checks if the code already exists in the `ports` table. If not, calls the Claude API to resolve the code to structured port/airport data and returns a candidate for staff review.
+
+**Request body:**
+```json
+{ "code": "MUC" }
+```
+
+**Response (code already exists):**
+```json
+{
+  "status": "OK",
+  "already_exists": true,
+  "candidate": {
+    "un_code": "DEMUC",
+    "name": "Munich Airport",
+    "country": "Germany",
+    "country_code": "DE",
+    "port_type": "AIR",
+    "lat": 48.353802,
+    "lng": 11.786085,
+    "confidence": "HIGH"
+  }
+}
+```
+
+**Response (resolved via Claude):**
+```json
+{
+  "status": "OK",
+  "already_exists": false,
+  "candidate": {
+    "un_code": "DEMUC",
+    "name": "Munich Airport",
+    "country": "Germany",
+    "country_code": "DE",
+    "port_type": "AIR",
+    "lat": 48.353802,
+    "lng": 11.786085,
+    "confidence": "HIGH"
+  }
+}
+```
+
+`confidence` values: `HIGH` | `LOW`  
+`port_type` values: `SEA` | `AIR`  
+`lat` / `lng` may be `null` if Claude cannot determine coordinates.
+
+#### `POST /geography/ports/confirm`
+Auth: `require_afu`  
+AFC users receive 403.
+
+Inserts the confirmed port into the `ports` table and invalidates the port in-memory cache.
+
+**Request body:** Full port candidate object (staff may have edited any field before confirming):
+```json
+{
+  "un_code": "DEMUC",
+  "name": "Munich Airport",
+  "country": "Germany",
+  "country_code": "DE",
+  "port_type": "AIR",
+  "lat": 48.353802,
+  "lng": 11.786085
+}
+```
+
+**Response:**
+```json
+{
+  "status": "OK",
+  "data": {
+    "un_code": "DEMUC",
+    "name": "Munich Airport",
+    "country": "Germany",
+    "country_code": "DE",
+    "port_type": "AIR",
+    "has_terminals": false,
+    "terminals": [],
+    "lat": 48.353802,
+    "lng": 11.786085
+  }
+}
+```
+
+**Errors:**
+- `409` — port with this `un_code` already exists in the table
+
+---
+
+### 5.7 Updated Port Response Shape
+
+The existing `/geography/ports` and `/geography/ports/{un_code}` responses now include coordinate fields added in v4.01:
+
+```json
+{
+  "un_code": "MYPKG",
+  "name": "Port Klang",
+  "country": "Malaysia",
+  "country_code": "MY",
+  "port_type": "SEA",
+  "has_terminals": true,
+  "terminals": [
+    { "terminal_id": "MYPKG_W", "name": "Westports", "label": "Westports" },
+    { "terminal_id": "MYPKG_N", "name": "Northport", "label": "Northport" }
+  ],
+  "lat": 2.9996,
+  "lng": 101.3851
+}
+```
+`lat` and `lng` are `number | null`. Newly seeded ports will have coordinates; legacy ports will return `null` until updated.
+
+### 5.8 List Countries
 
 #### `GET /geography/countries`
 Auth: `require_auth`  
@@ -1508,6 +1803,19 @@ Quick reference — which auth level each endpoint requires:
 | `GET /ports/{code}` | None |
 | `GET /geography/ports` | `require_auth` |
 | `GET /geography/ports/{code}` | `require_auth` |
+| `GET /geography/states` | `require_auth` |
+| `GET /geography/states/{code}` | `require_auth` |
+| `GET /geography/cities` | `require_auth` |
+| `GET /geography/cities/{city_id}` | `require_auth` |
+| `POST /geography/cities` | `require_afu` |
+| `PATCH /geography/cities/{city_id}` | `require_afu` |
+| `GET /geography/haulage-areas` | `require_auth` |
+| `GET /geography/haulage-areas/{area_id}` | `require_auth` |
+| `POST /geography/haulage-areas` | `require_afu` |
+| `PATCH /geography/haulage-areas/{area_id}` | `require_afu` |
+| `DELETE /geography/haulage-areas/{area_id}` | `require_afu` |
+| `POST /geography/ports/resolve` | `require_afu` |
+| `POST /geography/ports/confirm` | `require_afu` |
 | `GET /shipments/stats` | `require_auth` |
 | `GET /shipments/search` | `require_auth` |
 | `GET /shipments/` | `require_auth` |
@@ -1553,5 +1861,5 @@ Quick reference — which auth level each endpoint requires:
 
 ---
 
-*Last updated: 03 March 2026 — Contract v1.2*  
-*Next update: After v2.83 debug session resolves (shipments list empty issue)*
+*Last updated: 04 March 2026 — Contract v1.4*  
+*v1.4 changes: Added Geography sections 5.3–5.8 (states, cities, haulage areas, port resolution, updated port shape). Added new auth map entries for all geography write endpoints.*

@@ -9,6 +9,15 @@
   - `af-platform/src/lib/types.ts`
   - `af-platform/src/app/(platform)/shipments/[id]/_components.tsx`
 
+### [2026-03-04 22:00 UTC] — v3.17: LCL Container Reference — Type Definition + Detail Page Display
+- **Status:** Completed
+- **Tasks:**
+  - Added `container_number` and `seal_number` optional fields to `TypeDetailsLCL` in `types.ts`
+  - Added Container Reference section to `TypeDetailsCard` LCL branch in `_components.tsx` — renders below Packages totals when fields are present
+- **Files Modified:**
+  - `af-platform/src/lib/types.ts`
+  - `af-platform/src/app/(platform)/shipments/[id]/_components.tsx`
+
 ### [2026-03-04 21:00 UTC] — v3.16: Fix LCL Container/Seal Not Saving After BL Apply
 - **Status:** Completed
 - **Tasks:**

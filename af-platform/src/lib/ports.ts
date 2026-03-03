@@ -14,9 +14,11 @@ export interface Port {
   name: string;
   country: string;
   country_code: string;
-  port_type: string;
+  port_type: 'SEA' | 'AIR';
   has_terminals: boolean;
   terminals: Terminal[];
+  lat: number | null;
+  lng: number | null;
 }
 
 let _portsCache: Port[] | null = null;

@@ -6,14 +6,18 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Truck, Building2, PackageCheck, CheckCircle2, FileEdit, RefreshCw, ChevronRight } from 'lucide-react';
 import { fetchShipmentOrderStatsAction, fetchDashboardShipmentsAction } from '@/app/actions/shipments';
 import type { ShipmentListItem } from '@/app/actions/shipments';
 import { fetchCompanyStatsAction } from '@/app/actions/companies';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
+import { fetchGeoPortsAction } from '@/app/actions/geography';
 import { KpiCard } from '@/components/shared/KpiCard';
 import { ShipmentOrderTable } from '@/components/shipments/ShipmentOrderTable';
+import DashboardMap from '@/components/maps/DashboardMap';
+import type { ShipmentMapMarker } from '@/components/maps/DashboardMap';
+import type { Port } from '@/lib/ports';
 import type { ShipmentOrder, OrderType } from '@/lib/types';
 import { useRouter } from 'next/navigation';
 
@@ -114,15 +118,18 @@ export default function DashboardPage() {
 
   const [companyName, setCompanyName] = useState<string | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(null);
+  const [ports, setPorts] = useState<Port[]>([]);
+  const [activeItems, setActiveItems] = useState<ShipmentListItem[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [shipmentStatsResult, dashResult, profile] = await Promise.all([
+      const [shipmentStatsResult, dashResult, profile, portsResult] = await Promise.all([
         fetchShipmentOrderStatsAction(),
         fetchDashboardShipmentsAction(),
         getCurrentUserProfileAction(),
+        fetchGeoPortsAction(),
       ]);
 
       if (!shipmentStatsResult.success) throw new Error(shipmentStatsResult.error);
@@ -130,8 +137,10 @@ export default function DashboardPage() {
       if (!dashResult.success) throw new Error(dashResult.error);
 
       setShipmentStats(shipmentStatsResult.data);
+      setActiveItems(dashResult.data.active);
       setActiveOrders(dashResult.data.active.map(toShipmentOrder));
       setToInvoiceOrders(dashResult.data.to_invoice.map(toShipmentOrder));
+      if (portsResult.success) setPorts(portsResult.data);
       setAccountType(profile.account_type);
       setCompanyName(profile.company_name);
       setCompanyId(profile.company_id);
@@ -158,6 +167,24 @@ export default function DashboardPage() {
 
   const isAfc = accountType === 'AFC';
   const statsLoading = shipmentStats == null || (!isAfc && companyStats == null);
+
+  const mapMarkers: ShipmentMapMarker[] = useMemo(() => {
+    const portMap = new Map(ports.map((p) => [p.un_code, p]));
+    const markers: ShipmentMapMarker[] = [];
+    for (const item of activeItems) {
+      if (!item.destination_port) continue;
+      const port = portMap.get(item.destination_port);
+      if (!port?.lat || !port?.lng) continue;
+      markers.push({
+        shipment_id: item.shipment_id,
+        company_name: item.company_name || item.company_id,
+        status: item.status,
+        lat: port.lat,
+        lng: port.lng,
+      });
+    }
+    return markers;
+  }, [activeItems, ports]);
 
   return (
     <div className="p-6 space-y-6">
@@ -267,6 +294,11 @@ export default function DashboardPage() {
           />
         )}
       </div>
+
+      {/* Map Overview */}
+      {!loading && (
+        <DashboardMap markers={mapMarkers} height="350px" />
+      )}
 
       {/* Error state */}
       {error && (

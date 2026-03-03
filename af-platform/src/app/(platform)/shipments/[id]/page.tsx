@@ -33,6 +33,7 @@ import {
   CompanyReassignModal,
 } from './_components';
 import { createDocResultHandler } from './_doc-handler';
+import ShipmentRouteMapCard from '@/components/maps/ShipmentRouteMapCard';
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
@@ -213,6 +214,9 @@ export default function ShipmentOrderDetailPage() {
         ports={ports as Port[]}
         onPortUpdated={() => { loadOrder(); loadRouteTimings(); }}
       />
+
+      {/* Route Map */}
+      <ShipmentRouteMapCard order={order} ports={ports as Port[]} />
 
       {/* Upload Document button — AFU, status >= 2001 (Confirmed+) */}
       {accountType === 'AFU' && order.status >= 2001 && (
