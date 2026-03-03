@@ -406,7 +406,6 @@ function StatusBadge({ status }: { status: number }) {
 // ---------------------------------------------------------------------------
 
 function ShipmentCard({ order, href }: { order: ShipmentOrder; href: string }) {
-  const router = useRouter();
   const originCode = order.origin?.port_un_code ?? order.origin?.label ?? '—';
   const destCode = order.destination?.port_un_code ?? order.destination?.label ?? '—';
   const typeLabel = ORDER_TYPE_LABELS[order.order_type] ?? order.order_type;
@@ -415,13 +414,7 @@ function ShipmentCard({ order, href }: { order: ShipmentOrder; href: string }) {
     <div
       className="bg-white border border-[var(--border)] rounded-lg p-4 cursor-pointer transition-colors active:bg-[var(--sky-mist)]"
       style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
-      onClick={(e) => {
-        if (e.ctrlKey || e.metaKey) {
-          window.open(href, '_blank', 'noopener,noreferrer');
-        } else {
-          router.push(href);
-        }
-      }}
+      onClick={() => window.open(href, '_blank', 'noopener,noreferrer')}
     >
       {/* Top row: status badge + exception flag */}
       <div className="flex items-center justify-between mb-2">
@@ -613,20 +606,13 @@ function ShipmentRow({
   href: string;
   onDeleted: () => void;
 }) {
-  const router = useRouter();
   const originCode = order.origin?.port_un_code ?? order.origin?.label ?? '—';
   const destCode = order.destination?.port_un_code ?? order.destination?.label ?? '—';
 
   return (
     <tr
       className="hover:bg-[var(--surface)] transition-colors cursor-pointer"
-      onClick={(e) => {
-        if (e.ctrlKey || e.metaKey) {
-          window.open(href, '_blank', 'noopener,noreferrer');
-        } else {
-          router.push(href);
-        }
-      }}
+      onClick={() => window.open(href, '_blank', 'noopener,noreferrer')}
     >
       {/* Order ID */}
       <td className="px-4 py-3">

@@ -120,6 +120,7 @@ function Badge({ children }: { children: React.ReactNode }) {
 
 interface CompanyMatchSectionProps {
   matches: CompanyMatch[];
+  companies: Company[];
   formState: BLFormState;
   showCompanySearch: boolean;
   companySearch: string;
@@ -133,13 +134,15 @@ interface CompanyMatchSectionProps {
 }
 
 function CompanyMatchSection({
-  matches, formState, showCompanySearch, companySearch, companySearchResults,
+  matches, companies, formState, showCompanySearch, companySearch, companySearchResults,
   onShowSearch, onHideSearch, onSearchChange, onLink, onUnlink, update,
 }: CompanyMatchSectionProps) {
   const inputBaseCms = 'w-full px-3 py-2 text-sm border rounded-lg text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent';
 
   if (formState.linkedCompanyId) {
-    const linkedName = matches.find(m => m.company_id === formState.linkedCompanyId)?.name;
+    const linkedName =
+      matches.find(m => m.company_id === formState.linkedCompanyId)?.name ??
+      companies.find(c => c.company_id === formState.linkedCompanyId)?.name;
     return (
       <div className="mt-2 flex items-center justify-between border border-emerald-300 bg-emerald-50 rounded-lg p-3">
         <div className="flex items-center gap-2">
@@ -396,6 +399,7 @@ export function BLParseResult({
       <div>
         <CompanyMatchSection
           matches={matches}
+          companies={companies}
           formState={formState}
           showCompanySearch={showCompanySearch}
           companySearch={companySearch}

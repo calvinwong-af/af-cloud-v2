@@ -62,3 +62,35 @@
   - Removed unused `Check` icon import
 - **Files Modified:**
   - `af-platform/src/app/(platform)/shipments/[id]/_components.tsx`
+
+### [2026-03-04 00:30 UTC] — v2.89: AWB Create + Apply Fixes
+- **Status:** Completed
+- **Tasks:**
+  - Issue 1 — Company name in confirmed card: Added `companies` prop to `CompanyMatchSection`, name lookup now checks both match list and full companies list as fallback (confirmed fixed in testing)
+  - Issue 2 — AWB transport details on detail page: Added AIR-specific Transport card rendering showing MAWB, HAWB, AWB type, flight number, flight date, ETD (confirmed fixed in testing)
+  - Issue 3 — File save after AWB create: Changed `blUploadedFile` from `useState` to `useRef` so file is synchronously available when `handleBLConfirmCreate` runs. Added diagnostic `console.error` logs for both creation and apply paths when file is null or save fails.
+  - Issue 4A — Server packages: Auto-create a single package entry in `type_details.packages` when `pieces` or `cargo_weight_kg` is provided for AIR orders
+  - Issue 4B — Frontend packages card: Added AIR-specific row showing chargeable weight and pieces below the totals. Added `pieces` field to `TypeDetailsAir` type.
+  - Issue 5 — Port edit modal filtering: Added freight-type filtering to `PortEditModal` — AIR shipments show only airports, SEA shipments show only sea ports
+  - Bonus: Fixed unused `router` lint errors in `ShipmentOrderTable.tsx`
+- **Files Modified:**
+  - `af-platform/src/components/shipments/_bl-upload/BLParseResult.tsx`
+  - `af-platform/src/app/(platform)/shipments/[id]/_components.tsx`
+  - `af-platform/src/app/(platform)/shipments/[id]/_doc-handler.ts`
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx`
+  - `af-platform/src/lib/types.ts`
+  - `af-platform/src/components/shipments/CreateShipmentModal.tsx`
+  - `af-platform/src/components/shipments/ShipmentOrderTable.tsx`
+  - `af-server/routers/shipments/bl.py`
+
+### [2026-03-04 01:30 UTC] — v2.90: File Save Deep Fix
+- **Status:** Completed
+- **Tasks:**
+  - Server-side: Added file size logging and 0-byte guard to `save_document_file` endpoint in `doc_apply.py`
+  - Apply flow (`_doc-handler.ts`): Switched from `saveDocumentFileAction` (custom endpoint) to `uploadShipmentFileAction` (proven working standard upload endpoint). Uses `file_tags` JSON array instead of `doc_type` form field. Added pre-save diagnostic logging (name, size, type).
+  - Create flow (`CreateShipmentModal.tsx`): Same switch to `uploadShipmentFileAction` with `file_tags` pattern and diagnostic logging.
+  - Root cause: `saveDocumentFileAction` calls a separate endpoint (`/save-document-file`) that may have serialisation issues across the Next.js server action boundary. `uploadShipmentFileAction` calls the standard `/files` endpoint which is proven working from the Files tab upload.
+- **Files Modified:**
+  - `af-server/routers/shipments/doc_apply.py`
+  - `af-platform/src/app/(platform)/shipments/[id]/_doc-handler.ts`
+  - `af-platform/src/components/shipments/CreateShipmentModal.tsx`

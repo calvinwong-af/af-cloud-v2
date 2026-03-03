@@ -367,9 +367,17 @@ async def create_from_bl(
     # Type details for containers / air
     type_details = None
     if body.order_type == "AIR":
+        packages_list = []
+        if body.pieces is not None or body.cargo_weight_kg is not None:
+            packages_list = [{
+                "packaging_type": "PACKAGE",
+                "quantity": body.pieces or 1,
+                "gross_weight_kg": body.cargo_weight_kg,
+                "volume_cbm": None,
+            }]
         type_details = {
             "type": "AIR",
-            "packages": [],
+            "packages": packages_list,
             "chargeable_weight": body.chargeable_weight_kg,
             "pieces": body.pieces,
         }

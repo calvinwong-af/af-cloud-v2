@@ -287,6 +287,15 @@ async def save_document_file(
     file_content_type = file.content_type or "application/pdf"
     file_original_name = file.filename or f"{doc_type}_{shipment_id}.pdf"
 
+    logger.info(
+        "[save-document-file] Received file=%s content_type=%s size=%d bytes for %s",
+        file_original_name, file_content_type, len(file_bytes), shipment_id,
+    )
+
+    if len(file_bytes) == 0:
+        logger.error("[save-document-file] Empty file received for %s — aborting", shipment_id)
+        raise HTTPException(status_code=400, detail="Empty file received")
+
     # Map doc_type → file tag
     tag_map = {"AWB": "awb", "BC": "bc", "BL": "bl"}
     tag = tag_map.get(doc_type.upper(), doc_type.lower())

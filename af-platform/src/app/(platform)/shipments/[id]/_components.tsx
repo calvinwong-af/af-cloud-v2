@@ -195,6 +195,9 @@ export function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumb
   onPortUpdated?: () => void;
 }) {
   const [editingPort, setEditingPort] = useState<'origin' | 'destination' | null>(null);
+  const filteredPorts = order.order_type === 'AIR'
+    ? ports.filter(p => p.port_type?.toLowerCase().includes('air'))
+    : ports.filter(p => !p.port_type?.toLowerCase().includes('air'));
   const originTerminalId = order.origin?.terminal_id ?? null;
   const destTerminalId = order.destination?.terminal_id ?? null;
   const originTooltip = getPortLabel(order.origin?.port_un_code, originTerminalId, ports);
@@ -262,7 +265,7 @@ export function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumb
       {editingPort === 'origin' && onPortUpdated && (
         <PortEditModal
           currentCode={order.origin?.port_un_code ?? ''}
-          ports={ports}
+          ports={filteredPorts}
           field="origin_port_un_code"
           shipmentId={order.quotation_id}
           onSaved={() => { setEditingPort(null); onPortUpdated(); }}
@@ -272,7 +275,7 @@ export function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumb
       {editingPort === 'destination' && onPortUpdated && (
         <PortEditModal
           currentCode={order.destination?.port_un_code ?? ''}
-          ports={ports}
+          ports={filteredPorts}
           field="destination_port_un_code"
           shipmentId={order.quotation_id}
           onSaved={() => { setEditingPort(null); onPortUpdated(); }}
@@ -360,6 +363,7 @@ export function TypeDetailsCard({ order, orderType }: { order: ShipmentOrder; or
 
   if (orderType === 'SEA_LCL' || orderType === 'AIR') {
     const lcl = td as TypeDetailsLCL;
+    const airTd = td as import('@/lib/types').TypeDetailsAir;
     const totalWeight = (lcl.packages ?? []).reduce((sum, p) => sum + (p.gross_weight_kg ?? 0), 0);
     const totalVolume = (lcl.packages ?? []).reduce((sum, p) => sum + (p.volume_cbm ?? 0), 0);
 
@@ -397,6 +401,24 @@ export function TypeDetailsCard({ order, orderType }: { order: ShipmentOrder; or
             {totalVolume > 0 && (
               <div className="text-xs text-[var(--text-mid)]">
                 <span className="font-semibold">{totalVolume.toFixed(3)} CBM</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* AIR-specific: chargeable weight + pieces */}
+        {orderType === 'AIR' && (airTd.chargeable_weight != null || airTd.pieces != null) && (
+          <div className="flex items-center gap-4 pt-3 border-t border-[var(--border)]">
+            {airTd.pieces != null && (
+              <div className="text-xs text-[var(--text-mid)]">
+                <span className="text-[var(--text-muted)]">Pieces:</span>{' '}
+                <span className="font-semibold">{airTd.pieces}</span>
+              </div>
+            )}
+            {airTd.chargeable_weight != null && (
+              <div className="text-xs text-[var(--text-mid)]">
+                <span className="text-[var(--text-muted)]">Chargeable:</span>{' '}
+                <span className="font-semibold">{airTd.chargeable_weight} kg</span>
               </div>
             )}
           </div>

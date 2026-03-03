@@ -87,6 +87,7 @@ export interface TypeDetailsAir {
   type: 'AIR';
   packages: PackageDetail[];
   chargeable_weight: number | null;
+  pieces: number | null;
 }
 
 export interface TypeDetailsGround {

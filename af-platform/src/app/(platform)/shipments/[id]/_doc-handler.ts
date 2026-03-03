@@ -1,6 +1,6 @@
 import { useRouter } from 'next/navigation';
 import { applyBookingConfirmationAction, applyAWBAction } from '@/app/actions/shipments-write';
-import { saveDocumentFileAction } from '@/app/actions/shipments-files';
+import { uploadShipmentFileAction } from '@/app/actions/shipments-files';
 import type { DocType, ParsedBCData, ParsedAWBData } from '@/app/actions/shipments-files';
 import type { ParsedBL } from '@/components/shipments/BLUpdateModal';
 import type { ShipmentOrder } from '@/lib/types';
@@ -44,17 +44,20 @@ export function createDocResultHandler(params: {
       }
       await Promise.all([loadOrder(), loadRouteTimings()]);
       router.refresh();
-      // Save the uploaded document to Files (non-critical)
+      // Save the uploaded document to Files using the proven upload endpoint
       if (uploadedFile) {
+        console.info('[DocumentParse] BC file save: name=%s size=%d type=%s', uploadedFile.name, uploadedFile.size, uploadedFile.type);
         const fd = new FormData();
         fd.append('file', uploadedFile, uploadedFile.name);
-        fd.append('doc_type', 'BC');
-        const saveResult = await saveDocumentFileAction(order.quotation_id, fd);
+        fd.append('file_tags', JSON.stringify(['bc']));
+        const saveResult = await uploadShipmentFileAction(order.quotation_id, fd);
         if (!saveResult || !saveResult.success) {
-          console.error('[DocumentParse] BC file save failed:', saveResult?.error);
+          console.error('[DocumentParse] BC file save failed:', saveResult);
         } else {
           setFilesRefreshKey(k => k + 1);
         }
+      } else {
+        console.error('[DocumentParse] BC uploadedFile is null — cannot save to Files');
       }
       return { ok: true };
     }
@@ -66,17 +69,20 @@ export function createDocResultHandler(params: {
       }
       await Promise.all([loadOrder(), loadRouteTimings()]);
       router.refresh();
-      // Save the uploaded document to Files (non-critical)
+      // Save the uploaded document to Files using the proven upload endpoint
       if (uploadedFile) {
+        console.info('[DocumentParse] AWB file save: name=%s size=%d type=%s', uploadedFile.name, uploadedFile.size, uploadedFile.type);
         const fd = new FormData();
         fd.append('file', uploadedFile, uploadedFile.name);
-        fd.append('doc_type', 'AWB');
-        const saveResult = await saveDocumentFileAction(order.quotation_id, fd);
+        fd.append('file_tags', JSON.stringify(['awb']));
+        const saveResult = await uploadShipmentFileAction(order.quotation_id, fd);
         if (!saveResult || !saveResult.success) {
-          console.error('[DocumentParse] AWB file save failed:', saveResult?.error);
+          console.error('[DocumentParse] AWB file save failed:', saveResult);
         } else {
           setFilesRefreshKey(k => k + 1);
         }
+      } else {
+        console.error('[DocumentParse] AWB uploadedFile is null — cannot save to Files');
       }
       return { ok: true };
     }

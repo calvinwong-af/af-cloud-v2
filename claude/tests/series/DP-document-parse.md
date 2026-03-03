@@ -1,7 +1,7 @@
 # DP — Document Parser
 **Series:** DP
 **Status:** 🔵 Active
-**Total:** 48 | **YES:** 31 | **PENDING:** 13 | **DEFERRED:** 0 | **NA:** 0
+**Total:** 52 | **YES:** 36 | **PENDING:** 12 | **DEFERRED:** 0 | **NA:** 0
 **Last Updated:** 03 March 2026
 
 ---
@@ -26,8 +26,8 @@
 | DP-14 | Upload Document button visible on AIR shipments | YES | AF-003861 confirmed |
 | DP-15 | apply-booking-confirmation — booking_reference saved to shipment | PENDING | |
 | DP-16 | apply-booking-confirmation — Route card updates with pol/pod after apply | PENDING | |
-| DP-17 | apply-awb — hawb_number + mawb_number saved to shipment | PENDING | v2.85 incomplete — MAWB saved as booking_ref, HAWB not saved. Fix in v2.87 |
-| DP-18 | apply-awb — origin/dest airport codes update Route card | PENDING | AF-003866 |
+| DP-17 | apply-awb — hawb_number + mawb_number saved to shipment | YES | v2.89 confirmed — MAWB 160-08178262, HAWB 623X39081150 both showing on Transport card |
+| DP-18 | apply-awb — origin/dest airport codes update Route card | YES | AF-003876 confirmed — PEK origin, KUL destination showing correctly |
 | DP-19 | New Shipment modal — Upload tab label updated to "Upload Document" | YES | Confirmed |
 | DP-20 | New Shipment modal — drop zone accepts BL/AWB/BC | YES | Confirmed |
 | DP-21 | BC parse on new shipment — initial status Booking Confirmed (3002) | YES | AYN1317670 confirmed |
@@ -44,12 +44,12 @@
 | DP-32 | BLUploadTab — State C amber banner shown when no consignee match | YES | Confirmed — company search shown, Skip option present |
 | DP-33 | Context menu flips upward when row near bottom of viewport | YES | MCP fix — 03 Mar 2026 |
 | DP-34 | AWB result view — grouped sections (Route, AWB Numbers, Shipper, Consignee, Cargo) | YES | AF-003861 confirmed |
-| DP-35 | apply-awb — ETD updates on route card after Use This Data | PENDING | Requires v2.73 |
-| DP-36 | apply-awb — AWB document saved to Files tab (tag: awb) | PENDING | Confirmed not saving — fix in v2.87 |
+| DP-35 | apply-awb — ETD updates on route card after Use This Data | YES | AF-003876 confirmed — ETD 04 Mar 2026 showing on route card |
+| DP-36 | AWB file saved to Files tab after create flow | PENDING | Assumed fail — same root cause as DP-39 — fix in v2.90 |
 | DP-37 | apply-booking-confirmation — BC document saved to Files tab (tag: bc) | PENDING | Requires v2.73 |
 | DP-38 | apply-booking-confirmation — ETD/ETA updates on route card | PENDING | Requires v2.73 |
-| DP-39 | After AWB apply — Files tab updates without manual page reload | PENDING | Blocked by DP-36 — fix in v2.87 |
-| DP-40 | After BC apply — Files tab updates without manual page reload | PENDING | Requires v2.73 |
+| DP-39 | AWB file saved to Files tab after apply flow | PENDING | Confirmed broken — tested Session 10, Files tab empty after apply even after refresh — fix in v2.90 |
+| DP-40 | Files tab badge updates without page reload after AWB apply | PENDING | Confirmed broken — tested Session 10 — fix in v2.90 |
 | DP-41 | AWB apply — amber diff badge shown when parsed shipper differs from current | YES | Confirmed on AF-003861 — shown in parser dialog |
 | DP-42 | AWB apply — no diff badge when parsed shipper matches current | PENDING | |
 | DP-43 | DocumentParseModal — "Applying..." spinner shown on Use This Data click | YES | Confirmed |
@@ -58,6 +58,10 @@
 | DP-46 | Files tab badge updates immediately after AWB apply (no page reload) | YES | Confirmed |
 | DP-47 | Files tab badge updates immediately after BC apply (no page reload) | PENDING | |
 | DP-48 | AWB diff badge — shown in parser dialog but NOT on shipment details page | PENDING | TODO-AWB-01: dialog shows correctly; details page missing — fix alongside v2.78 (Opus) |
+| DP-49 | Packages card shows pieces + weight after AWB create | YES | Session 10 — 1× PACKAGE row with gross weight shown correctly |
+| DP-50 | Chargeable weight shown on AIR shipment after AWB create | YES | Session 10 — Pieces + Chargeable shown in totals footer |
+| DP-51 | Port edit modal shows only airports for AIR shipments | YES | Session 10 — sea ports excluded, airports only confirmed |
+| DP-52 | Port edit modal shows only sea ports for SEA shipments | YES | Session 10 — airports excluded, sea ports only confirmed |
 
 ---
 
@@ -65,4 +69,6 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 2.55 | 03 Mar 2026 | Session 10 — DP-49, 50, 51, 52 added as YES; DP-36, 39, 40 updated with confirmed broken status; total updated to 52 |
+| 2.54 | 03 Mar 2026 | DP-17, DP-18, DP-35 marked YES — AWB apply fields confirmed via v2.89 |
 | 2.51 | 03 Mar 2026 | Migrated from AF-Test-List.md |

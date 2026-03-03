@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  ArrowLeft, Ship, Package, Calendar, Upload,
+  Ship, Package, Calendar, Upload,
   FileText, AlertTriangle, Loader2, Hash,
   ClipboardList, Pencil,
 } from 'lucide-react';
@@ -146,14 +146,7 @@ export default function ShipmentOrderDetailPage() {
   return (
     <div className="p-6 space-y-5 max-w-4xl">
 
-      {/* Back button */}
-      <button
-        onClick={() => router.back()}
-        className="flex items-center gap-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to Shipments
-      </button>
+
 
       {/* Header */}
       <div className="bg-white border border-[var(--border)] rounded-xl p-5">
@@ -427,6 +420,24 @@ export default function ShipmentOrderDetailPage() {
           const bookingRef = bk.booking_reference as string || null;
           const carrierAgent = bk.carrier_agent as string || null;
           const etd = (order as unknown as Record<string, unknown>).etd as string || null;
+          const isAir = order.order_type === 'AIR';
+          const flightNumber = bk.flight_number as string || null;
+          const flightDate = bk.flight_date as string || null;
+
+          if (isAir) {
+            if (!order.mawb_number && !order.hawb_number && !flightNumber && !flightDate && !etd) return null;
+            return (
+              <SectionCard title="Transport" icon={<Ship className="w-4 h-4" />}>
+                <DataRow label="MAWB" value={order.mawb_number} mono />
+                <DataRow label="HAWB" value={order.hawb_number} mono />
+                <DataRow label="AWB Type" value={order.awb_type} />
+                <DataRow label="Flight" value={flightNumber} />
+                <DataRow label="Flight Date" value={flightDate ? formatDate(flightDate) : null} />
+                <DataRow label="ETD" value={etd ? formatDate(etd) : null} />
+              </SectionCard>
+            );
+          }
+
           if (!vesselName && !voyageNumber && !bookingRef && !carrierAgent && !etd) return null;
           return (
             <SectionCard title="Transport" icon={<Ship className="w-4 h-4" />}>
