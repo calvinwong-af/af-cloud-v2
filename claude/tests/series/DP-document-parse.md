@@ -1,7 +1,7 @@
 # DP — Document Parser
 **Series:** DP
 **Status:** 🔵 Active
-**Total:** 48 | **YES:** 29 | **PENDING:** 15 | **DEFERRED:** 0 | **NA:** 0
+**Total:** 48 | **YES:** 31 | **PENDING:** 13 | **DEFERRED:** 0 | **NA:** 0
 **Last Updated:** 03 March 2026
 
 ---
@@ -26,7 +26,7 @@
 | DP-14 | Upload Document button visible on AIR shipments | YES | AF-003861 confirmed |
 | DP-15 | apply-booking-confirmation — booking_reference saved to shipment | PENDING | |
 | DP-16 | apply-booking-confirmation — Route card updates with pol/pod after apply | PENDING | |
-| DP-17 | apply-awb — hawb_number + mawb_number saved to shipment | PENDING | |
+| DP-17 | apply-awb — hawb_number + mawb_number saved to shipment | PENDING | v2.85 incomplete — MAWB saved as booking_ref, HAWB not saved. Fix in v2.87 |
 | DP-18 | apply-awb — origin/dest airport codes update Route card | PENDING | AF-003866 |
 | DP-19 | New Shipment modal — Upload tab label updated to "Upload Document" | YES | Confirmed |
 | DP-20 | New Shipment modal — drop zone accepts BL/AWB/BC | YES | Confirmed |
@@ -41,14 +41,14 @@
 | DP-29 | DocumentParseModal — ownership section hidden when shipment has company_id | YES | AF-003874 — ownership section hidden, MB AUTOMATION assigned correctly |
 | DP-30 | DocumentParseModal — State B match card shown when consignee matches | YES | AWB parse — Universal Zentury Holdings matched as AFC-0005 |
 | DP-31 | DocumentParseModal — State C amber banner shown when no match | YES | Confirmed — company search shown after "Not this company" with Skip option |
-| DP-32 | BLUploadTab — State C amber banner shown when no consignee match | PENDING | Upload doc with unknown company |
+| DP-32 | BLUploadTab — State C amber banner shown when no consignee match | YES | Confirmed — company search shown, Skip option present |
 | DP-33 | Context menu flips upward when row near bottom of viewport | YES | MCP fix — 03 Mar 2026 |
 | DP-34 | AWB result view — grouped sections (Route, AWB Numbers, Shipper, Consignee, Cargo) | YES | AF-003861 confirmed |
 | DP-35 | apply-awb — ETD updates on route card after Use This Data | PENDING | Requires v2.73 |
-| DP-36 | apply-awb — AWB document saved to Files tab (tag: awb) | PENDING | Requires v2.73 |
+| DP-36 | apply-awb — AWB document saved to Files tab (tag: awb) | PENDING | Confirmed not saving — fix in v2.87 |
 | DP-37 | apply-booking-confirmation — BC document saved to Files tab (tag: bc) | PENDING | Requires v2.73 |
 | DP-38 | apply-booking-confirmation — ETD/ETA updates on route card | PENDING | Requires v2.73 |
-| DP-39 | After AWB apply — Files tab updates without manual page reload | PENDING | Requires v2.73 |
+| DP-39 | After AWB apply — Files tab updates without manual page reload | PENDING | Blocked by DP-36 — fix in v2.87 |
 | DP-40 | After BC apply — Files tab updates without manual page reload | PENDING | Requires v2.73 |
 | DP-41 | AWB apply — amber diff badge shown when parsed shipper differs from current | YES | Confirmed on AF-003861 — shown in parser dialog |
 | DP-42 | AWB apply — no diff badge when parsed shipper matches current | PENDING | |

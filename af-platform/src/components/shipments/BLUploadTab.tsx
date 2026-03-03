@@ -100,6 +100,7 @@ interface Props {
   onConfirmReady: (ready: boolean) => void;
   formState: BLFormState;
   onFormChange: (state: BLFormState) => void;
+  onFileSelected?: (file: File | null) => void;
 }
 
 export interface BLFormState {
@@ -184,7 +185,7 @@ const sanitiseAddress = (raw: string | null | undefined): string => {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function BLUploadTab({ ports, companies = [], onParsed, parsedResult, onConfirmReady, formState, onFormChange }: Props) {
+export default function BLUploadTab({ ports, companies = [], onParsed, parsedResult, onConfirmReady, formState, onFormChange, onFileSelected }: Props) {
   const [phase, setPhase] = useState<'upload' | 'parsing' | 'preview'>(parsedResult ? 'preview' : 'upload');
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -199,6 +200,7 @@ export default function BLUploadTab({ ports, companies = [], onParsed, parsedRes
   const handleFile = useCallback(async (file: File) => {
     setPhase('parsing');
     setError(null);
+    onFileSelected?.(file);
 
     try {
       const { parseBLAction } = await import('@/app/actions/shipments-write');
@@ -295,7 +297,7 @@ export default function BLUploadTab({ ports, companies = [], onParsed, parsedRes
       setError('Failed to parse document');
       setPhase('upload');
     }
-  }, [onParsed, onFormChange, checkReady, ports]);
+  }, [onParsed, onFormChange, checkReady, ports, onFileSelected]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();

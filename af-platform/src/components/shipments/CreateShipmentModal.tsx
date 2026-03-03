@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createShipmentOrderAction, CreateShipmentOrderPayload, createShipmentFromBLAction, type CreateFromBLPayload } from '@/app/actions/shipments-write';
+import { saveDocumentFileAction } from '@/app/actions/shipments-files';
 import BLUploadTab, { type BLFormState, getDefaultBLFormState } from './BLUploadTab';
 import { StepOrder } from './_create-shipment/StepOrder';
 import { StepRoute } from './_create-shipment/StepRoute';
@@ -70,6 +71,7 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
   const [blConfirmReady, setBLConfirmReady] = useState(false);
   const [blSubmitting, setBLSubmitting] = useState(false);
   const [blError, setBLError] = useState<string | null>(null);
+  const [blUploadedFile, setBLUploadedFile] = useState<File | null>(null);
 
   const handleBLConfirmCreate = useCallback(async () => {
     if (!blParsedResult || !blConfirmReady) return;
@@ -141,13 +143,25 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
         return;
       }
 
+      // Save the uploaded document to Files (non-critical — don't block creation)
+      if (blUploadedFile && result.shipment_id) {
+        const docType = isAWB ? 'AWB' : isBookingConfirmation ? 'BC' : 'BL';
+        const fd = new FormData();
+        fd.append('file', blUploadedFile, blUploadedFile.name);
+        fd.append('doc_type', docType);
+        const saveResult = await saveDocumentFileAction(result.shipment_id, fd);
+        if (!saveResult || !saveResult.success) {
+          console.error('[CreateShipmentModal] File save failed:', saveResult?.error);
+        }
+      }
+
       onCreated(result.shipment_id);
     } catch (err) {
       console.error('[CreateShipmentModal] BL create error:', err);
       setBLSubmitting(false);
       setBLError('Failed to create shipment');
     }
-  }, [blParsedResult, blConfirmReady, blFormState, ports, onCreated]);
+  }, [blParsedResult, blConfirmReady, blFormState, blUploadedFile, ports, onCreated]);
 
   // ── Manual Entry state ──
   const [step, setStep] = useState(1);
@@ -468,6 +482,7 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
                 onConfirmReady={setBLConfirmReady}
                 formState={blFormState}
                 onFormChange={setBLFormState}
+                onFileSelected={setBLUploadedFile}
               />
               {blError && (
                 <div className="mt-4 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600">

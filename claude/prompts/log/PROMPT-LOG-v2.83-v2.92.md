@@ -40,3 +40,15 @@
   - `af-platform/src/app/actions/shipments-write.ts`
   - `af-platform/src/app/(platform)/shipments/[id]/_components.tsx`
   - `af-platform/src/app/(platform)/shipments/[id]/page.tsx`
+
+### [2026-03-03 21:00 UTC] — v2.87: AWB Remaining Fixes + File Save
+- **Status:** Completed
+- **Tasks:**
+  - Fix 1 — Route nodes update in apply_awb: Added `route_nodes` to SELECT query and update ORIGIN node's `scheduled_etd` when `flight_date` is provided, matching the `apply_booking_confirmation` pattern. MAWB/HAWB/flight_number flat columns were already correct from v2.85.
+  - Fix 2 — Gross weight in creation flow: Added `weight_kg: body.cargo_weight_kg` to the `cargo` JSONB dict in `create_from_bl` — was previously missing despite being in the request model.
+  - Fix 3 — AWB file saved to Files tab: Added `onFileSelected` callback to `BLUploadTab` to surface the uploaded File object. `CreateShipmentModal` now stores the file and calls `saveDocumentFileAction` after successful creation with the correct doc_type tag. Apply flow already handled via `_doc-handler.ts`.
+- **Files Modified:**
+  - `af-server/routers/shipments/doc_apply.py`
+  - `af-server/routers/shipments/bl.py`
+  - `af-platform/src/components/shipments/BLUploadTab.tsx`
+  - `af-platform/src/components/shipments/CreateShipmentModal.tsx`

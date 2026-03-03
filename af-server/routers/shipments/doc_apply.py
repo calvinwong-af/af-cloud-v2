@@ -158,7 +158,7 @@ async def apply_awb(
 ):
     # Read current shipment
     row = conn.execute(text("""
-        SELECT id, booking, parties, type_details, cargo FROM shipments WHERE id = :id
+        SELECT id, booking, parties, type_details, cargo, route_nodes FROM shipments WHERE id = :id
     """), {"id": shipment_id}).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Shipment not found")
@@ -202,6 +202,16 @@ async def apply_awb(
     if body.flight_date is not None:
         set_clauses.append("etd = :etd")
         params["etd"] = body.flight_date
+
+    # Also update route node timings if nodes exist (match apply_booking_confirmation pattern)
+    nodes = _parse_jsonb(row[5]) or []
+    if not isinstance(nodes, list): nodes = []
+    for node in nodes:
+        if node.get("role") == "ORIGIN" and body.flight_date:
+            node["scheduled_etd"] = body.flight_date
+    if nodes:
+        set_clauses.append("route_nodes = CAST(:route_nodes AS jsonb)")
+        params["route_nodes"] = json.dumps(nodes)
 
     # Merge parties
     parties = _parse_jsonb(row[2]) or {}

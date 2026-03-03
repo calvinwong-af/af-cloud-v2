@@ -328,6 +328,7 @@ async def create_from_bl(
 
     cargo = {
         "description": body.cargo_description or "",
+        "weight_kg": body.cargo_weight_kg,
         "hs_code": None,
         "is_dg": False,
         "dg_class": None,

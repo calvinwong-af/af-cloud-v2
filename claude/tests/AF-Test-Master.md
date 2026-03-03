@@ -1,5 +1,5 @@
 # AF Platform — Test Master
-**Version:** 2.52
+**Version:** 2.53
 **Last Updated:** 03 March 2026
 
 > Individual series detail lives in `claude/tests/series/`. Retired series (MI, V2C, OF, SR, IN, SU) are in `AF-Test-Archive.md`.
@@ -10,7 +10,7 @@
 
 | Series | Description | Total | YES | PENDING | DEFERRED | NA | Status | File |
 |---|---|---|---|---|---|---|---|---|
-| DP | Document Parser | 48 | 29 | 15 | 0 | 0 | 🔵 Active | series/DP-document-parse.md |
+| DP | Document Parser | 48 | 31 | 13 | 0 | 0 | 🔵 Active | series/DP-document-parse.md |
 | DT | DateTime Inputs | 16 | 1 | 15 | 0 | 0 | 🔵 Active | series/DT-datetime.md |
 | VD | Vessel Display | 7 | 5 | 2 | 0 | 0 | 🔵 Active | series/VD-vessel-display.md |
 | PP | Port Pair Display | 9 | 8 | 1 | 0 | 0 | 🔵 Active | series/PP-port-pair.md |
@@ -34,7 +34,7 @@
 | MC | Manual Shipment Create | 6 | 6 | 0 | 0 | 0 | ✅ Complete | series/MC-manual-create.md |
 | SD | Shipment Delete | 3 | 3 | 0 | 0 | 0 | ✅ Complete | series/SD-shipment-delete.md |
 | LO | Loading State UI | 5 | 5 | 0 | 0 | 0 | ✅ Complete | series/LO-loading-state.md |
-| **TOTAL** | | **246** | **201** | **37** | **12** | **2** | | |
+| **TOTAL** | | **246** | **203** | **35** | **12** | **2** | | |
 
 ---
 
@@ -63,4 +63,6 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 2.53 | 03 Mar 2026 | DP: DP-28 confirmed YES (ADD saves correctly); port edit confirmed working |
+| 2.52 | 03 Mar 2026 | DP: 7 tests marked YES (DP-04, 24, 26, 27, 28, 29, 30, 31) |
 | 2.51 | 03 Mar 2026 | Migrated from AF-Test-List.md to modular structure |
