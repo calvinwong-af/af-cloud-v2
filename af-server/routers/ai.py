@@ -242,26 +242,30 @@ async def parse_document(
         logger.error("[parse-document] Extraction failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Document extraction failed: {e}")
 
-    # --- Step 3: Resolve port names to UN codes ---
-    if doc_type == "BL":
-        if data.get("port_of_loading") and not data.get("pol_code"):
-            matched = _match_port_un_code(conn, data["port_of_loading"])
-            if matched:
-                data["pol_code"] = matched
-        if data.get("port_of_discharge") and not data.get("pod_code"):
-            matched = _match_port_un_code(conn, data["port_of_discharge"])
-            if matched:
-                data["pod_code"] = matched
+    # --- Step 3: Resolve port names to UN codes (non-fatal) ---
+    logger.info("[parse-document] Step 3 — port resolution for doc_type=%s", doc_type)
+    try:
+        if doc_type == "BL":
+            if data.get("port_of_loading") and not data.get("pol_code"):
+                matched = _match_port_un_code(conn, data["port_of_loading"])
+                if matched:
+                    data["pol_code"] = matched
+            if data.get("port_of_discharge") and not data.get("pod_code"):
+                matched = _match_port_un_code(conn, data["port_of_discharge"])
+                if matched:
+                    data["pod_code"] = matched
 
-    elif doc_type == "BOOKING_CONFIRMATION":
-        if data.get("pol_name") and not data.get("pol_code"):
-            matched = _match_port_un_code(conn, data["pol_name"])
-            if matched:
-                data["pol_code"] = matched
-        if data.get("pod_name") and not data.get("pod_code"):
-            matched = _match_port_un_code(conn, data["pod_name"])
-            if matched:
-                data["pod_code"] = matched
+        elif doc_type == "BOOKING_CONFIRMATION":
+            if data.get("pol_name") and not data.get("pol_code"):
+                matched = _match_port_un_code(conn, data["pol_name"])
+                if matched:
+                    data["pol_code"] = matched
+            if data.get("pod_name") and not data.get("pod_code"):
+                matched = _match_port_un_code(conn, data["pod_name"])
+                if matched:
+                    data["pod_code"] = matched
+    except Exception as e:
+        logger.warning("[parse-document] Port resolution failed (non-fatal): %s", e)
 
     return {
         "status": "OK",
