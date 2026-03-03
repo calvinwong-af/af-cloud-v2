@@ -38,3 +38,13 @@
   - `af-platform/src/components/shipments/_doc-parsers/BLReview.tsx`
   - `af-platform/src/components/shipments/_doc-parsers/BCReview.tsx`
   - `af-platform/src/components/shipments/DocumentParseModal.tsx`
+
+### [2026-03-03 14:30 UTC] — v3.06: Port Code Resolution at Parse Time (BL + BC)
+- **Status:** Completed
+- **Tasks:**
+  - Added DB dependency (`get_db`) and `_match_port_un_code` import to `ai.py` parse-document endpoint
+  - Added port name → UN code resolution after Claude extraction for BL (`port_of_loading`/`port_of_discharge` → `pol_code`/`pod_code`)
+  - Added fallback port resolution for BC (`pol_name`/`pod_name` → `pol_code`/`pod_code` when Claude doesn't return codes)
+  - AWB unchanged (uses IATA codes directly)
+- **Files Modified:**
+  - `af-server/routers/ai.py`
