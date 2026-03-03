@@ -16,6 +16,7 @@ Items identified during development/testing that are not urgent but should be ad
 | UI-07 | BL apply — packages not updated for LCL shipments | Session 17 | BL apply does not write packages/container data for LCL. Should follow same pattern as AWB apply (packages written to type_details). |
 | UI-08 | BL apply — cargo description not updated | Session 17 | Cargo description field not populated after BL apply. Should follow same pattern as AWB (cargo_description written to shipment). |
 | UI-09 | "Read File" re-opens old legacy dialog instead of new parser | Session 17 | After BL apply via new DocumentParseModal flow, clicking "Read File" again opens the old BLUpdateModal. All legacy parse dialogs for all file types (BL, AWB, BC) should be removed — "Read File" should always route through DocumentParseModal. |
+| UI-10 | Parties card — no diff indicator after document apply | Session 17 | After applying a document that changes parties (shipper/consignee), the Parties card on the detail page shows no visual indicator of what changed. Diff badge works inside DocumentParseModal during review but does not persist post-apply. Tracked as DP-48. |
 | UI-06 | CLOSED — Back button removed; detail page opens in new tab | Closed Session 9 | Back button removed from page.tsx. ShipmentRow + ShipmentCard updated to always open in new tab via window.open. |
 
 ---
