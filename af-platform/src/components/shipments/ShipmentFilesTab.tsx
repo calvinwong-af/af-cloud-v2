@@ -210,7 +210,7 @@ export default function ShipmentFilesTab({ shipmentId, userRole, ports, refreshK
         setReparseInitialData({ docType: 'BL', data: result.data as Record<string, unknown> });
         setShowReparseModal(true);
       } else if (result.docType === 'AWB' || result.docType === 'BOOKING_CONFIRMATION') {
-        setReparseInitialData({ docType: result.docType, data: result.data as Record<string, unknown> });
+        setReparseInitialData({ docType: result.docType, data: result.data as unknown as Record<string, unknown> });
         setShowReparseModal(true);
       }
 
