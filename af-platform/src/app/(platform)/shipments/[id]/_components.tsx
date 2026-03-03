@@ -517,6 +517,27 @@ export function TypeDetailsCard({ order, orderType }: { order: ShipmentOrder; or
             )}
           </div>
         )}
+
+        {/* LCL Container Reference */}
+        {orderType === 'SEA_LCL' && (lcl.container_number || lcl.seal_number) && (
+          <div className="mt-3 pt-3 border-t border-[var(--border)]">
+            <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">
+              Container Reference
+            </p>
+            {lcl.container_number && (
+              <div className="flex items-center justify-between py-1 text-xs">
+                <span className="text-[var(--text-muted)]">Container No.</span>
+                <span className="font-mono text-[var(--text)]">{lcl.container_number}</span>
+              </div>
+            )}
+            {lcl.seal_number && (
+              <div className="flex items-center justify-between py-1 text-xs border-t border-[var(--border)]">
+                <span className="text-[var(--text-muted)]">Seal No.</span>
+                <span className="font-mono text-[var(--text)]">{lcl.seal_number}</span>
+              </div>
+            )}
+          </div>
+        )}
       </SectionCard>
     );
   }

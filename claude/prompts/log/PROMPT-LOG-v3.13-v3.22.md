@@ -1,5 +1,14 @@
 # Prompt Completion Log — v3.13–v3.22
 
+### [2026-03-04 21:30 UTC] — v3.17: LCL Container Reference — Type Definition + Detail Page Display
+- **Status:** Completed
+- **Tasks:**
+  - Added `container_number` and `seal_number` optional fields to `TypeDetailsLCL` interface
+  - Added Container Reference section to `TypeDetailsCard` SEA_LCL branch showing container and seal numbers when present
+- **Files Modified:**
+  - `af-platform/src/lib/types.ts`
+  - `af-platform/src/app/(platform)/shipments/[id]/_components.tsx`
+
 ### [2026-03-04 21:00 UTC] — v3.16: Fix LCL Container/Seal Not Saving After BL Apply
 - **Status:** Completed
 - **Tasks:**

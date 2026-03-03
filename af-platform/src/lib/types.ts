@@ -81,6 +81,8 @@ export interface TypeDetailsFCL {
 export interface TypeDetailsLCL {
   type: 'SEA_LCL';
   packages: PackageDetail[];
+  container_number?: string | null;   // LCL consolidation container number (from BL)
+  seal_number?: string | null;        // Seal number of LCL consolidation container
 }
 
 export interface TypeDetailsAir {
