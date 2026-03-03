@@ -369,6 +369,7 @@ Before marking any task complete, confirm the following by checking the actual w
 - [ ] Server Actions wrapped in try/catch — every path returns structured result, never throws
 - [ ] Client calls to Server Actions guarded with `if (!result)` null check and outer try/catch
 - [ ] **No unused imports/variables** — run `npm run lint` in `af-platform/` before committing platform changes
+- [ ] **No direct casts to `Record<string, unknown>`** from named interfaces — use `as unknown as Record<string, unknown>`
 
 ---
 
@@ -387,4 +388,24 @@ If lint passes locally, Cloud Build will not fail on ESLint errors.
 
 ---
 
-*Last updated: 28 Feb 2026 — v2.18 session*
+## 15. TypeScript — Casting Interface Types to `Record<string, unknown>`
+
+**Rule:** Never cast a named interface/type directly to `Record<string, unknown>`. TypeScript rejects this because interfaces without an index signature are not assignable to `Record<string, unknown>`. Always cast through `unknown` first.
+
+**Symptom:** Build fails with `Conversion of type 'Foo' to type 'Record<string, unknown>' may be a mistake because neither type sufficiently overlaps with the other. Index signature for type 'string' is missing in type 'Foo'.` The dev server (`npm run dev`) does NOT catch this — only `next build` does.
+
+**Wrong:**
+```typescript
+const data = result.data as Record<string, unknown>;
+```
+
+**Correct:**
+```typescript
+const data = result.data as unknown as Record<string, unknown>;
+```
+
+**When this happens:** Parsed document types (`ParsedBL`, `ParsedBCData`, `ParsedAWBData`) and other Pydantic-derived interfaces are commonly passed to generic form handlers that expect `Record<string, unknown>`. The direct cast fails at build time.
+
+---
+
+*Last updated: 03 Mar 2026 — v3.06 session*
