@@ -13,6 +13,9 @@ Items identified during development/testing that are not urgent but should be ad
 | UI-03 | Port edit pencil icon position on RouteCard | Identified during v2.88 port edit modal testing | Current absolute-positioned pencil icons are not well-placed visually. Revisit placement — consider inline next to the port code/name text rather than floating over the PortPair component. |
 | UI-04 | Port edit modal — no freight type filtering | Identified during v2.89 testing | PortEditModal shows all ports regardless of shipment type. Air shipments should only see airports; sea shipments should only see sea ports. Filter by order.order_type before passing ports to modal. Same underlying issue as UI-02. |
 | UI-05 | No ability to edit order details on shipment detail page | Identified during v2.89 testing | Users cannot edit order-level fields (order_type, transaction_type, incoterm) from the detail page. Needs an Edit Order modal or inline edit for these fields. AFU only. |
+| UI-07 | BL apply — packages not updated for LCL shipments | Session 17 | BL apply does not write packages/container data for LCL. Should follow same pattern as AWB apply (packages written to type_details). |
+| UI-08 | BL apply — cargo description not updated | Session 17 | Cargo description field not populated after BL apply. Should follow same pattern as AWB (cargo_description written to shipment). |
+| UI-09 | "Read File" re-opens old legacy dialog instead of new parser | Session 17 | After BL apply via new DocumentParseModal flow, clicking "Read File" again opens the old BLUpdateModal. All legacy parse dialogs for all file types (BL, AWB, BC) should be removed — "Read File" should always route through DocumentParseModal. |
 | UI-06 | CLOSED — Back button removed; detail page opens in new tab | Closed Session 9 | Back button removed from page.tsx. ShipmentRow + ShipmentCard updated to always open in new tab via window.open. |
 
 ---

@@ -10,7 +10,7 @@
 
 | Series | Description | Total | YES | PENDING | DEFERRED | NA | Status | File |
 |---|---|---|---|---|---|---|---|---|
-| DP | Document Parser | 62 | 52 | 8 | 0 | 0 | 🔵 Active | series/DP-document-parse.md |
+| DP | Document Parser | 62 | 51 | 9 | 0 | 0 | 🔵 Active | series/DP-document-parse.md |
 | FILE | File Upload & Management | 6 | 6 | 0 | 0 | 0 | ✅ Complete | series/FILE-file-upload.md |
 | DT | DateTime Inputs | 16 | 1 | 15 | 0 | 0 | 🔵 Active | series/DT-datetime.md |
 | VD | Vessel Display | 7 | 5 | 2 | 0 | 0 | 🔵 Active | series/VD-vessel-display.md |
@@ -35,7 +35,7 @@
 | MC | Manual Shipment Create | 6 | 6 | 0 | 0 | 0 | ✅ Complete | series/MC-manual-create.md |
 | SD | Shipment Delete | 3 | 3 | 0 | 0 | 0 | ✅ Complete | series/SD-shipment-delete.md |
 | LO | Loading State UI | 5 | 5 | 0 | 0 | 0 | ✅ Complete | series/LO-loading-state.md |
-| **TOTAL** | | **266** | **229** | **29** | **12** | **2** | | |
+| **TOTAL** | | **266** | **230** | **28** | **12** | **2** | | |
 
 ---
 
@@ -64,6 +64,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 2.63 | 03 Mar 2026 | Session 17 — DP-57 YES; total 230 passing |
 | 2.62 | 03 Mar 2026 | DP-61 YES, DP-62 YES; DP-60 PENDING (token issue); total 229 passing |
 | 2.61 | 03 Mar 2026 | DP: DP-55–62 added PENDING (v3.03 tests); total 266, 227 passing |
 | 2.60 | 03 Mar 2026 | FILE: FILE-03 YES — series complete; total 227 passing |
