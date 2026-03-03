@@ -12,7 +12,6 @@ import {
   type ParsedBCData,
   type ParsedAWBData,
 } from '@/app/actions/shipments-files';
-import type { ParsedBL } from '@/components/shipments/BLUpdateModal';
 import { AWBReview } from './_doc-parsers/AWBReview';
 import { BCReview } from './_doc-parsers/BCReview';
 import { BLReview } from './_doc-parsers/BLReview';
@@ -64,7 +63,7 @@ interface DocumentParseModalProps {
   currentParties?: CurrentParties; // Existing shipment parties — used to show diff badge on AWB review
   ports: Port[];
   onClose: () => void;
-  onResult: (docType: DocType, data: ParsedBCData | ParsedAWBData | ParsedBL, file: File | null) => Promise<{ ok: boolean; error?: string } | void>;
+  onResult: (docType: DocType, data: ParsedBCData | ParsedAWBData | Record<string, unknown>, file: File | null) => Promise<{ ok: boolean; error?: string } | void>;
   allowedTypes?: DocType[];
   initialDocType?: DocType;          // if set, skip to review phase immediately
   initialParsedData?: Record<string, unknown>;  // pre-parsed data to pre-fill form
@@ -326,7 +325,7 @@ export default function DocumentParseModal({
     setIsApplying(true);
     setApplyError(null);
     try {
-      const payload = docType === 'AWB' ? awbPayload : (parsedData as unknown as ParsedBCData | ParsedBL);
+      const payload = docType === 'AWB' ? awbPayload : (parsedData as unknown as ParsedBCData | Record<string, unknown>);
       const result = await onResult(docType, payload, file);
       if (!result || result.ok) {
         setApplySuccess(true);

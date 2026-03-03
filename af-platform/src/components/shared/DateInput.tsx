@@ -345,11 +345,12 @@ export function DateTimeInput({
   // Reset view when opening
   useEffect(() => {
     if (open) {
-      const d = parseDatetime(value) ?? new Date();
-      setViewYear(d.getFullYear());
-      setViewMonth(d.getMonth());
-      setHour(d.getHours());
-      setMinute(d.getMinutes());
+      const d = parseDatetime(value);
+      const nav = d ?? new Date();
+      setViewYear(nav.getFullYear());
+      setViewMonth(nav.getMonth());
+      setHour(d ? d.getHours() : 0);
+      setMinute(d ? d.getMinutes() : 0);
     }
   }, [open, value]);
 

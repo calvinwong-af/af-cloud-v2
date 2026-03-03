@@ -1,7 +1,8 @@
 # PP — Port Pair Display
 **Series:** PP
 **Status:** 🔵 Active
-**Total:** 9 | **YES:** 8 | **PENDING:** 1 | **DEFERRED:** 0 | **NA:** 0
+**Total:** 9 | **YES:** 9 | **PENDING:** 0 | **DEFERRED:** 0 | **NA:** 0
+**Status:** ✅ Complete
 **Last Updated:** 03 March 2026
 
 ---
@@ -15,7 +16,7 @@
 | PP-03 | Route card — port code in large monospace font | YES | |
 | PP-04 | Route card — port name tooltip on hover | YES | |
 | PP-05 | Route card — ETD shown below origin port code | YES | |
-| PP-06 | Route card — ETA shown below destination port code | PENDING | ETA not synced from task scheduled_start |
+| PP-06 | Route card — ETA shown below destination port code | YES | Confirmed — Session 19 |
 | PP-07 | Route card — ETD/ETA matches Route Node Timeline | YES | |
 | PP-08 | Route card — Incoterm pill displayed | YES | |
 | PP-09 | Route card — no ETD/ETA shows muted dash placeholder | YES | |

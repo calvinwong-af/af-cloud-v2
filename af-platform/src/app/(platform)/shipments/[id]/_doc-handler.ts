@@ -2,7 +2,6 @@ import { useRouter } from 'next/navigation';
 import { applyBookingConfirmationAction, applyAWBAction, updateShipmentFromBLAction } from '@/app/actions/shipments-write';
 import { uploadShipmentFileAction } from '@/app/actions/shipments-files';
 import type { DocType, ParsedBCData, ParsedAWBData } from '@/app/actions/shipments-files';
-import type { ParsedBL } from '@/components/shipments/BLUpdateModal';
 import type { ShipmentOrder } from '@/lib/types';
 
 export function createDocResultHandler(params: {
@@ -13,11 +12,8 @@ export function createDocResultHandler(params: {
   loadRouteTimings: () => Promise<void>;
   router: ReturnType<typeof useRouter>;
   setShowDocParseModal: (v: boolean) => void;
-  setDocParseBLData: (v: ParsedBL | null) => void;
-  setShowBLModal: (v: boolean) => void;
   setFilesRefreshKey: (fn: (k: number) => number) => void;
-  setPendingBLFile: (f: File | null) => void;
-}): (docType: DocType, data: ParsedBCData | ParsedAWBData | ParsedBL, file: File | null) => Promise<{ ok: boolean; error?: string } | void> {
+}): (docType: DocType, data: ParsedBCData | ParsedAWBData | Record<string, unknown>, file: File | null) => Promise<{ ok: boolean; error?: string } | void> {
   const {
     order,
     loadOrder,

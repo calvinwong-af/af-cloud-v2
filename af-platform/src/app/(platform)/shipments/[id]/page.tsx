@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 import { fetchShipmentOrderDetailAction, fetchPortsAction } from '@/app/actions/shipments';
 import { patchShipmentCargoAction } from '@/app/actions/shipments-write';
-import { uploadShipmentFileAction } from '@/app/actions/shipments-files';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
 import { formatDate } from '@/lib/utils';
 import type { ShipmentOrder } from '@/lib/types';
@@ -17,8 +16,6 @@ import type { Port } from '@/lib/ports';
 import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS } from '@/lib/types';
 import ShipmentTasks from '@/components/shipments/ShipmentTasks';
 import ShipmentFilesTab from '@/components/shipments/ShipmentFilesTab';
-import BLUpdateModal from '@/components/shipments/BLUpdateModal';
-import type { ParsedBL } from '@/components/shipments/BLUpdateModal';
 import BLPartyDiffModal from '@/components/shipments/BLPartyDiffModal';
 import DocumentParseModal from '@/components/shipments/DocumentParseModal';
 import RouteNodeTimeline from '@/components/shipments/RouteNodeTimeline';
@@ -50,16 +47,13 @@ export default function ShipmentOrderDetailPage() {
   const [accountType, setAccountType] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [showCompanyModal, setShowCompanyModal] = useState(false);
-  const [showBLModal, setShowBLModal] = useState(false);
   const [showDocParseModal, setShowDocParseModal] = useState(false);
-  const [docParseBLData, setDocParseBLData] = useState<ParsedBL | null>(null);
   const [ports, setPorts] = useState<{ un_code: string; name: string; country: string; port_type: string; has_terminals: boolean; terminals: Array<{ terminal_id: string; name: string; is_default: boolean }> }[]>([]);
   const [diffParty, setDiffParty] = useState<'shipper' | 'consignee' | null>(null);
   const [showEditParties, setShowEditParties] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'files'>('overview');
   const [fileCount, setFileCount] = useState<number | null>(null);
   const [filesRefreshKey, setFilesRefreshKey] = useState(0);
-  const [pendingBLFile, setPendingBLFile] = useState<File | null>(null);
   const [isDgEditing, setIsDgEditing] = useState(false);
   const [isDgValue, setIsDgValue] = useState(false);
   const [dgDescription, setDgDescription] = useState('');
@@ -551,39 +545,8 @@ export default function ShipmentOrderDetailPage() {
             loadRouteTimings,
             router,
             setShowDocParseModal,
-            setDocParseBLData,
-            setShowBLModal,
             setFilesRefreshKey,
-            setPendingBLFile,
           })}
-        />
-      )}
-
-      {/* BL Update modal */}
-      {showBLModal && (
-        <BLUpdateModal
-          shipmentId={order.quotation_id}
-          ports={ports}
-          onClose={() => { setShowBLModal(false); setDocParseBLData(null); setPendingBLFile(null); }}
-          onSuccess={async () => {
-            setShowBLModal(false);
-            setDocParseBLData(null);
-            await Promise.all([loadOrder(), loadRouteTimings()]);
-            // Save BL file to Files tab if we have it
-            if (pendingBLFile) {
-              const fd = new FormData();
-              fd.append('file', pendingBLFile, pendingBLFile.name);
-              fd.append('file_tags', JSON.stringify(['bl']));
-              const saveResult = await uploadShipmentFileAction(order.quotation_id, fd);
-              if (!saveResult || !saveResult.success) {
-                console.error('[BLUpload] BL file save failed:', saveResult);
-              } else {
-                setFilesRefreshKey(k => k + 1);
-              }
-              setPendingBLFile(null);
-            }
-          }}
-          initialParsed={docParseBLData}
         />
       )}
 

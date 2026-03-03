@@ -1,7 +1,8 @@
 # DP — Document Parser
 **Series:** DP
 **Status:** 🔵 Active
-**Total:** 82 | **YES:** 78 | **PENDING:** 1 | **DEFERRED:** 0 | **NA:** 1 | **FAIL:** 1
+**Total:** 82 | **YES:** 79 | **PENDING:** 0 | **DEFERRED:** 0 | **NA:** 2 | **FAIL:** 0
+**Status:** ✅ Complete
 **Last Updated:** 03 March 2026 (Session 15)
 
 ---
@@ -86,7 +87,7 @@
 | DP-74 | apply-bl (LCL) — Container Reference section shown in BLReview when lcl_container_number parsed | YES | Session 18 — v3.10 — Container Reference section visible with PCIU9526378 + MSC017994 |
 | DP-75 | apply-bl (LCL) — container + seal written as flat fields in type_details after apply | YES | Session 18 — v3.10 — PCIU9526378 / MSC017994 confirmed via screenshot |
 | DP-76 | apply-bl — terminal written to shipment when terminal port selected in BLReview | YES | Session 18 — v3.10 — terminal write-through confirmed working |
-| DP-77 | BLUpdateModal (legacy Read File flow) — port fields resolve correctly | FAIL | Session 17 — BUG: port fields blank in legacy dialog — tracked as UI-14 (low priority, dialog will be removed) |
+| DP-77 | BLUpdateModal (legacy Read File flow) — port fields resolve correctly | NA | BLUpdateModal deleted v3.15 — UI-14 closed |
 | DP-78 | Read File (BL reparse) — POL and POD pre-selected in BLReview (no amber "not matched") | YES | Session 18 — v3.11 — MYPKG + MYBKI pre-selected correctly on reparse |
 | DP-79 | Read File (BL reparse) — "Use This Data" not blocked by port validation error | YES | Session 18 — v3.11 — apply proceeds without port validation block |
 | DP-80 | Read File (BL reparse) — route card updates with correct ports after apply | YES | Session 18 — v3.11 — confirmed working |

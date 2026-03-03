@@ -44,25 +44,11 @@ function Combobox({ value, onChange, options, placeholder }: {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState<number>(-1);
-  const ref = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!value) setQuery('');
   }, [value]);
-
-  useEffect(() => {
-    function handle(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-        setHighlighted(-1);
-        const selected = options.find(o => o.value === value);
-        setQuery(selected?.label ?? '');
-      }
-    }
-    document.addEventListener('mousedown', handle);
-    return () => document.removeEventListener('mousedown', handle);
-  }, [value, options]);
 
   // Scroll highlighted item into view
   useEffect(() => {
@@ -129,7 +115,7 @@ function Combobox({ value, onChange, options, placeholder }: {
   }
 
   return (
-    <div ref={ref} className="relative">
+    <div className="relative">
       <input
         type="text"
         value={inputValue}
@@ -151,6 +137,7 @@ function Combobox({ value, onChange, options, placeholder }: {
             setHighlighted(-1);
           }
         }}
+        onBlur={() => setTimeout(() => { setOpen(false); setHighlighted(-1); }, 150)}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         autoComplete="off"

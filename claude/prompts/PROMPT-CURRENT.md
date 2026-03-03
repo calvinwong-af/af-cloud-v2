@@ -1,34 +1,28 @@
 # PROMPT-CURRENT — v3.15
-# BCReview Port Combobox Fix (same as v3.12 BLReview fix)
+# Combobox Fix Sweep + BLUpdateModal Removal
 
 ## Objective
-Apply the same `PortCombobox` fix from `BLReview.tsx` (v3.12) to `BCReview.tsx`.
-The combobox has the same two bugs: outside-click handler fires before option selection
-registers, and the two `onChange` handlers use stale closure when clearing the terminal.
+Three things in one pass:
+1. Fix `PortCombobox` in `BCReview.tsx` — same `onBlur` fix applied to BLReview in v3.12
+2. Fix `Combobox` in `StepRoute.tsx` — same outside-click bug, keep keyboard nav intact
+3. Remove `BLUpdateModal.tsx` entirely and clean up all references
 
 ---
 
-## Root Cause
+## Root Cause (Combobox bug — applies to both BCReview + StepRoute)
 
-Same as BLReview (v3.12):
+Both components use `useRef` + `document.addEventListener('mousedown')` to detect
+outside clicks. The `mousedown` on `document` fires before the option's `onMouseDown`,
+closing the dropdown without registering the selection.
 
-**Bug 1 — Outside-click closes dropdown before selection registers:**
-`PortCombobox` uses `useRef` + `document.addEventListener('mousedown')` to detect
-outside clicks. The `mousedown` on `document` fires before the option button's
-`onMouseDown`, closing the dropdown without registering the selection.
-
-**Bug 2 — Stale closure on terminal clear:**
-The POL and POD `onChange` handlers call `update()` twice in succession (port code +
-terminal clear). `update` closes over `formState` from the render, so the second call
-may use a stale snapshot.
+Fix: replace with `onBlur` + `setTimeout(150)` on the input. The 150ms delay lets the
+option's `onMouseDown` fire before the blur closes the dropdown.
 
 ---
 
-## Fix — BCReview.tsx only
+## Change 1 — BCReview.tsx: Fix PortCombobox
 
 **File:** `af-platform/src/components/shipments/_doc-parsers/BCReview.tsx`
-
-### Change 1 — Replace PortCombobox outside-click handler
 
 Replace the entire `PortCombobox` function. Remove `useRef`, `useEffect`, and
 `document.addEventListener`. Replace with `onBlur` + `setTimeout(150)`:
@@ -86,72 +80,123 @@ function PortCombobox({
 }
 ```
 
-Remove the `useRef` import (no longer needed). Keep `useState` and remove `useEffect`.
+Remove `useRef` from the import line. Remove `useEffect` from the import line.
 
-### Change 2 — Batch POL and POD onChange into single setFormState calls
+Also batch the POL and POD `onChange` handlers into single `setFormState` calls
+to prevent stale closure on terminal clear:
 
-Replace the POL `onChange`:
 ```tsx
+// POL onChange — replace:
 onChange={code => {
   const newPort = seaPorts.find(p => p.un_code === code);
   update('pol_code', code);
   if (!newPort?.has_terminals) update('pol_terminal', '');
 }}
-```
-With:
-```tsx
+// With:
 onChange={code => {
   setFormState({ ...formState, pol_code: code, pol_terminal: '' });
 }}
-```
 
-Replace the POD `onChange`:
-```tsx
+// POD onChange — replace:
 onChange={code => {
   const newPort = seaPorts.find(p => p.un_code === code);
   update('pod_code', code);
   if (!newPort?.has_terminals) update('pod_terminal', '');
 }}
-```
-With:
-```tsx
+// With:
 onChange={code => {
   setFormState({ ...formState, pod_code: code, pod_terminal: '' });
 }}
 ```
 
-Note: always clear terminal on port change (same as v3.12 BLReview) — the terminal
-selector's conditional render handles visibility, no need to guard on `has_terminals`.
+---
+
+## Change 2 — StepRoute.tsx: Fix Combobox outside-click handler
+
+**File:** `af-platform/src/components/shipments/_create-shipment/StepRoute.tsx`
+
+The `Combobox` component has keyboard nav (arrow keys, Enter, Escape) — keep all of
+that intact. Only replace the outside-click mechanism.
+
+In the `Combobox` function:
+- Remove the `useEffect` that adds `document.addEventListener('mousedown', handle)`
+- Remove the `ref` and `ref={ref}` on the wrapper `<div>`
+- Add `onBlur` to the `<input>` that defers closing:
+
+```tsx
+onBlur={() => setTimeout(() => { setOpen(false); setHighlighted(-1); }, 150)}
+```
+
+The `onMouseDown` on each list item already has `e.preventDefault()` which prevents
+the input from losing focus before the selection fires — this is correct, keep it.
+
+Remove `useRef` from the import if `ref` / `wrapperRef` are the only uses. Keep
+`listRef` (used for scroll-into-view on keyboard highlight) — only remove `wrapperRef`.
+
+Do NOT change the keyboard nav logic (ArrowDown, ArrowUp, Enter, Escape, Tab handlers).
+Do NOT change the `useEffect` that syncs `query` when `value` changes — keep that.
+Do NOT change the `useEffect` that scrolls highlighted item into view — keep that.
+
+---
+
+## Change 3 — Delete BLUpdateModal + clean up references
+
+### 3a. Delete the file
+`af-platform/src/components/shipments/BLUpdateModal.tsx` — delete entirely.
+
+### 3b. Clean up `_doc-handler.ts`
+**File:** `af-platform/src/app/(platform)/shipments/[id]/_doc-handler.ts`
+
+- Remove: `import type { ParsedBL } from '@/components/shipments/BLUpdateModal';`
+- Remove `setDocParseBLData`, `setShowBLModal`, `setPendingBLFile` from the `params`
+  type and destructure — they are no longer used
+- The BL branch already applies directly via `updateShipmentFromBLAction` — no logic
+  changes needed, just the type cleanup
+
+### 3c. Clean up `page.tsx`
+**File:** `af-platform/src/app/(platform)/shipments/[id]/page.tsx`
+
+Remove:
+- `import BLUpdateModal from '@/components/shipments/BLUpdateModal';`
+- `import type { ParsedBL } from '@/components/shipments/BLUpdateModal';`
+- State declarations: `showBLModal`, `docParseBLData`, `pendingBLFile`
+- The `setShowBLModal`, `setDocParseBLData`, `setPendingBLFile` props passed into
+  `createDocResultHandler`
+- The entire `{/* BL Update modal */}` render block at the bottom
+- The `uploadShipmentFileAction` import IF it is only used inside the now-removed
+  BLUpdateModal `onSuccess` block — check before removing
 
 ---
 
 ## Key Constraints
 
-- Modify **only** `BCReview.tsx` — no other files
-- Do NOT change `BLReview.tsx`, `DocumentParseModal.tsx`, or any backend files
-- Keep all other BCReview logic intact — containers, cargo, dates, parties sections
-  are unchanged
+- Do NOT change `BLReview.tsx` — already fixed in v3.12
+- Do NOT change `DocumentParseModal.tsx` or any backend files
+- Do NOT change `BLUploadTab.tsx` — unrelated to this prompt
+- `StepRoute.tsx`: keep keyboard nav, keep both `useEffect` hooks, only remove
+  `wrapperRef` and the outside-click `useEffect`
 - Python venv: `.venv` (Python 3.11) — no backend changes
+- Run `npm run build` or `tsc --noEmit` after changes to confirm no type errors
 
 ---
 
-## Files to Modify
+## Files to Modify / Delete
 
-1. `af-platform/src/components/shipments/_doc-parsers/BCReview.tsx`
+1. `af-platform/src/components/shipments/_doc-parsers/BCReview.tsx` — fix PortCombobox
+2. `af-platform/src/components/shipments/_create-shipment/StepRoute.tsx` — fix Combobox
+3. `af-platform/src/components/shipments/BLUpdateModal.tsx` — DELETE
+4. `af-platform/src/app/(platform)/shipments/[id]/_doc-handler.ts` — remove ParsedBL import + stale params
+5. `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — remove dead state + import + modal block
 
 ---
 
 ## Test Criteria
 
-After this change:
-1. Upload a Booking Confirmation via DocumentParseModal
-2. In BCReview, click the POL combobox — dropdown opens
-3. Type to filter — list narrows correctly
-4. Click a port option — port updates, dropdown closes
-5. Click POL again and select MYPKG — terminal selector appears below POL
-6. Change POL to a non-terminal port — terminal selector disappears and terminal is cleared
-7. Repeat steps 2–6 for POD
-8. No regression on BLReview port combobox behaviour
+1. **BCReview port combobox** — upload a BC, click POL, type to filter, select a port — updates correctly; select MYPKG — terminal selector appears; switch to non-terminal port — terminal clears
+2. **StepRoute port combobox** — open Create Shipment, go to Route step, click Origin Port, type to filter, click option — updates correctly; keyboard arrow nav still works
+3. **BLUpdateModal removed** — `npm run build` passes with no missing import errors; no reference to BLUpdateModal remains in the codebase
+4. **Upload Document flow** — upload a BL via the Upload Document button, apply — shipment updates correctly (BLUpdateModal was not in this path anyway)
+5. No regression on BLReview combobox or any other combobox
 
 ---
 
