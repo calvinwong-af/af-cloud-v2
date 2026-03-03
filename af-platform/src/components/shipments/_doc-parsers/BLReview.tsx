@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -75,7 +75,6 @@ function PortCombobox({
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
 
   const selectedLabel = options.find(o => o.value === value)?.label ?? '';
   const displayText = open ? query : selectedLabel;
@@ -86,18 +85,8 @@ function PortCombobox({
       ).slice(0, 30)
     : [];
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
-        setOpen(false); setQuery('');
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
   return (
-    <div ref={wrapperRef} className="relative">
+    <div className="relative">
       <input
         type="text"
         value={displayText}
@@ -105,6 +94,7 @@ function PortCombobox({
         className={className}
         onFocus={() => { setOpen(true); setQuery(''); }}
         onChange={e => setQuery(e.target.value)}
+        onBlur={() => setTimeout(() => { setOpen(false); setQuery(''); }, 150)}
         onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); setQuery(''); } }}
       />
       {open && filtered.length > 0 && (
@@ -212,8 +202,7 @@ export function BLReview({
             <PortCombobox
               value={str(formState.pol_code)}
               onChange={code => {
-                update('pol_code', code);
-                update('pol_terminal', '');
+                setFormState({ ...formState, pol_code: code, pol_terminal: '' });
               }}
               options={seaPortOptions}
               placeholder="Search port..."
@@ -248,8 +237,7 @@ export function BLReview({
             <PortCombobox
               value={str(formState.pod_code)}
               onChange={code => {
-                update('pod_code', code);
-                update('pod_terminal', '');
+                setFormState({ ...formState, pod_code: code, pod_terminal: '' });
               }}
               options={seaPortOptions}
               placeholder="Search port..."
