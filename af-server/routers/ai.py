@@ -12,10 +12,8 @@ import os
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from sqlalchemy.engine import Connection
-
 from core.auth import Claims, require_auth
-from core.db import get_db
+from core.db import get_db_direct
 from routers.shipments._helpers import _match_port_un_code
 
 logger = logging.getLogger(__name__)
@@ -193,7 +191,8 @@ async def _call_claude_async(api_key: str, file_base64: str, prompt: str) -> str
 async def parse_document(
     req: ParseDocumentRequest,
     claims: Claims = Depends(require_auth),
-    conn: Connection = Depends(get_db),
+    # conn NOT injected as a dependency — acquired manually in Step 3 only,
+    # so DB failures cannot block document parsing (Steps 1 & 2).
 ):
     import anthropic as _anthropic
 
@@ -245,25 +244,29 @@ async def parse_document(
     # --- Step 3: Resolve port names to UN codes (non-fatal) ---
     logger.info("[parse-document] Step 3 — port resolution for doc_type=%s", doc_type)
     try:
-        if doc_type == "BL":
-            if data.get("port_of_loading") and not data.get("pol_code"):
-                matched = _match_port_un_code(conn, data["port_of_loading"])
-                if matched:
-                    data["pol_code"] = matched
-            if data.get("port_of_discharge") and not data.get("pod_code"):
-                matched = _match_port_un_code(conn, data["port_of_discharge"])
-                if matched:
-                    data["pod_code"] = matched
+        conn = get_db_direct()
+        try:
+            if doc_type == "BL":
+                if data.get("port_of_loading") and not data.get("pol_code"):
+                    matched = _match_port_un_code(conn, data["port_of_loading"])
+                    if matched:
+                        data["pol_code"] = matched
+                if data.get("port_of_discharge") and not data.get("pod_code"):
+                    matched = _match_port_un_code(conn, data["port_of_discharge"])
+                    if matched:
+                        data["pod_code"] = matched
 
-        elif doc_type == "BOOKING_CONFIRMATION":
-            if data.get("pol_name") and not data.get("pol_code"):
-                matched = _match_port_un_code(conn, data["pol_name"])
-                if matched:
-                    data["pol_code"] = matched
-            if data.get("pod_name") and not data.get("pod_code"):
-                matched = _match_port_un_code(conn, data["pod_name"])
-                if matched:
-                    data["pod_code"] = matched
+            elif doc_type == "BOOKING_CONFIRMATION":
+                if data.get("pol_name") and not data.get("pol_code"):
+                    matched = _match_port_un_code(conn, data["pol_name"])
+                    if matched:
+                        data["pol_code"] = matched
+                if data.get("pod_name") and not data.get("pod_code"):
+                    matched = _match_port_un_code(conn, data["pod_name"])
+                    if matched:
+                        data["pod_code"] = matched
+        finally:
+            conn.close()
     except Exception as e:
         logger.warning("[parse-document] Port resolution failed (non-fatal): %s", e)
 

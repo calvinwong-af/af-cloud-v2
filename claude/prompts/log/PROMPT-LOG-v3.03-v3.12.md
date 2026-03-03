@@ -59,3 +59,13 @@
 - **Files Modified:**
   - `af-platform/src/components/shipments/_doc-parsers/BLReview.tsx`
   - `af-platform/src/components/shipments/_doc-parsers/BCReview.tsx`
+
+### [2026-03-03 16:00 UTC] — v3.08: Fix Production Parse 500 + Bypass BLUpdateModal
+- **Status:** Completed
+- **Tasks:**
+  - Part A: Removed `conn = Depends(get_db)` from parse-document endpoint; replaced with manual `get_db_direct()` inside Step 3 try/except so DB failures cannot block parsing
+  - Part B: Replaced BL branch in `_doc-handler.ts` — BL data now applies directly via `updateShipmentFromBLAction` instead of opening legacy BLUpdateModal; file uploaded inline
+  - Part C: Terminal selectors already completed in v3.07 — no changes needed
+- **Files Modified:**
+  - `af-server/routers/ai.py`
+  - `af-platform/src/app/(platform)/shipments/[id]/_doc-handler.ts`
