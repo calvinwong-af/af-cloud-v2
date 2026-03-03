@@ -52,3 +52,13 @@
   - `af-server/routers/shipments/bl.py`
   - `af-platform/src/components/shipments/BLUploadTab.tsx`
   - `af-platform/src/components/shipments/CreateShipmentModal.tsx`
+
+### [2026-03-03 22:00 UTC] — v2.88: Port Edit Modal
+- **Status:** Completed
+- **Tasks:**
+  - Removed `PortEditPopover` component (inline popover that clipped off card edges)
+  - Added `PortEditModal` component modelled on `CompanyReassignModal`: fixed full-screen overlay, searchable port list, highlight selected/current rows, Cancel/Save footer, inline error handling
+  - Updated `RouteCard` to render `PortEditModal` outside the relative div for proper full-screen overlay
+  - Removed unused `Check` icon import
+- **Files Modified:**
+  - `af-platform/src/app/(platform)/shipments/[id]/_components.tsx`

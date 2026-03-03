@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   MapPin, Package, Users, AlertTriangle, Loader2,
   Container, Weight, Activity, ChevronDown, ChevronRight, Pencil, X,
-  Clock, Check,
+  Clock,
 } from 'lucide-react';
 import { fetchStatusHistoryAction, fetchCompaniesForShipmentAction, reassignShipmentCompanyAction } from '@/app/actions/shipments';
 import type { StatusHistoryEntry } from '@/app/actions/shipments';
@@ -70,7 +70,7 @@ export function EmptyState({ message }: { message: string }) {
 
 // ─── Route card ───────────────────────────────────────────────────────────────
 
-function PortEditPopover({
+function PortEditModal({
   currentCode,
   ports,
   field,
@@ -85,29 +85,20 @@ function PortEditPopover({
   onSaved: () => void;
   onClose: () => void;
 }) {
-  const [query, setQuery] = useState('');
-  const [selected, setSelected] = useState(currentCode);
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const wrapperRef = useRef<HTMLDivElement>(null);
 
-  const filtered = query.trim()
+  const filtered = search.trim()
     ? ports.filter(p =>
-        p.un_code.toLowerCase().includes(query.toLowerCase()) ||
-        p.name.toLowerCase().includes(query.toLowerCase())
-      ).slice(0, 20)
-    : [];
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [onClose]);
+        p.un_code.toLowerCase().includes(search.toLowerCase()) ||
+        p.name.toLowerCase().includes(search.toLowerCase())
+      ).slice(0, 50)
+    : ports.slice(0, 50);
 
   async function handleSave() {
-    if (!selected || selected === currentCode) { onClose(); return; }
+    if (!selected || selected === currentCode) return;
     setSaving(true);
     setError(null);
     try {
@@ -115,6 +106,7 @@ function PortEditPopover({
       if (!result) { setError('No response'); setSaving(false); return; }
       if (!result.success) { setError(result.error); setSaving(false); return; }
       onSaved();
+      onClose();
     } catch {
       setError('Failed to update port');
       setSaving(false);
@@ -122,46 +114,71 @@ function PortEditPopover({
   }
 
   return (
-    <div ref={wrapperRef} className="absolute z-50 top-full mt-1 left-0 bg-white border border-[var(--border)] rounded-lg shadow-lg p-3 w-64">
-      <input
-        autoFocus
-        type="text"
-        value={query}
-        onChange={e => setQuery(e.target.value)}
-        placeholder="Search port..."
-        className="w-full px-2.5 py-1.5 text-xs border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[var(--sky)] mb-1"
-      />
-      {filtered.length > 0 && (
-        <div className="max-h-36 overflow-y-auto mb-2 border border-[var(--border)] rounded-md">
-          {filtered.map(p => (
-            <button
-              key={p.un_code}
-              onClick={() => { setSelected(p.un_code); setQuery(p.un_code); }}
-              className={`w-full text-left px-2.5 py-1.5 text-xs hover:bg-[var(--sky-mist)] ${p.un_code === selected ? 'bg-[var(--sky-mist)] font-medium' : ''}`}
-            >
-              <span className="font-mono font-semibold">{p.un_code}</span>
-              <span className="text-[var(--text-muted)] ml-1.5">{p.name}</span>
-            </button>
-          ))}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-sm mx-4">
+        <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
+          <h3 className="text-sm font-semibold text-[var(--text)]">Edit Port</h3>
+          <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text)]">
+            <X className="w-4 h-4" />
+          </button>
         </div>
-      )}
-      {selected && selected !== currentCode && (
-        <div className="text-[10px] text-[var(--text-muted)] mb-2">
-          {currentCode} → <span className="font-semibold text-[var(--text)]">{selected}</span>
+
+        <div className="p-4">
+          <input
+            autoFocus
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search ports…"
+            className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent mb-3"
+          />
+
+          <div className="max-h-56 overflow-y-auto border border-[var(--border)] rounded-lg">
+            {filtered.length === 0 ? (
+              <div className="px-3 py-4 text-sm text-[var(--text-muted)]">No ports found</div>
+            ) : (
+              filtered.map(p => (
+                <button
+                  key={p.un_code}
+                  onClick={() => setSelected(p.un_code)}
+                  className={`w-full text-left px-3 py-2 text-sm border-b border-[var(--border)] last:border-0 transition-colors ${
+                    selected === p.un_code
+                      ? 'bg-[var(--sky-pale)] text-[var(--sky)]'
+                      : p.un_code === currentCode
+                      ? 'bg-gray-50 text-[var(--text-muted)]'
+                      : 'hover:bg-[var(--surface)] text-[var(--text)]'
+                  }`}
+                >
+                  <span className="font-mono font-semibold">{p.un_code}</span>
+                  <span className="text-[var(--text-muted)] ml-1.5">{p.name}</span>
+                </button>
+              ))
+            )}
+          </div>
+
+          {error && (
+            <div className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {error}
+            </div>
+          )}
         </div>
-      )}
-      {error && <p className="text-[10px] text-red-600 mb-1">{error}</p>}
-      <div className="flex items-center justify-end gap-1.5">
-        <button onClick={onClose} className="px-2 py-1 text-[10px] text-[var(--text-muted)] hover:text-[var(--text)] rounded">Cancel</button>
-        <button
-          onClick={handleSave}
-          disabled={saving || !selected || selected === currentCode}
-          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium text-white rounded disabled:opacity-50"
-          style={{ background: 'var(--sky)' }}
-        >
-          {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-          Save
-        </button>
+
+        <div className="flex items-center justify-end gap-2 p-4 border-t border-[var(--border)]">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={!selected || selected === currentCode || saving}
+            className="px-4 py-2 text-sm font-medium text-white bg-[var(--sky)] rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2"
+          >
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            Save
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -220,50 +237,48 @@ export function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumb
         {isAfu && onPortUpdated && (
           <>
             <div className="absolute top-0 left-0" style={{ marginTop: '18px', marginLeft: '-4px' }}>
-              <div className="relative inline-block">
-                <button
-                  onClick={() => setEditingPort(editingPort === 'origin' ? null : 'origin')}
-                  className="p-1 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--sky)] transition-colors"
-                  title="Edit origin port"
-                >
-                  <Pencil className="w-3 h-3" />
-                </button>
-                {editingPort === 'origin' && (
-                  <PortEditPopover
-                    currentCode={order.origin?.port_un_code ?? ''}
-                    ports={ports}
-                    field="origin_port_un_code"
-                    shipmentId={order.quotation_id}
-                    onSaved={() => { setEditingPort(null); onPortUpdated(); }}
-                    onClose={() => setEditingPort(null)}
-                  />
-                )}
-              </div>
+              <button
+                onClick={() => setEditingPort(editingPort === 'origin' ? null : 'origin')}
+                className="p-1 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--sky)] transition-colors"
+                title="Edit origin port"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
             </div>
             <div className="absolute top-0 right-0" style={{ marginTop: '18px', marginRight: '-4px' }}>
-              <div className="relative inline-block">
-                <button
-                  onClick={() => setEditingPort(editingPort === 'destination' ? null : 'destination')}
-                  className="p-1 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--sky)] transition-colors"
-                  title="Edit destination port"
-                >
-                  <Pencil className="w-3 h-3" />
-                </button>
-                {editingPort === 'destination' && (
-                  <PortEditPopover
-                    currentCode={order.destination?.port_un_code ?? ''}
-                    ports={ports}
-                    field="destination_port_un_code"
-                    shipmentId={order.quotation_id}
-                    onSaved={() => { setEditingPort(null); onPortUpdated(); }}
-                    onClose={() => setEditingPort(null)}
-                  />
-                )}
-              </div>
+              <button
+                onClick={() => setEditingPort(editingPort === 'destination' ? null : 'destination')}
+                className="p-1 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--sky)] transition-colors"
+                title="Edit destination port"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
             </div>
           </>
         )}
       </div>
+
+      {/* Port edit modal — rendered outside the relative div for full-screen overlay */}
+      {editingPort === 'origin' && onPortUpdated && (
+        <PortEditModal
+          currentCode={order.origin?.port_un_code ?? ''}
+          ports={ports}
+          field="origin_port_un_code"
+          shipmentId={order.quotation_id}
+          onSaved={() => { setEditingPort(null); onPortUpdated(); }}
+          onClose={() => setEditingPort(null)}
+        />
+      )}
+      {editingPort === 'destination' && onPortUpdated && (
+        <PortEditModal
+          currentCode={order.destination?.port_un_code ?? ''}
+          ports={ports}
+          field="destination_port_un_code"
+          shipmentId={order.quotation_id}
+          onSaved={() => { setEditingPort(null); onPortUpdated(); }}
+          onClose={() => setEditingPort(null)}
+        />
+      )}
     </div>
   );
 }
