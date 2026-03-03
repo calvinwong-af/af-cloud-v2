@@ -1,5 +1,13 @@
 # Prompt Completion Log — v3.03–v3.12
 
+### [2026-03-04 18:00 UTC] — v3.12: BLReview Port Combobox — Cannot Change Port (UI-15)
+- **Status:** Completed
+- **Tasks:**
+  - Change 1: Replaced `document.addEventListener('mousedown')` outside-click handler with `onBlur` + `setTimeout(150)` — allows option `onMouseDown` to fire before dropdown closes; removed `useRef`/`useEffect` imports
+  - Change 2: Batched POL and POD `onChange` handlers into single `setFormState` calls — prevents stale closure when clearing terminal alongside port code update
+- **Files Modified:**
+  - `af-platform/src/components/shipments/_doc-parsers/BLReview.tsx`
+
 ### [2026-03-04 17:00 UTC] — v3.11: BL Reparse Port Resolution (UI-15 + UI-16)
 - **Status:** Completed
 - **Tasks:**
