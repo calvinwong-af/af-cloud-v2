@@ -56,6 +56,7 @@ class ApplyBookingConfirmationRequest(BaseModel):
     cargo_description: str | None = None
     hs_code: str | None = None
     cargo_weight_kg: float | None = None
+    shipper_name: str | None = None
 
 
 @router.post("/{shipment_id}/apply-booking-confirmation")
@@ -67,7 +68,7 @@ async def apply_booking_confirmation(
 ):
     # Read current shipment
     row = conn.execute(text("""
-        SELECT id, booking, route_nodes, type_details FROM shipments WHERE id = :id
+        SELECT id, booking, route_nodes, type_details, bl_document FROM shipments WHERE id = :id
     """), {"id": shipment_id}).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Shipment not found")
@@ -134,6 +135,17 @@ async def apply_booking_confirmation(
         set_clauses.append("type_details = CAST(:type_details AS jsonb)")
         params["type_details"] = json.dumps(type_details)
 
+    # Write parsed shipper to bl_document if present (BC may have shipper/booking_party)
+    if body.shipper_name is not None:
+        bl_doc = _parse_jsonb(row[4]) or {}
+        if not isinstance(bl_doc, dict): bl_doc = {}
+        bl_doc["shipper"] = {
+            "name": body.shipper_name,
+            "address": None,
+        }
+        set_clauses.append("bl_document = CAST(:bl_document AS jsonb)")
+        params["bl_document"] = json.dumps(bl_doc)
+
     conn.execute(text(f"""
         UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
     """), params)
@@ -176,7 +188,7 @@ async def apply_awb(
     # Read current shipment
     row = conn.execute(text("""
         SELECT id, booking, parties, type_details, cargo, route_nodes,
-               incoterm_code, transaction_type
+               incoterm_code, transaction_type, bl_document
         FROM shipments WHERE id = :id
     """), {"id": shipment_id}).fetchone()
     if not row:
@@ -284,6 +296,22 @@ async def apply_awb(
         cargo["hs_code"] = body.hs_code
     set_clauses.append("cargo = CAST(:cargo AS jsonb)")
     params["cargo"] = json.dumps(cargo)
+
+    # Write parsed parties to bl_document (audit record of what the document contained)
+    bl_doc = _parse_jsonb(row[8]) or {}
+    if not isinstance(bl_doc, dict): bl_doc = {}
+    if body.shipper_name is not None or body.shipper_address is not None:
+        bl_doc["shipper"] = {
+            "name": body.shipper_name,
+            "address": body.shipper_address,
+        }
+    if body.consignee_name is not None or body.consignee_address is not None:
+        bl_doc["consignee"] = {
+            "name": body.consignee_name,
+            "address": body.consignee_address,
+        }
+    set_clauses.append("bl_document = CAST(:bl_document AS jsonb)")
+    params["bl_document"] = json.dumps(bl_doc) if bl_doc else None
 
     conn.execute(text(f"""
         UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id

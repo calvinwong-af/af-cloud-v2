@@ -407,7 +407,9 @@ export default function ShipmentFilesTab({ shipmentId, userRole, ports, refreshK
               const result = await applyAWBAction(shipmentId, data as ParsedAWBData);
               if (!result?.success) return { ok: false, error: result?.error };
             } else if (docType === 'BOOKING_CONFIRMATION') {
-              const result = await applyBookingConfirmationAction(shipmentId, data as ParsedBCData);
+              const bcData = data as ParsedBCData;
+              const bcPayload = { ...bcData, shipper_name: bcData.shipper || bcData.booking_party || null };
+              const result = await applyBookingConfirmationAction(shipmentId, bcPayload);
               if (!result?.success) return { ok: false, error: result?.error };
             } else if (docType === 'BL') {
               const blData = data as unknown as Record<string, unknown>;

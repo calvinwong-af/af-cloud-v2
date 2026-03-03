@@ -968,6 +968,7 @@ export async function applyBookingConfirmationAction(
     cargo_description?: string | null;
     hs_code?: string | null;
     cargo_weight_kg?: number | null;
+    shipper_name?: string | null;
   },
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
@@ -1005,6 +1006,53 @@ export async function applyBookingConfirmationAction(
   } catch (err) {
     console.error('[applyBookingConfirmationAction]', err instanceof Error ? err.message : err);
     return { success: false, error: 'Failed to apply booking confirmation' };
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// Clear Parsed Parties Diff (bl_document)
+// ---------------------------------------------------------------------------
+
+export async function clearParsedPartiesDiffAction(
+  shipmentId: string,
+  party: 'shipper' | 'consignee' | 'all',
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) return { success: false, error: 'No session token' };
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) return { success: false, error: 'Server URL not configured' };
+
+    const res = await fetch(
+      `${serverUrl}/api/v2/shipments/${encodeURIComponent(shipmentId)}/clear-parsed-diff`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ party }),
+        cache: 'no-store',
+      },
+    );
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const msg = json?.detail ?? `Server responded ${res.status}`;
+      return { success: false, error: msg };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error('[clearParsedPartiesDiffAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to clear parsed diff' };
   }
 }
 

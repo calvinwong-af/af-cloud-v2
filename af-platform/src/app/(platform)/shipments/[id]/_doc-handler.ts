@@ -72,7 +72,13 @@ export function createDocResultHandler(params: {
     }
 
     if (docType === 'BOOKING_CONFIRMATION') {
-      const result = await applyBookingConfirmationAction(order.quotation_id, data as ParsedBCData);
+      const bcData = data as ParsedBCData;
+      // Map shipper/booking_party to shipper_name for bl_document diff tracking
+      const bcPayload = {
+        ...bcData,
+        shipper_name: bcData.shipper || bcData.booking_party || null,
+      };
+      const result = await applyBookingConfirmationAction(order.quotation_id, bcPayload);
       if (!result || !result.success) {
         return { ok: false, error: result?.error ?? 'Apply failed' };
       }

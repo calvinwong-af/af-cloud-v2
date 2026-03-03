@@ -844,3 +844,48 @@ async def update_parties(
         "status": "OK",
         "data": {"parties": parties},
     }
+
+
+# ---------------------------------------------------------------------------
+# PATCH /shipments/{shipment_id}/clear-parsed-diff
+# ---------------------------------------------------------------------------
+
+class ClearParsedDiffRequest(BaseModel):
+    party: str  # 'shipper' | 'consignee' | 'all'
+
+
+@router.patch("/{shipment_id}/clear-parsed-diff")
+async def clear_parsed_diff(
+    shipment_id: str,
+    body: ClearParsedDiffRequest,
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    """
+    Clear parsed party data from bl_document after the user resolves
+    a party diff (either by keeping current values or applying BL values).
+    """
+    if body.party not in ("shipper", "consignee", "all"):
+        raise HTTPException(status_code=400, detail="party must be 'shipper', 'consignee', or 'all'")
+
+    row = conn.execute(text("""
+        SELECT bl_document FROM shipments WHERE id = :id
+    """), {"id": shipment_id}).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+
+    bl_doc = _parse_jsonb(row[0]) or {}
+    if not isinstance(bl_doc, dict):
+        bl_doc = {}
+
+    if body.party in ("shipper", "all"):
+        bl_doc.pop("shipper", None)
+    if body.party in ("consignee", "all"):
+        bl_doc.pop("consignee", None)
+
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(text("""
+        UPDATE shipments SET bl_document = CAST(:bl_document AS jsonb), updated_at = :now WHERE id = :id
+    """), {"bl_document": json.dumps(bl_doc) if bl_doc else None, "now": now, "id": shipment_id})
+
+    return {"status": "OK"}

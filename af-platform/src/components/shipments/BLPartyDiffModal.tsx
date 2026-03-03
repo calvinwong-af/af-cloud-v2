@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
-import { updateShipmentFromBLAction } from '@/app/actions/shipments-write';
+import { updateShipmentFromBLAction, clearParsedPartiesDiffAction } from '@/app/actions/shipments-write';
 
 interface PartyValues {
   name: string | null;
@@ -33,6 +33,18 @@ export default function BLPartyDiffModal({
   const nameDiff = (blValues?.name ?? '') !== (orderValues?.name ?? '');
   const addressDiff = (blValues?.address ?? '') !== (orderValues?.address ?? '');
 
+  async function handleKeepCurrent() {
+    setSaving(true);
+    setError(null);
+    try {
+      await clearParsedPartiesDiffAction(shipmentId, party);
+      onClose();
+    } catch {
+      setError('Failed to clear diff');
+      setSaving(false);
+    }
+  }
+
   async function handleUseBL() {
     setSaving(true);
     setError(null);
@@ -54,6 +66,8 @@ export default function BLPartyDiffModal({
         setSaving(false);
         return;
       }
+      // Clear parsed diff from bl_document so indicator disappears
+      await clearParsedPartiesDiffAction(shipmentId, party);
       onUpdated();
     } catch {
       setError('Failed to update');
@@ -122,8 +136,9 @@ export default function BLPartyDiffModal({
         {/* Actions */}
         <div className="flex items-center justify-end gap-2 p-4 border-t border-[var(--border)]">
           <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+            onClick={handleKeepCurrent}
+            disabled={saving}
+            className="px-4 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text)] transition-colors disabled:opacity-50"
           >
             Keep Current
           </button>
