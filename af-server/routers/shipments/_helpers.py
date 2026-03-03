@@ -155,7 +155,7 @@ _PORT_ALIASES: dict[str, str] = {
     "SAIGON":          "VNSGN",
     "VUNG TAU":        "VNVUT",
     "SHANGHAI":        "CNSHA",
-    "NINGBO":          "CNNBO",
+    "NINGBO":          "CNNGB",
     "SHENZHEN":        "CNSZX",
     "YANTIAN":         "CNYTN",
     "GUANGZHOU":       "CNGZU",
@@ -191,11 +191,11 @@ def _match_port_un_code(conn, port_text: str) -> str | None:
     if not port_text:
         return None
     port_text_upper = port_text.upper().strip()
-    logger.debug("[port_match] Looking for: '%s'", port_text_upper)
+    logger.info("[port_match] Looking for: '%s'", port_text_upper)
 
     # Check alias dictionary first
     if port_text_upper in _PORT_ALIASES:
-        logger.debug("[port_match] Alias hit: '%s' -> %s", port_text_upper, _PORT_ALIASES[port_text_upper])
+        logger.info("[port_match] Alias hit: '%s' -> %s", port_text_upper, _PORT_ALIASES[port_text_upper])
         return _PORT_ALIASES[port_text_upper]
 
     # Quick check: if it looks like a UN code already (5 uppercase letters)

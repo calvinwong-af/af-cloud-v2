@@ -1,7 +1,7 @@
 # DP — Document Parser
 **Series:** DP
 **Status:** 🔵 Active
-**Total:** 62 | **YES:** 50 | **PENDING:** 10 | **DEFERRED:** 0 | **NA:** 0
+**Total:** 62 | **YES:** 51 | **PENDING:** 9 | **DEFERRED:** 0 | **NA:** 0
 **Last Updated:** 03 March 2026 (Session 15)
 
 ---
@@ -66,7 +66,7 @@
 | DP-54 | apply-booking-confirmation — containers written to type_details (Containers card populated) | YES | v3.02 — Session 15 — 40'FF ×2, 20'ST ×1 confirmed via screenshot |
 | DP-55 | _is_booking_relevant() — returns True for FOB import (booking relevant path) | PENDING | v3.03 — verify via BL apply on FOB import shipment → status 3002 |
 | DP-56 | _is_booking_relevant() — returns False for FOB export (booking not relevant path) | PENDING | v3.03 — verify via BL apply on FOB export shipment → status 4001 or 3002 based on on_board_date |
-| DP-57 | apply-bl — status advances to Booking Confirmed (3002) on Path A shipment (FOB import) | PENDING | v3.03 — use shipment with incoterm=FOB, transaction_type=IMPORT |
+| DP-57 | apply-bl — status advances correctly on booking-relevant import (CNF import, past ETD → Departed) | YES | Session 17 — AF-003850 CNF IMPORT, BL apply → status Departed; vessel WAN HAI 355/W051, CNNGB→MYPKG Northport confirmed on Route card |
 | DP-58 | apply-bl — status advances based on on_board_date on Path B shipment (FOB export, past date → 4001) | PENDING | v3.03 — use shipment with incoterm=FOB, transaction_type=EXPORT, past on_board_date |
 | DP-59 | apply-bl — status advances to Booking Confirmed (3002) on Path B shipment with future on_board_date | PENDING | v3.03 — use shipment with incoterm=FOB, transaction_type=EXPORT, future on_board_date |
 | DP-60 | apply-awb — status advances to Booking Confirmed (3002) on Path A shipment (FCA import) | PENDING | v3.03 — blocked by token expiry issue in local dev; retry needed |
@@ -79,6 +79,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 2.63 | 03 Mar 2026 | Session 17 — DP-57 marked YES (CNF import BL apply → Departed confirmed); total 51 YES |
 | 2.61 | 03 Mar 2026 | Session 15 — DP-55–62 added as PENDING (v3.03 incoterm-aware status + EXW block); total updated to 62 |
 | 2.59 | 03 Mar 2026 | Session 15 — DP-53, 54 added as YES (v3.02 BC apply fixes confirmed); total updated to 54 |
 | 2.56 | 03 Mar 2026 | Session 10 — DP-36, 39, 40 marked YES (file save confirmed working after GCS fix) |

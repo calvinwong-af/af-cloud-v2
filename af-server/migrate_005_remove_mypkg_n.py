@@ -15,6 +15,9 @@ Run from af-server root with venv active:
 """
 
 import sys
+from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parent / '.env.local')
 from sqlalchemy import text
 from core.db import get_engine
 

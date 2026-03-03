@@ -85,6 +85,29 @@ async def get_current_user(
     conn=Depends(get_db),
 ):
     """Return the current authenticated user's profile."""
+    from core.auth import _LOCAL_DEV_SKIP_AUTH
+
+    # Local dev bypass — return a synthetic user record matching the hardcoded claims
+    if _LOCAL_DEV_SKIP_AUTH:
+        return {
+            "status": "OK",
+            "data": {
+                "uid": claims.uid,
+                "email": claims.email,
+                "first_name": "Dev",
+                "last_name": "User",
+                "phone_number": None,
+                "account_type": claims.account_type,
+                "role": claims.role,
+                "company_id": None,
+                "company_name": None,
+                "valid_access": True,
+                "validated": True,
+                "last_login": None,
+                "created_at": None,
+            }
+        }
+
     row = conn.execute(
         text(_USERS_SELECT + " WHERE u.uid = :uid"),
         {"uid": claims.uid},

@@ -730,8 +730,12 @@ export async function parseBLDocumentAction(
     }
 
     const json = await res.json();
-    // /parse-bl returns { parsed: {...}, doc_type, ... } — extract the parsed object
-    return { success: true, data: json.parsed ?? json };
+    // /parse-bl returns { parsed: {...}, origin_un_code, destination_un_code, ... }
+    // Inject resolved port codes into the parsed object so BLReview combobox pre-selects them
+    const parsed = json.parsed ?? json;
+    if (json.origin_un_code) parsed.pol_code = json.origin_un_code;
+    if (json.destination_un_code) parsed.pod_code = json.destination_un_code;
+    return { success: true, data: parsed };
   } catch (err) {
     console.error('[parseBLDocumentAction]', err instanceof Error ? err.message : err);
     return { success: false, error: 'Failed to parse BL document' };

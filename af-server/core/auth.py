@@ -86,10 +86,25 @@ class Claims(BaseModel):
 _bearer = HTTPBearer(auto_error=False)
 
 
+_LOCAL_DEV_SKIP_AUTH = os.environ.get("LOCAL_DEV_SKIP_AUTH", "").lower() == "true"
+
+_DEV_CLAIMS = {
+    "uid": "dev-local-uid",
+    "email": "dev@accelefreight.com",
+}
+
+
 async def _verify_token(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
 ) -> dict:
     """Verify the Firebase ID token and return the decoded payload."""
+
+    # Local dev bypass — skips Firebase verification entirely.
+    # Gated behind LOCAL_DEV_SKIP_AUTH=true in .env.local.
+    # This env var is never set in Cloud Run — safe to keep in codebase.
+    if _LOCAL_DEV_SKIP_AUTH:
+        return _DEV_CLAIMS
+
     _get_firebase_app()  # ensure initialised
 
     if not credentials or not credentials.credentials:
@@ -130,6 +145,17 @@ async def _build_claims(decoded_token: dict) -> Claims:
 
     uid = decoded_token.get("uid")
     email = decoded_token.get("email", "")
+
+    # Local dev bypass — return hardcoded AFU-ADMIN claims without DB lookup
+    if _LOCAL_DEV_SKIP_AUTH:
+        return Claims(
+            uid=uid,
+            email=email,
+            account_type=constants.AFU,
+            role=constants.AFU_ADMIN,
+            company_id=None,
+            name="Dev User",
+        )
 
     conn = get_db_direct()
     try:
