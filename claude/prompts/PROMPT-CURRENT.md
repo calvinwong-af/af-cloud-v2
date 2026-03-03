@@ -1,166 +1,257 @@
-# PROMPT-CURRENT — v3.11
-# BL Reparse Port Resolution — UI-15 + UI-16
+# PROMPT-CURRENT — v3.15
+# BCReview Port Combobox Fix (same as v3.12 BLReview fix)
 
 ## Objective
-Two related fixes to make the "Read File" reparse flow for BL documents resolve ports correctly
-and allow the user to apply the data without being blocked by missing port codes.
+Apply the same `PortCombobox` fix from `BLReview.tsx` (v3.12) to `BCReview.tsx`.
+The combobox has the same two bugs: outside-click handler fires before option selection
+registers, and the two `onChange` handlers use stale closure when clearing the terminal.
 
 ---
 
-## Background
+## Root Cause
 
-The `reparseDocumentFileAction` in `shipments-files.ts` handles "Read File" on the Files tab.
-For BL documents it calls the `/api/v2/shipments/parse-bl` endpoint, which returns:
-```json
-{ "parsed": { ...fields... }, "origin_un_code": "MYPKG", "destination_un_code": "MYBKI" }
-```
+Same as BLReview (v3.12):
 
-However, `reparseDocumentFileAction` currently returns `{ success: true, docType: 'BL', data: parseJson }`
-where `parseJson` is the raw response — it does NOT unwrap `parsed` or inject `pol_code`/`pod_code`
-into the data object.
+**Bug 1 — Outside-click closes dropdown before selection registers:**
+`PortCombobox` uses `useRef` + `document.addEventListener('mousedown')` to detect
+outside clicks. The `mousedown` on `document` fires before the option button's
+`onMouseDown`, closing the dropdown without registering the selection.
 
-This means `reparseInitialData.data` in `ShipmentFilesTab` is the raw `/parse-bl` response wrapper,
-not the flat parsed fields that `BLReview` and `DocumentParseModal` expect.
+**Bug 2 — Stale closure on terminal clear:**
+The POL and POD `onChange` handlers call `update()` twice in succession (port code +
+terminal clear). `update` closes over `formState` from the render, so the second call
+may use a stale snapshot.
 
-In `DocumentParseModal`, the `useEffect` for BL reparse attempts to unwrap:
+---
+
+## Fix — BCReview.tsx only
+
+**File:** `af-platform/src/components/shipments/_doc-parsers/BCReview.tsx`
+
+### Change 1 — Replace PortCombobox outside-click handler
+
+Replace the entire `PortCombobox` function. Remove `useRef`, `useEffect`, and
+`document.addEventListener`. Replace with `onBlur` + `setTimeout(150)`:
+
 ```tsx
-if (data.parsed && typeof data.parsed === 'object' && !Array.isArray(data.parsed)) {
-  setParsedData(data.parsed as Record<string, unknown>);
+function PortCombobox({
+  value, onChange, options, placeholder, className,
+}: {
+  value: string;
+  onChange: (code: string) => void;
+  options: { value: string; label: string }[];
+  placeholder?: string;
+  className?: string;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+
+  const selectedLabel = options.find(o => o.value === value)?.label ?? '';
+  const displayText = open ? query : selectedLabel;
+  const filtered = open
+    ? options.filter(o =>
+        o.label.toLowerCase().includes(query.toLowerCase()) ||
+        o.value.toLowerCase().includes(query.toLowerCase())
+      ).slice(0, 30)
+    : [];
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        value={displayText}
+        placeholder={placeholder ?? 'Search...'}
+        className={className}
+        onFocus={() => { setOpen(true); setQuery(''); }}
+        onChange={e => setQuery(e.target.value)}
+        onBlur={() => setTimeout(() => { setOpen(false); setQuery(''); }, 150)}
+        onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); setQuery(''); } }}
+      />
+      {open && filtered.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-[var(--border)] rounded-lg shadow-lg max-h-48 overflow-y-auto">
+          {filtered.map(o => (
+            <button
+              key={o.value}
+              type="button"
+              onMouseDown={e => { e.preventDefault(); onChange(o.value); setOpen(false); setQuery(''); }}
+              className={`w-full text-left px-3 py-2 text-xs hover:bg-[var(--sky-mist)] ${o.value === value ? 'bg-[var(--sky-mist)] font-medium' : ''}`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 ```
-This correctly unwraps the `parsed` object — but `pol_code`/`pod_code` are still missing because
-they live on the outer response (`origin_un_code`/`destination_un_code`), not inside `parsed`.
 
-Additionally, the `onResult` BL handler in `ShipmentFilesTab` builds FormData manually using
-`blData.port_of_loading` → `bl_port_of_loading` / `blData.port_of_discharge` → `bl_port_of_discharge`
-(raw string fields). These are different from `pol_code`/`pod_code` which the apply validation
-guard requires before allowing submission.
+Remove the `useRef` import (no longer needed). Keep `useState` and remove `useEffect`.
 
----
+### Change 2 — Batch POL and POD onChange into single setFormState calls
 
-## Fix 1 — Inject pol_code/pod_code in reparseDocumentFileAction (UI-16)
-
-**File:** `af-platform/src/app/actions/shipments-files.ts`
-
-In `reparseDocumentFileAction`, in the BL branch, after receiving `parseJson` from `/parse-bl`,
-apply the same injection logic that `parseBLDocumentAction` already uses:
-
-Current code:
-```typescript
-const parseJson = await parseRes.json();
-return { success: true, docType: 'BL', data: parseJson };
-```
-
-Replace with:
-```typescript
-const parseJson = await parseRes.json();
-// Inject resolved port codes into the parsed object — same pattern as parseBLDocumentAction
-const parsed = (parseJson.parsed && typeof parseJson.parsed === 'object')
-  ? { ...parseJson.parsed }
-  : { ...parseJson };
-if (parseJson.origin_un_code) parsed.pol_code = parseJson.origin_un_code;
-if (parseJson.destination_un_code) parsed.pod_code = parseJson.destination_un_code;
-// Return the flat parsed object (not the wrapper) so DocumentParseModal useEffect
-// does not need to unwrap — parsedData will have pol_code/pod_code at the top level
-return { success: true, docType: 'BL', data: parsed };
-```
-
----
-
-## Fix 2 — Send pol_code/pod_code from reparse onResult handler (UI-15)
-
-**File:** `af-platform/src/components/shipments/ShipmentFilesTab.tsx`
-
-In the `onResult` callback passed to the reparse `DocumentParseModal`, in the BL branch,
-`blData` now has `pol_code` and `pod_code` (after Fix 1). Update the FormData builder to
-send `pol_code`/`pod_code` instead of the raw port name strings:
-
-Current code (remove these two lines):
-```typescript
-if (blData.port_of_loading) formData.append('bl_port_of_loading', String(blData.port_of_loading));
-if (blData.port_of_discharge) formData.append('bl_port_of_discharge', String(blData.port_of_discharge));
-```
-
-Replace with:
-```typescript
-if (blData.pol_code) formData.append('pol_code', String(blData.pol_code));
-if (blData.pod_code) formData.append('pod_code', String(blData.pod_code));
-if (blData.pol_terminal) formData.append('origin_terminal', String(blData.pol_terminal));
-if (blData.pod_terminal) formData.append('dest_terminal', String(blData.pod_terminal));
-```
-
-Also add the v3.10 fields that are missing from the reparse handler (for consistency with the
-fresh upload `_doc-handler.ts` BL apply path). Add these alongside the existing fields:
-```typescript
-if (blData.cargo_description) formData.append('cargo_description', String(blData.cargo_description));
-if (blData.total_weight_kg)   formData.append('total_weight_kg',   String(blData.total_weight_kg));
-if (blData.lcl_container_number) formData.append('lcl_container_number', String(blData.lcl_container_number));
-if (blData.lcl_seal_number)      formData.append('lcl_seal_number',      String(blData.lcl_seal_number));
-```
-
----
-
-## Fix 3 — Remove stale useEffect unwrap in DocumentParseModal (cleanup)
-
-**File:** `af-platform/src/components/shipments/DocumentParseModal.tsx`
-
-After Fix 1, `reparseDocumentFileAction` returns a flat parsed object with `pol_code`/`pod_code`
-already injected. The `useEffect` that unwraps `data.parsed` is now redundant and should be
-simplified to avoid double-processing:
-
-Current:
+Replace the POL `onChange`:
 ```tsx
-useEffect(() => {
-  if ((initialDocType === 'BL' || initialDocType === 'BOOKING_CONFIRMATION') && initialParsedData) {
-    const data = initialParsedData;
-    if (data.parsed && typeof data.parsed === 'object' && !Array.isArray(data.parsed)) {
-      setParsedData(data.parsed as Record<string, unknown>);
-    } else {
-      setParsedData(data);
-    }
-  }
-}, [initialDocType]);
+onChange={code => {
+  const newPort = seaPorts.find(p => p.un_code === code);
+  update('pol_code', code);
+  if (!newPort?.has_terminals) update('pol_terminal', '');
+}}
 ```
-
-Replace with:
+With:
 ```tsx
-useEffect(() => {
-  if ((initialDocType === 'BL' || initialDocType === 'BOOKING_CONFIRMATION') && initialParsedData) {
-    setParsedData(initialParsedData);
-  }
-}, [initialDocType]);
+onChange={code => {
+  setFormState({ ...formState, pol_code: code, pol_terminal: '' });
+}}
 ```
 
-The unwrap logic is now handled upstream in `reparseDocumentFileAction` (Fix 1).
-`initialParsedData` will always be a flat object with all keys at the top level.
+Replace the POD `onChange`:
+```tsx
+onChange={code => {
+  const newPort = seaPorts.find(p => p.un_code === code);
+  update('pod_code', code);
+  if (!newPort?.has_terminals) update('pod_terminal', '');
+}}
+```
+With:
+```tsx
+onChange={code => {
+  setFormState({ ...formState, pod_code: code, pod_terminal: '' });
+}}
+```
+
+Note: always clear terminal on port change (same as v3.12 BLReview) — the terminal
+selector's conditional render handles visibility, no need to guard on `has_terminals`.
 
 ---
 
 ## Key Constraints
 
-- Do NOT change `parseBLDocumentAction` — it already injects `pol_code`/`pod_code` correctly
-- Do NOT change `_doc-handler.ts` — the fresh upload BL apply path is working correctly
-- Do NOT change `BLReview.tsx` — the combobox and port resolution UI is correct
-- The reparse flow (`reparseDocumentFileAction` + `ShipmentFilesTab` `onResult`) must mirror
-  the fresh upload flow (`parseBLDocumentAction` + `_doc-handler.ts`) in terms of data shape
-  and FormData fields sent to `updateShipmentFromBLAction`
-- Python venv: `.venv` (Python 3.11) — no backend changes needed for these fixes
+- Modify **only** `BCReview.tsx` — no other files
+- Do NOT change `BLReview.tsx`, `DocumentParseModal.tsx`, or any backend files
+- Keep all other BCReview logic intact — containers, cargo, dates, parties sections
+  are unchanged
+- Python venv: `.venv` (Python 3.11) — no backend changes
 
 ---
 
 ## Files to Modify
 
-1. `af-platform/src/app/actions/shipments-files.ts` — Fix 1 (inject pol_code/pod_code in reparse)
-2. `af-platform/src/components/shipments/ShipmentFilesTab.tsx` — Fix 2 (send pol_code/pod_code in FormData)
-3. `af-platform/src/components/shipments/DocumentParseModal.tsx` — Fix 3 (simplify useEffect)
+1. `af-platform/src/components/shipments/_doc-parsers/BCReview.tsx`
 
 ---
 
 ## Test Criteria
 
-After these changes, trigger "Read File" on an existing BL document:
-1. BLReview opens with POL and POD pre-selected (MYPKG, MYBKI etc.) — no amber "not matched" warning
-2. User can click "Use This Data" without being blocked by port validation error
-3. Port codes are sent to the backend correctly (verify in network tab or server logs)
-4. Terminal selector appears for MYPKG if that port has terminals
-5. Reparse apply updates the shipment route card with correct ports
+After this change:
+1. Upload a Booking Confirmation via DocumentParseModal
+2. In BCReview, click the POL combobox — dropdown opens
+3. Type to filter — list narrows correctly
+4. Click a port option — port updates, dropdown closes
+5. Click POL again and select MYPKG — terminal selector appears below POL
+6. Change POL to a non-terminal port — terminal selector disappears and terminal is cleared
+7. Repeat steps 2–6 for POD
+8. No regression on BLReview port combobox behaviour
+
+---
+
+# ARCHIVED — v3.13
+# Fix GCS Signed URL on Cloud Run (files.py)
+
+## Problem
+
+The `/api/v2/shipments/{shipment_id}/files/{file_id}/download` endpoint fails in
+production (Cloud Run) with a 500 error. The frontend displays "Failed to get file URL"
+because no `detail` is returned.
+
+Root cause: `blob.generate_signed_url()` requires a service account private key. On
+Cloud Run the default credential is a Compute Engine metadata token — no private key
+is available locally — so the call throws an exception at runtime.
+
+This breaks:
+- File download (clicking filename or download button)
+- "Read file again" (reparse) for BL, AWB, BC documents
+
+---
+
+## Fix — files.py only
+
+**File:** `af-server/routers/shipments/files.py`
+
+Replace the signed URL generation block in `download_shipment_file` with the
+IAM-based signing approach, which works on Cloud Run without a private key.
+
+### Current code (to replace)
+
+```python
+from google.cloud import storage as gcs_storage
+from datetime import timedelta
+gcs_client = gcs_storage.Client(project="cloud-accele-freight")
+bucket = gcs_client.bucket(FILES_BUCKET_NAME)
+blob = bucket.blob(file_location)
+
+signed_url = blob.generate_signed_url(
+    version="v4",
+    expiration=timedelta(minutes=15),
+    method="GET",
+)
+
+return {"download_url": signed_url}
+```
+
+### Replacement code
+
+```python
+import google.auth
+import google.auth.transport.requests
+from google.cloud import storage as gcs_storage
+from datetime import timedelta
+
+# Obtain application default credentials (works on Cloud Run via metadata server)
+credentials, project = google.auth.default(
+    scopes=["https://www.googleapis.com/auth/cloud-platform"]
+)
+auth_request = google.auth.transport.requests.Request()
+credentials.refresh(auth_request)
+
+gcs_client = gcs_storage.Client(project="cloud-accele-freight", credentials=credentials)
+bucket = gcs_client.bucket(FILES_BUCKET_NAME)
+blob = bucket.blob(file_location)
+
+signed_url = blob.generate_signed_url(
+    version="v4",
+    expiration=timedelta(minutes=15),
+    method="GET",
+    service_account_email=credentials.service_account_email,
+    access_token=credentials.token,
+)
+
+return {"download_url": signed_url}
+```
+
+---
+
+## Key Constraints
+
+- Modify **only** `download_shipment_file` in `files.py` — no other functions
+- Do NOT change `_helpers.py`, `__init__.py`, or any other file
+- The `google-auth` and `google-cloud-storage` packages are already installed — no
+  new dependencies needed
+- Keep all existing auth checks, NotFoundError guards, and visibility logic intact
+- Python venv: `.venv` (Python 3.11)
+
+---
+
+## Files to Modify
+
+1. `af-server/routers/shipments/files.py` — `download_shipment_file` function only
+
+---
+
+## Test Criteria
+
+After this change:
+1. Local dev: clicking a file name or download button opens the file in a new tab
+2. Production (Cloud Run): same — no "Failed to get file URL" error
+3. "Read file again" (reparse) on a BL/AWB/BC file opens DocumentParseModal successfully
+4. No regression on file upload, tag edit, visibility toggle, or delete

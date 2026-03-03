@@ -1,6 +1,6 @@
 # AF Platform — Test Master
-**Version:** 2.57
-**Last Updated:** 03 March 2026
+**Version:** 2.58
+**Last Updated:** 04 March 2026
 
 > Individual series detail lives in `claude/tests/series/`. Retired series (MI, V2C, OF, SR, IN, SU) are in `AF-Test-Archive.md`.
 
@@ -10,7 +10,7 @@
 
 | Series | Description | Total | YES | PENDING | DEFERRED | NA | Status | File |
 |---|---|---|---|---|---|---|---|---|
-| DP | Document Parser | 77 | 66 | 7 | 0 | 1 | 🔵 Active | series/DP-document-parse.md |
+| DP | Document Parser | 82 | 78 | 1 | 0 | 1 | 🔵 Active | series/DP-document-parse.md |
 | FILE | File Upload & Management | 6 | 6 | 0 | 0 | 0 | ✅ Complete | series/FILE-file-upload.md |
 | DT | DateTime Inputs | 16 | 1 | 15 | 0 | 0 | 🔵 Active | series/DT-datetime.md |
 | VD | Vessel Display | 7 | 5 | 2 | 0 | 0 | 🔵 Active | series/VD-vessel-display.md |
@@ -35,7 +35,7 @@
 | MC | Manual Shipment Create | 6 | 6 | 0 | 0 | 0 | ✅ Complete | series/MC-manual-create.md |
 | SD | Shipment Delete | 3 | 3 | 0 | 0 | 0 | ✅ Complete | series/SD-shipment-delete.md |
 | LO | Loading State UI | 5 | 5 | 0 | 0 | 0 | ✅ Complete | series/LO-loading-state.md |
-| **TOTAL** | | **281** | **245** | **27** | **12** | **3** | | |
+| **TOTAL** | | **286** | **257** | **21** | **12** | **3** | | |
 
 ---
 
@@ -64,6 +64,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 2.58 | 04 Mar 2026 | Session 18 — DP updated: 82 total, 78 YES, 1 PENDING; overall 257/286 passing |
 | 2.66 | 03 Mar 2026 | Session 17 — DP-55, DP-60 YES (inferred); total 235 passing |
 | 2.65 | 03 Mar 2026 | Session 17 — DP-59 YES (inferred); total 233 passing |
 | 2.64 | 03 Mar 2026 | Session 17 — DP-56, DP-58 YES; total 232 passing |

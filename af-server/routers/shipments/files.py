@@ -254,16 +254,41 @@ async def download_shipment_file(
     if not file_location:
         raise HTTPException(status_code=500, detail="File location not set")
 
+    import os
+    import google.auth
+    import google.auth.transport.requests
     from google.cloud import storage as gcs_storage
     from datetime import timedelta
-    gcs_client = gcs_storage.Client(project="cloud-accele-freight")
-    bucket = gcs_client.bucket(FILES_BUCKET_NAME)
-    blob = bucket.blob(file_location)
 
-    signed_url = blob.generate_signed_url(
-        version="v4",
-        expiration=timedelta(minutes=15),
-        method="GET",
-    )
+    key_file = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if key_file and os.path.isfile(key_file):
+        # Local dev: sign directly with the service account key (no IAM API needed)
+        from google.oauth2 import service_account as sa
+        sa_creds = sa.Credentials.from_service_account_file(key_file)
+        gcs_client = gcs_storage.Client(project="cloud-accele-freight", credentials=sa_creds)
+        bucket = gcs_client.bucket(FILES_BUCKET_NAME)
+        blob = bucket.blob(file_location)
+        signed_url = blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(minutes=15),
+            method="GET",
+        )
+    else:
+        # Cloud Run: use metadata-server credentials + IAM signBytes
+        credentials, project = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        auth_request = google.auth.transport.requests.Request()
+        credentials.refresh(auth_request)
+        gcs_client = gcs_storage.Client(project="cloud-accele-freight", credentials=credentials)
+        bucket = gcs_client.bucket(FILES_BUCKET_NAME)
+        blob = bucket.blob(file_location)
+        signed_url = blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(minutes=15),
+            method="GET",
+            service_account_email=credentials.service_account_email,
+            access_token=credentials.token,
+        )
 
     return {"download_url": signed_url}

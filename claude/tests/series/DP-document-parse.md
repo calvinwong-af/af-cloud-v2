@@ -1,7 +1,7 @@
 # DP — Document Parser
 **Series:** DP
 **Status:** 🔵 Active
-**Total:** 77 | **YES:** 66 | **PENDING:** 7 | **DEFERRED:** 0 | **NA:** 1 | **FAIL:** 2
+**Total:** 82 | **YES:** 78 | **PENDING:** 1 | **DEFERRED:** 0 | **NA:** 1 | **FAIL:** 1
 **Last Updated:** 03 March 2026 (Session 15)
 
 ---
@@ -78,15 +78,20 @@
 | DP-66 | Files tab reparse still opens BLUpdateModal (legacy flow unaffected) | YES | Session 17 — confirmed — Read File on Files tab opens old BLUpdateModal as expected |
 | DP-67 | Terminal selector appears for MYPKG in BLReview | YES | Session 17 — confirmed terminal selector present for MYPKG |
 | DP-68 | Terminal selector appears for MYPKG in BCReview | YES | Session 17 — confirmed terminal selector present for MYPKG |
-| DP-69 | Changing port to one without terminals clears terminal field | FAIL | Session 17 — BUG: switching away from a terminal port fails to clear terminal state — tracked as UI-13 |
+| DP-69 | Changing port to one without terminals clears terminal field | YES | Session 18 — v3.12 — batched setFormState fix; terminal clears correctly on port change |
 | DP-70 | Production parse endpoint — no 500 on Cloud Run after v3.08 fix | YES | Session 17 — confirmed working after ANTHROPIC_API_KEY added to af-server env vars |
-| DP-71 | apply-bl (LCL) — Packages card shows normalised line items (qty, weight, volume) after apply | PENDING | v3.10 — cargo_items normalised into type_details.packages |
-| DP-72 | apply-bl — cargo description updates on detail page after apply | PENDING | v3.10 — cargo_description written to cargo JSONB |
-| DP-73 | apply-bl — cargo weight updates after apply | PENDING | v3.10 — total_weight_kg written to cargo JSONB |
-| DP-74 | apply-bl (LCL) — Container Reference section shown in BLReview when lcl_container_number parsed | PENDING | v3.10 — new BLReview section for LCL container/seal |
-| DP-75 | apply-bl (LCL) — container + seal written as flat fields in type_details after apply | PENDING | v3.10 — type_details.container_number + seal_number for LCL |
-| DP-76 | apply-bl — terminal written to shipment when terminal port selected in BLReview | PENDING | v3.10 — origin_terminal/dest_terminal now accepted by backend |
+| DP-71 | apply-bl (LCL) — Packages card shows normalised line items (qty, weight, volume) after apply | YES | Session 18 — v3.10 — EPOGARDE SF, 1 PALLET, 197.00 kg, 0.7300 M3 confirmed via screenshot |
+| DP-72 | apply-bl — cargo description updates on detail page after apply | YES | Session 18 — v3.10 — confirmed via screenshot |
+| DP-73 | apply-bl — cargo weight updates after apply | YES | Session 18 — v3.10 — 197.00 kg confirmed via screenshot |
+| DP-74 | apply-bl (LCL) — Container Reference section shown in BLReview when lcl_container_number parsed | YES | Session 18 — v3.10 — Container Reference section visible with PCIU9526378 + MSC017994 |
+| DP-75 | apply-bl (LCL) — container + seal written as flat fields in type_details after apply | YES | Session 18 — v3.10 — PCIU9526378 / MSC017994 confirmed via screenshot |
+| DP-76 | apply-bl — terminal written to shipment when terminal port selected in BLReview | YES | Session 18 — v3.10 — terminal write-through confirmed working |
 | DP-77 | BLUpdateModal (legacy Read File flow) — port fields resolve correctly | FAIL | Session 17 — BUG: port fields blank in legacy dialog — tracked as UI-14 (low priority, dialog will be removed) |
+| DP-78 | Read File (BL reparse) — POL and POD pre-selected in BLReview (no amber "not matched") | YES | Session 18 — v3.11 — MYPKG + MYBKI pre-selected correctly on reparse |
+| DP-79 | Read File (BL reparse) — "Use This Data" not blocked by port validation error | YES | Session 18 — v3.11 — apply proceeds without port validation block |
+| DP-80 | Read File (BL reparse) — route card updates with correct ports after apply | YES | Session 18 — v3.11 — confirmed working |
+| DP-81 | Read File (BL reparse) — terminal selector appears for MYPKG in BLReview | YES | Session 18 — v3.11 — confirmed working |
+| DP-82 | BLReview port combobox — user can search and select a different port for POL and POD | YES | Session 18 — v3.12 — onBlur+setTimeout fix; both comboboxes fully interactive |
 
 ---
 
@@ -94,6 +99,9 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 2.75 | 04 Mar 2026 | Session 18 — DP-71–76, DP-80, DP-81 marked YES (v3.10/v3.11 confirmed); 78 YES, 1 PENDING |
+| 2.74 | 04 Mar 2026 | Session 18 — DP-82 added YES (v3.12 combobox fix); DP-69 YES (terminal clear confirmed); total updated to 82 |
+| 2.73 | 04 Mar 2026 | Session 18 — DP-78–81 added; DP-78, DP-79 YES (v3.11 reparse port resolution confirmed); total updated to 81 |
 | 2.72 | 04 Mar 2026 | Session 17 — DP-71–76 added as PENDING (v3.10 BL apply completeness); total updated to 76 |
 | 2.71 | 04 Mar 2026 | Session 17 — DP-66, 67, 68 YES; DP-69 FAIL (UI-13); total 66 YES |
 | 2.70 | 03 Mar 2026 | Session 17 — DP-63, 64, 65, 70 YES; total 62 YES |
