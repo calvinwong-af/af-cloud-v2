@@ -96,7 +96,21 @@
   - `af-platform/src/app/(platform)/shipments/[id]/_doc-handler.ts`
   - `af-server/routers/shipments/doc_apply.py`
 
-### [2026-03-04 TBC] — v2.91: Async Claude API Fix
+### [2026-03-04] — v2.92: Files Tab Fixes + Cleanup
+- **Status:** Completed
+- **Commit:** 03194a3
+- **Tasks:**
+  - `_helpers.py`: Added `user` field mapping in `_file_row_to_dict` — uploader email now shows instead of "Unknown"
+  - `ShipmentFilesTab.tsx`: "Read file again" button now appears on AWB and BC files (via `PARSED_DOC_TAGS` set)
+  - `_doc-handler.ts`: Removed `console.info` diagnostic logs, kept `console.error`
+  - `doc_apply.py`: Updated module docstring to reflect current file saving contract (frontend calls `/files` not `/save-document-file`)
+- **Files Modified:**
+  - `af-server/routers/shipments/_helpers.py`
+  - `af-platform/src/components/shipments/ShipmentFilesTab.tsx`
+  - `af-platform/src/app/(platform)/shipments/[id]/_doc-handler.ts`
+  - `af-server/routers/shipments/doc_apply.py`
+
+### [2026-03-04] — v2.91: Async Claude API Fix
 - **Status:** Completed
 - **Tasks:**
   - Replaced sync `_call_claude` with async `_call_claude_async` using `anthropic.AsyncAnthropic` + `await` — uvicorn event loop no longer blocked during Claude API calls

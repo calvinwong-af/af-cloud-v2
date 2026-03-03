@@ -1,7 +1,7 @@
 # AcceleFreight — AF Server V2 API Contract
 **Base URL:** `https://af-server-667020632236.asia-northeast1.run.app/api/v2` (prod) · `http://localhost:8000/api/v2` (local)  
 **Auth:** Firebase ID token — `Authorization: Bearer <token>` on all protected routes  
-**Version:** Contract v1.2 — 03 March 2026  
+**Version:** Contract v1.3 — 03 March 2026  
 **Status:** Living document — update when endpoints change
 
 ---
@@ -415,8 +415,21 @@ Updates the status and appends to status history in both `shipments` and `shipme
 | `5001` | Completed |
 | `-1` | Cancelled |
 
-**Path A** (booking required — e.g. FOB EXPORT): `1002 → 2001 → 3001 → 3002 → 4001 → 4002 → 5001`  
-**Path B** (no booking — e.g. CNF IMPORT): `1002 → 2001 → 4001 → 4002 → 5001`
+**Path A** (booking relevant — AcceleFreight controls freight): `1002 → 2001 → 3001 → 3002 → 4001 → 4002 → 5001`  
+**Path B** (booking not relevant — freight arranged by other party): `1002 → 2001 → 4001 → 4002 → 5001`
+
+**Booking relevance is determined by incoterm + transaction_type:**
+
+| Classification | Incoterm + Type |
+|---|---|
+| Path A (relevant) | EXW import, FOB import, FCA import, CFR/CNF/CIF export, DDP export, DAP export, CPT export |
+| Path B (not relevant) | FOB export, FCA export, CNF/CFR/CIF import, DDP import, DAP import, CPT import |
+| Blocked combination | EXW export — hard blocked in UI, not a valid combination |
+
+**Auto-advance on document apply:**
+- BC apply → always advances to Booking Confirmed (3002)
+- BL/AWB apply on Path A → advances to Booking Confirmed (3002)
+- BL/AWB apply on Path B (import, freight not ours) → advances to Departed (4001) if on_board_date ≤ today, else Booking Confirmed (3002)
 
 **Response:**
 ```json
@@ -696,7 +709,7 @@ Update shipper/consignee/notify_party directly (without a BL upload). Empty stri
 
 #### `POST /shipments/{shipment_id}/apply-booking-confirmation`
 Auth: `require_afu`  
-Apply booking confirmation data to an existing shipment. Updates `booking` JSONB, flat `etd`/`eta` columns, and route node timings if nodes exist.
+Apply booking confirmation data to an existing shipment. Updates `booking` JSONB, flat `etd`/`eta` columns, route node timings if nodes exist, `type_details.containers`, and auto-advances status to Booking Confirmed (3002).
 
 **Request body:**
 ```json
@@ -709,14 +722,16 @@ Apply booking confirmation data to an existing shipment. Updates `booking` JSONB
   "pod_code": "MYPKG",
   "etd": "2026-03-10",
   "eta_pod": "2026-03-25",
-  "containers": null,
+  "containers": [{"size": "40HC", "quantity": 2}],
   "cargo_description": null,
   "hs_code": null,
   "cargo_weight_kg": null
 }
 ```
 
-**Response:** `{ "shipment_id": "AF-003873", "status": "OK" }`
+**Response:** `{ "shipment_id": "AF-003873", "status": "OK", "new_status": 3002 }`
+
+⚠️ Always advances status to 3002 (Booking Confirmed) regardless of incoterm.
 
 ---
 

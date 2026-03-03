@@ -12,10 +12,12 @@ import {
   updateShipmentFileAction,
   deleteShipmentFileAction,
   getFileDownloadUrlAction,
-  reparseBlFileAction,
+  reparseDocumentFileAction,
 } from '@/app/actions/shipments-files';
-import type { ShipmentFile, FileTag } from '@/app/actions/shipments-files';
-import BLUpdateModal, { type ParsedBL } from '@/components/shipments/BLUpdateModal';
+import type { ShipmentFile, FileTag, ParsedAWBData, ParsedBCData } from '@/app/actions/shipments-files';
+import { applyAWBAction, applyBookingConfirmationAction, updateShipmentFromBLAction } from '@/app/actions/shipments-write';
+import { refreshSessionCookie } from '@/lib/auth';
+import DocumentParseModal from '@/components/shipments/DocumentParseModal';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -88,6 +90,13 @@ function tagStyle(tag: string): string {
   return TAG_COLORS[tag.toLowerCase()] ?? 'bg-gray-100 text-gray-600';
 }
 
+function docTypeFromTags(tags: string[]): 'BL' | 'AWB' | 'BOOKING_CONFIRMATION' | null {
+  if (tags.includes('bl')) return 'BL';
+  if (tags.includes('awb')) return 'AWB';
+  if (tags.includes('bc')) return 'BOOKING_CONFIRMATION';
+  return null;
+}
+
 const isAFU = (role: string) => role === 'AFU' || role.startsWith('AFU');
 const canUpload = (role: string) => isAFU(role) || role === 'AFC_ADMIN' || role === 'AFC_MANAGER' || role === 'AFC-ADMIN' || role === 'AFC-M';
 const canEditTags = (role: string) => canUpload(role);
@@ -105,8 +114,11 @@ export default function ShipmentFilesTab({ shipmentId, userRole, ports, refreshK
   const [editingFileId, setEditingFileId] = useState<number | null>(null);
   const [reparsingFileId, setReparsingFileId] = useState<number | null>(null);
   const [reparseError, setReparseError] = useState<string | null>(null);
-  const [blParsedData, setBlParsedData] = useState<ParsedBL | null>(null);
-  const [showBLModal, setShowBLModal] = useState(false);
+  const [showReparseModal, setShowReparseModal] = useState(false);
+  const [reparseInitialData, setReparseInitialData] = useState<{
+    docType: 'BL' | 'AWB' | 'BOOKING_CONFIRMATION';
+    data: Record<string, unknown>;
+  } | null>(null);
 
   const loadFiles = useCallback(async () => {
     const result = await getShipmentFilesAction(shipmentId);
@@ -175,28 +187,36 @@ export default function ShipmentFilesTab({ shipmentId, userRole, ports, refreshK
     }
   }, [shipmentId]);
 
-  const handleReparse = useCallback(async (fileId: number) => {
-    setReparsingFileId(fileId);
+  const handleReparse = useCallback(async (file: ShipmentFile) => {
+    const docType = docTypeFromTags(file.file_tags ?? []);
+    if (!docType) return;
+
+    setReparsingFileId(file.file_id);
     setReparseError(null);
+
+    // Force-refresh the session cookie before the long parse call
+    await refreshSessionCookie();
+
     try {
-      const result = await reparseBlFileAction(shipmentId, fileId);
-      if (!result) {
-        setReparseError('No response from server');
-        setReparsingFileId(null);
-        return;
-      }
+      const result = await reparseDocumentFileAction(shipmentId, file.file_id, docType);
+
       if (!result.success) {
         setReparseError(result.error);
         setReparsingFileId(null);
         return;
       }
 
-      const data = result.data as { parsed: ParsedBL };
-      setBlParsedData(data.parsed);
-      setShowBLModal(true);
+      if (result.docType === 'BL') {
+        setReparseInitialData({ docType: 'BL', data: result.data as Record<string, unknown> });
+        setShowReparseModal(true);
+      } else if (result.docType === 'AWB' || result.docType === 'BOOKING_CONFIRMATION') {
+        setReparseInitialData({ docType: result.docType, data: result.data as Record<string, unknown> });
+        setShowReparseModal(true);
+      }
+
       setReparsingFileId(null);
     } catch {
-      setReparseError('Failed to re-parse BL');
+      setReparseError('Failed to re-parse document');
       setReparsingFileId(null);
     }
   }, [shipmentId]);
@@ -262,7 +282,7 @@ export default function ShipmentFilesTab({ shipmentId, userRole, ports, refreshK
                   {file.file_name}
                 </button>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-xs text-[var(--text-muted)]">{formatFileSize(file.file_size)}</span>
+                  <span className="text-xs text-[var(--text-muted)]">{formatFileSize(file.file_size_kb)}</span>
                   <span className="text-[var(--border)]">·</span>
                   <span className="text-xs text-[var(--text-muted)]">{file.user}</span>
                   <span className="text-[var(--border)]">·</span>
@@ -288,7 +308,7 @@ export default function ShipmentFilesTab({ shipmentId, userRole, ports, refreshK
               <div className="flex items-center gap-1 flex-shrink-0">
                 {isAFU(userRole) && (file.file_tags ?? []).some(t => PARSED_DOC_TAGS.has(t)) && (
                   <button
-                    onClick={() => handleReparse(file.file_id)}
+                    onClick={() => handleReparse(file)}
                     disabled={reparsingFileId !== null}
                     className="flex items-center gap-1 px-1.5 py-1 rounded text-xs text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors disabled:opacity-50"
                     title="Read file again"
@@ -369,22 +389,55 @@ export default function ShipmentFilesTab({ shipmentId, userRole, ports, refreshK
         />
       )}
 
-      {/* BL re-parse modal */}
-      {showBLModal && blParsedData && (
-        <BLUpdateModal
+      {/* Document re-parse modal — all doc types through DocumentParseModal */}
+      {showReparseModal && reparseInitialData && (
+        <DocumentParseModal
           shipmentId={shipmentId}
+          companyId="ALREADY_SET"
+          currentParties={undefined}
           ports={ports}
+          initialDocType={reparseInitialData.docType}
+          initialParsedData={reparseInitialData.data}
           onClose={() => {
-            setShowBLModal(false);
-            setBlParsedData(null);
+            setShowReparseModal(false);
+            setReparseInitialData(null);
           }}
-          onSuccess={() => {
-            setShowBLModal(false);
-            setBlParsedData(null);
+          onResult={async (docType, data) => {
+            if (docType === 'AWB') {
+              const result = await applyAWBAction(shipmentId, data as ParsedAWBData);
+              if (!result?.success) return { ok: false, error: result?.error };
+            } else if (docType === 'BOOKING_CONFIRMATION') {
+              const result = await applyBookingConfirmationAction(shipmentId, data as ParsedBCData);
+              if (!result?.success) return { ok: false, error: result?.error };
+            } else if (docType === 'BL') {
+              const blData = data as Record<string, unknown>;
+              const formData = new FormData();
+              if (blData.waybill_number) formData.append('waybill_number', String(blData.waybill_number));
+              if (blData.carrier_agent ?? blData.carrier) formData.append('carrier_agent', String(blData.carrier_agent ?? blData.carrier));
+              if (blData.vessel_name) formData.append('vessel_name', String(blData.vessel_name));
+              if (blData.voyage_number) formData.append('voyage_number', String(blData.voyage_number));
+              if (blData.on_board_date) formData.append('etd', String(blData.on_board_date));
+              if (blData.shipper_name) formData.append('shipper_name', String(blData.shipper_name));
+              if (blData.shipper_address) formData.append('shipper_address', String(blData.shipper_address));
+              if (blData.consignee_name) formData.append('consignee_name', String(blData.consignee_name));
+              if (blData.consignee_address) formData.append('consignee_address', String(blData.consignee_address));
+              if (blData.notify_party_name) formData.append('notify_party_name', String(blData.notify_party_name));
+              if (blData.port_of_loading) formData.append('bl_port_of_loading', String(blData.port_of_loading));
+              if (blData.port_of_discharge) formData.append('bl_port_of_discharge', String(blData.port_of_discharge));
+              if (Array.isArray(blData.containers) && blData.containers.length > 0) {
+                formData.append('containers', JSON.stringify(blData.containers));
+              }
+              if (Array.isArray(blData.cargo_items) && blData.cargo_items.length > 0) {
+                formData.append('cargo_items', JSON.stringify(blData.cargo_items));
+              }
+              const result = await updateShipmentFromBLAction(shipmentId, formData);
+              if (!result?.success) return { ok: false, error: result?.error };
+            }
+            setShowReparseModal(false);
+            setReparseInitialData(null);
             onBLUpdated?.();
+            return { ok: true };
           }}
-          initialParsed={blParsedData}
-          skipFileSave
         />
       )}
     </div>

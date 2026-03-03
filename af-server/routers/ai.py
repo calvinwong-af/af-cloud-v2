@@ -162,7 +162,7 @@ async def _call_claude_async(api_key: str, file_base64: str, prompt: str) -> str
     response = await client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=4096,
-        timeout=30.0,
+        timeout=60.0,
         messages=[{
             "role": "user",
             "content": [

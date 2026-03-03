@@ -16,6 +16,7 @@ export function createDocResultHandler(params: {
   setDocParseBLData: (v: ParsedBL | null) => void;
   setShowBLModal: (v: boolean) => void;
   setFilesRefreshKey: (fn: (k: number) => number) => void;
+  setPendingBLFile: (f: File | null) => void;
 }): (docType: DocType, data: ParsedBCData | ParsedAWBData | ParsedBL, file: File | null) => Promise<{ ok: boolean; error?: string } | void> {
   const {
     order,
@@ -26,11 +27,13 @@ export function createDocResultHandler(params: {
     setDocParseBLData,
     setShowBLModal,
     setFilesRefreshKey,
+    setPendingBLFile,
   } = params;
 
   return async (docType: DocType, data, uploadedFile) => {
     if (docType === 'BL') {
       // BL: close this modal and open BLUpdateModal — no loading state needed
+      setPendingBLFile(uploadedFile);
       setShowDocParseModal(false);
       setDocParseBLData(data as ParsedBL);
       setShowBLModal(true);

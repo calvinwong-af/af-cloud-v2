@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { fetchShipmentOrderDetailAction, fetchPortsAction } from '@/app/actions/shipments';
 import { patchShipmentCargoAction } from '@/app/actions/shipments-write';
+import { uploadShipmentFileAction } from '@/app/actions/shipments-files';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
 import { formatDate } from '@/lib/utils';
 import type { ShipmentOrder } from '@/lib/types';
@@ -58,6 +59,7 @@ export default function ShipmentOrderDetailPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'files'>('overview');
   const [fileCount, setFileCount] = useState<number | null>(null);
   const [filesRefreshKey, setFilesRefreshKey] = useState(0);
+  const [pendingBLFile, setPendingBLFile] = useState<File | null>(null);
   const [isDgEditing, setIsDgEditing] = useState(false);
   const [isDgValue, setIsDgValue] = useState(false);
   const [dgDescription, setDgDescription] = useState('');
@@ -552,6 +554,7 @@ export default function ShipmentOrderDetailPage() {
             setDocParseBLData,
             setShowBLModal,
             setFilesRefreshKey,
+            setPendingBLFile,
           })}
         />
       )}
@@ -561,12 +564,24 @@ export default function ShipmentOrderDetailPage() {
         <BLUpdateModal
           shipmentId={order.quotation_id}
           ports={ports}
-          onClose={() => { setShowBLModal(false); setDocParseBLData(null); }}
-          onSuccess={() => {
+          onClose={() => { setShowBLModal(false); setDocParseBLData(null); setPendingBLFile(null); }}
+          onSuccess={async () => {
             setShowBLModal(false);
             setDocParseBLData(null);
-            loadOrder();
-            loadRouteTimings();
+            await Promise.all([loadOrder(), loadRouteTimings()]);
+            // Save BL file to Files tab if we have it
+            if (pendingBLFile) {
+              const fd = new FormData();
+              fd.append('file', pendingBLFile, pendingBLFile.name);
+              fd.append('file_tags', JSON.stringify(['bl']));
+              const saveResult = await uploadShipmentFileAction(order.quotation_id, fd);
+              if (!saveResult || !saveResult.success) {
+                console.error('[BLUpload] BL file save failed:', saveResult);
+              } else {
+                setFilesRefreshKey(k => k + 1);
+              }
+              setPendingBLFile(null);
+            }
           }}
           initialParsed={docParseBLData}
         />

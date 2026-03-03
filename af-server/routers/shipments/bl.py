@@ -30,6 +30,7 @@ from ._helpers import (
     _match_port_un_code,
     _match_company,
     _determine_initial_status,
+    _is_booking_relevant,
     _resolve_gcs_path,
     _save_file_to_gcs,
     _create_file_record,
@@ -207,7 +208,7 @@ async def parse_bl(
     elif doc_type == "AWB":
         parsed_for_response = parsed  # Keep AWB fields as-is
         order_type = "AIR"
-        initial_status = STATUS_BOOKING_CONFIRMED
+        initial_status = _determine_initial_status(parsed.get("flight_date"))
         origin_iata = (parsed.get("origin_iata") or "").strip().upper()
         dest_iata = (parsed.get("dest_iata") or "").strip().upper()
         origin_un_code = origin_iata or None
@@ -523,7 +524,8 @@ async def update_from_bl(
 
     # Load shipment
     row = conn.execute(text("""
-        SELECT id, company_id, booking, parties, bl_document, type_details, trash
+        SELECT id, company_id, booking, parties, bl_document, type_details, trash,
+               incoterm_code, transaction_type
         FROM shipments WHERE id = :id
     """), {"id": shipment_id}).fetchone()
 
@@ -693,6 +695,19 @@ async def update_from_bl(
         logger.error("[bl_update] Failed to write shipment %s: %s", shipment_id, str(e))
         raise HTTPException(status_code=500, detail=f"Failed to save shipment: {str(e)}")
 
+    # Auto-advance status based on incoterm classification
+    incoterm_code = row[7]   # incoterm_code
+    txn_type = row[8]        # transaction_type
+    if _is_booking_relevant(incoterm_code, txn_type):
+        new_status = STATUS_BOOKING_CONFIRMED  # 3002
+    else:
+        new_status = _determine_initial_status(etd)  # 4001 if past, 3002 if future/None
+
+    conn.execute(text("""
+        UPDATE shipments SET status = :status WHERE id = :id
+    """), {"status": new_status, "id": shipment_id})
+    logger.info("[bl_update] Status auto-advanced to %s for %s", new_status, shipment_id)
+
     # Log to system_logs
     _log_system_action_pg(conn, "BL_UPDATED", shipment_id, claims.uid, claims.email)
 
@@ -732,6 +747,7 @@ async def update_from_bl(
             "etd": flat_updates.get("etd"),
             "origin_port": flat_updates.get("origin_port"),
             "dest_port": flat_updates.get("dest_port"),
+            "new_status": new_status,
         },
         "msg": "Shipment updated from BL",
     }

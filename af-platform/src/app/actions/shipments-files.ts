@@ -13,7 +13,7 @@ export interface ShipmentFile {
   file_name: string;
   file_location: string;
   file_tags: string[];
-  file_size: number; // KB
+  file_size_kb: number; // KB
   visibility: boolean;
   notification_sent: boolean;
   user: string;
@@ -352,6 +352,123 @@ export async function reparseBlFileAction(
 }
 
 // ---------------------------------------------------------------------------
+// Re-parse document file — doc-type-aware (BL, AWB, BC)
+// ---------------------------------------------------------------------------
+
+export type ReparseResult =
+  | { success: true; docType: 'BL'; data: Record<string, unknown> }
+  | { success: true; docType: 'AWB'; data: ParsedAWBData }
+  | { success: true; docType: 'BOOKING_CONFIRMATION'; data: ParsedBCData }
+  | { success: false; error: string };
+
+export async function reparseDocumentFileAction(
+  shipmentId: string,
+  fileId: number,
+  docType: 'BL' | 'AWB' | 'BOOKING_CONFIRMATION',
+): Promise<ReparseResult> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) {
+      return { success: false, error: 'Unauthorised' };
+    }
+
+    const idToken = await getIdToken();
+    if (!idToken) {
+      return { success: false, error: 'No session token' };
+    }
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) {
+      return { success: false, error: 'Server URL not configured' };
+    }
+
+    // 1. Get signed download URL
+    const downloadUrl = new URL(
+      `/api/v2/shipments/${encodeURIComponent(shipmentId)}/files/${fileId}/download`,
+      serverUrl,
+    );
+    const downloadRes = await fetch(downloadUrl.toString(), {
+      headers: { Authorization: `Bearer ${idToken}` },
+      cache: 'no-store',
+    });
+    if (!downloadRes.ok) {
+      const json = await downloadRes.json().catch(() => null);
+      return { success: false, error: json?.detail ?? 'Failed to get file URL' };
+    }
+    const { download_url } = await downloadRes.json();
+
+    // 2. Fetch file bytes from signed URL (server-side — no CORS)
+    const fileRes = await fetch(download_url);
+    if (!fileRes.ok) {
+      return { success: false, error: 'Failed to download file from storage' };
+    }
+    const fileBuffer = await fileRes.arrayBuffer();
+
+    // 3. Route to the correct parse endpoint based on docType
+    if (docType === 'BL') {
+      // BL uses the existing parse-bl endpoint (FormData with file)
+      const contentType = fileRes.headers.get('content-type') || 'application/pdf';
+      const blob = new Blob([fileBuffer], { type: contentType });
+      const formData = new FormData();
+      formData.append('file', blob, 'bl.pdf');
+
+      const parseUrl = new URL('/api/v2/shipments/parse-bl', serverUrl);
+      const parseRes = await fetch(parseUrl.toString(), {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}` },
+        body: formData,
+        cache: 'no-store',
+      });
+
+      if (!parseRes.ok) {
+        const json = await parseRes.json().catch(() => null);
+        return { success: false, error: json?.detail ?? 'Failed to parse BL' };
+      }
+
+      const parseJson = await parseRes.json();
+      return { success: true, docType: 'BL', data: parseJson };
+    }
+
+    // AWB and BC use the AI parse-document endpoint (JSON with base64)
+    const base64 = Buffer.from(fileBuffer).toString('base64');
+    const hint = docType; // 'AWB' | 'BOOKING_CONFIRMATION'
+
+    const parseUrl = new URL('/api/v2/ai/parse-document', serverUrl);
+    const parseRes = await fetch(parseUrl.toString(), {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        file_base64: base64,
+        file_name: `document.pdf`,
+        hint,
+      }),
+      cache: 'no-store',
+    });
+
+    if (!parseRes.ok) {
+      const json = await parseRes.json().catch(() => null);
+      return { success: false, error: json?.detail ?? `Failed to parse ${docType}` };
+    }
+
+    const parseJson = await parseRes.json();
+    if (parseJson.status === 'ERROR') {
+      return { success: false, error: parseJson.msg ?? 'Parse failed' };
+    }
+
+    if (docType === 'AWB') {
+      return { success: true, docType: 'AWB', data: parseJson.data as ParsedAWBData };
+    }
+    return { success: true, docType: 'BOOKING_CONFIRMATION', data: parseJson.data as ParsedBCData };
+  } catch (err) {
+    console.error('[reparseDocumentFileAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: `Failed to re-parse ${docType}` };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // GET /api/v2/shipments/{shipmentId}/files/{fileId}/download
 // ---------------------------------------------------------------------------
 
@@ -567,5 +684,56 @@ export async function parseDocumentAction(
   } catch (err) {
     console.error('[parseDocumentAction]', err instanceof Error ? err.message : err);
     return { success: false, error: 'Failed to parse document' };
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// POST /api/v2/shipments/parse-bl — BL-specific parse from base64
+// ---------------------------------------------------------------------------
+
+export async function parseBLDocumentAction(
+  fileBase64: string,
+  fileName: string,
+): Promise<{ success: true; data: Record<string, unknown> } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const idToken = await getIdToken();
+    if (!idToken) return { success: false, error: 'No session token' };
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) return { success: false, error: 'Server URL not configured' };
+
+    // Convert base64 to binary Blob and build FormData
+    const binaryStr = atob(fileBase64);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+
+    const formData = new FormData();
+    formData.append('file', blob, fileName || 'bl.pdf');
+
+    const url = new URL('/api/v2/shipments/parse-bl', serverUrl);
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${idToken}` },
+      body: formData,
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const msg = json?.detail ?? json?.msg ?? `Server responded ${res.status}`;
+      return { success: false, error: msg };
+    }
+
+    const json = await res.json();
+    // /parse-bl returns { parsed: {...}, doc_type, ... } — extract the parsed object
+    return { success: true, data: json.parsed ?? json };
+  } catch (err) {
+    console.error('[parseBLDocumentAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to parse BL document' };
   }
 }

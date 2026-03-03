@@ -363,6 +363,7 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
             setIncoterm={setIncoterm}
             ports={ports}
             orderType={orderType}
+            transactionType={transactionType}
           />
         );
 

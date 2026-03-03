@@ -20,6 +20,7 @@ interface StepRouteProps {
   setIncoterm: (t: string) => void;
   ports: Port[];
   orderType: OrderType;
+  transactionType: string;
 }
 
 // ─── Shared UI ────────────────────────────────────────────────────────────────
@@ -224,6 +225,7 @@ export function StepRoute({
   setIncoterm,
   ports,
   orderType,
+  transactionType,
 }: StepRouteProps) {
   const seaPorts = getSeaPorts(ports);
   const airports = getAirports(ports);
@@ -234,7 +236,18 @@ export function StepRoute({
     sublabel: `${p.un_code}${p.country ? ' · ' + p.country : ''}`,
   }));
 
-  const incotermOptions = INCOTERMS.map(i => ({ value: i, label: i }));
+  const availableIncoterms = INCOTERMS.filter(code => {
+    if (transactionType === 'EXPORT' && code === 'EXW') return false;
+    return true;
+  });
+  const incotermOptions = availableIncoterms.map(i => ({ value: i, label: i }));
+
+  // Clear incoterm if EXW selected and user switches to EXPORT
+  useEffect(() => {
+    if (transactionType === 'EXPORT' && incoterm === 'EXW') {
+      setIncoterm('');
+    }
+  }, [transactionType, incoterm, setIncoterm]);
 
   const originPort = activePorts.find(p => p.un_code === originCode);
   const destPort = activePorts.find(p => p.un_code === destCode);

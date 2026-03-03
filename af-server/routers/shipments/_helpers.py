@@ -191,11 +191,11 @@ def _match_port_un_code(conn, port_text: str) -> str | None:
     if not port_text:
         return None
     port_text_upper = port_text.upper().strip()
-    logger.info("[port_match] Looking for: '%s'", port_text_upper)
+    logger.debug("[port_match] Looking for: '%s'", port_text_upper)
 
     # Check alias dictionary first
     if port_text_upper in _PORT_ALIASES:
-        logger.info("[port_match] Alias hit: '%s' -> %s", port_text_upper, _PORT_ALIASES[port_text_upper])
+        logger.debug("[port_match] Alias hit: '%s' -> %s", port_text_upper, _PORT_ALIASES[port_text_upper])
         return _PORT_ALIASES[port_text_upper]
 
     # Quick check: if it looks like a UN code already (5 uppercase letters)
@@ -204,7 +204,7 @@ def _match_port_un_code(conn, port_text: str) -> str | None:
             SELECT id FROM geography WHERE id = :code
         """), {"code": port_text_upper}).fetchone()
         if row:
-            logger.info("[port_match] Direct UN code hit: %s", port_text_upper)
+            logger.debug("[port_match] Direct UN code hit: %s", port_text_upper)
             return port_text_upper
 
     # Search ports table for matching name
@@ -215,7 +215,7 @@ def _match_port_un_code(conn, port_text: str) -> str | None:
     """), {"exact": port_text_upper}).fetchall()
 
     if rows:
-        logger.info("[port_match] Exact name match: %s -> %s", port_text_upper, rows[0][0])
+        logger.debug("[port_match] Exact name match: %s -> %s", port_text_upper, rows[0][0])
         return rows[0][0]
 
     # Contains match
@@ -226,10 +226,10 @@ def _match_port_un_code(conn, port_text: str) -> str | None:
     """), {"pattern": f"%{port_text_upper}%", "search": port_text_upper}).fetchone()
 
     if row:
-        logger.info("[port_match] Contains match: '%s' ~ '%s' -> %s", port_text_upper, row[1], row[0])
+        logger.debug("[port_match] Contains match: '%s' ~ '%s' -> %s", port_text_upper, row[1], row[0])
         return row[0]
 
-    logger.info("[port_match] No match for '%s'", port_text_upper)
+    logger.debug("[port_match] No match for '%s'", port_text_upper)
     return None
 
 
@@ -238,7 +238,7 @@ def _match_company(conn, consignee_name: str) -> list[dict]:
     if not consignee_name:
         return []
     name_lower = consignee_name.lower().strip()
-    logger.info("[company_match] Looking for: '%s'", name_lower)
+    logger.debug("[company_match] Looking for: '%s'", name_lower)
 
     import re as _re
 
@@ -277,7 +277,7 @@ def _match_company(conn, consignee_name: str) -> list[dict]:
                 score = 0.5 + (matched / max(len(name_words), 1)) * 0.3
 
         if score > 0.3:
-            logger.info("[company_match] Hit: '%s' norm:'%s' (score %.2f)", company_name, company_norm, score)
+            logger.debug("[company_match] Hit: '%s' norm:'%s' (score %.2f)", company_name, company_norm, score)
             matches.append({
                 "company_id": r[0],
                 "name": company_name,
@@ -285,8 +285,27 @@ def _match_company(conn, consignee_name: str) -> list[dict]:
             })
 
     matches.sort(key=lambda m: m["score"], reverse=True)
-    logger.info("[company_match] Total matches for '%s': %d", name_lower, len(matches))
+    logger.debug("[company_match] Total matches for '%s': %d", name_lower, len(matches))
     return matches[:3]
+
+
+_BOOKING_NOT_RELEVANT = {
+    ("FOB", "EXPORT"),
+    ("FCA", "EXPORT"),
+    ("CNF", "IMPORT"),
+    ("CFR", "IMPORT"),
+    ("CIF", "IMPORT"),
+    ("DDP", "IMPORT"),
+    ("DAP", "IMPORT"),
+    ("CPT", "IMPORT"),
+}
+
+
+def _is_booking_relevant(incoterm: str | None, transaction_type: str | None) -> bool:
+    """Returns True if the Booking stage is meaningful for this shipment."""
+    if not incoterm or not transaction_type:
+        return True
+    return (incoterm.upper(), transaction_type.upper()) not in _BOOKING_NOT_RELEVANT
 
 
 def _determine_initial_status(on_board_date: str | None) -> int:

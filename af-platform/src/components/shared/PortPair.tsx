@@ -28,6 +28,8 @@ interface PortPairProps {
   size?: 'lg' | 'sm';
   vesselName?: string | null;
   voyageNumber?: string | null;
+  originAction?: React.ReactNode;
+  destAction?: React.ReactNode;
 }
 
 export default function PortPair({
@@ -41,6 +43,8 @@ export default function PortPair({
   size = 'lg',
   vesselName,
   voyageNumber,
+  originAction,
+  destAction,
 }: PortPairProps) {
   const originLabel = viewContext === 'staff' ? 'POL' : 'Origin';
   const destLabel = viewContext === 'staff' ? 'POD' : 'Destination';
@@ -77,11 +81,14 @@ export default function PortPair({
         {/* Origin side */}
         <div className="flex-1 min-w-0">
           <div className={labelCls}>{originLabel}</div>
-          <div
-            className={`${codeCls} ${origin.port_name && origin.port_name !== originCode ? 'cursor-help' : ''}`}
-            title={origin.port_name && origin.port_name !== originCode ? origin.port_name : undefined}
-          >
-            {originCode}
+          <div className="flex items-center gap-1">
+            <span
+              className={`${codeCls} ${origin.port_name && origin.port_name !== originCode ? 'cursor-help' : ''}`}
+              title={origin.port_name && origin.port_name !== originCode ? origin.port_name : undefined}
+            >
+              {originCode}
+            </span>
+            {originAction && <span className="flex-shrink-0">{originAction}</span>}
           </div>
           {origin.terminal_id && (
             <div className={isLg ? 'text-[10px] text-[var(--text-muted)]' : 'text-[9px] text-[var(--text-muted)]'}>
@@ -116,11 +123,14 @@ export default function PortPair({
         {/* Destination side */}
         <div className="flex-1 min-w-0 text-right">
           <div className={labelCls}>{destLabel}</div>
-          <div
-            className={`${codeCls} ${destination.port_name && destination.port_name !== destCode ? 'cursor-help' : ''}`}
-            title={destination.port_name && destination.port_name !== destCode ? destination.port_name : undefined}
-          >
-            {destCode}
+          <div className="flex items-center justify-end gap-1">
+            {destAction && <span className="flex-shrink-0">{destAction}</span>}
+            <span
+              className={`${codeCls} ${destination.port_name && destination.port_name !== destCode ? 'cursor-help' : ''}`}
+              title={destination.port_name && destination.port_name !== destCode ? destination.port_name : undefined}
+            >
+              {destCode}
+            </span>
           </div>
           {destination.terminal_id && (
             <div className={isLg ? 'text-[10px] text-[var(--text-muted)]' : 'text-[9px] text-[var(--text-muted)]'}>

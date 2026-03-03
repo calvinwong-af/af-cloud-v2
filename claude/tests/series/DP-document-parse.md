@@ -1,8 +1,8 @@
 # DP — Document Parser
 **Series:** DP
 **Status:** 🔵 Active
-**Total:** 52 | **YES:** 36 | **PENDING:** 12 | **DEFERRED:** 0 | **NA:** 0
-**Last Updated:** 03 March 2026
+**Total:** 54 | **YES:** 50 | **PENDING:** 2 | **DEFERRED:** 0 | **NA:** 0
+**Last Updated:** 03 March 2026 (Session 15)
 
 ---
 
@@ -15,17 +15,17 @@
 | DP-03 | MUC resolves to label in PortPair/RouteCard | YES | AF-003866 — Munich Airport, Germany confirmed |
 | DP-04 | POST /api/v2/ai/parse-document — BL PDF returns doc_type=BL | YES | AF-003874 confirmed |
 | DP-05 | POST /api/v2/ai/parse-document — AWB PDF returns doc_type=AWB | YES | PAMAE2603001 confirmed |
-| DP-06 | POST /api/v2/ai/parse-document — BC PDF returns doc_type=BOOKING_CONFIRMATION | PENDING | Use AYN1317670 |
+| DP-06 | POST /api/v2/ai/parse-document — BC PDF returns doc_type=BOOKING_CONFIRMATION | YES | v3.01 — AYN1317670 confirmed via screenshot (Session 14) |
 | DP-07 | AWB parse — hawb_number populated for HOUSE AWB | YES | PAMAE2603001 confirmed |
 | DP-08 | AWB parse — mawb_number populated for HOUSE AWB | YES | 738-0562 1335 confirmed |
-| DP-09 | BC parse — booking_reference populated | PENDING | Use AYN1317670 |
-| DP-10 | BC parse — vessel_name populated | PENDING | Expected: CMA CGM A. LINCOLN |
-| DP-11 | BC parse — etd populated as YYYY-MM-DD | PENDING | Expected: 2026-02-19 |
+| DP-09 | BC parse — booking_reference populated | YES | v3.01 — AYN1317670 confirmed (Session 14) |
+| DP-10 | BC parse — vessel_name populated | YES | v3.01 — CMA CGM LEO confirmed (Session 14) |
+| DP-11 | BC parse — etd populated as YYYY-MM-DD | YES | v3.01 — 2026-02-20 confirmed (Session 14) |
 | DP-12 | DocumentParseModal opens via Upload Document button | YES | AF-003861 confirmed |
 | DP-13 | DocumentParseModal — doc type badge shows after parse | YES | "Air Waybill / HOUSE / HIGH" confirmed |
 | DP-14 | Upload Document button visible on AIR shipments | YES | AF-003861 confirmed |
-| DP-15 | apply-booking-confirmation — booking_reference saved to shipment | PENDING | |
-| DP-16 | apply-booking-confirmation — Route card updates with pol/pod after apply | PENDING | |
+| DP-15 | apply-booking-confirmation — booking_reference saved to shipment | YES | Session 14 — AYN1317670 confirmed on AF-003843 |
+| DP-16 | apply-booking-confirmation — Route card updates with pol/pod after apply | YES | Session 14 — MYPKG→USLAX, ETD 20 Feb, ETA 25 Mar confirmed on AF-003843 |
 | DP-17 | apply-awb — hawb_number + mawb_number saved to shipment | YES | v2.89 confirmed — MAWB 160-08178262, HAWB 623X39081150 both showing on Transport card |
 | DP-18 | apply-awb — origin/dest airport codes update Route card | YES | AF-003876 confirmed — PEK origin, KUL destination showing correctly |
 | DP-19 | New Shipment modal — Upload tab label updated to "Upload Document" | YES | Confirmed |
@@ -45,23 +45,25 @@
 | DP-33 | Context menu flips upward when row near bottom of viewport | YES | MCP fix — 03 Mar 2026 |
 | DP-34 | AWB result view — grouped sections (Route, AWB Numbers, Shipper, Consignee, Cargo) | YES | AF-003861 confirmed |
 | DP-35 | apply-awb — ETD updates on route card after Use This Data | YES | AF-003876 confirmed — ETD 04 Mar 2026 showing on route card |
-| DP-36 | AWB file saved to Files tab after create flow | PENDING | Assumed fail — same root cause as DP-39 — fix in v2.90 |
-| DP-37 | apply-booking-confirmation — BC document saved to Files tab (tag: bc) | PENDING | Requires v2.73 |
-| DP-38 | apply-booking-confirmation — ETD/ETA updates on route card | PENDING | Requires v2.73 |
-| DP-39 | AWB file saved to Files tab after apply flow | PENDING | Confirmed broken — tested Session 10, Files tab empty after apply even after refresh — fix in v2.90 |
-| DP-40 | Files tab badge updates without page reload after AWB apply | PENDING | Confirmed broken — tested Session 10 — fix in v2.90 |
+| DP-36 | AWB file saved to Files tab after create flow | YES | Session 10 — confirmed working after GCS permission fix |
+| DP-37 | apply-booking-confirmation — BC document saved to Files tab (tag: bc) | YES | Session 14 — 20260206 BKGCONF_AYN1317670.pdf with BC tag confirmed |
+| DP-38 | apply-booking-confirmation — ETD/ETA updates on route card | YES | Session 14 — ETD 20 Feb 2026, ETA 25 Mar 2026 confirmed on route card |
+| DP-39 | AWB file saved to Files tab after apply flow | YES | Session 10 — confirmed working, file appears with AWB tag |
+| DP-40 | Files tab badge updates without page reload after AWB apply | YES | Session 10 — badge increments immediately without reload |
 | DP-41 | AWB apply — amber diff badge shown when parsed shipper differs from current | YES | Confirmed on AF-003861 — shown in parser dialog |
 | DP-42 | AWB apply — no diff badge when parsed shipper matches current | PENDING | |
 | DP-43 | DocumentParseModal — "Applying..." spinner shown on Use This Data click | YES | Confirmed |
 | DP-44 | DocumentParseModal — modal non-dismissible during apply (X + Cancel disabled) | YES | Confirmed |
 | DP-45 | DocumentParseModal — success state shown briefly before close | YES | Confirmed |
 | DP-46 | Files tab badge updates immediately after AWB apply (no page reload) | YES | Confirmed |
-| DP-47 | Files tab badge updates immediately after BC apply (no page reload) | PENDING | |
+| DP-47 | Files tab badge updates immediately after BC apply (no page reload) | YES | Session 14 — Files badge shows 1 immediately after BC apply on AF-003843 |
 | DP-48 | AWB diff badge — shown in parser dialog but NOT on shipment details page | PENDING | TODO-AWB-01: dialog shows correctly; details page missing — fix alongside v2.78 (Opus) |
 | DP-49 | Packages card shows pieces + weight after AWB create | YES | Session 10 — 1× PACKAGE row with gross weight shown correctly |
 | DP-50 | Chargeable weight shown on AIR shipment after AWB create | YES | Session 10 — Pieces + Chargeable shown in totals footer |
 | DP-51 | Port edit modal shows only airports for AIR shipments | YES | Session 10 — sea ports excluded, airports only confirmed |
 | DP-52 | Port edit modal shows only sea ports for SEA shipments | YES | Session 10 — airports excluded, sea ports only confirmed |
+| DP-53 | apply-booking-confirmation — status advances to Booking Confirmed (3002) | YES | v3.02 — Session 15 — AF-003843 confirmed via screenshot |
+| DP-54 | apply-booking-confirmation — containers written to type_details (Containers card populated) | YES | v3.02 — Session 15 — 40'FF ×2, 20'ST ×1 confirmed via screenshot |
 
 ---
 
@@ -69,6 +71,8 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 2.59 | 03 Mar 2026 | Session 15 — DP-53, 54 added as YES (v3.02 BC apply fixes confirmed); total updated to 54 |
+| 2.56 | 03 Mar 2026 | Session 10 — DP-36, 39, 40 marked YES (file save confirmed working after GCS fix) |
 | 2.55 | 03 Mar 2026 | Session 10 — DP-49, 50, 51, 52 added as YES; DP-36, 39, 40 updated with confirmed broken status; total updated to 52 |
 | 2.54 | 03 Mar 2026 | DP-17, DP-18, DP-35 marked YES — AWB apply fields confirmed via v2.89 |
 | 2.51 | 03 Mar 2026 | Migrated from AF-Test-List.md |

@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { X, Upload, FileText, Loader2, AlertCircle, Check, Plane, Ship, ClipboardList, Search, Link2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { refreshSessionCookie } from '@/lib/auth';
 import {
   parseDocumentAction,
+  parseBLDocumentAction,
   type DocType,
   type ParseConfidence,
   type ParsedBCData,
@@ -26,6 +28,8 @@ function sanitiseErrorMessage(raw: string | null | undefined): string {
   if (!raw) return 'Document parsing failed — please try again or enter details manually';
   if (raw.includes('overloaded_error') || raw.includes('529'))
     return 'Service temporarily busy — please try again in a moment';
+  if (raw.includes('timed out') || raw.includes('503') || raw.includes('timeout'))
+    return 'Document parsing timed out — please try again (large documents may take longer)';
   if (raw.includes('ANTHROPIC_API_KEY'))
     return 'Document parsing is not available — contact support';
   return 'Document parsing failed — please try again or enter details manually';
@@ -62,6 +66,8 @@ interface DocumentParseModalProps {
   onClose: () => void;
   onResult: (docType: DocType, data: ParsedBCData | ParsedAWBData | ParsedBL, file: File | null) => Promise<{ ok: boolean; error?: string } | void>;
   allowedTypes?: DocType[];
+  initialDocType?: DocType;          // if set, skip to review phase immediately
+  initialParsedData?: Record<string, unknown>;  // pre-parsed data to pre-fill form
 }
 
 type Phase = 'idle' | 'parsing' | 'review' | 'error';
@@ -108,13 +114,15 @@ export default function DocumentParseModal({
   onClose,
   onResult,
   allowedTypes,
+  initialDocType,
+  initialParsedData,
 }: DocumentParseModalProps) {
-  const [phase, setPhase] = useState<Phase>('idle');
+  const [phase, setPhase] = useState<Phase>(initialDocType ? 'review' : 'idle');
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [docType, setDocType] = useState<DocType | null>(null);
+  const [docType, setDocType] = useState<DocType | null>(initialDocType ?? null);
   const [confidence, setConfidence] = useState<ParseConfidence | null>(null);
-  const [parsedData, setParsedData] = useState<Record<string, unknown> | null>(null);
+  const [parsedData, setParsedData] = useState<Record<string, unknown> | null>(initialParsedData ?? null);
   const [dragOver, setDragOver] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
@@ -128,6 +136,48 @@ export default function DocumentParseModal({
     shipperName: '', shipperAddress: '', consigneeName: '', consigneeAddress: '',
     cargoDescription: '', pieces: '', grossWeightKg: '', chargeableWeightKg: '', hsCode: '',
   });
+
+  // Pre-fill BL/BC parsedData from initialParsedData on mount (reparse flow)
+  // For BL, reparseDocumentFileAction returns the full /parse-bl response which nests
+  // BL fields inside a `parsed` property — extract it if present.
+  useEffect(() => {
+    if ((initialDocType === 'BL' || initialDocType === 'BOOKING_CONFIRMATION') && initialParsedData) {
+      const data = initialParsedData;
+      // /parse-bl wraps BL fields in a `parsed` key — unwrap if present
+      if (data.parsed && typeof data.parsed === 'object' && !Array.isArray(data.parsed)) {
+        setParsedData(data.parsed as Record<string, unknown>);
+      } else {
+        setParsedData(data);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialDocType]);
+
+  // Pre-fill AWB form from initialParsedData on mount (reparse flow)
+  useEffect(() => {
+    if (initialDocType === 'AWB' && initialParsedData) {
+      const data = initialParsedData;
+      setAwbForm({
+        awbType: (data.awb_type as string) ?? '',
+        mawbNumber: (data.mawb_number as string) ?? '',
+        hawbNumber: (data.hawb_number as string) ?? '',
+        originIata: (data.origin_iata as string) ?? '',
+        destIata: (data.dest_iata as string) ?? '',
+        flightNumber: (data.flight_number as string) ?? '',
+        flightDate: (data.flight_date as string) ?? '',
+        shipperName: sanitiseAddress(data.shipper_name as string),
+        shipperAddress: sanitiseAddress(data.shipper_address as string),
+        consigneeName: sanitiseAddress(data.consignee_name as string),
+        consigneeAddress: sanitiseAddress(data.consignee_address as string),
+        cargoDescription: sanitiseAddress(data.cargo_description as string),
+        pieces: data.pieces != null ? String(data.pieces) : '',
+        grossWeightKg: data.gross_weight_kg != null ? String(data.gross_weight_kg) : '',
+        chargeableWeightKg: data.chargeable_weight_kg != null ? String(data.chargeable_weight_kg) : '',
+        hsCode: (data.hs_code as string) ?? '',
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialDocType]);
 
   // Company assignment
   const [linkedCompanyId, setLinkedCompanyId] = useState<string | null>(null);
@@ -162,6 +212,7 @@ export default function DocumentParseModal({
   const handleAnalyse = useCallback(async () => {
     if (!file) return;
 
+    await refreshSessionCookie();
     setPhase('parsing');
     setError(null);
 
@@ -202,7 +253,20 @@ export default function DocumentParseModal({
 
       setDocType(dt);
       setConfidence(conf);
-      const data = result.data as Record<string, unknown>;
+
+      // BL: re-parse with dedicated /parse-bl endpoint for richer extraction
+      let data: Record<string, unknown>;
+      if (dt === 'BL') {
+        const blResult = await parseBLDocumentAction(base64, file.name);
+        if (!blResult.success) {
+          setError(sanitiseErrorMessage(blResult.error));
+          setPhase('error');
+          return;
+        }
+        data = blResult.data;
+      } else {
+        data = result.data as Record<string, unknown>;
+      }
       setParsedData(data);
 
       // Pre-fill AWB form if AWB
@@ -257,16 +321,10 @@ export default function DocumentParseModal({
       hs_code: awbForm.hsCode || null,
     };
 
-    if (docType === 'BL') {
-      // BL: no loading state — parent will close this modal and open BLUpdateModal
-      onResult(docType, parsedData as unknown as ParsedBCData | ParsedBL, file);
-      return;
-    }
-
     setIsApplying(true);
     setApplyError(null);
     try {
-      const payload = docType === 'AWB' ? awbPayload : parsedData as unknown as ParsedBCData;
+      const payload = docType === 'AWB' ? awbPayload : (parsedData as unknown as ParsedBCData | ParsedBL);
       const result = await onResult(docType, payload, file);
       if (!result || result.ok) {
         setApplySuccess(true);

@@ -42,6 +42,27 @@ export function onAuthChange(callback: (user: User | null) => void) {
 // Call this once in the root layout to keep the cookie fresh as Firebase
 // silently refreshes the ID token every hour.
 // Reads af-persist marker to preserve the original keepSignedIn choice.
+// Call this before long server actions (e.g. document parsing) to ensure
+// the af-session cookie is fresh. Safe to call anytime — no-op if not expired.
+export async function refreshSessionCookie(): Promise<void> {
+  try {
+    const auth = getFirebaseAuth();
+    const user = auth.currentUser;
+    if (!user) return;
+    const token = await user.getIdToken(true); // force refresh
+    const isPersistent = document.cookie
+      .split(';')
+      .some((c) => c.trim() === 'af-persist=1');
+    if (isPersistent) {
+      document.cookie = `af-session=${token}; path=/; max-age=2592000; samesite=strict`;
+    } else {
+      document.cookie = `af-session=${token}; path=/; samesite=strict`;
+    }
+  } catch {
+    // Non-fatal — let the action attempt proceed
+  }
+}
+
 export function startTokenRefresh() {
   return onIdTokenChanged(getFirebaseAuth(), async (user) => {
     if (user) {

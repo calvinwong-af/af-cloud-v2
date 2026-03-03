@@ -23,10 +23,12 @@ from sqlalchemy import text
 
 from core.auth import Claims, require_afu
 from core.db import get_db
-from core.constants import FILES_BUCKET_NAME
+from core.constants import FILES_BUCKET_NAME, STATUS_BOOKING_CONFIRMED
 
 from ._helpers import (
     _parse_jsonb,
+    _is_booking_relevant,
+    _determine_initial_status,
     _resolve_gcs_path,
     _save_file_to_gcs,
     _create_file_record,
@@ -65,7 +67,7 @@ async def apply_booking_confirmation(
 ):
     # Read current shipment
     row = conn.execute(text("""
-        SELECT id, booking, route_nodes FROM shipments WHERE id = :id
+        SELECT id, booking, route_nodes, type_details FROM shipments WHERE id = :id
     """), {"id": shipment_id}).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Shipment not found")
@@ -73,8 +75,8 @@ async def apply_booking_confirmation(
     now = datetime.now(timezone.utc).isoformat()
 
     # Build SET clauses
-    set_clauses = ["updated_at = :now"]
-    params: dict = {"id": shipment_id, "now": now}
+    set_clauses = ["updated_at = :now", "status = :status"]
+    params: dict = {"id": shipment_id, "now": now, "status": STATUS_BOOKING_CONFIRMED}
 
     if body.booking_reference is not None:
         set_clauses.append("booking_reference = :booking_reference")
@@ -120,11 +122,23 @@ async def apply_booking_confirmation(
         set_clauses.append("route_nodes = CAST(:route_nodes AS jsonb)")
         params["route_nodes"] = json.dumps(nodes)
 
+    # Merge containers into type_details
+    if body.containers is not None:
+        type_details = _parse_jsonb(row[3]) or {}
+        if not isinstance(type_details, dict):
+            type_details = {}
+        type_details["containers"] = [
+            {"container_size": c.get("size") or c.get("container_size"), "quantity": c.get("quantity", 1)}
+            for c in body.containers
+        ] if body.containers else []
+        set_clauses.append("type_details = CAST(:type_details AS jsonb)")
+        params["type_details"] = json.dumps(type_details)
+
     conn.execute(text(f"""
         UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
     """), params)
 
-    logger.info("[apply-bc] Updated %s with booking confirmation data", shipment_id)
+    logger.info("[apply-bc] Updated %s with booking confirmation data (status → %s)", shipment_id, STATUS_BOOKING_CONFIRMED)
     return {"shipment_id": shipment_id, "status": "OK"}
 
 
@@ -161,7 +175,9 @@ async def apply_awb(
 ):
     # Read current shipment
     row = conn.execute(text("""
-        SELECT id, booking, parties, type_details, cargo, route_nodes FROM shipments WHERE id = :id
+        SELECT id, booking, parties, type_details, cargo, route_nodes,
+               incoterm_code, transaction_type
+        FROM shipments WHERE id = :id
     """), {"id": shipment_id}).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Shipment not found")
@@ -247,6 +263,14 @@ async def apply_awb(
         type_details["pieces"] = body.pieces
     if body.chargeable_weight_kg is not None:
         type_details["chargeable_weight"] = body.chargeable_weight_kg
+    # Rebuild packages array from AWB pieces + gross weight so the Packages card renders correctly
+    if body.pieces is not None or body.gross_weight_kg is not None:
+        type_details["packages"] = [{
+            "packaging_type": "PACKAGE",
+            "quantity": body.pieces or 1,
+            "gross_weight_kg": body.gross_weight_kg,
+            "volume_cbm": None,
+        }]
     set_clauses.append("type_details = CAST(:type_details AS jsonb)")
     params["type_details"] = json.dumps(type_details)
 
@@ -265,8 +289,20 @@ async def apply_awb(
         UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
     """), params)
 
-    logger.info("[apply-awb] Updated %s with AWB data", shipment_id)
-    return {"shipment_id": shipment_id, "status": "OK"}
+    # Auto-advance status based on incoterm classification
+    incoterm_code = row[6]   # incoterm_code
+    txn_type = row[7]        # transaction_type
+    if _is_booking_relevant(incoterm_code, txn_type):
+        new_status = STATUS_BOOKING_CONFIRMED  # 3002
+    else:
+        new_status = _determine_initial_status(body.flight_date)  # 4001 if past, 3002 if future/None
+
+    conn.execute(text("""
+        UPDATE shipments SET status = :status WHERE id = :id
+    """), {"status": new_status, "id": shipment_id})
+
+    logger.info("[apply-awb] Updated %s with AWB data (status → %s)", shipment_id, new_status)
+    return {"shipment_id": shipment_id, "status": "OK", "new_status": new_status}
 
 
 # ---------------------------------------------------------------------------

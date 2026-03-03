@@ -211,55 +211,48 @@ export function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumb
         </span>
         <h2 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Route</h2>
       </div>
-      <div className="relative">
-        <PortPair
-          origin={{
-            port_un_code: order.origin?.port_un_code ?? null,
-            terminal_id: originTerminalId,
-            terminal_name: originTerminalId ? (ports.find(p => p.un_code === order.origin?.port_un_code)?.terminals.find(t => t.terminal_id === originTerminalId)?.name ?? null) : null,
-            port_name: originTooltip || order.origin?.label || null,
-            country_code: order.origin?.country_code ?? null,
-          }}
-          destination={{
-            port_un_code: order.destination?.port_un_code ?? null,
-            terminal_id: destTerminalId,
-            terminal_name: destTerminalId ? (ports.find(p => p.un_code === order.destination?.port_un_code)?.terminals.find(t => t.terminal_id === destTerminalId)?.name ?? null) : null,
-            port_name: destTooltip || order.destination?.label || null,
-            country_code: order.destination?.country_code ?? null,
-          }}
-          viewContext={isAfu ? 'customer' : 'staff'}
-          etd={etd}
-          eta={eta}
-          incoterm={order.incoterm_code}
-          orderType={order.order_type}
-          size="lg"
-          vesselName={vesselName}
-          voyageNumber={voyageNumber}
-        />
-        {/* Edit pencil icons — AFU only */}
-        {isAfu && onPortUpdated && (
-          <>
-            <div className="absolute top-0 left-0" style={{ marginTop: '18px', marginLeft: '-4px' }}>
-              <button
-                onClick={() => setEditingPort(editingPort === 'origin' ? null : 'origin')}
-                className="p-1 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--sky)] transition-colors"
-                title="Edit origin port"
-              >
-                <Pencil className="w-3 h-3" />
-              </button>
-            </div>
-            <div className="absolute top-0 right-0" style={{ marginTop: '18px', marginRight: '-4px' }}>
-              <button
-                onClick={() => setEditingPort(editingPort === 'destination' ? null : 'destination')}
-                className="p-1 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--sky)] transition-colors"
-                title="Edit destination port"
-              >
-                <Pencil className="w-3 h-3" />
-              </button>
-            </div>
-          </>
-        )}
-      </div>
+      <PortPair
+        origin={{
+          port_un_code: order.origin?.port_un_code ?? null,
+          terminal_id: originTerminalId,
+          terminal_name: originTerminalId ? (ports.find(p => p.un_code === order.origin?.port_un_code)?.terminals.find(t => t.terminal_id === originTerminalId)?.name ?? null) : null,
+          port_name: originTooltip || order.origin?.label || null,
+          country_code: order.origin?.country_code ?? null,
+        }}
+        destination={{
+          port_un_code: order.destination?.port_un_code ?? null,
+          terminal_id: destTerminalId,
+          terminal_name: destTerminalId ? (ports.find(p => p.un_code === order.destination?.port_un_code)?.terminals.find(t => t.terminal_id === destTerminalId)?.name ?? null) : null,
+          port_name: destTooltip || order.destination?.label || null,
+          country_code: order.destination?.country_code ?? null,
+        }}
+        viewContext={isAfu ? 'customer' : 'staff'}
+        etd={etd}
+        eta={eta}
+        incoterm={order.incoterm_code}
+        orderType={order.order_type}
+        size="lg"
+        vesselName={vesselName}
+        voyageNumber={voyageNumber}
+        originAction={isAfu && onPortUpdated ? (
+          <button
+            onClick={() => setEditingPort(editingPort === 'origin' ? null : 'origin')}
+            className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
+            title="Edit origin port"
+          >
+            <Pencil className="w-3 h-3" />
+          </button>
+        ) : undefined}
+        destAction={isAfu && onPortUpdated ? (
+          <button
+            onClick={() => setEditingPort(editingPort === 'destination' ? null : 'destination')}
+            className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
+            title="Edit destination port"
+          >
+            <Pencil className="w-3 h-3" />
+          </button>
+        ) : undefined}
+      />
 
       {/* Port edit modal — rendered outside the relative div for full-screen overlay */}
       {editingPort === 'origin' && onPortUpdated && (

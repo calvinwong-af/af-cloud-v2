@@ -166,7 +166,14 @@ export function BLManualFields({ formState, onChange, ports, notifyPartyNameFrom
             <FieldLabel>Transaction</FieldLabel>
             <select
               value={formState.transactionType}
-              onChange={e => onChange({ transactionType: e.target.value })}
+              onChange={e => {
+                const newTxn = e.target.value;
+                const updates: Partial<BLFormState> = { transactionType: newTxn };
+                if (newTxn === 'EXPORT' && formState.incotermCode === 'EXW') {
+                  updates.incotermCode = 'FOB';
+                }
+                onChange(updates);
+              }}
               className={inputBase}
             >
               <option value="IMPORT">IMPORT</option>
@@ -180,9 +187,11 @@ export function BLManualFields({ formState, onChange, ports, notifyPartyNameFrom
               onChange={e => onChange({ incotermCode: e.target.value })}
               className={inputBase}
             >
-              {['EXW','FCA','FAS','FOB','CFR','CNF','CIF','CPT','CIP','DAP','DPU','DDP'].map(i => (
-                <option key={i} value={i}>{i}</option>
-              ))}
+              {['EXW','FCA','FAS','FOB','CFR','CNF','CIF','CPT','CIP','DAP','DPU','DDP']
+                .filter(i => !(formState.transactionType === 'EXPORT' && i === 'EXW'))
+                .map(i => (
+                  <option key={i} value={i}>{i}</option>
+                ))}
             </select>
           </div>
         </div>
