@@ -9,8 +9,14 @@ _BL_EXTRACTION_PROMPT = """You are extracting structured data from a Bill of Lad
 Return ONLY valid JSON, no preamble, no markdown, no code fences.
 Use null for any field not present.
 
-For containers: extract container details if present (FCL shipments). Set to null if no container numbers are found (LCL/loose cargo). For LCL shipments where a consolidation container number is shown, put it in lcl_container_number not in containers.
-For cargo_items: extract individual cargo line items for LCL/loose cargo shipments (pallets, cartons, etc.). Set to null if the BL only lists containers.
+CONTAINER RULES — follow strictly:
+- FCL shipments: each container has its own BL line with individual container numbers, types, and seals. Put these in the containers array. Set lcl_container_number and lcl_seal_number to null.
+- LCL shipments: cargo is consolidated into a shared box. The BL shows cargo line items (pallets, cartons) but the container number belongs to the consolidation box managed by the freight forwarder. Put the consolidation container number in lcl_container_number and its seal in lcl_seal_number. Set containers to null.
+- Key indicator: if the BL has a "delivery_status" or "shipment_type" field containing "LCL", "LESS THAN CONTAINER LOAD", or similar — always use lcl_container_number, never containers.
+- If only one container number appears alongside multiple cargo line items (pallets/cartons) — this is LCL. Use lcl_container_number.
+- Only use containers array when each container has its own distinct cargo assignment (FCL pattern).
+
+For cargo_items: extract individual cargo line items for LCL/loose cargo shipments (pallets, cartons, etc.). Set to null if the BL only lists containers (FCL).
 
 The carrier_agent field is the party issuing the BL — may be a carrier, NVOCC, co-loader, or freight forwarder acting as agent.
 

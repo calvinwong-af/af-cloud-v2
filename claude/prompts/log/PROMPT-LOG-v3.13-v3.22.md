@@ -1,5 +1,12 @@
 # Prompt Completion Log — v3.13–v3.22
 
+### [2026-03-04 21:00 UTC] — v3.16: Fix LCL Container/Seal Not Saving After BL Apply
+- **Status:** Completed
+- **Tasks:**
+  - Replaced ambiguous container/LCL instruction in `_BL_EXTRACTION_PROMPT` with explicit CONTAINER RULES block that distinguishes FCL vs LCL patterns and directs AI to use `lcl_container_number`/`lcl_seal_number` for consolidation shipments
+- **Files Modified:**
+  - `af-server/routers/shipments/_prompts.py`
+
 ### [2026-03-04 20:00 UTC] — v3.15: Combobox Fix Sweep + BLUpdateModal Removal
 - **Status:** Completed
 - **Tasks:**
