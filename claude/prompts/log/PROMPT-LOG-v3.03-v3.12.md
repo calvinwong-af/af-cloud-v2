@@ -60,6 +60,23 @@
   - `af-platform/src/components/shipments/_doc-parsers/BLReview.tsx`
   - `af-platform/src/components/shipments/_doc-parsers/BCReview.tsx`
 
+### [2026-03-04 13:00 UTC] — v3.09: Persistent Parsed Parties Diff (DP-48 / UI-10)
+- **Status:** Completed
+- **Tasks:**
+  - Backend: Added `bl_document` to apply_awb SELECT + wrote parsed shipper/consignee to `bl_document` JSONB
+  - Backend: Added `shipper_name` field to `ApplyBookingConfirmationRequest` + wrote parsed shipper to `bl_document` in apply_booking_confirmation
+  - Backend: Added `PATCH /{shipment_id}/clear-parsed-diff` endpoint in `bl.py` — removes shipper/consignee from `bl_document` on diff resolution
+  - Frontend: Added `clearParsedPartiesDiffAction` server action
+  - Frontend: Added `shipper_name` to `applyBookingConfirmationAction` type + mapped BC `shipper`/`booking_party` → `shipper_name` in both `_doc-handler.ts` and `ShipmentFilesTab.tsx`
+  - Frontend: Wired `BLPartyDiffModal` — "Keep Current" and "Use BL Values" both call `clearParsedPartiesDiffAction` to clear the diff indicator
+- **Files Modified:**
+  - `af-server/routers/shipments/doc_apply.py`
+  - `af-server/routers/shipments/bl.py`
+  - `af-platform/src/app/actions/shipments-write.ts`
+  - `af-platform/src/app/(platform)/shipments/[id]/_doc-handler.ts`
+  - `af-platform/src/components/shipments/BLPartyDiffModal.tsx`
+  - `af-platform/src/components/shipments/ShipmentFilesTab.tsx`
+
 ### [2026-03-03 16:00 UTC] — v3.08: Fix Production Parse 500 + Bypass BLUpdateModal
 - **Status:** Completed
 - **Tasks:**
