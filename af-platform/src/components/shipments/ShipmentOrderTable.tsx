@@ -550,8 +550,7 @@ export function ShipmentOrderTable({ orders, loading, accountType, onRefresh }: 
       </div>
 
       {/* Desktop: table view */}
-      <div className="hidden md:block bg-white border border-[var(--border)] rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="hidden md:block bg-white border border-[var(--border)] rounded-xl overflow-x-auto">
           <table className="w-full min-w-max text-sm">
             <thead>
               <tr className="bg-[var(--surface)] border-b border-[var(--border)]">
@@ -562,7 +561,6 @@ export function ShipmentOrderTable({ orders, loading, accountType, onRefresh }: 
                 <Th>Route</Th>
                 <Th>Company</Th>
                 <Th>Cargo Ready</Th>
-                <Th>Updated</Th>
                 <Th><span className="sr-only">Actions</span></Th>
               </tr>
             </thead>
@@ -578,7 +576,6 @@ export function ShipmentOrderTable({ orders, loading, accountType, onRefresh }: 
               ))}
             </tbody>
           </table>
-        </div>
         <div className="px-4 py-2.5 text-xs text-[var(--text-muted)] border-t border-[var(--border)]">
           {orders.length} orders shown
         </div>
@@ -660,11 +657,11 @@ function ShipmentRow({
 
       {/* Company */}
       <td className="px-4 py-3">
-        <div className="text-sm text-[var(--text)]">
+        <div className="text-xs font-medium text-[var(--text)] leading-tight">
           {order._company_name ?? order.company_id}
         </div>
         {order._company_name && (
-          <div className="text-xs font-mono text-[var(--text-muted)]">
+          <div className="text-[10px] font-mono text-[var(--text-muted)] mt-0.5">
             {order.company_id}
           </div>
         )}
@@ -673,11 +670,6 @@ function ShipmentRow({
       {/* Cargo ready date */}
       <td className="px-4 py-3 text-xs text-[var(--text-muted)] whitespace-nowrap">
         {formatDate(order.cargo_ready_date)}
-      </td>
-
-      {/* Updated */}
-      <td className="px-4 py-3 text-xs text-[var(--text-muted)] whitespace-nowrap">
-        {formatDate(order.updated)}
       </td>
 
       {/* Actions */}
@@ -694,12 +686,11 @@ function ShipmentRow({
 
 function ShipmentTableSkeleton() {
   return (
-    <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
-      <div className="overflow-x-auto">
+    <div className="bg-white border border-[var(--border)] rounded-xl overflow-x-auto">
         <table className="w-full min-w-max text-sm">
           <thead>
             <tr className="bg-[var(--surface)] border-b border-[var(--border)]">
-              {['Order ID', 'Status', 'Type', 'Incoterm', 'Route', 'Company', 'Cargo Ready', 'Updated', ''].map((h) => (
+              {['Order ID', 'Status', 'Type', 'Incoterm', 'Route', 'Company', 'Cargo Ready', ''].map((h) => (
                 <th key={h} className="px-4 py-3 text-left text-xs font-medium text-[var(--text-mid)] uppercase tracking-wide">
                   {h}
                 </th>
@@ -709,7 +700,7 @@ function ShipmentTableSkeleton() {
           <tbody className="divide-y divide-[var(--border)]">
             {Array.from({ length: 10 }).map((_, i) => (
               <tr key={i}>
-                {Array.from({ length: 9 }).map((_, j) => (
+                {Array.from({ length: 8 }).map((_, j) => (
                   <td key={j} className="px-4 py-3">
                     <div className={`h-4 bg-gray-100 rounded animate-pulse ${j === 0 ? 'w-28' : j === 3 ? 'w-32' : 'w-20'}`} />
                   </td>
@@ -718,7 +709,6 @@ function ShipmentTableSkeleton() {
             ))}
           </tbody>
         </table>
-      </div>
     </div>
   );
 }

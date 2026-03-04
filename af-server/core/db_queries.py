@@ -224,7 +224,7 @@ def get_shipment_by_id(conn, shipment_id: str) -> dict | None:
     data["completed_at"] = str(data["completed_at"]) if data.get("completed_at") else None
 
     # Timestamps to string
-    for key in ("etd", "eta", "created_at", "updated_at", "cargo_ready_date"):
+    for key in ("created_at", "updated_at", "cargo_ready_date"):
         if data.get(key) is not None:
             data[key] = str(data[key])
 

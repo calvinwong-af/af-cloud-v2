@@ -354,7 +354,7 @@ function ShipmentsPageInner() {
         </div>
       ) : (
         <div className="border-b border-[var(--border)]">
-          <nav className="flex gap-1 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <nav className="flex gap-1 overflow-x-auto pb-px -mb-px" style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
             {FILTER_TABS.map((tab) => (
               <button
                 key={tab.key}
@@ -369,7 +369,7 @@ function ShipmentsPageInner() {
                 {stats && tab.key !== 'all' && (
                   <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full
                     ${activeTab === tab.key ? 'bg-sky-100 text-sky-700' : 'bg-gray-100 text-gray-500'}`}>
-                    {tab.key === 'to_invoice' ? stats.to_invoice : stats[tab.key as keyof typeof stats] ?? 0}
+                    {(() => { const n = tab.key === 'to_invoice' ? stats.to_invoice : (stats[tab.key as keyof typeof stats] ?? 0) as number; return n >= 1000 ? `${(n / 1000).toFixed(1)}K` : n; })()}
                   </span>
                 )}
               </button>

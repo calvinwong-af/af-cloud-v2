@@ -395,7 +395,7 @@ async def create_from_bl(
             origin_port, origin_terminal, dest_port, dest_terminal,
             cargo, type_details, booking, parties, bl_document,
             exception_data, route_nodes, trash,
-            cargo_ready_date, etd, creator,
+            cargo_ready_date, creator,
             hawb_number, mawb_number, awb_type,
             migrated_from_v1, created_at, updated_at
         ) VALUES (
@@ -404,7 +404,7 @@ async def create_from_bl(
             :origin_port, :origin_terminal, :dest_port, :dest_terminal,
             CAST(:cargo AS jsonb), CAST(:type_details AS jsonb), CAST(:booking AS jsonb), CAST(:parties AS jsonb), NULL,
             NULL, NULL, FALSE,
-            NULL, :etd, CAST(:creator AS jsonb),
+            NULL, CAST(:creator AS jsonb),
             :hawb_number, :mawb_number, :awb_type,
             FALSE, :now, :now
         )
@@ -427,7 +427,6 @@ async def create_from_bl(
         "booking": json.dumps(booking),
         "parties": json.dumps(parties),
         "creator": json.dumps(creator),
-        "etd": body.etd,
         "hawb_number": body.hawb_number,
         "mawb_number": body.mawb_number,
         "awb_type": body.awb_type,
@@ -448,6 +447,26 @@ async def create_from_bl(
         etd=etd_date,
         updated_by=claims.email,
     )
+
+    # Seed POL task scheduled_end from ETD (single source of truth)
+    if body.etd:
+        for task in tasks:
+            if task.get("task_type") == "POL" and task.get("mode") == "TRACKED":
+                task["scheduled_end"] = body.etd
+                break
+
+    # If ETD is in the past, it represents an actual departure (SOB) → write actual_end too
+    if body.etd:
+        try:
+            from datetime import date as _date2
+            etd_d = _date2.fromisoformat(body.etd[:10])
+            if etd_d <= _date.today():
+                for task in tasks:
+                    if task.get("task_type") == "POL" and task.get("mode") == "TRACKED":
+                        task["actual_end"] = body.etd
+                        break
+        except (ValueError, TypeError):
+            pass
 
     wf_history = [{
         "status": body.initial_status,
@@ -572,9 +591,6 @@ async def update_from_bl(
     # Also write flat fields so detail-page readers see updated values
     flat_updates: dict = {}
     # vessel_name and voyage_number live in booking JSONB only — no flat columns
-    if etd is not None:
-        flat_updates["etd"] = etd
-
     # Merge parties — shipper + consignee (don't replace whole parties dict)
     # Only write to parties if currently empty — unless force_update is set
     is_force = force_update == "true"
@@ -741,9 +757,6 @@ async def update_from_bl(
         "id": shipment_id,
     }
 
-    if "etd" in flat_updates:
-        set_clauses.append("etd = :etd_flat")
-        params["etd_flat"] = flat_updates["etd"]
     if "origin_port" in flat_updates:
         set_clauses.append("origin_port = :origin_port")
         params["origin_port"] = flat_updates["origin_port"]
@@ -781,6 +794,30 @@ async def update_from_bl(
         conn, shipment_id, new_status, claims.email, "Auto-advanced from ATD (BL apply)"
     )
 
+    # Sync ETD to TRACKED POL task (on_board_date on BL = vessel sailed → actual_end)
+    if etd:
+        wf_row = conn.execute(text("""
+            SELECT workflow_tasks FROM shipment_workflows WHERE shipment_id = :id
+        """), {"id": shipment_id}).fetchone()
+        if wf_row:
+            wf_tasks = _parse_jsonb(wf_row[0]) or []
+            modified = False
+            for task in wf_tasks:
+                if task.get("task_type") == "POL" and task.get("mode") == "TRACKED":
+                    # on_board_date on a BL = vessel has already sailed → write to actual_end
+                    # Also seed scheduled_end if still blank (ETD reference)
+                    task["actual_end"] = etd
+                    if not task.get("scheduled_end"):
+                        task["scheduled_end"] = etd
+                    modified = True
+                    break
+            if modified:
+                conn.execute(text("""
+                    UPDATE shipment_workflows
+                    SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
+                    WHERE shipment_id = :id
+                """), {"tasks": json.dumps(wf_tasks), "now": now, "id": shipment_id})
+
     # Log to system_logs
     _log_system_action_pg(conn, "BL_UPDATED", shipment_id, claims.uid, claims.email)
 
@@ -817,7 +854,6 @@ async def update_from_bl(
             "booking": booking,
             "parties": parties,
             "bl_document": bl_doc,
-            "etd": flat_updates.get("etd"),
             "origin_port": flat_updates.get("origin_port"),
             "dest_port": flat_updates.get("dest_port"),
             "new_status": new_status,

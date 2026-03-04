@@ -209,15 +209,17 @@ async def update_shipment_task(
         task["visibility"] = body.visibility
 
     # --- Timing fields ---
-    if body.scheduled_start is not None:
+    # Use __fields_set__ to distinguish "not sent" from "explicitly set to null".
+    # Explicit null clears the field; omitted fields are left unchanged.
+    if "scheduled_start" in body.__fields_set__:
         task["scheduled_start"] = body.scheduled_start
-    if body.scheduled_end is not None:
+    if "scheduled_end" in body.__fields_set__:
         task["scheduled_end"] = body.scheduled_end
-    if body.actual_start is not None:
+    if "actual_start" in body.__fields_set__:
         task["actual_start"] = body.actual_start
-    if body.actual_end is not None:
+    if "actual_end" in body.__fields_set__:
         task["actual_end"] = body.actual_end
-        task["completed_at"] = body.actual_end
+        task["completed_at"] = body.actual_end if body.actual_end is not None else None
 
     task["updated_by"] = claims.uid
     task["updated_at"] = now
@@ -251,23 +253,11 @@ async def update_shipment_task(
         WHERE shipment_id = :id
     """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
 
-    # --- Sync flat ETD/ETA columns + auto status for TRACKED port tasks ---
+    # --- Auto status progression for TRACKED port tasks ---
     task_type = task.get("task_type")
     task_mode = task.get("mode")
 
     if task_mode == TRACKED and task_type in ("POL", "POD"):
-        # Sync flat ETD/ETA columns (derived copies on shipments table)
-        if task_type == "POL" and body.scheduled_end is not None:
-            conn.execute(
-                text("UPDATE shipments SET etd = :etd, updated_at = :now WHERE id = :id"),
-                {"etd": body.scheduled_end, "now": now, "id": shipment_id}
-            )
-        if task_type == "POD" and body.scheduled_start is not None:
-            conn.execute(
-                text("UPDATE shipments SET eta = :eta, updated_at = :now WHERE id = :id"),
-                {"eta": body.scheduled_start, "now": now, "id": shipment_id}
-            )
-
         # Auto status progression — forward only
         if task_type == "POL" and body.actual_end is not None:
             cur = conn.execute(

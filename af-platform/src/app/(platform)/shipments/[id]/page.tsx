@@ -429,7 +429,7 @@ export default function ShipmentOrderDetailPage() {
         {(() => {
           const bookingRef = bk.booking_reference as string || null;
           const carrierAgent = bk.carrier_agent as string || null;
-          const etd = (order as unknown as Record<string, unknown>).etd as string || null;
+          const etd = routePolEtd;
           const isAir = order.order_type === 'AIR';
           const flightNumber = bk.flight_number as string || null;
           const flightDate = bk.flight_date as string || null;

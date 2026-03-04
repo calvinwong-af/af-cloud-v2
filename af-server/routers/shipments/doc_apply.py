@@ -66,10 +66,10 @@ async def apply_booking_confirmation(
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
 ):
-    # Read current shipment (4a: include incoterm_code, transaction_type, etd, eta)
+    # Read current shipment (4a: include incoterm_code, transaction_type)
     row = conn.execute(text("""
-        SELECT id, booking, route_nodes, type_details, bl_document,
-               incoterm_code, transaction_type, etd, eta
+        SELECT id, booking, type_details, bl_document,
+               incoterm_code, transaction_type
         FROM shipments WHERE id = :id
     """), {"id": shipment_id}).fetchone()
     if not row:
@@ -105,29 +105,9 @@ async def apply_booking_confirmation(
     set_clauses.append("booking = CAST(:booking AS jsonb)")
     params["booking"] = json.dumps(booking)
 
-    # ETD/ETA — fill-blanks only (4c: don't overwrite existing values)
-    if body.etd and not row[7]:
-        set_clauses.append("etd = :etd")
-        params["etd"] = body.etd
-    if body.eta_pod and not row[8]:
-        set_clauses.append("eta = :eta")
-        params["eta"] = body.eta_pod
-
-    # Also update route node timings if nodes exist — fill-blanks only
-    nodes = _parse_jsonb(row[2]) or []
-    if not isinstance(nodes, list): nodes = []
-    for node in nodes:
-        if node.get("role") == "ORIGIN" and body.etd and not node.get("scheduled_etd"):
-            node["scheduled_etd"] = body.etd
-        if node.get("role") == "DESTINATION" and body.eta_pod and not node.get("scheduled_eta"):
-            node["scheduled_eta"] = body.eta_pod
-    if nodes:
-        set_clauses.append("route_nodes = CAST(:route_nodes AS jsonb)")
-        params["route_nodes"] = json.dumps(nodes)
-
     # Merge containers into type_details
     if body.containers is not None:
-        type_details = _parse_jsonb(row[3]) or {}
+        type_details = _parse_jsonb(row[2]) or {}
         if not isinstance(type_details, dict):
             type_details = {}
         type_details["containers"] = [
@@ -139,7 +119,7 @@ async def apply_booking_confirmation(
 
     # Write parsed shipper to bl_document if present (BC may have shipper/booking_party)
     if body.shipper_name is not None:
-        bl_doc = _parse_jsonb(row[4]) or {}
+        bl_doc = _parse_jsonb(row[3]) or {}
         if not isinstance(bl_doc, dict): bl_doc = {}
         bl_doc["shipper"] = {
             "name": body.shipper_name,
@@ -152,8 +132,44 @@ async def apply_booking_confirmation(
         UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
     """), params)
 
+    # Sync ETD/ETA to TRACKED POL/POD workflow tasks (fill-blanks only)
+    wf_row = conn.execute(text("""
+        SELECT workflow_tasks FROM shipment_workflows WHERE shipment_id = :id
+    """), {"id": shipment_id}).fetchone()
+    if wf_row:
+        tasks = _parse_jsonb(wf_row[0]) or []
+        tasks_modified = False
+        # Compute ETA POL fallback: if ETD present but no ETA POL supplied, use ETD - 1 day
+        # ETA POL = scheduled_start on the POL TRACKED task (when cargo arrives at loading port)
+        effective_eta_pol = None
+        if body.etd:
+            try:
+                from datetime import date as _date, timedelta
+                etd_d = _date.fromisoformat(body.etd[:10])
+                effective_eta_pol = (etd_d - timedelta(days=1)).isoformat()
+            except (ValueError, TypeError):
+                pass
+
+        for task in tasks:
+            if task.get("mode") != "TRACKED":
+                continue
+            if task.get("task_type") == "POL" and body.etd:
+                task["scheduled_end"] = body.etd          # ETD POL
+                if effective_eta_pol:
+                    task["scheduled_start"] = effective_eta_pol  # ETA POL fallback
+                tasks_modified = True
+            if task.get("task_type") == "POD" and body.eta_pod:
+                task["scheduled_start"] = body.eta_pod    # ETA POD
+                tasks_modified = True
+        if tasks_modified:
+            conn.execute(text("""
+                UPDATE shipment_workflows
+                SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
+                WHERE shipment_id = :id
+            """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
+
     # 4b: Compute status from incoterm logic (not hard-coded)
-    new_status = _resolve_document_status(row[5], row[6], body.etd)
+    new_status = _resolve_document_status(row[4], row[5], body.etd)
     conn.execute(text("UPDATE shipments SET status = :status WHERE id = :id"),
                  {"status": new_status, "id": shipment_id})
     # No ATD check for BC — vessel has not departed by definition
@@ -195,7 +211,7 @@ async def apply_awb(
 ):
     # Read current shipment
     row = conn.execute(text("""
-        SELECT id, booking, parties, type_details, cargo, route_nodes,
+        SELECT id, booking, parties, type_details, cargo,
                incoterm_code, transaction_type, bl_document
         FROM shipments WHERE id = :id
     """), {"id": shipment_id}).fetchone()
@@ -236,21 +252,6 @@ async def apply_awb(
         booking["flight_date"] = body.flight_date
     set_clauses.append("booking = CAST(:booking AS jsonb)")
     params["booking"] = json.dumps(booking)
-
-    # Write flight_date to flat etd column so route card shows correct ETD
-    if body.flight_date is not None:
-        set_clauses.append("etd = :etd")
-        params["etd"] = body.flight_date
-
-    # Also update route node timings if nodes exist (match apply_booking_confirmation pattern)
-    nodes = _parse_jsonb(row[5]) or []
-    if not isinstance(nodes, list): nodes = []
-    for node in nodes:
-        if node.get("role") == "ORIGIN" and body.flight_date:
-            node["scheduled_etd"] = body.flight_date
-    if nodes:
-        set_clauses.append("route_nodes = CAST(:route_nodes AS jsonb)")
-        params["route_nodes"] = json.dumps(nodes)
 
     # Merge parties
     parties = _parse_jsonb(row[2]) or {}
@@ -306,7 +307,7 @@ async def apply_awb(
     params["cargo"] = json.dumps(cargo)
 
     # Write parsed parties to bl_document (audit record of what the document contained)
-    bl_doc = _parse_jsonb(row[8]) or {}
+    bl_doc = _parse_jsonb(row[7]) or {}
     if not isinstance(bl_doc, dict): bl_doc = {}
     if body.shipper_name is not None or body.shipper_address is not None:
         bl_doc["shipper"] = {
@@ -325,9 +326,32 @@ async def apply_awb(
         UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
     """), params)
 
+    # Sync flight_date to TRACKED POL task actual_end (AWB = already-flown document)
+    # Also seed scheduled_end if blank
+    if body.flight_date:
+        wf_row = conn.execute(text("""
+            SELECT workflow_tasks FROM shipment_workflows WHERE shipment_id = :id
+        """), {"id": shipment_id}).fetchone()
+        if wf_row:
+            tasks = _parse_jsonb(wf_row[0]) or []
+            tasks_modified = False
+            for task in tasks:
+                if task.get("task_type") == "POL" and task.get("mode") == "TRACKED":
+                    task["actual_end"] = body.flight_date
+                    if not task.get("scheduled_end"):
+                        task["scheduled_end"] = body.flight_date
+                    tasks_modified = True
+                    break
+            if tasks_modified:
+                conn.execute(text("""
+                    UPDATE shipment_workflows
+                    SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
+                    WHERE shipment_id = :id
+                """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
+
     # Auto-advance status based on incoterm classification
-    incoterm_code = row[6]   # incoterm_code
-    txn_type = row[7]        # transaction_type
+    incoterm_code = row[5]   # incoterm_code
+    txn_type = row[6]        # transaction_type
     new_status = _resolve_document_status(incoterm_code, txn_type, body.flight_date)
     conn.execute(text("UPDATE shipments SET status = :status WHERE id = :id"),
                  {"status": new_status, "id": shipment_id})

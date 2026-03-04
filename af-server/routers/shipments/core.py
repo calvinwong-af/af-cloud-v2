@@ -297,15 +297,13 @@ def _lazy_init_tasks_pg(conn, shipment_id: str, shipment_data: dict) -> list[dic
         except (ValueError, TypeError):
             return None
 
-    etd = _parse_date(shipment_data.get("etd"))
-    eta = _parse_date(shipment_data.get("eta"))
     cargo_ready_date = _parse_date(shipment_data.get("cargo_ready_date"))
 
     tasks = generate_incoterm_tasks(
         incoterm=incoterm,
         transaction_type=txn_type,
-        etd=etd,
-        eta=eta,
+        etd=None,
+        eta=None,
         cargo_ready_date=cargo_ready_date,
         updated_by="system",
     )
@@ -517,7 +515,7 @@ async def create_shipment_manual(
             origin_port, origin_terminal, dest_port, dest_terminal,
             cargo, type_details, parties, bl_document,
             exception_data, route_nodes, trash,
-            cargo_ready_date, etd, eta, creator,
+            cargo_ready_date, creator,
             migrated_from_v1, created_at, updated_at
         ) VALUES (
             :id, :countid, :company_id, :order_type, :transaction_type, :incoterm_code,
@@ -525,7 +523,7 @@ async def create_shipment_manual(
             :origin_port, :origin_terminal, :dest_port, :dest_terminal,
             CAST(:cargo AS jsonb), CAST(:type_details AS jsonb), CAST(:parties AS jsonb), NULL,
             NULL, NULL, FALSE,
-            :cargo_ready_date, :etd, :eta, CAST(:creator AS jsonb),
+            :cargo_ready_date, CAST(:creator AS jsonb),
             FALSE, :now, :now
         )
     """), {
@@ -547,8 +545,6 @@ async def create_shipment_manual(
         "parties": json.dumps(parties),
         "creator": json.dumps(creator),
         "cargo_ready_date": body.cargo_ready_date,
-        "etd": body.etd,
-        "eta": body.eta,
     })
 
     # 12. Auto-generate tasks
@@ -566,6 +562,14 @@ async def create_shipment_manual(
         etd=etd_date,
         updated_by=claims.email,
     )
+
+    # Seed POL/POD task timing from request (single source of truth)
+    for task in tasks:
+        if task.get("mode") == "TRACKED":
+            if task.get("task_type") == "POL" and body.etd:
+                task["scheduled_end"] = body.etd
+            elif task.get("task_type") == "POD" and body.eta:
+                task["scheduled_start"] = body.eta
 
     # 13. Workflow history
     wf_history = [{

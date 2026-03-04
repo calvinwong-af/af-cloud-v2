@@ -65,7 +65,6 @@ export function createDocResultHandler(params: {
         return { ok: false, error: result?.error ?? 'Apply failed' };
       }
       await Promise.all([loadOrder(), loadRouteTimings()]);
-      router.refresh();
       setFilesRefreshKey(k => k + 1);
       return { ok: true };
     }
@@ -82,7 +81,6 @@ export function createDocResultHandler(params: {
         return { ok: false, error: result?.error ?? 'Apply failed' };
       }
       await Promise.all([loadOrder(), loadRouteTimings()]);
-      router.refresh();
       // Save the uploaded document to Files using the proven upload endpoint
       if (uploadedFile) {
         const fd = new FormData();
@@ -106,7 +104,6 @@ export function createDocResultHandler(params: {
         return { ok: false, error: result?.error ?? 'Apply failed' };
       }
       await Promise.all([loadOrder(), loadRouteTimings()]);
-      router.refresh();
       // Save the uploaded document to Files using the proven upload endpoint
       if (uploadedFile) {
         const fd = new FormData();
