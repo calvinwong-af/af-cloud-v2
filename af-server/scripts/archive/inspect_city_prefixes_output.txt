@@ -1,0 +1,31 @@
+=== Unique MY- state prefixes in PricingHaulage city_codes ===
+
+Prefix          In PG states?        Example city codes
+--------------------------------------------------------------------------------
+MY-JHR          OK                   MY-JHR-001, MY-JHR-002, MY-JHR-003
+MY-KDH          OK                   MY-KDH-001, MY-KDH-002, MY-KDH-003
+MY-KLT          MISMATCH             MY-KLT-001, MY-KLT-002, MY-KLT-003
+MY-KUL          OK                   MY-KUL-001, MY-KUL-002, MY-KUL-003
+MY-MLK          OK                   MY-MLK-001, MY-MLK-002, MY-MLK-003
+MY-NE9          MISMATCH             MY-NE9-001, MY-NE9-002, MY-NE9-003
+MY-PEJ          MISMATCH             MY-PEJ-001, MY-PEJ-002, MY-PEJ-003
+MY-PER          MISMATCH             MY-PER-001, MY-PER-002
+MY-PHG          OK                   MY-PHG-001, MY-PHG-002, MY-PHG-003
+MY-PKG          MISMATCH             MY-PKG-001, MY-PKG-002, MY-PKG-002A
+MY-PNG          OK                   MY-PNG-001, MY-PNG-002, MY-PNG-003
+MY-PRK          OK                   MY-PRK-001, MY-PRK-002, MY-PRK-003
+MY-SBH          OK                   MY-SBH-001, MY-SBH-002, MY-SBH-003
+MY-SEL          MISMATCH             MY-SEL-001, MY-SEL-002, MY-SEL-003
+MY-SWK          OK                   MY-SWK-004, MY-SWK-93050, MY-SWK-93450
+MY-TER          MISMATCH             MY-TER-001, MY-TER-002, MY-TER-003
+
+Total prefixes: 16 | Mismatches: 7
+
+Prefixes needing mapping:
+  MY-KLT
+  MY-NE9
+  MY-PEJ
+  MY-PER
+  MY-PKG
+  MY-SEL
+  MY-TER
