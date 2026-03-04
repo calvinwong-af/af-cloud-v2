@@ -9,9 +9,9 @@
 
 import { useState } from 'react';
 import { Globe } from 'lucide-react';
-import { StatesTab, CitiesTab, HaulageAreasTab, PortsTab } from './_components';
+import { StatesTab, CitiesTab, HaulageAreasTab, PortsTab, CountriesTab } from './_components';
 
-const TABS = ['States', 'Cities', 'Haulage Areas', 'Ports'] as const;
+const TABS = ['States', 'Cities', 'Haulage Areas', 'Ports', 'Countries'] as const;
 type Tab = (typeof TABS)[number];
 
 export default function GeographyPage() {
@@ -52,6 +52,7 @@ export default function GeographyPage() {
       {tab === 'Cities' && <CitiesTab />}
       {tab === 'Haulage Areas' && <HaulageAreasTab />}
       {tab === 'Ports' && <PortsTab />}
+      {tab === 'Countries' && <CountriesTab />}
     </div>
   );
 }

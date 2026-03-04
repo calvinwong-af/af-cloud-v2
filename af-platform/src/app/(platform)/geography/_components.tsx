@@ -7,7 +7,9 @@ import {
   fetchGeoPortsAction, createCityAction, updateCityAction,
   createHaulageAreaAction, updateHaulageAreaAction, deleteHaulageAreaAction,
   updatePortCoordinatesAction, resolvePortAction, confirmPortAction,
+  fetchCountriesAction, updateCountryAction,
 } from '@/app/actions/geography';
+import type { Country } from '@/app/actions/geography';
 import type { State, City, HaulageArea } from '@/lib/types';
 import type { Port } from '@/lib/ports';
 
@@ -61,6 +63,72 @@ const btnPrimary = "px-4 py-2 text-sm font-medium rounded-lg bg-[var(--sky)] tex
 const btnSecondary = "px-4 py-2 text-sm font-medium rounded-lg border border-[var(--border)] text-[var(--text-mid)] hover:bg-[var(--surface)] transition-colors";
 const thCls = "px-4 py-3 text-left text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide";
 const tdCls = "px-4 py-3 text-sm text-[var(--text)]";
+
+// ---------------------------------------------------------------------------
+// FilterCombobox — typeable dropdown for filter controls
+// ---------------------------------------------------------------------------
+
+function FilterCombobox({
+  value,
+  onChange,
+  options,
+  placeholder,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  options: { value: string; label: string }[];
+  placeholder?: string;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+
+  const selectedLabel = options.find(o => o.value === value)?.label ?? '';
+  const displayText = open ? query : selectedLabel;
+  const filtered = open
+    ? options.filter(o =>
+        o.label.toLowerCase().includes(query.toLowerCase()) ||
+        o.value.toLowerCase().includes(query.toLowerCase())
+      ).slice(0, 30)
+    : [];
+
+  return (
+    <div className="relative min-w-[160px]">
+      <input
+        type="text"
+        value={displayText}
+        placeholder={placeholder ?? 'Search...'}
+        className={inputCls}
+        onFocus={() => { setOpen(true); setQuery(''); }}
+        onChange={e => setQuery(e.target.value)}
+        onBlur={() => setTimeout(() => { setOpen(false); setQuery(''); }, 150)}
+        onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); setQuery(''); } }}
+      />
+      {value && !open && (
+        <button
+          type="button"
+          onMouseDown={e => { e.preventDefault(); onChange(''); }}
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text)]"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      )}
+      {open && filtered.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-[var(--border)] rounded-lg shadow-lg max-h-48 overflow-y-auto">
+          {filtered.map(o => (
+            <button
+              key={o.value}
+              type="button"
+              onMouseDown={e => { e.preventDefault(); onChange(o.value); setOpen(false); setQuery(''); }}
+              className={`w-full text-left px-3 py-2 text-xs hover:bg-[var(--sky-mist)] ${o.value === value ? 'bg-[var(--sky-mist)] font-medium' : ''}`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Mini map preview (placeholder when no Google Maps key)
@@ -343,6 +411,7 @@ export function HaulageAreasTab() {
   const [states, setStates] = useState<State[]>([]);
   const [ports, setPorts] = useState<Port[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterCountry, setFilterCountry] = useState('');
   const [filterPort, setFilterPort] = useState('');
   const [filterState, setFilterState] = useState('');
   const [showAdd, setShowAdd] = useState(false);
@@ -361,13 +430,36 @@ export function HaulageAreasTab() {
       fetchStatesAction(),
       fetchGeoPortsAction(),
     ]);
-    if (areasRes.success) setAreas(areasRes.data);
+    let areaData = areasRes.success ? areasRes.data : [];
+    if (filterCountry && portsRes.success) {
+      const portsInCountry = new Set(
+        portsRes.data.filter(p => p.country_code === filterCountry).map(p => p.un_code)
+      );
+      areaData = areaData.filter(a => portsInCountry.has(a.port_un_code));
+    }
+    setAreas(areaData);
     if (statesRes.success) setStates(statesRes.data);
     if (portsRes.success) setPorts(portsRes.data);
     setLoading(false);
-  }, [filterPort, filterState]);
+  }, [filterPort, filterState, filterCountry]);
 
   useEffect(() => { load(); }, [load]);
+
+  const portsInAreas = new Set(areas.map(a => a.port_un_code));
+  const countryOptions = Array.from(
+    new Map(
+      ports
+        .filter(p => portsInAreas.has(p.un_code))
+        .map(p => [p.country_code, { value: p.country_code, label: `${p.country_code} — ${p.country}` }])
+    ).values()
+  ).sort((a, b) => a.value.localeCompare(b.value));
+
+  const portOptions = (filterCountry
+    ? seaPorts.filter(p => p.country_code === filterCountry)
+    : seaPorts
+  ).map(p => ({ value: p.un_code, label: `${p.name} (${p.un_code})` }));
+
+  const stateOptions = states.map(s => ({ value: s.state_code, label: s.name }));
 
   const handleDelete = async (area: HaulageArea) => {
     if (!confirm(`Deactivate "${area.area_name}"?`)) return;
@@ -378,14 +470,24 @@ export function HaulageAreasTab() {
   return (
     <>
       <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <select value={filterPort} onChange={(e) => setFilterPort(e.target.value)} className={`${inputCls} max-w-[200px]`}>
-          <option value="">All ports</option>
-          {seaPorts.map((p) => <option key={p.un_code} value={p.un_code}>{p.name} ({p.un_code})</option>)}
-        </select>
-        <select value={filterState} onChange={(e) => setFilterState(e.target.value)} className={`${inputCls} max-w-[200px]`}>
-          <option value="">All states</option>
-          {states.map((s) => <option key={s.state_code} value={s.state_code}>{s.name}</option>)}
-        </select>
+        <FilterCombobox
+          value={filterCountry}
+          onChange={(v) => { setFilterCountry(v); setFilterPort(''); setFilterState(''); }}
+          options={countryOptions}
+          placeholder="All countries"
+        />
+        <FilterCombobox
+          value={filterPort}
+          onChange={setFilterPort}
+          options={portOptions}
+          placeholder="All ports"
+        />
+        <FilterCombobox
+          value={filterState}
+          onChange={setFilterState}
+          options={stateOptions}
+          placeholder="All states"
+        />
         <button onClick={() => setShowAdd(true)} className={btnPrimary}>
           <Plus className="w-4 h-4 inline mr-1" />Add Area
         </button>
@@ -843,6 +945,184 @@ function PortResolveModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
       )}
 
       {!candidate && error && <p className="text-sm text-red-600">{error}</p>}
+    </ModalOverlay>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Countries Tab
+// ---------------------------------------------------------------------------
+
+export function CountriesTab() {
+  const [countries, setCountries] = useState<Country[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [editCountry, setEditCountry] = useState<Country | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const r = await fetchCountriesAction();
+    if (r.success) setCountries(r.data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = search
+    ? countries.filter(c =>
+        c.name.toLowerCase().includes(search.toLowerCase()) ||
+        c.country_code.toLowerCase().includes(search.toLowerCase())
+      )
+    : countries;
+
+  return (
+    <>
+      <div className="flex items-center gap-3 mb-4">
+        <div className="relative flex-1 max-w-[300px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+          <input
+            className={`${inputCls} pl-9`}
+            placeholder="Search countries..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <TableShell>
+        <thead className="bg-[var(--surface)]">
+          <tr>
+            <th className={thCls}>Code</th>
+            <th className={thCls}>Name</th>
+            <th className={thCls}>Currency</th>
+            <th className={thCls}>Tax</th>
+            <th className={thCls}>Rate</th>
+            <th className={thCls}></th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-[var(--border)]">
+          {loading ? (
+            <tr><td colSpan={6} className="py-8 text-center">
+              <Loader2 className="w-5 h-5 animate-spin mx-auto text-[var(--text-muted)]" />
+            </td></tr>
+          ) : filtered.length === 0 ? (
+            <EmptyRow cols={6} message="No countries found" />
+          ) : (
+            filtered.map(c => (
+              <tr key={c.country_code} className="hover:bg-[var(--surface)]/50">
+                <td className={`${tdCls} font-mono`}>{c.country_code}</td>
+                <td className={tdCls}>{c.name}</td>
+                <td className={tdCls}>
+                  {c.currency_code
+                    ? <span className="font-mono text-xs">{c.currency_code} {c.currency_symbol && <span className="text-[var(--text-muted)]">({c.currency_symbol})</span>}</span>
+                    : <span className="text-[var(--text-muted)]">—</span>}
+                </td>
+                <td className={tdCls}>
+                  {c.tax_label
+                    ? <span className={`text-xs px-2 py-0.5 rounded-full ${c.tax_applicable ? 'bg-amber-50 text-amber-700' : 'bg-[var(--surface)] text-[var(--text-muted)]'}`}>
+                        {c.tax_label}
+                      </span>
+                    : <span className="text-[var(--text-muted)]">—</span>}
+                </td>
+                <td className={tdCls}>
+                  {c.tax_rate != null
+                    ? <span className="text-sm">{c.tax_rate}%</span>
+                    : <span className="text-[var(--text-muted)]">—</span>}
+                </td>
+                <td className={tdCls}>
+                  <button onClick={() => setEditCountry(c)} className="text-[var(--text-muted)] hover:text-[var(--text)]">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </TableShell>
+
+      {editCountry && (
+        <CountryEditModal
+          country={editCountry}
+          onClose={() => setEditCountry(null)}
+          onSaved={() => { setEditCountry(null); load(); }}
+        />
+      )}
+    </>
+  );
+}
+
+function CountryEditModal({ country, onClose, onSaved }: {
+  country: Country;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [currencyCode, setCurrencyCode] = useState(country.currency_code ?? '');
+  const [currencySymbol, setCurrencySymbol] = useState(country.currency_symbol ?? '');
+  const [taxLabel, setTaxLabel] = useState(country.tax_label ?? '');
+  const [taxRate, setTaxRate] = useState(country.tax_rate?.toString() ?? '');
+  const [taxApplicable, setTaxApplicable] = useState(country.tax_applicable);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError('');
+    const result = await updateCountryAction(country.country_code, {
+      currency_code: currencyCode || null,
+      currency_symbol: currencySymbol || null,
+      tax_label: taxLabel || null,
+      tax_rate: taxRate ? parseFloat(taxRate) : null,
+      tax_applicable: taxApplicable,
+    });
+    if (!result.success) { setError(result.error); setSaving(false); return; }
+    onSaved();
+  };
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-[var(--text)]">
+          Edit Country — {country.country_code}
+        </h3>
+        <button onClick={onClose}><X className="w-5 h-5 text-[var(--text-muted)]" /></button>
+      </div>
+      <p className="text-sm text-[var(--text-muted)] mb-4">{country.name}</p>
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Currency Code">
+            <input className={inputCls} value={currencyCode} onChange={e => setCurrencyCode(e.target.value.toUpperCase())} placeholder="e.g. MYR" />
+          </Field>
+          <Field label="Currency Symbol">
+            <input className={inputCls} value={currencySymbol} onChange={e => setCurrencySymbol(e.target.value)} placeholder="e.g. RM" />
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Tax Label">
+            <input className={inputCls} value={taxLabel} onChange={e => setTaxLabel(e.target.value.toUpperCase())} placeholder="e.g. GST, VAT, SST" />
+          </Field>
+          <Field label="Tax Rate (%)">
+            <input className={inputCls} value={taxRate} onChange={e => setTaxRate(e.target.value)} placeholder="e.g. 9.00" />
+          </Field>
+        </div>
+        <Field label="Tax Applicable">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={taxApplicable}
+              onChange={e => setTaxApplicable(e.target.checked)}
+              className="w-4 h-4 rounded border-[var(--border)] text-[var(--sky)]"
+            />
+            <span className="text-sm text-[var(--text)]">Tax applies to this country</span>
+          </label>
+        </Field>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+      </div>
+      <div className="flex justify-end gap-2 mt-5">
+        <button onClick={onClose} className={btnSecondary}>Cancel</button>
+        <button onClick={handleSave} disabled={saving} className={btnPrimary}>
+          {saving && <Loader2 className="w-4 h-4 animate-spin inline mr-1" />}Save
+        </button>
+      </div>
     </ModalOverlay>
   );
 }

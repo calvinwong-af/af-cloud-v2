@@ -1,5 +1,18 @@
 # Prompt Completion Log — v4.11–v4.20
 
+### [2026-03-05 17:30 UTC] — v-GEO-02: Geography Countries Backend + Countries Tab + Haulage Areas Combobox Filters
+- **Status:** Completed
+- **Tasks:**
+  - **Part 1 (geography.py):** Replaced countries stub with full implementation — GET /countries (with 10-min cache), GET /countries/{code}, PATCH /countries/{code} (AFU only, dynamic UPDATE). Added `_countries_cache`, `_invalidate_countries_cache()`.
+  - **Part 2 (geography.ts):** Added `Country` interface, `fetchCountriesAction`, `updateCountryAction` server actions following existing patterns.
+  - **Part 3a (page.tsx):** Added 'Countries' tab to TABS constant, imported and rendered `CountriesTab`.
+  - **Part 3b (_components.tsx):** Added `FilterCombobox` reusable typeable combobox. Upgraded HaulageAreasTab filters from `<select>` to `FilterCombobox` with country/port/state comboboxes. Added client-side country filter. Added `CountriesTab` (table with search, edit button) and `CountryEditModal` (currency + tax fields).
+- **Files Modified:**
+  - `af-server/routers/geography.py`
+  - `af-platform/src/app/actions/geography.ts`
+  - `af-platform/src/app/(platform)/geography/page.tsx`
+  - `af-platform/src/app/(platform)/geography/_components.tsx`
+
 ### [2026-03-05 16:15 UTC] — v4.18: Investigate and Fix POL ATA Not Showing on Route Node
 - **Status:** Completed
 - **Tasks:**

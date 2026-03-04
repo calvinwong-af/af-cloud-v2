@@ -12,6 +12,17 @@ type ActionResult<T> =
   | { success: true; data: T }
   | { success: false; error: string };
 
+export interface Country {
+  country_code: string;
+  name: string;
+  currency_code: string | null;
+  currency_symbol: string | null;
+  tax_label: string | null;
+  tax_rate: number | null;
+  tax_applicable: boolean;
+  is_active: boolean;
+}
+
 async function getToken(): Promise<string | null> {
   const { cookies } = await import('next/headers');
   const cookieStore = cookies();
@@ -183,4 +194,43 @@ export async function confirmPortAction(data: {
   port_type: string; lat?: number | null; lng?: number | null;
 }) {
   return afuWriteAction('/api/v2/geography/ports/confirm', 'POST', data);
+}
+
+// Countries
+export async function fetchCountriesAction(): Promise<ActionResult<Country[]>> {
+  try {
+    const session = await verifySessionAndRole(['AFC-ADMIN', 'AFC-M', 'AFU-ADMIN']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+    const token = await getToken();
+    if (!token) return { success: false, error: 'No session token' };
+
+    const url = new URL('/api/v2/geography/countries', process.env.AF_SERVER_URL);
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      return { success: false, error: `Server responded ${res.status}: ${text}` };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data ?? [] };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'Failed to fetch countries' };
+  }
+}
+
+export async function updateCountryAction(
+  countryCode: string,
+  data: {
+    currency_code?: string | null;
+    currency_symbol?: string | null;
+    tax_label?: string | null;
+    tax_rate?: number | null;
+    tax_applicable?: boolean;
+  }
+): Promise<ActionResult<void>> {
+  return afuWriteAction(`/api/v2/geography/countries/${encodeURIComponent(countryCode)}`, 'PATCH', data as Record<string, unknown>);
 }

@@ -679,9 +679,119 @@ async def delete_haulage_area(
 
 
 # ---------------------------------------------------------------------------
-# Countries (stub — kept for backwards compatibility)
+# Countries
 # ---------------------------------------------------------------------------
 
+_countries_cache: list[dict] = []
+_countries_cache_ts: float = 0
+
+
+def _invalidate_countries_cache():
+    global _countries_cache, _countries_cache_ts
+    _countries_cache = []
+    _countries_cache_ts = 0
+
+
 @router.get("/countries")
-async def list_countries(claims: Claims = Depends(require_auth)):
-    return {"status": "OK", "data": [], "msg": "Countries — implementation in progress"}
+async def list_countries(
+    claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
+):
+    """List all active countries, ordered by name."""
+    global _countries_cache, _countries_cache_ts
+
+    now = time.monotonic()
+    if _countries_cache and (now - _countries_cache_ts) < _PORT_CACHE_TTL:
+        return {"status": "OK", "data": _countries_cache}
+
+    rows = conn.execute(text("""
+        SELECT country_code, name, currency_code, currency_symbol,
+               tax_label, tax_rate, tax_applicable, is_active
+        FROM countries WHERE is_active = TRUE
+        ORDER BY name
+    """)).fetchall()
+
+    _countries_cache = [
+        {
+            "country_code": r[0],
+            "name": r[1],
+            "currency_code": r[2],
+            "currency_symbol": r[3],
+            "tax_label": r[4],
+            "tax_rate": float(r[5]) if r[5] is not None else None,
+            "tax_applicable": r[6],
+            "is_active": r[7],
+        }
+        for r in rows
+    ]
+    _countries_cache_ts = now
+    logger.info(f"[geography] Countries cache refreshed — {len(_countries_cache)} countries loaded")
+
+    return {"status": "OK", "data": _countries_cache}
+
+
+@router.get("/countries/{country_code}")
+async def get_country(
+    country_code: str,
+    claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
+):
+    """Get a single country by code."""
+    row = conn.execute(text("""
+        SELECT country_code, name, currency_code, currency_symbol,
+               tax_label, tax_rate, tax_applicable, is_active
+        FROM countries WHERE country_code = :code
+    """), {"code": country_code}).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Country {country_code} not found")
+
+    return {"status": "OK", "data": {
+        "country_code": row[0],
+        "name": row[1],
+        "currency_code": row[2],
+        "currency_symbol": row[3],
+        "tax_label": row[4],
+        "tax_rate": float(row[5]) if row[5] is not None else None,
+        "tax_applicable": row[6],
+        "is_active": row[7],
+    }}
+
+
+class CountryUpdate(BaseModel):
+    currency_code: str | None = None
+    currency_symbol: str | None = None
+    tax_label: str | None = None
+    tax_rate: float | None = None
+    tax_applicable: bool | None = None
+    is_active: bool | None = None
+
+
+@router.patch("/countries/{country_code}")
+async def update_country(
+    country_code: str,
+    body: CountryUpdate,
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    """Update country tax/currency fields (AFU only). Name is not updatable."""
+    existing = conn.execute(text("SELECT country_code FROM countries WHERE country_code = :code"),
+                            {"code": country_code}).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Country {country_code} not found")
+
+    updates = []
+    params: dict = {"code": country_code}
+
+    for field in ["currency_code", "currency_symbol", "tax_label", "tax_rate", "tax_applicable", "is_active"]:
+        val = getattr(body, field, None)
+        if val is not None:
+            updates.append(f"{field} = :{field}")
+            params[field] = val
+
+    if not updates:
+        return {"status": "OK"}
+
+    conn.execute(text(f"UPDATE countries SET {', '.join(updates)} WHERE country_code = :code"), params)
+    _invalidate_countries_cache()
+    return {"status": "OK"}
