@@ -37,6 +37,7 @@ interface ShipmentFilesTabProps {
   refreshKey?: number; // increment to trigger a files reload (e.g. after document apply)
   onBLUpdated?: () => void; // called after a BL re-parse update is confirmed
   onFileCountChange?: (count: number) => void; // called when file list loads or changes
+  onDocApplied?: () => void; // called after any doc re-parse apply succeeds
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -105,7 +106,7 @@ const canToggleVisibility = (role: string) => isAFU(role);
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function ShipmentFilesTab({ shipmentId, userRole, ports, refreshKey, onBLUpdated, onFileCountChange }: ShipmentFilesTabProps) {
+export default function ShipmentFilesTab({ shipmentId, userRole, ports, refreshKey, onBLUpdated, onFileCountChange, onDocApplied }: ShipmentFilesTabProps) {
   const [files, setFiles] = useState<ShipmentFile[]>([]);
   const [tags, setTags] = useState<FileTag[]>([]);
   const [loading, setLoading] = useState(true);
@@ -449,6 +450,7 @@ export default function ShipmentFilesTab({ shipmentId, userRole, ports, refreshK
             setShowReparseModal(false);
             setReparseInitialData(null);
             onBLUpdated?.();
+            onDocApplied?.();
             return { ok: true };
           }}
         />

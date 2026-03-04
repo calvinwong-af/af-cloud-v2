@@ -13,13 +13,14 @@ export function createDocResultHandler(params: {
   router: ReturnType<typeof useRouter>;
   setShowDocParseModal: (v: boolean) => void;
   setFilesRefreshKey: (fn: (k: number) => number) => void;
+  setRouteTimelineRefreshKey: (fn: (k: number) => number) => void;
 }): (docType: DocType, data: ParsedBCData | ParsedAWBData | Record<string, unknown>, file: File | null) => Promise<{ ok: boolean; error?: string } | void> {
   const {
     order,
     loadOrder,
     loadRouteTimings,
-    router,
     setFilesRefreshKey,
+    setRouteTimelineRefreshKey,
   } = params;
 
   return async (docType: DocType, data, uploadedFile) => {
@@ -66,6 +67,7 @@ export function createDocResultHandler(params: {
       }
       await Promise.all([loadOrder(), loadRouteTimings()]);
       setFilesRefreshKey(k => k + 1);
+      setRouteTimelineRefreshKey(k => k + 1);
       return { ok: true };
     }
 
@@ -81,6 +83,7 @@ export function createDocResultHandler(params: {
         return { ok: false, error: result?.error ?? 'Apply failed' };
       }
       await Promise.all([loadOrder(), loadRouteTimings()]);
+      setRouteTimelineRefreshKey(k => k + 1);
       // Save the uploaded document to Files using the proven upload endpoint
       if (uploadedFile) {
         const fd = new FormData();
@@ -104,6 +107,7 @@ export function createDocResultHandler(params: {
         return { ok: false, error: result?.error ?? 'Apply failed' };
       }
       await Promise.all([loadOrder(), loadRouteTimings()]);
+      setRouteTimelineRefreshKey(k => k + 1);
       // Save the uploaded document to Files using the proven upload endpoint
       if (uploadedFile) {
         const fd = new FormData();

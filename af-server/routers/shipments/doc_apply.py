@@ -32,6 +32,7 @@ from ._helpers import (
     _resolve_gcs_path,
     _save_file_to_gcs,
     _create_file_record,
+    _sync_route_node_timings,
 )
 
 logger = logging.getLogger(__name__)
@@ -167,6 +168,14 @@ async def apply_booking_confirmation(
                 SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
                 WHERE shipment_id = :id
             """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
+
+    # Sync route node timings — BC provides ETD POL, ETA POD, ETA POL (fallback)
+    _sync_route_node_timings(
+        conn, shipment_id, now,
+        origin_scheduled_etd=body.etd or None,
+        origin_scheduled_eta=effective_eta_pol,
+        dest_scheduled_eta=body.eta_pod or None,
+    )
 
     # 4b: Compute status from incoterm logic (not hard-coded)
     new_status = _resolve_document_status(row[4], row[5], body.etd)
@@ -348,6 +357,14 @@ async def apply_awb(
                     SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
                     WHERE shipment_id = :id
                 """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
+
+    # Sync route node timings — AWB is post-flight, actual only
+    # Do NOT write scheduled_etd — that belongs to BC (planning document)
+    if body.flight_date:
+        _sync_route_node_timings(
+            conn, shipment_id, now,
+            origin_actual_etd=body.flight_date,
+        )
 
     # Auto-advance status based on incoterm classification
     incoterm_code = row[5]   # incoterm_code

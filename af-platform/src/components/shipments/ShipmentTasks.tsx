@@ -288,8 +288,8 @@ function TaskCard({
                 </div>
               )}
             </div>
-            {/* Actual row — only shown if task has started */}
-            {task.status !== 'PENDING' && (
+            {/* Actual row — shown whenever actual values are present (regardless of status) */}
+            {(task.actual_start || task.actual_end) && (
               <div className="grid grid-cols-2 gap-x-4">
                 <div>
                   <span className="text-[var(--text-muted)]">{timingLabels.startedLabel}</span>
@@ -298,7 +298,7 @@ function TaskCard({
                   </div>
                 </div>
                 {/* ATD hidden for TRACKED POD — ATA is the meaningful completion event */}
-                {task.status === 'COMPLETED' && !(task.mode === 'TRACKED' && task.task_type === 'POD') && (
+                {!(task.mode === 'TRACKED' && task.task_type === 'POD') && (
                   <div>
                     <span className="text-[var(--text-muted)]">{timingLabels.completedLabel}</span>
                     <div className="text-emerald-600 font-medium">

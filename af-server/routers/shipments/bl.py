@@ -38,6 +38,7 @@ from ._helpers import (
     _create_file_record,
     _maybe_unblock_export_clearance_pg,
     _log_system_action_pg,
+    _sync_route_node_timings,
 )
 from ._prompts import (
     _BL_EXTRACTION_PROMPT,
@@ -468,6 +469,19 @@ async def create_from_bl(
         except (ValueError, TypeError):
             pass
 
+    # Sync route node timings from BL SOB date
+    if body.etd:
+        from datetime import date as _date3
+        try:
+            etd_is_past = _date3.fromisoformat(body.etd[:10]) <= _date3.today()
+        except (ValueError, TypeError):
+            etd_is_past = False
+        _sync_route_node_timings(
+            conn, shipment_id, now,
+            origin_scheduled_etd=body.etd,
+            origin_actual_etd=body.etd if etd_is_past else None,
+        )
+
     wf_history = [{
         "status": body.initial_status,
         "status_label": STATUS_LABELS.get(body.initial_status, str(body.initial_status)),
@@ -817,6 +831,14 @@ async def update_from_bl(
                     SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
                     WHERE shipment_id = :id
                 """), {"tasks": json.dumps(wf_tasks), "now": now, "id": shipment_id})
+
+    # Sync route node timings — BL SOB date = actual departure (ATD)
+    if etd:
+        _sync_route_node_timings(
+            conn, shipment_id, now,
+            origin_scheduled_etd=etd,
+            origin_actual_etd=etd,
+        )
 
     # Log to system_logs
     _log_system_action_pg(conn, "BL_UPDATED", shipment_id, claims.uid, claims.email)

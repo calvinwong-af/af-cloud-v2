@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   MapPin, Plus, Trash2, Loader2, AlertTriangle, Anchor,
 } from 'lucide-react';
@@ -19,6 +19,11 @@ interface RouteNodeTimelineProps {
   shipmentId: string;
   accountType: string | null;
   userRole: string | null;
+  refreshKey?: number;
+  /** Task-sourced timing overrides — always take precedence over route_nodes JSONB */
+  polAta?: string | null;
+  polAtd?: string | null;
+  podAta?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -51,12 +56,33 @@ const ROLE_COLORS: Record<string, string> = {
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function RouteNodeTimeline({ shipmentId, accountType, userRole }: RouteNodeTimelineProps) {
+export default function RouteNodeTimeline({ shipmentId, accountType, userRole, refreshKey, polAta, polAtd, podAta }: RouteNodeTimelineProps) {
   const [nodes, setNodes] = useState<RouteNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [derived, setDerived] = useState(true);
+
+  // Merge task-sourced actual timing into loaded nodes — task is source of truth
+  const displayNodes = useMemo(() => {
+    if (!nodes.length) return nodes;
+    return nodes.map(node => {
+      if (node.role === 'ORIGIN') {
+        return {
+          ...node,
+          actual_eta: polAta ?? node.actual_eta,
+          actual_etd: polAtd ?? node.actual_etd,
+        };
+      }
+      if (node.role === 'DESTINATION') {
+        return {
+          ...node,
+          actual_eta: podAta ?? node.actual_eta,
+        };
+      }
+      return node;
+    });
+  }, [nodes, polAta, polAtd, podAta]);
 
   const editable = canEditNodes(accountType, userRole);
   const removable = canRemoveNodes(accountType);
@@ -86,6 +112,15 @@ export default function RouteNodeTimeline({ shipmentId, accountType, userRole }:
   useEffect(() => {
     loadNodes();
   }, [loadNodes]);
+
+  const isFirstRefreshRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRefreshRender.current) {
+      isFirstRefreshRender.current = false;
+      return;
+    }
+    loadNodes();
+  }, [refreshKey, loadNodes]);
 
   async function handleAddTranship(afterIndex: number) {
     const newNodes = [...nodes];
@@ -177,10 +212,12 @@ export default function RouteNodeTimeline({ shipmentId, accountType, userRole }:
 
       {/* Horizontal timeline */}
       <div className="flex items-start overflow-x-auto pb-2">
-        {nodes.map((node, i) => (
+        {displayNodes.map((node, i) => (
           <div key={node.sequence} className="flex items-start flex-shrink-0">
             {/* Node */}
-            <div className="relative flex flex-col items-center min-w-[100px]">
+            <div className={`relative flex flex-col items-center ${
+              node.role === 'ORIGIN' ? 'min-w-[140px]' : 'min-w-[100px]'
+            }`}>
               {/* Port code circle — display only */}
               <div
                 title={node.port_name || undefined}
@@ -203,37 +240,80 @@ export default function RouteNodeTimeline({ shipmentId, accountType, userRole }:
               </span>
 
               {/* Timing info */}
-              <div className="mt-1 text-center space-y-0.5">
-                {(node.role === 'ORIGIN' || node.role === 'TRANSHIP') && (
-                  <div className="text-[10px]">
-                    {node.actual_etd ? (
-                      <>
-                        <span className="font-medium text-[var(--text)]">ATD: {formatDate(node.actual_etd)}</span>
-                        {node.scheduled_etd && node.scheduled_etd !== node.actual_etd && (
-                          <div className="text-[9px] text-[var(--text-muted)] line-through">{formatDate(node.scheduled_etd)}</div>
-                        )}
-                      </>
-                    ) : node.scheduled_etd ? (
-                      <span className="text-[var(--text-mid)]">ETD: {formatDate(node.scheduled_etd)}</span>
-                    ) : (
-                      <span className="text-[var(--text-muted)]">ETD: —</span>
-                    )}
+              <div className="mt-1.5 w-full">
+                {node.role === 'ORIGIN' ? (
+                  /* 2×2 grid: left = arrival (ETA/ATA), right = departure (ETD/ATD) */
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-center">
+                    {/* ETA POL */}
+                    <div>
+                      <div className="text-[9px] font-semibold text-[var(--text-muted)] uppercase tracking-wide">ETA</div>
+                      <div className="text-[10px] leading-tight text-[var(--text-mid)]">
+                        {node.scheduled_eta ? formatDate(node.scheduled_eta) : <span className="text-[var(--text-muted)]">—</span>}
+                      </div>
+                    </div>
+                    {/* ETD POL */}
+                    <div>
+                      <div className="text-[9px] font-semibold text-[var(--text-muted)] uppercase tracking-wide">ETD</div>
+                      <div className="text-[10px] leading-tight text-[var(--text-mid)]">
+                        {node.scheduled_etd ? formatDate(node.scheduled_etd) : <span className="text-[var(--text-muted)]">—</span>}
+                      </div>
+                    </div>
+                    {/* ATA POL */}
+                    <div>
+                      <div className="text-[9px] font-semibold text-blue-500 uppercase tracking-wide">ATA</div>
+                      <div className="text-[10px] font-medium leading-tight text-blue-600">
+                        {node.actual_eta ? formatDate(node.actual_eta) : <span className="text-[var(--text-muted)] font-normal">—</span>}
+                      </div>
+                    </div>
+                    {/* ATD POL */}
+                    <div>
+                      <div className="text-[9px] font-semibold text-emerald-500 uppercase tracking-wide">ATD</div>
+                      <div className="text-[10px] font-medium leading-tight text-emerald-600">
+                        {node.actual_etd ? formatDate(node.actual_etd) : <span className="text-[var(--text-muted)] font-normal">—</span>}
+                      </div>
+                    </div>
                   </div>
-                )}
-                {(node.role === 'DESTINATION' || node.role === 'TRANSHIP') && (
-                  <div className="text-[10px]">
-                    {node.actual_eta ? (
-                      <>
-                        <span className="font-medium text-[var(--text)]">ATA: {formatDate(node.actual_eta)}</span>
-                        {node.scheduled_eta && node.scheduled_eta !== node.actual_eta && (
-                          <div className="text-[9px] text-[var(--text-muted)] line-through">{formatDate(node.scheduled_eta)}</div>
-                        )}
-                      </>
-                    ) : node.scheduled_eta ? (
-                      <span className="text-[var(--text-mid)]">ETA: {formatDate(node.scheduled_eta)}</span>
-                    ) : (
-                      <span className="text-[var(--text-muted)]">ETA: —</span>
-                    )}
+                ) : node.role === 'TRANSHIP' ? (
+                  /* T/S: stacked ETD + ETA rows */
+                  <div className="space-y-1 text-center">
+                    <div>
+                      <div className="text-[9px] font-semibold text-[var(--text-muted)] uppercase tracking-wide">
+                        {node.actual_etd ? 'ATD' : 'ETD'}
+                      </div>
+                      <div className={`text-[10px] leading-tight ${node.actual_etd ? 'font-medium text-emerald-600' : 'text-[var(--text-mid)]'}`}>
+                        {node.actual_etd
+                          ? formatDate(node.actual_etd)
+                          : node.scheduled_etd
+                            ? formatDate(node.scheduled_etd)
+                            : <span className="text-[var(--text-muted)]">—</span>}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[9px] font-semibold text-[var(--text-muted)] uppercase tracking-wide">
+                        {node.actual_eta ? 'ATA' : 'ETA'}
+                      </div>
+                      <div className={`text-[10px] leading-tight ${node.actual_eta ? 'font-medium text-blue-600' : 'text-[var(--text-mid)]'}`}>
+                        {node.actual_eta
+                          ? formatDate(node.actual_eta)
+                          : node.scheduled_eta
+                            ? formatDate(node.scheduled_eta)
+                            : <span className="text-[var(--text-muted)]">—</span>}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* DESTINATION: single ETA/ATA column */
+                  <div className="text-center">
+                    <div className="text-[9px] font-semibold text-[var(--text-muted)] uppercase tracking-wide">
+                      {node.actual_eta ? 'ATA' : 'ETA'}
+                    </div>
+                    <div className={`text-[10px] leading-tight ${node.actual_eta ? 'font-medium text-blue-600' : 'text-[var(--text-mid)]'}`}>
+                      {node.actual_eta
+                        ? formatDate(node.actual_eta)
+                        : node.scheduled_eta
+                          ? formatDate(node.scheduled_eta)
+                          : <span className="text-[var(--text-muted)]">—</span>}
+                    </div>
                   </div>
                 )}
               </div>
@@ -252,7 +332,7 @@ export default function RouteNodeTimeline({ shipmentId, accountType, userRole }:
             </div>
 
             {/* Connector line + add button */}
-            {i < nodes.length - 1 && (
+            {i < displayNodes.length - 1 && (
               <div className="flex flex-col items-center justify-start pt-5 mx-1">
                 <div className="w-12 h-0.5 bg-[var(--border)] relative">
                   <Anchor className="w-3 h-3 text-[var(--text-muted)] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />

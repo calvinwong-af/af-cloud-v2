@@ -54,12 +54,14 @@ export default function ShipmentOrderDetailPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'files'>('overview');
   const [fileCount, setFileCount] = useState<number | null>(null);
   const [filesRefreshKey, setFilesRefreshKey] = useState(0);
+  const [routeTimelineRefreshKey, setRouteTimelineRefreshKey] = useState(0);
   const [isDgEditing, setIsDgEditing] = useState(false);
   const [isDgValue, setIsDgValue] = useState(false);
   const [dgDescription, setDgDescription] = useState('');
   const [isSavingDg, setIsSavingDg] = useState(false);
   const [routePolEta, setRoutePolEta] = useState<string | null>(null);
   const [routePolEtd, setRoutePolEtd] = useState<string | null>(null);
+  const [routePolAta, setRoutePolAta] = useState<string | null>(null);
   const [routePolAtd, setRoutePolAtd] = useState<string | null>(null);
   const [routePodEta, setRoutePodEta] = useState<string | null>(null);
   const [routePodAta, setRoutePodAta] = useState<string | null>(null);
@@ -82,6 +84,7 @@ export default function ShipmentOrderDetailPage() {
 
         setRoutePolEta(polTask?.scheduled_start ?? null);
         setRoutePolEtd(polTask?.scheduled_end ?? null);
+        setRoutePolAta(polTask?.actual_start ?? null);
         setRoutePolAtd(polTask?.actual_end ?? null);
         setRoutePodEta(podTask?.scheduled_start ?? null);
         setRoutePodAta(podTask?.actual_start ?? null);
@@ -215,6 +218,7 @@ export default function ShipmentOrderDetailPage() {
         accountType={accountType}
         polEta={routePolEta}
         polEtd={routePolEtd}
+        polAta={routePolAta}
         polAtd={routePolAtd}
         podEta={routePodEta}
         podAta={routePodAta}
@@ -296,6 +300,10 @@ export default function ShipmentOrderDetailPage() {
           refreshKey={filesRefreshKey}
           onBLUpdated={loadOrder}
           onFileCountChange={setFileCount}
+          onDocApplied={() => {
+            loadRouteTimings();
+            setRouteTimelineRefreshKey(k => k + 1);
+          }}
         />
       </div>
 
@@ -305,6 +313,10 @@ export default function ShipmentOrderDetailPage() {
             shipmentId={order.quotation_id}
             accountType={accountType}
             userRole={userRole}
+            refreshKey={routeTimelineRefreshKey}
+            polAta={routePolAta}
+            polAtd={routePolAtd}
+            podAta={routePodAta}
           />
           <ShipmentTasks
             shipmentId={order.quotation_id}
@@ -312,7 +324,7 @@ export default function ShipmentOrderDetailPage() {
             accountType={accountType}
             vesselName={vesselName}
             voyageNumber={voyageNumber}
-            onTimingChanged={() => { loadRouteTimings(); loadOrder(); }}
+            onTimingChanged={() => { loadRouteTimings(); loadOrder(); setRouteTimelineRefreshKey(k => k + 1); }}
           />
         </div>
       ) : activeTab === 'files' ? null : (
@@ -560,6 +572,7 @@ export default function ShipmentOrderDetailPage() {
             router,
             setShowDocParseModal,
             setFilesRefreshKey,
+            setRouteTimelineRefreshKey,
           })}
         />
       )}

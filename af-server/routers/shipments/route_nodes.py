@@ -139,6 +139,33 @@ async def get_route_nodes(
     # Enrich with port details
     nodes = _enrich_route_nodes(conn, nodes)
 
+    # Enrich ORIGIN/DESTINATION timing from TRACKED tasks (defense-in-depth)
+    # This ensures route node display is always consistent with task data,
+    # even if a write-time sync was missed.
+    wf_row = conn.execute(text("""
+        SELECT workflow_tasks FROM shipment_workflows WHERE shipment_id = :id
+    """), {"id": shipment_id}).fetchone()
+    if wf_row:
+        wf_tasks = _parse_jsonb(wf_row[0]) or []
+        pol_task = next(
+            (t for t in wf_tasks if t.get("task_type") == "POL" and t.get("mode") == "TRACKED"),
+            None,
+        )
+        pod_task = next(
+            (t for t in wf_tasks if t.get("task_type") == "POD" and t.get("mode") == "TRACKED"),
+            None,
+        )
+        for node in nodes:
+            if node.get("role") == "ORIGIN" and pol_task:
+                # Always overwrite from task — task is source of truth for actual timing
+                if pol_task.get("actual_start"):
+                    node["actual_eta"] = pol_task["actual_start"]
+                if pol_task.get("actual_end"):
+                    node["actual_etd"] = pol_task["actual_end"]
+            elif node.get("role") == "DESTINATION" and pod_task:
+                if pod_task.get("actual_start"):
+                    node["actual_eta"] = pod_task["actual_start"]
+
     return {
         "shipment_id": shipment_id,
         "route_nodes": nodes,

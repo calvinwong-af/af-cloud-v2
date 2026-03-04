@@ -8,6 +8,7 @@ import { formatDate } from '@/lib/utils';
 interface OriginTimingProps {
   eta: string | null;
   etd: string | null;
+  ata?: string | null;
   atd: string | null;
   showEta?: boolean;
 }
@@ -243,33 +244,37 @@ export default function PortPair({
       {/* Stacked timing row — below vessel, spanning full width */}
       {hasStackedTiming && (
         <div className={`${isLg ? 'mt-3 pt-3' : 'mt-1.5 pt-1.5'} border-t border-[var(--border)] flex items-start justify-between`}>
-          {/* Origin timing — left aligned */}
+          {/* Origin timing — 2×2 grid: ETA/ETD top row, ATA/ATD bottom row */}
           {useStackedOrigin ? (
-            <div className="flex items-center gap-3 flex-wrap">
-              {originTiming.showEta && originTiming.eta && (
-                <div>
-                  <span className={dateLabelCls}>ETA </span>
-                  <span className={dateValueCls}>{formatDate(originTiming.eta)}</span>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+              {/* ETA */}
+              <div>
+                <div className={dateLabelCls}>ETA</div>
+                <div className={dateValueCls}>
+                  {originTiming.eta ? formatDate(originTiming.eta) : <span className={dateLabelCls}>—</span>}
                 </div>
-              )}
-              {originTiming.etd && (
-                <div>
-                  <span className={dateLabelCls}>ETD </span>
-                  <span className={originTiming.atd ? dateLabelCls : dateValueCls}>{formatDate(originTiming.etd)}</span>
+              </div>
+              {/* ETD */}
+              <div>
+                <div className={dateLabelCls}>ETD</div>
+                <div className={originTiming.atd ? dateLabelCls : dateValueCls}>
+                  {originTiming.etd ? formatDate(originTiming.etd) : <span className={dateLabelCls}>—</span>}
                 </div>
-              )}
-              {originTiming.atd && (
-                <div>
-                  <span className={isLg ? 'text-[10px] text-[var(--sky)] font-medium' : 'text-[9px] text-[var(--sky)] font-medium'}>ATD </span>
-                  <span className={isLg ? 'text-xs text-[var(--sky)] font-medium' : 'text-[10px] text-[var(--sky)] font-medium'}>{formatDate(originTiming.atd)}</span>
+              </div>
+              {/* ATA */}
+              <div>
+                <div className={isLg ? 'text-[10px] text-blue-500 font-medium' : 'text-[9px] text-blue-500 font-medium'}>ATA</div>
+                <div className={isLg ? 'text-xs text-blue-600 font-medium' : 'text-[10px] text-blue-600 font-medium'}>
+                  {originTiming.ata ? formatDate(originTiming.ata) : <span className={dateLabelCls}>—</span>}
                 </div>
-              )}
-              {!originTiming.etd && !originTiming.atd && isLg && (
-                <div>
-                  <span className={dateLabelCls}>ETD </span>
-                  <span className={dateLabelCls}>—</span>
+              </div>
+              {/* ATD */}
+              <div>
+                <div className={isLg ? 'text-[10px] text-emerald-500 font-medium' : 'text-[9px] text-emerald-500 font-medium'}>ATD</div>
+                <div className={isLg ? 'text-xs text-emerald-600 font-medium' : 'text-[10px] text-emerald-600 font-medium'}>
+                  {originTiming.atd ? formatDate(originTiming.atd) : <span className={dateLabelCls}>—</span>}
                 </div>
-              )}
+              </div>
             </div>
           ) : <div />}
 

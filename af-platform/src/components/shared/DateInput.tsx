@@ -180,13 +180,23 @@ function TimePicker({
 // useDropdownPosition — calculate portal position
 // ---------------------------------------------------------------------------
 
+// Estimated dropdown height — calendar (~220px) + time picker (~56px) + padding
+const DROPDOWN_HEIGHT = 300;
+
 function useDropdownPosition(anchorRef: React.RefObject<HTMLDivElement | null>, open: boolean) {
-  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number; openUp: boolean } | null>(null);
 
   useEffect(() => {
     if (!open || !anchorRef.current) { setPos(null); return; }
     const rect = anchorRef.current.getBoundingClientRect();
-    setPos({ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 260) });
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUp = spaceBelow < DROPDOWN_HEIGHT && rect.top > DROPDOWN_HEIGHT;
+    setPos({
+      top: openUp ? rect.top - DROPDOWN_HEIGHT - 4 : rect.bottom + 4,
+      left: rect.left,
+      width: Math.max(rect.width, 260),
+      openUp,
+    });
   }, [open, anchorRef]);
 
   return pos;

@@ -30,7 +30,7 @@ from logic.incoterm_tasks import (
     EXPORT_CLEARANCE,
 )
 
-from ._helpers import _parse_jsonb
+from ._helpers import _parse_jsonb, _sync_route_node_timings
 from .core import _lazy_init_tasks_pg
 
 logger = logging.getLogger(__name__)
@@ -252,6 +252,16 @@ async def update_shipment_task(
         SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
         WHERE shipment_id = :id
     """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
+
+    # --- Sync route node timings for TRACKED POL actual_start (ATA) ---
+    # Use task["actual_start"] (final value) — covers both manual edits AND
+    # auto-set from status transitions (IN_PROGRESS / COMPLETED auto-stamps).
+    if (task.get("mode") == TRACKED and task.get("task_type") == "POL"
+            and task.get("actual_start")):
+        _sync_route_node_timings(
+            conn, shipment_id, now,
+            origin_actual_eta=task["actual_start"],
+        )
 
     # --- Auto status progression for TRACKED port tasks ---
     task_type = task.get("task_type")

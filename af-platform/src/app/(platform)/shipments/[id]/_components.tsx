@@ -315,11 +315,12 @@ function IncotermEditModal({
   );
 }
 
-export function RouteCard({ order, accountType, polEta, polEtd, polAtd, podEta, podAta, vesselName, voyageNumber, ports, onPortUpdated }: {
+export function RouteCard({ order, accountType, polEta, polEtd, polAta, polAtd, podEta, podAta, vesselName, voyageNumber, ports, onPortUpdated }: {
   order: ShipmentOrder;
   accountType: string | null;
   polEta?: string | null;
   polEtd?: string | null;
+  polAta?: string | null;
   polAtd?: string | null;
   podEta?: string | null;
   podAta?: string | null;
@@ -366,6 +367,7 @@ export function RouteCard({ order, accountType, polEta, polEtd, polAtd, podEta, 
         originTiming={{
           eta: order.transaction_type === 'EXPORT' ? (polEta ?? null) : null,
           etd: polEtd ?? null,
+          ata: polAta ?? null,
           atd: polAtd ?? null,
           showEta: order.transaction_type === 'EXPORT',
         }}

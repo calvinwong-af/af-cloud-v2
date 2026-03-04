@@ -192,11 +192,8 @@ def _match_port_un_code(conn, port_text: str) -> str | None:
     if not port_text:
         return None
     port_text_upper = port_text.upper().strip()
-    logger.info("[port_match] Looking for: '%s'", port_text_upper)
-
     # Check alias dictionary first
     if port_text_upper in _PORT_ALIASES:
-        logger.info("[port_match] Alias hit: '%s' -> %s", port_text_upper, _PORT_ALIASES[port_text_upper])
         return _PORT_ALIASES[port_text_upper]
 
     # Quick check: if it looks like a UN code already (5 uppercase letters)
@@ -463,3 +460,90 @@ def _log_system_action_pg(conn, action: str, entity_id: str, uid: str, email: st
         "email": email,
         "created_at": now,
     })
+
+
+def _sync_route_node_timings(
+    conn,
+    shipment_id: str,
+    now: str,
+    *,
+    origin_scheduled_eta: str | None = None,
+    origin_scheduled_etd: str | None = None,
+    origin_actual_etd: str | None = None,
+    origin_actual_eta: str | None = None,
+    dest_scheduled_eta: str | None = None,
+    dest_actual_eta: str | None = None,
+) -> None:
+    """
+    Sync timing values to the route_nodes JSONB on shipments.
+    Only updates fields that are explicitly passed (non-None).
+    For derived (unsaved) route nodes, builds and saves minimal nodes first.
+    """
+    row = conn.execute(
+        text("SELECT route_nodes, origin_port, dest_port FROM shipments WHERE id = :id"),
+        {"id": shipment_id},
+    ).fetchone()
+    if not row:
+        return
+
+    nodes = _parse_jsonb(row[0]) or []
+
+    # If no saved route nodes yet, bootstrap from origin/dest port codes
+    if not nodes:
+        origin_code = row[1] or ""
+        dest_code = row[2] or ""
+        if not origin_code and not dest_code:
+            return
+        nodes = []
+        if origin_code:
+            nodes.append({
+                "port_un_code": origin_code,
+                "port_name": origin_code,
+                "sequence": 1,
+                "role": "ORIGIN",
+                "scheduled_eta": None,
+                "actual_eta": None,
+                "scheduled_etd": None,
+                "actual_etd": None,
+            })
+        if dest_code:
+            nodes.append({
+                "port_un_code": dest_code,
+                "port_name": dest_code,
+                "sequence": 2 if origin_code else 1,
+                "role": "DESTINATION",
+                "scheduled_eta": None,
+                "actual_eta": None,
+                "scheduled_etd": None,
+                "actual_etd": None,
+            })
+
+    modified = False
+    for node in nodes:
+        if node.get("role") == "ORIGIN":
+            if origin_scheduled_eta is not None:
+                node["scheduled_eta"] = origin_scheduled_eta
+                modified = True
+            if origin_scheduled_etd is not None:
+                node["scheduled_etd"] = origin_scheduled_etd
+                modified = True
+            if origin_actual_etd is not None:
+                node["actual_etd"] = origin_actual_etd
+                modified = True
+            if origin_actual_eta is not None:
+                node["actual_eta"] = origin_actual_eta
+                modified = True
+        elif node.get("role") == "DESTINATION":
+            if dest_scheduled_eta is not None:
+                node["scheduled_eta"] = dest_scheduled_eta
+                modified = True
+            if dest_actual_eta is not None:
+                node["actual_eta"] = dest_actual_eta
+                modified = True
+
+    if modified:
+        conn.execute(text("""
+            UPDATE shipments
+            SET route_nodes = CAST(:nodes AS jsonb), updated_at = :now
+            WHERE id = :id
+        """), {"nodes": json.dumps(nodes), "now": now, "id": shipment_id})

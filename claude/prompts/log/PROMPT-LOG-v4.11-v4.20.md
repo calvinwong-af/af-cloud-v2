@@ -1,5 +1,60 @@
 # Prompt Completion Log — v4.11–v4.20
 
+### [2026-03-05 16:15 UTC] — v4.18: Investigate and Fix POL ATA Not Showing on Route Node
+- **Status:** Completed
+- **Tasks:**
+  - **Frontend fix (onTimingChanged):** Added `setRouteTimelineRefreshKey(k => k + 1)` to onTimingChanged callback.
+  - **Backend fix (tasks.py):** Changed sync condition from `body.__fields_set__` to `task.get("actual_start")` to cover auto-set from status transitions.
+  - **Backend fix (route_nodes.py):** Added read-time enrichment in GET /route-nodes — always overwrites ORIGIN/DESTINATION actual timing from TRACKED tasks (task is source of truth).
+  - **Frontend fix (props-based display):** Added `polAta`, `polAtd`, `podAta` props to RouteNodeTimeline. Component merges task timing into loaded nodes via `useMemo` — task timing always wins. Eliminates dependency on route_nodes JSONB sync and refreshKey re-fetch chain. Wired from page.tsx `routePolAta`, `routePolAtd`, `routePodAta` state.
+  - Added debug logging to tasks.py and _helpers.py sync path.
+- **Files Modified:**
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx`
+  - `af-platform/src/components/shipments/RouteNodeTimeline.tsx`
+  - `af-server/routers/shipments/tasks.py`
+  - `af-server/routers/shipments/_helpers.py`
+  - `af-server/routers/shipments/route_nodes.py`
+
+### [2026-03-05 15:00 UTC] — v4.17: AWB scheduled_etd Correction + POL ATA Wiring + Remove Route Node Strikethroughs
+- **Status:** Completed
+- **Tasks:**
+  - **Change A (doc_apply.py):** Removed `origin_scheduled_etd` from AWB route node sync — AWB is post-flight, only actual_etd should be written. Scheduled_etd belongs to BC.
+  - **Change B (tasks.py + page.tsx):** B1 — Added `routePolAta` state variable in page.tsx. B2 — Populated from `polTask.actual_start` in loadRouteTimings. B3 — Added `_sync_route_node_timings` import to tasks.py, calls `origin_actual_eta` after TRACKED POL task actual_start save.
+  - **Change C (RouteNodeTimeline.tsx):** Removed conditional strikethrough from ORIGIN ETA and ETD cells. Removed strikethrough blocks from T/S nodes (both ETD and ETA sections). Removed strikethrough block from DESTINATION node.
+- **Files Modified:**
+  - `af-server/routers/shipments/doc_apply.py`
+  - `af-server/routers/shipments/tasks.py`
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx`
+  - `af-platform/src/components/shipments/RouteNodeTimeline.tsx`
+
+### [2026-03-05 14:30 UTC] — v4.16: Route Node Sync on Doc Apply + Files Tab Re-parse Refresh Fix
+- **Status:** Completed
+- **Tasks:**
+  - **Change A (_helpers.py):** Added `_sync_route_node_timings` helper — syncs timing values to route_nodes JSONB, bootstraps minimal nodes from origin/dest port codes when route_nodes is null.
+  - **Change B (doc_apply.py):** BC apply now syncs ETD POL, ETA POL (fallback), ETA POD to route nodes.
+  - **Change C (doc_apply.py):** AWB apply syncs flight_date as both scheduled_etd and actual_etd on ORIGIN route node.
+  - **Change D (bl.py):** D1 — update_from_bl syncs SOB date as scheduled_etd + actual_etd on ORIGIN. D2 — create_from_bl syncs route nodes at creation, with actual_etd only when ETD is past.
+  - **Change E (ShipmentFilesTab.tsx + page.tsx):** Added `onDocApplied` prop to ShipmentFilesTab, called after re-parse apply. Wired in page.tsx to trigger loadRouteTimings + routeTimelineRefreshKey increment.
+- **Files Modified:**
+  - `af-server/routers/shipments/_helpers.py`
+  - `af-server/routers/shipments/doc_apply.py`
+  - `af-server/routers/shipments/bl.py`
+  - `af-platform/src/components/shipments/ShipmentFilesTab.tsx`
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx`
+
+### [2026-03-05 14:00 UTC] — v4.15: Route Node Timeline: Refresh Fix, ORIGIN ETA/ATA Display, 4-Timing Grid Layout, Task ATD/ATA Visibility Fix
+- **Status:** Completed
+- **Tasks:**
+  - **Change A (RouteNodeTimeline.tsx):** Added `refreshKey` prop with skip-first-render useEffect to reload nodes on doc apply.
+  - **Change B (RouteNodeTimeline.tsx):** Redesigned ORIGIN node timing to 2x2 grid (ETA/ETD top row, ATA/ATD bottom row). Widened ORIGIN min-width to 140px. Reformatted T/S and DESTINATION nodes with label-style layout.
+  - **Change C (ShipmentTasks.tsx):** Changed actual row visibility from `task.status !== 'PENDING'` to `task.actual_start || task.actual_end` so ATD/ATA show regardless of task status. Removed `COMPLETED` gate on ATD column.
+  - **Change D (page.tsx + _doc-handler.ts):** Added `routeTimelineRefreshKey` state, wired to RouteNodeTimeline and createDocResultHandler. All 3 doc-type branches increment key after apply. Removed unused `router` destructuring.
+- **Files Modified:**
+  - `af-platform/src/components/shipments/RouteNodeTimeline.tsx`
+  - `af-platform/src/components/shipments/ShipmentTasks.tsx`
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx`
+  - `af-platform/src/app/(platform)/shipments/[id]/_doc-handler.ts`
+
 ### [2026-03-05 13:15 UTC] — v4.14: BC Apply: Default ETA POL to ETD - 1 Day When ETA POL is Absent
 - **Status:** Completed
 - **Tasks:**
