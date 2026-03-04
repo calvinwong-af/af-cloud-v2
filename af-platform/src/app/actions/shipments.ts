@@ -350,6 +350,8 @@ export interface PortWithTerminals {
   port_type: string;
   has_terminals: boolean;
   terminals: Array<{ terminal_id: string; name: string; is_default: boolean }>;
+  lat: number | null;
+  lng: number | null;
 }
 
 export async function fetchPortsAction(): Promise<PortWithTerminals[]> {
