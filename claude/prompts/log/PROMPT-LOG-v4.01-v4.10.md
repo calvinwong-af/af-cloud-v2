@@ -1,5 +1,12 @@
 # Prompt Completion Log — v4.01–v4.10
 
+### [2026-03-04 23:30 UTC] — v4.02: Geocode all ports via Google Geocoding API
+- **Status:** Completed
+- **Tasks:** Created backfill script to geocode all ports (SEA + AIR) missing lat/lng coordinates using Google Geocoding API. AIR ports geocoded by airport name, SEA ports by "name, country". Idempotent, logs progress, handles errors per-port.
+- **Files Modified:**
+  - `af-server/scripts/geocode_ports.py` (new — geocoding backfill script)
+- **Notes:** Run with `python -m scripts.geocode_ports` after ensuring Cloud SQL Auth Proxy is active and `GOOGLE_MAPS_API_KEY` is set in `.env.local`.
+
 ### [2026-03-04 23:00 UTC] — v4.01: Geography Phase 1 — States, Cities, Haulage Areas + Port Resolution + Maps
 - **Status:** Completed
 - **Tasks:**
