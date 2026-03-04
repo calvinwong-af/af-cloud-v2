@@ -46,6 +46,7 @@ interface ShipmentTasksProps {
   accountType: string | null;
   vesselName?: string | null;
   voyageNumber?: string | null;
+  onTimingChanged?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -599,7 +600,7 @@ function EditTaskModal({
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function ShipmentTasks({ shipmentId, orderType, accountType, vesselName, voyageNumber }: ShipmentTasksProps) {
+export default function ShipmentTasks({ shipmentId, orderType, accountType, vesselName, voyageNumber, onTimingChanged }: ShipmentTasksProps) {
   const [tasks, setTasks] = useState<WorkflowTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -672,6 +673,11 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, vess
         setWarning(result.warning);
       }
       await loadTasks();
+
+      // TRACKED POL/POD completion syncs timing to route nodes
+      if (matchedTask?.mode === 'TRACKED' && ['POL', 'POD'].includes(matchedTask?.task_type ?? '')) {
+        onTimingChanged?.();
+      }
     } catch (err) {
       console.error('[ShipmentTasks] handleMarkComplete failed:', err);
       setSaving(null);
@@ -682,6 +688,7 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, vess
 
   async function handleUndo(taskId: string) {
     setSaving(taskId);
+    const matchedTask = tasks.find((t) => t.task_id === taskId);
     setTasks((prev) =>
       prev.map((t) =>
         t.task_id === taskId
@@ -700,6 +707,11 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, vess
         return;
       }
       await loadTasks();
+
+      // TRACKED POL/POD undo may affect route node timing
+      if (matchedTask?.mode === 'TRACKED' && ['POL', 'POD'].includes(matchedTask?.task_type ?? '')) {
+        onTimingChanged?.();
+      }
     } catch (err) {
       console.error('[ShipmentTasks] handleUndo failed:', err);
       setSaving(null);
@@ -722,8 +734,18 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, vess
       if (result.warning) {
         setWarning(result.warning);
       }
+
+      // Check if timing changed on a TRACKED port task → refresh route timeline
+      const timingFields = ['scheduled_start', 'scheduled_end', 'actual_start', 'actual_end'];
+      const hadTimingUpdate = timingFields.some(f => f in updates);
+      const isTrackedPort = editingTask?.mode === 'TRACKED' && ['POL', 'POD'].includes(editingTask?.task_type ?? '');
+
       setEditingTask(null);
       await loadTasks();
+
+      if (hadTimingUpdate && isTrackedPort) {
+        onTimingChanged?.();
+      }
     } catch (err) {
       console.error('[ShipmentTasks] handleEditSave failed:', err);
       setEditSaving(false);

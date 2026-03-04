@@ -315,13 +315,14 @@ function IncotermEditModal({
   );
 }
 
-export function RouteCard({ order, accountType, etd, eta, etdLabel, etaLabel, vesselName, voyageNumber, ports, onPortUpdated }: {
+export function RouteCard({ order, accountType, polEta, polEtd, polAtd, podEta, podAta, vesselName, voyageNumber, ports, onPortUpdated }: {
   order: ShipmentOrder;
   accountType: string | null;
-  etd?: string | null;
-  eta?: string | null;
-  etdLabel?: string;
-  etaLabel?: string;
+  polEta?: string | null;
+  polEtd?: string | null;
+  polAtd?: string | null;
+  podEta?: string | null;
+  podAta?: string | null;
   vesselName?: string | null;
   voyageNumber?: string | null;
   ports: Port[];
@@ -362,10 +363,16 @@ export function RouteCard({ order, accountType, etd, eta, etdLabel, etaLabel, ve
           country_code: order.destination?.country_code ?? null,
         }}
         viewContext={isAfu ? 'customer' : 'staff'}
-        etd={etd}
-        eta={eta}
-        etdLabel={etdLabel}
-        etaLabel={etaLabel}
+        originTiming={{
+          eta: order.transaction_type === 'EXPORT' ? (polEta ?? null) : null,
+          etd: polEtd ?? null,
+          atd: polAtd ?? null,
+          showEta: order.transaction_type === 'EXPORT',
+        }}
+        destTiming={{
+          eta: podEta ?? null,
+          ata: podAta ?? null,
+        }}
         incoterm={order.incoterm_code}
         orderType={order.order_type}
         size="lg"
@@ -1215,7 +1222,7 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
               {(advanceLoading || revertLoading) ? (
                 <><Loader2 className={`w-3.5 h-3.5 animate-spin ${revertLoading ? 'text-amber-300' : ''}`} /> Updating…</>
               ) : (
-                <>Advance to {SHIPMENT_STATUS_LABELS[advanceStatus]}</>
+                <>Advance to {advanceStatus === 4001 ? 'In Transit' : SHIPMENT_STATUS_LABELS[advanceStatus]}</>
               )}
             </button>
           )}

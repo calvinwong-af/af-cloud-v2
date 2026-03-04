@@ -23,6 +23,7 @@ from core.constants import (
     FILES_BUCKET_NAME,
     STATUS_LABELS,
     STATUS_BOOKING_CONFIRMED,
+    STATUS_DEPARTED,
 )
 from logic.incoterm_tasks import generate_tasks as generate_incoterm_tasks
 
@@ -781,6 +782,45 @@ async def update_from_bl(
         UPDATE shipments SET status = :status WHERE id = :id
     """), {"status": new_status, "id": shipment_id})
     logger.info("[bl_update] Status auto-advanced to %s for %s", new_status, shipment_id)
+
+    # Check if TRACKED POL task has ATD set — advance to Departed (4001) if needed
+    if new_status < STATUS_DEPARTED:
+        wf_row = conn.execute(
+            text("SELECT workflow_tasks FROM shipment_workflows WHERE shipment_id = :id"),
+            {"id": shipment_id}
+        ).fetchone()
+        if wf_row:
+            wf_tasks = _parse_jsonb(wf_row[0]) or []
+            pol_task = next(
+                (t for t in wf_tasks if t.get("task_type") == "POL" and t.get("mode") == "TRACKED"),
+                None
+            )
+            if pol_task and pol_task.get("actual_end"):
+                cur = conn.execute(
+                    text("SELECT status, status_history FROM shipments WHERE id = :id"),
+                    {"id": shipment_id}
+                ).fetchone()
+                if cur and (cur[0] or 0) < STATUS_DEPARTED:
+                    history = _parse_jsonb(cur[1]) or []
+                    history.append({
+                        "status": STATUS_DEPARTED,
+                        "label": STATUS_LABELS[STATUS_DEPARTED],
+                        "timestamp": now,
+                        "changed_by": claims.email,
+                        "note": "Auto-advanced from ATD (BL apply)",
+                    })
+                    conn.execute(text("""
+                        UPDATE shipments
+                        SET status = :status, status_history = CAST(:history AS jsonb), updated_at = :now
+                        WHERE id = :id
+                    """), {
+                        "status": STATUS_DEPARTED,
+                        "history": json.dumps(history),
+                        "now": now,
+                        "id": shipment_id,
+                    })
+                    new_status = STATUS_DEPARTED
+                    logger.info("[bl_update] Auto-advanced %s to Departed (4001) from POL ATD", shipment_id)
 
     # Log to system_logs
     _log_system_action_pg(conn, "BL_UPDATED", shipment_id, claims.uid, claims.email)

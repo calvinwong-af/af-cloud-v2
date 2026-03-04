@@ -16,7 +16,7 @@ from sqlalchemy import text
 from core.auth import Claims, require_auth
 from core.db import get_db
 from core.exceptions import NotFoundError
-from core import db_queries
+from core import constants, db_queries
 from logic.incoterm_tasks import (
     migrate_task_on_read,
     PENDING,
@@ -250,6 +250,68 @@ async def update_shipment_task(
         SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
         WHERE shipment_id = :id
     """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
+
+    # --- Sync flat ETD/ETA columns + auto status for TRACKED port tasks ---
+    task_type = task.get("task_type")
+    task_mode = task.get("mode")
+
+    if task_mode == TRACKED and task_type in ("POL", "POD"):
+        # Sync flat ETD/ETA columns (derived copies on shipments table)
+        if task_type == "POL" and body.scheduled_end is not None:
+            conn.execute(
+                text("UPDATE shipments SET etd = :etd, updated_at = :now WHERE id = :id"),
+                {"etd": body.scheduled_end, "now": now, "id": shipment_id}
+            )
+        if task_type == "POD" and body.scheduled_start is not None:
+            conn.execute(
+                text("UPDATE shipments SET eta = :eta, updated_at = :now WHERE id = :id"),
+                {"eta": body.scheduled_start, "now": now, "id": shipment_id}
+            )
+
+        # Auto status progression — forward only
+        if task_type == "POL" and body.actual_end is not None:
+            cur = conn.execute(
+                text("SELECT status, status_history FROM shipments WHERE id = :id"),
+                {"id": shipment_id}
+            ).fetchone()
+            if cur and (cur[0] or 0) < constants.STATUS_DEPARTED:
+                new_status = constants.STATUS_DEPARTED
+                history = _parse_jsonb(cur[1]) or []
+                history.append({
+                    "status": new_status,
+                    "label": constants.STATUS_LABELS[new_status],
+                    "timestamp": now,
+                    "changed_by": claims.email,
+                    "note": "Auto-advanced from ATD (POL task)",
+                })
+                conn.execute(text("""
+                    UPDATE shipments
+                    SET status = :status, status_history = CAST(:history AS jsonb), updated_at = :now
+                    WHERE id = :id
+                """), {"status": new_status, "history": json.dumps(history), "now": now, "id": shipment_id})
+                logger.info("[tasks] Auto-advanced %s to Departed (4001) from POL ATD", shipment_id)
+
+        elif task_type == "POD" and body.actual_start is not None:
+            cur = conn.execute(
+                text("SELECT status, status_history FROM shipments WHERE id = :id"),
+                {"id": shipment_id}
+            ).fetchone()
+            if cur and (cur[0] or 0) < constants.STATUS_ARRIVED:
+                new_status = constants.STATUS_ARRIVED
+                history = _parse_jsonb(cur[1]) or []
+                history.append({
+                    "status": new_status,
+                    "label": constants.STATUS_LABELS[new_status],
+                    "timestamp": now,
+                    "changed_by": claims.email,
+                    "note": "Auto-advanced from ATA (POD task)",
+                })
+                conn.execute(text("""
+                    UPDATE shipments
+                    SET status = :status, status_history = CAST(:history AS jsonb), updated_at = :now
+                    WHERE id = :id
+                """), {"status": new_status, "history": json.dumps(history), "now": now, "id": shipment_id})
+                logger.info("[tasks] Auto-advanced %s to Arrived (4002) from POD ATA", shipment_id)
 
     logger.info("Task %s updated on %s by %s", task_id, shipment_id, claims.uid)
 

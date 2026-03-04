@@ -27,10 +27,6 @@ type SaveRouteNodesResult =
   | { success: true; data: RouteNode[] }
   | { success: false; error: string };
 
-type UpdateNodeTimingResult =
-  | { success: true; data: RouteNode }
-  | { success: false; error: string };
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -127,47 +123,3 @@ export async function saveRouteNodesAction(
   }
 }
 
-// ---------------------------------------------------------------------------
-// PATCH single node timing
-// ---------------------------------------------------------------------------
-
-export async function updateRouteNodeTimingAction(
-  shipmentId: string,
-  sequence: number,
-  timing: Partial<Pick<RouteNode, 'scheduled_eta' | 'actual_eta' | 'scheduled_etd' | 'actual_etd'>>,
-): Promise<UpdateNodeTimingResult> {
-  try {
-    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF', 'AFC-ADMIN', 'AFC-M']);
-    if (!session.valid) {
-      return { success: false, error: 'Unauthorised' };
-    }
-
-    const auth = await getAuthHeaders();
-    if (!auth) return { success: false, error: 'No session token' };
-
-    const url = new URL(
-      `/api/v2/shipments/${encodeURIComponent(shipmentId)}/route-nodes/${sequence}`,
-      auth.serverUrl,
-    );
-    const res = await fetch(url.toString(), {
-      method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${auth.idToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(timing),
-      cache: 'no-store',
-    });
-
-    if (!res.ok) {
-      const json = await res.json().catch(() => null);
-      return { success: false, error: json?.detail ?? `Server responded ${res.status}` };
-    }
-
-    const json = await res.json();
-    return { success: true, data: json.node ?? {} as RouteNode };
-  } catch (err) {
-    console.error('[updateRouteNodeTimingAction]', err instanceof Error ? err.message : err);
-    return { success: false, error: 'Failed to update route node' };
-  }
-}

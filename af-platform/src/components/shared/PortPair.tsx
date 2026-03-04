@@ -5,6 +5,18 @@ import { formatDate } from '@/lib/utils';
 // PortPair — shared port-pair display for route cards and timeline
 // ---------------------------------------------------------------------------
 
+interface OriginTimingProps {
+  eta: string | null;
+  etd: string | null;
+  atd: string | null;
+  showEta?: boolean;
+}
+
+interface DestTimingProps {
+  eta: string | null;
+  ata: string | null;
+}
+
 interface PortPairProps {
   origin: {
     port_un_code: string | null;
@@ -21,10 +33,14 @@ interface PortPairProps {
     country_code?: string | null;
   };
   viewContext: 'staff' | 'customer';
+  /** Legacy single-date props — used by shipment list and other simple usages */
   etd?: string | null;
   eta?: string | null;
   etdLabel?: string;
   etaLabel?: string;
+  /** Stacked timing props — used by Route Card for full timing display */
+  originTiming?: OriginTimingProps;
+  destTiming?: DestTimingProps;
   incoterm?: string | null;
   orderType?: string;
   size?: 'lg' | 'sm';
@@ -79,6 +95,8 @@ export default function PortPair({
   eta,
   etdLabel = 'ETD',
   etaLabel = 'ETA',
+  originTiming,
+  destTiming,
   incoterm,
   orderType,
   size = 'lg',
@@ -117,6 +135,12 @@ export default function PortPair({
   const iconPad = isLg ? 'p-2' : 'p-1';
   const lineW = isLg ? 'w-12' : 'w-6';
 
+  const useStackedOrigin = !!originTiming;
+  const useStackedDest = !!destTiming;
+
+  // Check if we have any stacked timing to show in the bottom row
+  const hasStackedTiming = useStackedOrigin || useStackedDest;
+
   return (
     <div>
       <div className="flex items-center">
@@ -137,17 +161,23 @@ export default function PortPair({
               {origin.terminal_name ?? origin.terminal_id}
             </div>
           )}
-          {etd && (
-            <div className={`mt-1`}>
-              <span className={dateLabelCls}>{etdLabel} </span>
-              <span className={dateValueCls}>{formatDate(etd)}</span>
-            </div>
-          )}
-          {!etd && isLg && (
-            <div className="mt-1">
-              <span className={dateLabelCls}>{etdLabel} </span>
-              <span className={`${dateLabelCls}`}>—</span>
-            </div>
+
+          {/* Legacy single-date timing (non-stacked) */}
+          {!useStackedOrigin && (
+            <>
+              {etd && (
+                <div className="mt-1">
+                  <span className={dateLabelCls}>{etdLabel} </span>
+                  <span className={dateValueCls}>{formatDate(etd)}</span>
+                </div>
+              )}
+              {!etd && isLg && (
+                <div className="mt-1">
+                  <span className={dateLabelCls}>{etdLabel} </span>
+                  <span className={dateLabelCls}>—</span>
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -179,28 +209,93 @@ export default function PortPair({
               {destination.terminal_name ?? destination.terminal_id}
             </div>
           )}
-          {eta && (
-            <div className={`mt-1`}>
-              <span className={dateLabelCls}>{etaLabel} </span>
-              <span className={dateValueCls}>{formatDate(eta)}</span>
-            </div>
-          )}
-          {!eta && isLg && (
-            <div className="mt-1">
-              <span className={dateLabelCls}>{etaLabel} </span>
-              <span className={`${dateLabelCls}`}>—</span>
-            </div>
+
+          {/* Legacy single-date timing (non-stacked) */}
+          {!useStackedDest && (
+            <>
+              {eta && (
+                <div className="mt-1">
+                  <span className={dateLabelCls}>{etaLabel} </span>
+                  <span className={dateValueCls}>{formatDate(eta)}</span>
+                </div>
+              )}
+              {!eta && isLg && (
+                <div className="mt-1">
+                  <span className={dateLabelCls}>{etaLabel} </span>
+                  <span className={dateLabelCls}>—</span>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
 
-      {/* Vessel row — between port pair and incoterm */}
+      {/* Vessel row */}
       {isLg && (vesselName || voyageNumber) && (
         <div className="mt-2 flex items-center justify-center gap-1.5 text-xs text-[var(--text-muted)]">
           <Ship className="w-3.5 h-3.5" />
           {vesselName && <span className="font-medium">{vesselName}</span>}
           {vesselName && voyageNumber && <span>·</span>}
           {voyageNumber && <span className="font-mono">{voyageNumber}</span>}
+        </div>
+      )}
+
+      {/* Stacked timing row — below vessel, spanning full width */}
+      {hasStackedTiming && (
+        <div className={`${isLg ? 'mt-3 pt-3' : 'mt-1.5 pt-1.5'} border-t border-[var(--border)] flex items-start justify-between`}>
+          {/* Origin timing — left aligned */}
+          {useStackedOrigin ? (
+            <div className="flex items-center gap-3 flex-wrap">
+              {originTiming.showEta && originTiming.eta && (
+                <div>
+                  <span className={dateLabelCls}>ETA </span>
+                  <span className={dateValueCls}>{formatDate(originTiming.eta)}</span>
+                </div>
+              )}
+              {originTiming.etd && (
+                <div>
+                  <span className={dateLabelCls}>ETD </span>
+                  <span className={originTiming.atd ? dateLabelCls : dateValueCls}>{formatDate(originTiming.etd)}</span>
+                </div>
+              )}
+              {originTiming.atd && (
+                <div>
+                  <span className={isLg ? 'text-[10px] text-[var(--sky)] font-medium' : 'text-[9px] text-[var(--sky)] font-medium'}>ATD </span>
+                  <span className={isLg ? 'text-xs text-[var(--sky)] font-medium' : 'text-[10px] text-[var(--sky)] font-medium'}>{formatDate(originTiming.atd)}</span>
+                </div>
+              )}
+              {!originTiming.etd && !originTiming.atd && isLg && (
+                <div>
+                  <span className={dateLabelCls}>ETD </span>
+                  <span className={dateLabelCls}>—</span>
+                </div>
+              )}
+            </div>
+          ) : <div />}
+
+          {/* Destination timing — right aligned */}
+          {useStackedDest ? (
+            <div className="flex items-center gap-3 flex-wrap justify-end">
+              {destTiming.eta && (
+                <div>
+                  <span className={destTiming.ata ? dateLabelCls : dateValueCls}>{formatDate(destTiming.eta)}</span>
+                  <span className={dateLabelCls}> ETA</span>
+                </div>
+              )}
+              {destTiming.ata && (
+                <div>
+                  <span className={isLg ? 'text-xs text-[var(--sky)] font-medium' : 'text-[10px] text-[var(--sky)] font-medium'}>{formatDate(destTiming.ata)}</span>
+                  <span className={isLg ? 'text-[10px] text-[var(--sky)] font-medium' : 'text-[9px] text-[var(--sky)] font-medium'}> ATA</span>
+                </div>
+              )}
+              {!destTiming.eta && !destTiming.ata && isLg && (
+                <div>
+                  <span className={dateLabelCls}>— </span>
+                  <span className={dateLabelCls}>ETA</span>
+                </div>
+              )}
+            </div>
+          ) : <div />}
         </div>
       )}
 

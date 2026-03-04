@@ -2,13 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  MapPin, Plus, Trash2, X, Loader2, AlertTriangle, Anchor,
+  MapPin, Plus, Trash2, Loader2, AlertTriangle, Anchor,
 } from 'lucide-react';
-import { DateTimeInput } from '@/components/shared/DateInput';
 import {
   getRouteNodesAction,
   saveRouteNodesAction,
-  updateRouteNodeTimingAction,
   type RouteNode,
 } from '@/app/actions/shipments-route';
 import { formatDate } from '@/lib/utils';
@@ -50,93 +48,6 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// Timing inline edit panel
-// ---------------------------------------------------------------------------
-
-function TimingEditPanel({
-  node,
-  onSave,
-  onClose,
-  saving,
-}: {
-  node: RouteNode;
-  onSave: (timing: Partial<Pick<RouteNode, 'scheduled_eta' | 'actual_eta' | 'scheduled_etd' | 'actual_etd'>>) => void;
-  onClose: () => void;
-  saving: boolean;
-}) {
-  const [scheduledEtd, setScheduledEtd] = useState(node.scheduled_etd ?? '');
-  const [actualEtd, setActualEtd] = useState(node.actual_etd ?? '');
-  const [scheduledEta, setScheduledEta] = useState(node.scheduled_eta ?? '');
-  const [actualEta, setActualEta] = useState(node.actual_eta ?? '');
-
-  function handleSave() {
-    const timing: Record<string, string | null> = {};
-    if (scheduledEtd !== (node.scheduled_etd ?? '')) timing.scheduled_etd = scheduledEtd || null;
-    if (actualEtd !== (node.actual_etd ?? '')) timing.actual_etd = actualEtd || null;
-    if (scheduledEta !== (node.scheduled_eta ?? '')) timing.scheduled_eta = scheduledEta || null;
-    if (actualEta !== (node.actual_eta ?? '')) timing.actual_eta = actualEta || null;
-
-    if (Object.keys(timing).length === 0) {
-      onClose();
-      return;
-    }
-    onSave(timing);
-  }
-
-  const inputCls = 'w-full px-2 py-1.5 text-xs border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)]';
-
-  return (
-    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 z-20 bg-white border border-[var(--border)] rounded-xl shadow-lg p-3 w-56">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-semibold text-[var(--text)]">{node.port_un_code}</span>
-        <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text)]">
-          <X className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      <div className="space-y-2">
-        {(node.role === 'ORIGIN' || node.role === 'TRANSHIP') && (
-          <>
-            <div>
-              <label className="text-[10px] text-[var(--text-muted)] block mb-0.5">ETD (Scheduled)</label>
-              <DateTimeInput value={scheduledEtd} onChange={setScheduledEtd} className={inputCls} />
-            </div>
-            <div>
-              <label className="text-[10px] text-[var(--text-muted)] block mb-0.5">ATD (Actual)</label>
-              <DateTimeInput value={actualEtd} onChange={setActualEtd} className={inputCls} />
-            </div>
-          </>
-        )}
-        {(node.role === 'DESTINATION' || node.role === 'TRANSHIP') && (
-          <>
-            <div>
-              <label className="text-[10px] text-[var(--text-muted)] block mb-0.5">ETA (Scheduled)</label>
-              <DateTimeInput value={scheduledEta} onChange={setScheduledEta} className={inputCls} />
-            </div>
-            <div>
-              <label className="text-[10px] text-[var(--text-muted)] block mb-0.5">ATA (Actual)</label>
-              <DateTimeInput value={actualEta} onChange={setActualEta} className={inputCls} />
-            </div>
-          </>
-        )}
-      </div>
-
-      <div className="flex justify-end gap-2 mt-3 pt-2 border-t border-[var(--border)]">
-        <button onClick={onClose} className="text-xs text-[var(--text-muted)] hover:text-[var(--text)]">Cancel</button>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="px-3 py-1 text-xs font-medium text-white bg-[var(--sky)] rounded-lg hover:opacity-90 disabled:opacity-50 flex items-center gap-1"
-        >
-          {saving && <Loader2 className="w-3 h-3 animate-spin" />}
-          Save
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -144,7 +55,6 @@ export default function RouteNodeTimeline({ shipmentId, accountType, userRole }:
   const [nodes, setNodes] = useState<RouteNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [editingSeq, setEditingSeq] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [derived, setDerived] = useState(true);
 
@@ -176,24 +86,6 @@ export default function RouteNodeTimeline({ shipmentId, accountType, userRole }:
   useEffect(() => {
     loadNodes();
   }, [loadNodes]);
-
-  async function handleTimingSave(
-    sequence: number,
-    timing: Partial<Pick<RouteNode, 'scheduled_eta' | 'actual_eta' | 'scheduled_etd' | 'actual_etd'>>,
-  ) {
-    setSaving(true);
-    try {
-      const result = await updateRouteNodeTimingAction(shipmentId, sequence, timing);
-      if (!result || !result.success) {
-        setError(result?.error ?? 'Failed to update timing');
-      }
-      setEditingSeq(null);
-      await loadNodes();
-    } catch {
-      setError('Failed to update timing');
-    }
-    setSaving(false);
-  }
 
   async function handleAddTranship(afterIndex: number) {
     const newNodes = [...nodes];
@@ -289,16 +181,11 @@ export default function RouteNodeTimeline({ shipmentId, accountType, userRole }:
           <div key={node.sequence} className="flex items-start flex-shrink-0">
             {/* Node */}
             <div className="relative flex flex-col items-center min-w-[100px]">
-              {/* Port code circle */}
-              <button
-                onClick={() => editable && !derived ? setEditingSeq(editingSeq === node.sequence ? null : node.sequence) : undefined}
+              {/* Port code circle — display only */}
+              <div
                 title={node.port_name || undefined}
-                className={`w-12 h-12 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-colors ${
+                className={`w-12 h-12 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
                   node.port_name ? 'cursor-help' : ''
-                } ${
-                  editable && !derived
-                    ? 'cursor-pointer hover:border-[var(--sky)] hover:bg-[var(--sky-mist)]'
-                    : ''
                 } ${
                   node.role === 'ORIGIN'
                     ? 'border-blue-300 bg-blue-50 text-blue-700'
@@ -308,7 +195,7 @@ export default function RouteNodeTimeline({ shipmentId, accountType, userRole }:
                 }`}
               >
                 {node.port_un_code ? node.port_un_code.slice(0, 5) : '?'}
-              </button>
+              </div>
 
               {/* Role label */}
               <span className={`mt-1.5 text-[10px] font-semibold ${ROLE_COLORS[node.role] ?? 'text-[var(--text-muted)]'}`}>
@@ -361,16 +248,6 @@ export default function RouteNodeTimeline({ shipmentId, accountType, userRole }:
                 >
                   <Trash2 className="w-3 h-3" />
                 </button>
-              )}
-
-              {/* Inline timing edit */}
-              {editingSeq === node.sequence && (
-                <TimingEditPanel
-                  node={node}
-                  onSave={(timing) => handleTimingSave(node.sequence, timing)}
-                  onClose={() => setEditingSeq(null)}
-                  saving={saving}
-                />
               )}
             </div>
 

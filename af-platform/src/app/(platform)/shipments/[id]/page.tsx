@@ -8,7 +8,7 @@ import {
   ClipboardList, Pencil,
 } from 'lucide-react';
 import { fetchShipmentOrderDetailAction, fetchPortsAction } from '@/app/actions/shipments';
-import { patchShipmentCargoAction } from '@/app/actions/shipments-write';
+import { patchShipmentCargoAction, fetchShipmentTasksAction } from '@/app/actions/shipments-write';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
 import { formatDate } from '@/lib/utils';
 import type { ShipmentOrder } from '@/lib/types';
@@ -19,7 +19,6 @@ import ShipmentFilesTab from '@/components/shipments/ShipmentFilesTab';
 import BLPartyDiffModal from '@/components/shipments/BLPartyDiffModal';
 import DocumentParseModal from '@/components/shipments/DocumentParseModal';
 import RouteNodeTimeline from '@/components/shipments/RouteNodeTimeline';
-import { getRouteNodesAction } from '@/app/actions/shipments-route';
 import {
   STATUS_STYLES,
   SectionCard,
@@ -59,10 +58,11 @@ export default function ShipmentOrderDetailPage() {
   const [isDgValue, setIsDgValue] = useState(false);
   const [dgDescription, setDgDescription] = useState('');
   const [isSavingDg, setIsSavingDg] = useState(false);
-  const [routeEtd, setRouteEtd] = useState<string | null>(null);
-  const [routeEta, setRouteEta] = useState<string | null>(null);
-  const [etdIsActual, setEtdIsActual] = useState(false);
-  const [etaIsActual, setEtaIsActual] = useState(false);
+  const [routePolEta, setRoutePolEta] = useState<string | null>(null);
+  const [routePolEtd, setRoutePolEtd] = useState<string | null>(null);
+  const [routePolAtd, setRoutePolAtd] = useState<string | null>(null);
+  const [routePodEta, setRoutePodEta] = useState<string | null>(null);
+  const [routePodAta, setRoutePodAta] = useState<string | null>(null);
 
   const loadOrder = useCallback(async () => {
     const result = await fetchShipmentOrderDetailAction(quotationId);
@@ -75,14 +75,16 @@ export default function ShipmentOrderDetailPage() {
 
   const loadRouteTimings = useCallback(async () => {
     try {
-      const result = await getRouteNodesAction(quotationId);
-      if (result.success && result.data) {
-        const origin = result.data.find(n => n.role === 'ORIGIN');
-        const dest = result.data.find(n => n.role === 'DESTINATION');
-        setRouteEtd(origin?.actual_etd ?? origin?.scheduled_etd ?? null);
-        setRouteEta(dest?.actual_eta ?? dest?.scheduled_eta ?? null);
-        setEtdIsActual(!!origin?.actual_etd);
-        setEtaIsActual(!!dest?.actual_eta);
+      const result = await fetchShipmentTasksAction(quotationId);
+      if (result && result.success && result.data) {
+        const polTask = result.data.find(t => t.task_type === 'POL' && t.mode === 'TRACKED');
+        const podTask = result.data.find(t => t.task_type === 'POD' && t.mode === 'TRACKED');
+
+        setRoutePolEta(polTask?.scheduled_start ?? null);
+        setRoutePolEtd(polTask?.scheduled_end ?? null);
+        setRoutePolAtd(polTask?.actual_end ?? null);
+        setRoutePodEta(podTask?.scheduled_start ?? null);
+        setRoutePodAta(podTask?.actual_start ?? null);
       }
     } catch { /* non-critical */ }
   }, [quotationId]);
@@ -211,14 +213,15 @@ export default function ShipmentOrderDetailPage() {
       <RouteCard
         order={order}
         accountType={accountType}
-        etd={routeEtd}
-        eta={routeEta}
-        etdLabel={etdIsActual ? 'ATD' : 'ETD'}
-        etaLabel={etaIsActual ? 'ATA' : 'ETA'}
+        polEta={routePolEta}
+        polEtd={routePolEtd}
+        polAtd={routePolAtd}
+        podEta={routePodEta}
+        podAta={routePodAta}
         vesselName={vesselName}
         voyageNumber={voyageNumber}
         ports={ports as Port[]}
-        onPortUpdated={() => { loadOrder(); loadRouteTimings(); }}
+        onPortUpdated={() => { loadOrder(); }}
       />
 
       {/* Route Map */}
@@ -309,6 +312,7 @@ export default function ShipmentOrderDetailPage() {
             accountType={accountType}
             vesselName={vesselName}
             voyageNumber={voyageNumber}
+            onTimingChanged={() => { loadRouteTimings(); loadOrder(); }}
           />
         </div>
       ) : activeTab === 'files' ? null : (
