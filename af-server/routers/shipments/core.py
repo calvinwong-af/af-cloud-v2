@@ -654,6 +654,7 @@ _VALID_PORT_FIELDS = ["origin_port_un_code", "destination_port_un_code"]
 class UpdatePortRequest(BaseModel):
     field: str   # 'origin_port_un_code' or 'destination_port_un_code'
     port_un_code: str
+    terminal_id: str | None = None
 
 
 @router.patch("/{shipment_id}/port")
@@ -685,10 +686,12 @@ async def update_shipment_port(
 
     # Map field name to flat column
     col = "origin_port" if body.field == "origin_port_un_code" else "dest_port"
+    terminal_col = "origin_terminal" if body.field == "origin_port_un_code" else "dest_terminal"
+    terminal_val = body.terminal_id.strip() if body.terminal_id else None
 
     conn.execute(
-        text(f"UPDATE shipments SET {col} = :port, updated_at = :now WHERE id = :id"),
-        {"port": port_code, "now": now, "id": shipment_id},
+        text(f"UPDATE shipments SET {col} = :port, {terminal_col} = :terminal, updated_at = :now WHERE id = :id"),
+        {"port": port_code, "terminal": terminal_val, "now": now, "id": shipment_id},
     )
 
     # Also update the corresponding route node if present

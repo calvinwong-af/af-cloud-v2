@@ -61,6 +61,8 @@ export default function ShipmentOrderDetailPage() {
   const [isSavingDg, setIsSavingDg] = useState(false);
   const [routeEtd, setRouteEtd] = useState<string | null>(null);
   const [routeEta, setRouteEta] = useState<string | null>(null);
+  const [etdIsActual, setEtdIsActual] = useState(false);
+  const [etaIsActual, setEtaIsActual] = useState(false);
 
   const loadOrder = useCallback(async () => {
     const result = await fetchShipmentOrderDetailAction(quotationId);
@@ -79,6 +81,8 @@ export default function ShipmentOrderDetailPage() {
         const dest = result.data.find(n => n.role === 'DESTINATION');
         setRouteEtd(origin?.actual_etd ?? origin?.scheduled_etd ?? null);
         setRouteEta(dest?.actual_eta ?? dest?.scheduled_eta ?? null);
+        setEtdIsActual(!!origin?.actual_etd);
+        setEtaIsActual(!!dest?.actual_eta);
       }
     } catch { /* non-critical */ }
   }, [quotationId]);
@@ -209,6 +213,8 @@ export default function ShipmentOrderDetailPage() {
         accountType={accountType}
         etd={routeEtd}
         eta={routeEta}
+        etdLabel={etdIsActual ? 'ATD' : 'ETD'}
+        etaLabel={etaIsActual ? 'ATA' : 'ETA'}
         vesselName={vesselName}
         voyageNumber={voyageNumber}
         ports={ports as Port[]}

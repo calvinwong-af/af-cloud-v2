@@ -855,6 +855,7 @@ export async function updatePartiesAction(
 export interface UpdateShipmentPortInput {
   field: 'origin_port_un_code' | 'destination_port_un_code';
   port_un_code: string;
+  terminal_id?: string | null;
 }
 
 export async function updateShipmentPortAction(

@@ -23,6 +23,8 @@ interface PortPairProps {
   viewContext: 'staff' | 'customer';
   etd?: string | null;
   eta?: string | null;
+  etdLabel?: string;
+  etaLabel?: string;
   incoterm?: string | null;
   orderType?: string;
   size?: 'lg' | 'sm';
@@ -75,6 +77,8 @@ export default function PortPair({
   viewContext,
   etd,
   eta,
+  etdLabel = 'ETD',
+  etaLabel = 'ETA',
   incoterm,
   orderType,
   size = 'lg',
@@ -135,13 +139,13 @@ export default function PortPair({
           )}
           {etd && (
             <div className={`mt-1`}>
-              <span className={dateLabelCls}>ETD </span>
+              <span className={dateLabelCls}>{etdLabel} </span>
               <span className={dateValueCls}>{formatDate(etd)}</span>
             </div>
           )}
           {!etd && isLg && (
             <div className="mt-1">
-              <span className={dateLabelCls}>ETD </span>
+              <span className={dateLabelCls}>{etdLabel} </span>
               <span className={`${dateLabelCls}`}>—</span>
             </div>
           )}
@@ -177,13 +181,13 @@ export default function PortPair({
           )}
           {eta && (
             <div className={`mt-1`}>
-              <span className={dateLabelCls}>ETA </span>
+              <span className={dateLabelCls}>{etaLabel} </span>
               <span className={dateValueCls}>{formatDate(eta)}</span>
             </div>
           )}
           {!eta && isLg && (
             <div className="mt-1">
-              <span className={dateLabelCls}>ETA </span>
+              <span className={dateLabelCls}>{etaLabel} </span>
               <span className={`${dateLabelCls}`}>—</span>
             </div>
           )}

@@ -87,8 +87,12 @@ function PortEditModal({
 }) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
+  const [selectedTerminal, setSelectedTerminal] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const selectedPort = selected ? ports.find(p => p.un_code === selected) : null;
+  const showTerminals = selectedPort?.has_terminals && selectedPort.terminals.length > 0;
 
   const filtered = search.trim()
     ? ports.filter(p =>
@@ -97,12 +101,28 @@ function PortEditModal({
       ).slice(0, 50)
     : ports.slice(0, 50);
 
+  function handleSelectPort(code: string) {
+    setSelected(code);
+    // Auto-select default terminal if port has terminals
+    const port = ports.find(p => p.un_code === code);
+    if (port?.has_terminals && port.terminals.length > 0) {
+      const def = port.terminals.find(t => t.is_default);
+      setSelectedTerminal(def?.terminal_id ?? null);
+    } else {
+      setSelectedTerminal(null);
+    }
+  }
+
   async function handleSave() {
     if (!selected || selected === currentCode) return;
     setSaving(true);
     setError(null);
     try {
-      const result = await updateShipmentPortAction(shipmentId, { field, port_un_code: selected });
+      const result = await updateShipmentPortAction(shipmentId, {
+        field,
+        port_un_code: selected,
+        terminal_id: showTerminals ? selectedTerminal : null,
+      });
       if (!result) { setError('No response'); setSaving(false); return; }
       if (!result.success) { setError(result.error); setSaving(false); return; }
       onSaved();
@@ -140,7 +160,7 @@ function PortEditModal({
               filtered.map(p => (
                 <button
                   key={p.un_code}
-                  onClick={() => setSelected(p.un_code)}
+                  onClick={() => handleSelectPort(p.un_code)}
                   className={`w-full text-left px-3 py-2 text-sm border-b border-[var(--border)] last:border-0 transition-colors ${
                     selected === p.un_code
                       ? 'bg-[var(--sky-pale)] text-[var(--sky)]'
@@ -155,6 +175,28 @@ function PortEditModal({
               ))
             )}
           </div>
+
+          {/* Terminal selection — shown when selected port has terminals */}
+          {showTerminals && (
+            <div className="mt-3">
+              <p className="text-xs font-medium text-[var(--text-mid)] mb-2">Select Terminal</p>
+              <div className="flex flex-wrap gap-2">
+                {selectedPort.terminals.map(t => (
+                  <button
+                    key={t.terminal_id}
+                    onClick={() => setSelectedTerminal(t.terminal_id)}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                      selectedTerminal === t.terminal_id
+                        ? 'bg-[var(--sky-pale)] text-[var(--sky)] border-[var(--sky)]'
+                        : 'bg-white text-[var(--text)] border-[var(--border)] hover:bg-[var(--surface)]'
+                    }`}
+                  >
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
@@ -273,11 +315,13 @@ function IncotermEditModal({
   );
 }
 
-export function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumber, ports, onPortUpdated }: {
+export function RouteCard({ order, accountType, etd, eta, etdLabel, etaLabel, vesselName, voyageNumber, ports, onPortUpdated }: {
   order: ShipmentOrder;
   accountType: string | null;
   etd?: string | null;
   eta?: string | null;
+  etdLabel?: string;
+  etaLabel?: string;
   vesselName?: string | null;
   voyageNumber?: string | null;
   ports: Port[];
@@ -320,6 +364,8 @@ export function RouteCard({ order, accountType, etd, eta, vesselName, voyageNumb
         viewContext={isAfu ? 'customer' : 'staff'}
         etd={etd}
         eta={eta}
+        etdLabel={etdLabel}
+        etaLabel={etaLabel}
         incoterm={order.incoterm_code}
         orderType={order.order_type}
         size="lg"

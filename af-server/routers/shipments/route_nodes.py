@@ -17,7 +17,7 @@ from sqlalchemy import text
 from core.auth import Claims, require_auth
 from core.db import get_db
 from core.exceptions import NotFoundError
-from core import db_queries
+from core import constants, db_queries
 
 from ._helpers import _parse_jsonb, _log_system_action_pg
 
@@ -304,7 +304,63 @@ async def update_route_node_timing(
         UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
     """), params)
 
+    # --- Auto status progression (forward only) ---
+    auto_status_changed = False
+    new_status = None
+
+    if body.actual_etd is not None and target.get("role") == "ORIGIN":
+        # ATD set on ORIGIN → auto-advance to Departed (4001)
+        cur = conn.execute(
+            text("SELECT status, status_history FROM shipments WHERE id = :id"),
+            {"id": shipment_id},
+        ).fetchone()
+        if cur and (cur[0] or 0) < constants.STATUS_DEPARTED:
+            new_status = constants.STATUS_DEPARTED
+            history = _parse_jsonb(cur[1]) or []
+            history.append({
+                "status": new_status,
+                "label": constants.STATUS_LABELS[new_status],
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "changed_by": claims.email,
+                "note": "Auto-advanced from ATD",
+            })
+            conn.execute(text("""
+                UPDATE shipments
+                SET status = :status, status_history = CAST(:history AS jsonb), updated_at = :now
+                WHERE id = :id
+            """), {"status": new_status, "history": json.dumps(history), "now": datetime.now(timezone.utc).isoformat(), "id": shipment_id})
+            _log_system_action_pg(conn, "AUTO_STATUS_DEPARTED", shipment_id, claims.uid, claims.email)
+            auto_status_changed = True
+            logger.info("[route-nodes] Auto-advanced %s to Departed (4001)", shipment_id)
+
+    elif body.actual_eta is not None and target.get("role") == "DESTINATION":
+        # ATA set on DESTINATION → auto-advance to Arrived (4002)
+        cur = conn.execute(
+            text("SELECT status, status_history FROM shipments WHERE id = :id"),
+            {"id": shipment_id},
+        ).fetchone()
+        if cur and (cur[0] or 0) < constants.STATUS_ARRIVED:
+            new_status = constants.STATUS_ARRIVED
+            history = _parse_jsonb(cur[1]) or []
+            history.append({
+                "status": new_status,
+                "label": constants.STATUS_LABELS[new_status],
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "changed_by": claims.email,
+                "note": "Auto-advanced from ATA",
+            })
+            conn.execute(text("""
+                UPDATE shipments
+                SET status = :status, status_history = CAST(:history AS jsonb), updated_at = :now
+                WHERE id = :id
+            """), {"status": new_status, "history": json.dumps(history), "now": datetime.now(timezone.utc).isoformat(), "id": shipment_id})
+            _log_system_action_pg(conn, "AUTO_STATUS_ARRIVED", shipment_id, claims.uid, claims.email)
+            auto_status_changed = True
+            logger.info("[route-nodes] Auto-advanced %s to Arrived (4002)", shipment_id)
+
     return {
         "shipment_id": shipment_id,
         "node": target,
+        "auto_status_changed": auto_status_changed,
+        "new_status": new_status,
     }

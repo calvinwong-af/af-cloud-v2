@@ -1,5 +1,22 @@
 # Prompt Completion Log — v4.01–v4.10
 
+### [2026-03-04 06:00 UTC] — v4.03: Route Node Timing — Auto Status Progression + Terminal Selection + ATD/ATA Labels
+- **Status:** Completed
+- **Tasks:**
+  - Backend: Added auto status progression to `PATCH /route-nodes/{sequence}` — ATD on ORIGIN auto-advances to Departed (4001), ATA on DESTINATION auto-advances to Arrived (4002). Forward-only, appends to `status_history` JSONB, logs via `_log_system_action_pg`.
+  - Backend: Added `terminal_id` field to `UpdatePortRequest` in `core.py` — PATCH `/port` now writes both port and terminal in one call
+  - Frontend: Added terminal picker to `PortEditModal` — shows pill buttons when selected port has terminals, auto-selects default terminal
+  - Frontend: Added `etdLabel`/`etaLabel` props to `PortPair` — shows "ATD"/"ATA" when actual times are displayed instead of scheduled
+  - Frontend: RouteCard and page.tsx now track whether displayed time is actual vs scheduled, passes correct label
+  - Confirmed `STATUS_ARRIVED = 4002` and `STATUS_LABELS[4002]` already exist in `constants.py`
+- **Files Modified:**
+  - `af-server/routers/shipments/route_nodes.py`
+  - `af-server/routers/shipments/core.py`
+  - `af-platform/src/app/(platform)/shipments/[id]/_components.tsx`
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx`
+  - `af-platform/src/app/actions/shipments-write.ts`
+  - `af-platform/src/components/shared/PortPair.tsx`
+
 ### [2026-03-04 23:30 UTC] — v4.02: Geocode all ports via Google Geocoding API
 - **Status:** Completed
 - **Tasks:** Created backfill script to geocode all ports (SEA + AIR) missing lat/lng coordinates using Google Geocoding API. AIR ports geocoded by airport name, SEA ports by "name, country". Idempotent, logs progress, handles errors per-port.
