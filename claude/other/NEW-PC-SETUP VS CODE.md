@@ -210,7 +210,38 @@ Claude Code will automatically read `CLAUDE.md` and `.claude/settings.local.json
 
 ---
 
-## 9. Verify everything works
+## 9. Claude Code Skills (`/prompt` and `/prompt-push`)
+
+The repo includes two custom slash-command skills in `.claude/commands/`:
+
+| Skill | File | Purpose |
+|---|---|---|
+| `/prompt` | `.claude/commands/prompt.md` | Read and execute `claude/prompts/PROMPT-CURRENT.md`, lint/compile check, log to prompt log, then clear the prompt file. Does **not** commit or push. |
+| `/prompt-push` | `.claude/commands/prompt-push.md` | Run the full `/prompt` workflow, then `npm run build`, commit, and push. |
+
+These files are checked into the repo, so they are available automatically after cloning — no extra setup needed.
+
+### How to use
+Inside a Claude Code session:
+```
+/prompt          # Execute the current prompt (no commit)
+/prompt-push     # Execute the current prompt, build, commit & push
+```
+
+### How they work
+1. **`/prompt`** reads `claude/prompts/PROMPT-CURRENT.md`, executes all tasks, runs `npm run lint` (platform) and `py_compile main.py` (server) if relevant files changed, logs the result to `claude/prompts/log/`, and clears the prompt file.
+2. **`/prompt-push`** does everything `/prompt` does, then runs `npm run build`, stages changed files (excluding `.env.local` and service account keys), commits with a descriptive message + `Co-Authored-By` trailer, and pushes.
+
+### Verify skills are loaded
+After starting Claude Code, the skills should appear in the autocomplete when you type `/`. If they don't, confirm the files exist:
+```bash
+ls .claude/commands/
+# Should show: prompt.md  prompt-push.md
+```
+
+---
+
+## 10. Verify everything works
 
 ```bash
 # Server compiles
