@@ -23,12 +23,12 @@ from sqlalchemy import text
 
 from core.auth import Claims, require_afu
 from core.db import get_db
-from core.constants import FILES_BUCKET_NAME, STATUS_BOOKING_CONFIRMED
+from core.constants import FILES_BUCKET_NAME
 
 from ._helpers import (
     _parse_jsonb,
-    _is_booking_relevant,
-    _determine_initial_status,
+    _resolve_document_status,
+    _check_atd_advancement_pg,
     _resolve_gcs_path,
     _save_file_to_gcs,
     _create_file_record,
@@ -66,18 +66,20 @@ async def apply_booking_confirmation(
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
 ):
-    # Read current shipment
+    # Read current shipment (4a: include incoterm_code, transaction_type, etd, eta)
     row = conn.execute(text("""
-        SELECT id, booking, route_nodes, type_details, bl_document FROM shipments WHERE id = :id
+        SELECT id, booking, route_nodes, type_details, bl_document,
+               incoterm_code, transaction_type, etd, eta
+        FROM shipments WHERE id = :id
     """), {"id": shipment_id}).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Shipment not found")
 
     now = datetime.now(timezone.utc).isoformat()
 
-    # Build SET clauses
-    set_clauses = ["updated_at = :now", "status = :status"]
-    params: dict = {"id": shipment_id, "now": now, "status": STATUS_BOOKING_CONFIRMED}
+    # Build SET clauses (status computed separately after UPDATE)
+    set_clauses = ["updated_at = :now"]
+    params: dict = {"id": shipment_id, "now": now}
 
     if body.booking_reference is not None:
         set_clauses.append("booking_reference = :booking_reference")
@@ -103,21 +105,21 @@ async def apply_booking_confirmation(
     set_clauses.append("booking = CAST(:booking AS jsonb)")
     params["booking"] = json.dumps(booking)
 
-    # Write ETD/ETA flat columns unconditionally (works for V1 shipments with no route nodes)
-    if body.etd:
+    # ETD/ETA — fill-blanks only (4c: don't overwrite existing values)
+    if body.etd and not row[7]:
         set_clauses.append("etd = :etd")
         params["etd"] = body.etd
-    if body.eta_pod:
+    if body.eta_pod and not row[8]:
         set_clauses.append("eta = :eta")
         params["eta"] = body.eta_pod
 
-    # Also update route node timings if nodes exist
+    # Also update route node timings if nodes exist — fill-blanks only
     nodes = _parse_jsonb(row[2]) or []
     if not isinstance(nodes, list): nodes = []
     for node in nodes:
-        if node.get("role") == "ORIGIN" and body.etd:
+        if node.get("role") == "ORIGIN" and body.etd and not node.get("scheduled_etd"):
             node["scheduled_etd"] = body.etd
-        if node.get("role") == "DESTINATION" and body.eta_pod:
+        if node.get("role") == "DESTINATION" and body.eta_pod and not node.get("scheduled_eta"):
             node["scheduled_eta"] = body.eta_pod
     if nodes:
         set_clauses.append("route_nodes = CAST(:route_nodes AS jsonb)")
@@ -150,8 +152,14 @@ async def apply_booking_confirmation(
         UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
     """), params)
 
-    logger.info("[apply-bc] Updated %s with booking confirmation data (status → %s)", shipment_id, STATUS_BOOKING_CONFIRMED)
-    return {"shipment_id": shipment_id, "status": "OK"}
+    # 4b: Compute status from incoterm logic (not hard-coded)
+    new_status = _resolve_document_status(row[5], row[6], body.etd)
+    conn.execute(text("UPDATE shipments SET status = :status WHERE id = :id"),
+                 {"status": new_status, "id": shipment_id})
+    # No ATD check for BC — vessel has not departed by definition
+
+    logger.info("[apply-bc] Updated %s with booking confirmation data (status → %s)", shipment_id, new_status)
+    return {"shipment_id": shipment_id, "status": "OK", "new_status": new_status}
 
 
 # ---------------------------------------------------------------------------
@@ -320,14 +328,12 @@ async def apply_awb(
     # Auto-advance status based on incoterm classification
     incoterm_code = row[6]   # incoterm_code
     txn_type = row[7]        # transaction_type
-    if _is_booking_relevant(incoterm_code, txn_type):
-        new_status = STATUS_BOOKING_CONFIRMED  # 3002
-    else:
-        new_status = _determine_initial_status(body.flight_date)  # 4001 if past, 3002 if future/None
-
-    conn.execute(text("""
-        UPDATE shipments SET status = :status WHERE id = :id
-    """), {"status": new_status, "id": shipment_id})
+    new_status = _resolve_document_status(incoterm_code, txn_type, body.flight_date)
+    conn.execute(text("UPDATE shipments SET status = :status WHERE id = :id"),
+                 {"status": new_status, "id": shipment_id})
+    new_status = _check_atd_advancement_pg(
+        conn, shipment_id, new_status, claims.email, "Auto-advanced from ATD (AWB apply)"
+    )
 
     logger.info("[apply-awb] Updated %s with AWB data (status → %s)", shipment_id, new_status)
     return {"shipment_id": shipment_id, "status": "OK", "new_status": new_status}

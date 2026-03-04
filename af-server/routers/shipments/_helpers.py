@@ -15,6 +15,7 @@ from core.constants import (
     FILES_BUCKET_NAME,
     STATUS_BOOKING_CONFIRMED,
     STATUS_DEPARTED,
+    STATUS_LABELS,
 )
 from logic.incoterm_tasks import (
     FREIGHT_BOOKING,
@@ -323,6 +324,81 @@ def _determine_initial_status(on_board_date: str | None) -> int:
             return STATUS_DEPARTED  # 4001 — vessel already departed
     except (ValueError, TypeError):
         return STATUS_BOOKING_CONFIRMED
+
+
+def _resolve_document_status(
+    incoterm_code: str | None,
+    txn_type: str | None,
+    date_hint: str | None,
+) -> int:
+    """
+    Determine the correct status after a document (BL/AWB/BC) is applied.
+    Returns STATUS_DEPARTED (4001) if date_hint is in the past and booking is
+    not relevant, otherwise STATUS_BOOKING_CONFIRMED (3002).
+    """
+    if _is_booking_relevant(incoterm_code, txn_type):
+        return STATUS_BOOKING_CONFIRMED
+    return _determine_initial_status(date_hint)
+
+
+def _check_atd_advancement_pg(
+    conn,
+    shipment_id: str,
+    current_status: int,
+    claims_email: str,
+    note: str = "Auto-advanced from ATD (doc apply)",
+) -> int:
+    """
+    If TRACKED POL task has actual_end set and current status < STATUS_DEPARTED,
+    advance shipment to STATUS_DEPARTED and append to status_history.
+    Returns the final status.
+    """
+    if current_status >= STATUS_DEPARTED:
+        return current_status
+
+    now = datetime.now(timezone.utc).isoformat()
+    wf_row = conn.execute(
+        text("SELECT workflow_tasks FROM shipment_workflows WHERE shipment_id = :id"),
+        {"id": shipment_id}
+    ).fetchone()
+    if not wf_row:
+        return current_status
+
+    wf_tasks = _parse_jsonb(wf_row[0]) or []
+    pol_task = next(
+        (t for t in wf_tasks if t.get("task_type") == "POL" and t.get("mode") == "TRACKED"),
+        None
+    )
+    if not pol_task or not pol_task.get("actual_end"):
+        return current_status
+
+    cur = conn.execute(
+        text("SELECT status, status_history FROM shipments WHERE id = :id"),
+        {"id": shipment_id}
+    ).fetchone()
+    if not cur or (cur[0] or 0) >= STATUS_DEPARTED:
+        return current_status
+
+    history = _parse_jsonb(cur[1]) or []
+    history.append({
+        "status": STATUS_DEPARTED,
+        "label": STATUS_LABELS[STATUS_DEPARTED],
+        "timestamp": now,
+        "changed_by": claims_email,
+        "note": note,
+    })
+    conn.execute(text("""
+        UPDATE shipments
+        SET status = :status, status_history = CAST(:history AS jsonb), updated_at = :now
+        WHERE id = :id
+    """), {
+        "status": STATUS_DEPARTED,
+        "history": json.dumps(history),
+        "now": now,
+        "id": shipment_id,
+    })
+    logger.info("[atd_check] Auto-advanced %s to Departed (4001)", shipment_id)
+    return STATUS_DEPARTED
 
 
 # ---------------------------------------------------------------------------

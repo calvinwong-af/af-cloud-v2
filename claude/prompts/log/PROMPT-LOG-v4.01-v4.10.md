@@ -1,5 +1,57 @@
 # Prompt Completion Log — v4.01–v4.10
 
+### [2026-03-05 10:00 UTC] — v4.10: StatusCard Frontend Update + Backend Tab Fix
+- **Status:** Completed
+- **Tasks:**
+  - **A1:** Guarded `advanceStatus` to skip 5001 — pipeline advance button now stops at 4002
+  - **A2:** Added "Mark as Completed" / "Undo Completed" toggle button to StatusCard (emerald green / muted undo), visible for AFU when status >= 3002, shows completed_at date
+  - **A3:** Updated `isTerminal` in StatusCard and RouteCard — only cancelled (-1) is terminal now
+  - **A4:** Invoice toggle now gates on `order.completed` instead of `currentStatus === 5001`, updated helper text
+  - **A5:** Added emerald "Completed" badge next to status badge when `order.completed === true`
+  - **A6:** Added `completed: boolean` and `completed_at: string | null` to `ShipmentOrder` interface
+  - **A7:** Added `CheckCircle`, `RotateCcw` lucide imports, `updateCompletedFlagAction` import
+  - **B:** Added `updateCompletedFlagAction` server action to `shipments-write.ts`
+  - **C1:** Updated `_tab_where()` — active excludes `completed = TRUE`, completed uses flag, to_invoice uses flag
+  - **C2:** Updated `get_shipment_stats()` SQL aggregation to use `completed` boolean
+  - **D:** Added `completed`/`completed_at` field normalization in `get_shipment_by_id()`
+  - Fixed `toShipmentOrder` in dashboard and shipments list pages to include new fields
+- **Files Modified:**
+  - `af-platform/src/lib/types.ts`
+  - `af-platform/src/app/(platform)/shipments/[id]/_components.tsx`
+  - `af-platform/src/app/actions/shipments-write.ts`
+  - `af-platform/src/app/(platform)/dashboard/page.tsx`
+  - `af-platform/src/app/(platform)/shipments/page.tsx`
+  - `af-server/core/db_queries.py`
+
+### [2026-03-05 08:30 UTC] — v4.09: Completed Flag — Schema, Migration, and Status Pipeline Cleanup
+- **Status:** Completed
+- **Tasks:**
+  - Created `005_completed_flag.sql` migration — adds `completed` boolean + `completed_at` timestamptz columns to shipments, backfills status 5001 → 4002 with completed=true, adds index
+  - Updated `constants.py` — removed 5001 from STATUS_PATH_A and STATUS_PATH_B (pipeline now ends at 4002), marked STATUS_COMPLETED as legacy with comment
+  - Added `PATCH /{id}/complete` endpoint to `status.py` — toggles completed flag, enforces minimum status 3002, appends COMPLETED/UNCOMPLETED event to status_history, sets/clears completed_at
+  - Updated `update_invoiced_status` — gates on `completed` boolean instead of `status == 5001`
+  - Updated `update_shipment_status` — removed 5001 from terminal state protection (only STATUS_CANCELLED blocks now), removed `completed_val` logic that wrote to `shipment_workflows.completed`, removed 5001 from fallback `all_codes` lists
+  - Removed unused `STATUS_COMPLETED` import from status.py
+- **Files Modified:**
+  - `af-server/migrations/005_completed_flag.sql` (new)
+  - `af-server/core/constants.py`
+  - `af-server/routers/shipments/status.py`
+- **Notes:** Run `005_completed_flag.sql` against PostgreSQL before testing. `shipment_workflows.completed` column left as-is per prompt (no longer written to). Frontend StatusCard update is a separate prompt.
+
+### [2026-03-05 07:00 UTC] — v4.08: Document Apply Status Advancement Consolidation
+- **Status:** Completed
+- **Tasks:**
+  - Added `_resolve_document_status()` helper to `_helpers.py` — extracts incoterm-based status logic shared across BL/AWB/BC apply endpoints
+  - Added `_check_atd_advancement_pg()` helper to `_helpers.py` — checks TRACKED POL task ATD and auto-advances to Departed (4001) with status_history append
+  - Refactored `bl.py` PATCH `/{id}/bl` — replaced inline status+ATD block with calls to new helpers (identical logic, no behavior change)
+  - Refactored `apply_awb` in `doc_apply.py` — replaced inline status logic with `_resolve_document_status`, added ATD check via `_check_atd_advancement_pg` (was missing)
+  - Fixed `apply_booking_confirmation` in `doc_apply.py` — replaced hard-coded `STATUS_BOOKING_CONFIRMED` with incoterm-aware `_resolve_document_status`, added fill-blanks-only logic for ETD/ETA (flat columns + route_nodes), updated SELECT to include `incoterm_code`, `transaction_type`, `etd`, `eta`, updated return value to include `new_status`
+  - Cleaned up unused imports (`STATUS_DEPARTED` from bl.py, `STATUS_BOOKING_CONFIRMED`/`_is_booking_relevant`/`_determine_initial_status` from doc_apply.py)
+- **Files Modified:**
+  - `af-server/routers/shipments/_helpers.py`
+  - `af-server/routers/shipments/bl.py`
+  - `af-server/routers/shipments/doc_apply.py`
+
 ### [2026-03-05 04:00 UTC] — v4.07: Route Card Timing Layout Polish + BL Apply Status Progression
 - **Status:** Completed
 - **Tasks:**

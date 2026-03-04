@@ -25,6 +25,14 @@ Items identified during development/testing that are not urgent but should be ad
 
 ---
 
+## TECHNICAL DEBT
+
+| # | Item | Context | Notes |
+|---|---|---|---|
+| TD-01 | Refactor `_helpers.py` into domain-specific modules | Session 27 | File growing across multiple concerns (GCS, port matching, incoterm/status logic, task helpers, system logging). Split into: `_helpers.py` (core utils), `_file_helpers.py`, `_port_helpers.py`, `_status_helpers.py`. Trigger: when AI agent features are added or file exceeds ~500 lines with new concerns. |
+
+---
+
 ## LOW PRIORITY
 
 | # | Item | Context | Notes |

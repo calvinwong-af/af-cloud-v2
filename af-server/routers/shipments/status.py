@@ -20,7 +20,6 @@ from core.constants import (
     AFC_ADMIN,
     AFC_M,
     STATUS_LABELS,
-    STATUS_COMPLETED,
     STATUS_CANCELLED,
     STATUS_BOOKING_PENDING,
     STATUS_BOOKING_CONFIRMED,
@@ -85,8 +84,8 @@ async def update_shipment_status(
 
     # --- d. Terminal state protection (skipped for reversion) ---
     if not body.reverted:
-        if current_status == STATUS_COMPLETED or current_status == STATUS_CANCELLED:
-            return {"status": "ERROR", "msg": "Cannot change status of a completed or cancelled shipment"}
+        if current_status == STATUS_CANCELLED:
+            return {"status": "ERROR", "msg": "Cannot change status of a cancelled shipment"}
 
     # --- d2. Path B guard: reject booking statuses for non-booking paths ---
     if path == "B" and new_status in (STATUS_BOOKING_PENDING, STATUS_BOOKING_CONFIRMED):
@@ -114,14 +113,14 @@ async def update_shipment_status(
             # (e.g. status=3001 Booking Pending on a Path B incoterm like CNF IMPORT).
             # Allow advancing to any status that is numerically ahead in the full
             # ordered list, or to STATUS_CANCELLED. Block going backwards.
-            all_codes = [1001, 1002, 2001, 3001, 3002, 4001, 4002, 5001]
+            all_codes = [1001, 1002, 2001, 3001, 3002, 4001, 4002]
             current_ord = all_codes.index(current_status) if current_status in all_codes else -1
             new_ord = all_codes.index(new_status) if new_status in all_codes else -1
             if current_ord >= 0 and new_ord >= 0 and new_ord <= current_ord:
                 return {"status": "ERROR", "msg": "Cannot go backwards without revert flag"}
         elif not path_list:
             # Fallback if no incoterm — use simple forward check
-            all_codes = [1001, 1002, 2001, 3001, 3002, 4001, 4002, 5001]
+            all_codes = [1001, 1002, 2001, 3001, 3002, 4001, 4002]
             if current_status in all_codes and new_status in all_codes:
                 if all_codes.index(new_status) <= all_codes.index(current_status):
                     return {"status": "ERROR", "msg": "Cannot go backwards without revert flag"}
@@ -173,24 +172,11 @@ async def update_shipment_status(
 
         new_wf_history = list(wf_history) + [wf_history_entry]
 
-        completed_val = None
-        if new_status == STATUS_COMPLETED:
-            completed_val = True
-        elif new_status == STATUS_CANCELLED:
-            completed_val = False
-
-        if completed_val is not None:
-            conn.execute(text("""
-                UPDATE shipment_workflows
-                SET status_history = CAST(:history AS jsonb), updated_at = :now, completed = :completed
-                WHERE shipment_id = :id
-            """), {"history": json.dumps(new_wf_history), "now": now, "completed": completed_val, "id": shipment_id})
-        else:
-            conn.execute(text("""
-                UPDATE shipment_workflows
-                SET status_history = CAST(:history AS jsonb), updated_at = :now
-                WHERE shipment_id = :id
-            """), {"history": json.dumps(new_wf_history), "now": now, "id": shipment_id})
+        conn.execute(text("""
+            UPDATE shipment_workflows
+            SET status_history = CAST(:history AS jsonb), updated_at = :now
+            WHERE shipment_id = :id
+        """), {"history": json.dumps(new_wf_history), "now": now, "id": shipment_id})
 
     logger.info(
         "Status updated %s: %s -> %s (path %s) by %s",
@@ -201,6 +187,90 @@ async def update_shipment_status(
         "status": "OK",
         "data": {"shipment_id": shipment_id, "new_status": new_status, "path": path},
         "msg": "Status updated",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Update completed flag
+# ---------------------------------------------------------------------------
+
+class UpdateCompletedRequest(BaseModel):
+    completed: bool
+    note: str | None = None
+
+
+@router.patch("/{shipment_id}/complete")
+async def update_completed_flag(
+    shipment_id: str,
+    body: UpdateCompletedRequest,
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    """
+    Mark a shipment as completed or uncomplete it. AFU staff only.
+    Shipment must be at status 3002 or beyond to be marked complete.
+    Sets completed_at timestamp when completing; clears it when uncompleting.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+
+    row = conn.execute(text("""
+        SELECT status, status_history FROM shipments WHERE id = :id
+    """), {"id": shipment_id}).fetchone()
+
+    if not row:
+        raise NotFoundError(f"Shipment {shipment_id} not found")
+
+    current_status = row[0] or 0
+
+    # Minimum status to allow completion
+    if body.completed and current_status < STATUS_BOOKING_CONFIRMED:
+        return {
+            "status": "ERROR",
+            "msg": f"Shipment must be at Booking Confirmed (3002) or beyond to mark as completed (current: {current_status})",
+        }
+
+    # Build status_history note entry
+    q_history = _parse_jsonb(row[1]) or []
+    event = "COMPLETED" if body.completed else "UNCOMPLETED"
+    history_entry = {
+        "event": event,
+        "timestamp": now,
+        "changed_by": claims.email,
+        "note": body.note,
+    }
+    new_q_history = list(q_history) + [history_entry]
+
+    # Write completed flag + history
+    if body.completed:
+        conn.execute(text("""
+            UPDATE shipments
+            SET completed = TRUE,
+                completed_at = :now,
+                status_history = CAST(:history AS jsonb),
+                updated_at = :now
+            WHERE id = :id
+        """), {"now": now, "history": json.dumps(new_q_history), "id": shipment_id})
+    else:
+        conn.execute(text("""
+            UPDATE shipments
+            SET completed = FALSE,
+                completed_at = NULL,
+                status_history = CAST(:history AS jsonb),
+                updated_at = :now
+            WHERE id = :id
+        """), {"now": now, "history": json.dumps(new_q_history), "id": shipment_id})
+
+    logger.info(
+        "Completed flag %s on %s by %s",
+        event, shipment_id, claims.uid,
+    )
+
+    return {
+        "status": "OK",
+        "data": {
+            "completed": body.completed,
+            "completed_at": now if body.completed else None,
+        },
     }
 
 
@@ -219,17 +289,17 @@ async def update_invoiced_status(
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
 ):
-    """Update the issued_invoice flag. AFU staff only. Shipment must be completed (5001)."""
+    """Update the issued_invoice flag. AFU staff only. Shipment must be completed."""
     now = datetime.now(timezone.utc).isoformat()
 
     row = conn.execute(text("""
-        SELECT status FROM shipments WHERE id = :id
+        SELECT completed FROM shipments WHERE id = :id
     """), {"id": shipment_id}).fetchone()
 
     if not row:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
-    if row[0] != STATUS_COMPLETED:
+    if not row[0]:
         return {"status": "ERROR", "msg": "Invoiced flag can only be set on completed shipments"}
 
     conn.execute(text("""

@@ -4,11 +4,11 @@ import { useState, useEffect, useRef } from 'react';
 import {
   MapPin, Package, Users, AlertTriangle, Loader2,
   Container, Weight, Activity, ChevronDown, ChevronRight, Pencil, X,
-  Clock,
+  Clock, CheckCircle, RotateCcw,
 } from 'lucide-react';
 import { fetchStatusHistoryAction, fetchCompaniesForShipmentAction, reassignShipmentCompanyAction } from '@/app/actions/shipments';
 import type { StatusHistoryEntry } from '@/app/actions/shipments';
-import { updateShipmentStatusAction, updateInvoicedStatusAction, updatePartiesAction, updateShipmentPortAction, updateIncotermAction } from '@/app/actions/shipments-write';
+import { updateShipmentStatusAction, updateInvoicedStatusAction, updateCompletedFlagAction, updatePartiesAction, updateShipmentPortAction, updateIncotermAction } from '@/app/actions/shipments-write';
 import { formatDate } from '@/lib/utils';
 import type { ShipmentOrder, ShipmentOrderStatus, TypeDetailsFCL, TypeDetailsLCL } from '@/lib/types';
 import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, getStatusPathList } from '@/lib/types';
@@ -330,7 +330,7 @@ export function RouteCard({ order, accountType, polEta, polEtd, polAtd, podEta, 
 }) {
   const [editingPort, setEditingPort] = useState<'origin' | 'destination' | null>(null);
   const [editingIncoterm, setEditingIncoterm] = useState(false);
-  const isTerminal = order.status === 5001 || order.status === -1;
+  const isTerminal = order.status === -1;
   const filteredPorts = order.order_type === 'AIR'
     ? ports.filter(p => p.port_type?.toLowerCase().includes('air'))
     : ports.filter(p => !p.port_type?.toLowerCase().includes('air'));
@@ -875,8 +875,9 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
   const [showExceptionModal, setShowExceptionModal] = useState(false);
 
   const currentStatus = order.status;
-  const isTerminal = currentStatus === 5001 || currentStatus === -1;
+  const isTerminal = currentStatus === -1;
   const isAfu = accountType === 'AFU';
+  const [completedLoading, setCompletedLoading] = useState(false);
 
   // Determine path from incoterm + transaction_type
   const pathList = getStatusPathList(order.incoterm_code, order.transaction_type);
@@ -887,7 +888,7 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
 
   // Next step on path
   const nextStatus = displayIdx < pathList.length - 1 ? pathList[displayIdx + 1] : null;
-  const advanceStatus = nextStatus && !isTerminal ? nextStatus : null;
+  const advanceStatus = nextStatus && !isTerminal && nextStatus !== 5001 ? nextStatus : null;
 
   // Exception flag state
   const exceptionFlagged = order.exception?.flagged === true;
@@ -896,7 +897,7 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
   const canCancel = !isTerminal;
 
   // Any mutation in progress — disables all action buttons
-  const anyLoading = advanceLoading || revertLoading || cancelLoading || exceptionLoading;
+  const anyLoading = advanceLoading || revertLoading || cancelLoading || exceptionLoading || completedLoading;
 
   // Group steps by node (thousands digit)
   const nodes = (() => {
@@ -918,7 +919,7 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
   function getNodeState(nodeGroup: { steps: ShipmentOrderStatus[] }): 'past' | 'current' | 'future' {
     const hasCurrent = nodeGroup.steps.includes(currentStatus);
     // Terminal statuses (Completed, Cancelled) show as past/done, not current
-    if (hasCurrent && (currentStatus === 5001 || currentStatus === -1)) return 'past';
+    if (hasCurrent && currentStatus === -1) return 'past';
     if (hasCurrent) return 'current';
     const firstIdx = pathList.indexOf(nodeGroup.steps[0]);
     return firstIdx < displayIdx ? 'past' : 'future';
@@ -1021,6 +1022,19 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
       }
     } catch { setError('Failed to update invoice status'); }
     setInvoiceLoading(false);
+  }
+
+  async function handleCompletedToggle() {
+    setCompletedLoading(true);
+    setError(null);
+    try {
+      const result = await updateCompletedFlagAction(order.quotation_id, !order.completed);
+      if (!result) { setError('No response'); setCompletedLoading(false); return; }
+      if (result.success) { onReload(); } else {
+        setError('error' in result ? result.error : 'Failed to update');
+      }
+    } catch { setError('Failed to update completed status'); }
+    setCompletedLoading(false);
   }
 
   async function toggleHistory() {
@@ -1195,6 +1209,11 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
           <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${statusStyle}`}>
             {statusLabel}
           </span>
+          {order.completed && (
+            <span className="ml-2 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 inline-flex items-center gap-1">
+              <CheckCircle className="w-3 h-3" /> Completed
+            </span>
+          )}
         </div>
         {order.last_status_updated && (
           <span className="text-xs text-[var(--text-muted)]">
@@ -1210,7 +1229,7 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
           {advanceStatus && (
             <button
               onClick={() => {
-                if (advanceStatus === 5001 || advanceStatus === -1) {
+                if (advanceStatus === -1) {
                   setConfirmAction({ status: advanceStatus, label: SHIPMENT_STATUS_LABELS[advanceStatus] ?? `${advanceStatus}` });
                 } else {
                   executeStatusChange(advanceStatus);
@@ -1257,6 +1276,42 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
                 <><span>&#x2715;</span> Cancel Shipment</>
               )}
             </button>
+          )}
+        </div>
+      )}
+
+      {/* Mark as Completed — AFU only, status >= 3002 and not cancelled */}
+      {isAfu && currentStatus >= 3002 && currentStatus !== -1 && (
+        <div className="mt-3 flex items-center gap-3">
+          {order.completed ? (
+            <button
+              onClick={handleCompletedToggle}
+              disabled={anyLoading}
+              className="px-4 py-2 border border-gray-300 text-gray-500 bg-white text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {completedLoading ? (
+                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating…</>
+              ) : (
+                <><RotateCcw className="w-3.5 h-3.5" /> Undo Completed</>
+              )}
+            </button>
+          ) : (
+            <button
+              onClick={handleCompletedToggle}
+              disabled={anyLoading}
+              className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {completedLoading ? (
+                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating…</>
+              ) : (
+                <><CheckCircle className="w-3.5 h-3.5" /> Mark as Completed</>
+              )}
+            </button>
+          )}
+          {order.completed && order.completed_at && (
+            <span className="text-xs text-[var(--text-muted)]">
+              Completed {formatDate(order.completed_at)}
+            </span>
           )}
         </div>
       )}
@@ -1402,18 +1457,18 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
               </span>
             ) : (
               <span className="text-xs text-[var(--text-muted)] ml-2">
-                {currentStatus === 5001
+                {order.completed
                   ? (order.issued_invoice ? 'Invoice processed' : 'Awaiting invoice')
-                  : 'Available after shipment is completed'}
+                  : 'Available once shipment is marked as completed'}
               </span>
             )}
           </div>
           <button
-            onClick={currentStatus === 5001 ? handleInvoiceToggle : undefined}
-            disabled={currentStatus !== 5001 || invoiceLoading}
+            onClick={order.completed ? handleInvoiceToggle : undefined}
+            disabled={!order.completed || invoiceLoading}
             className={`relative w-10 h-5 rounded-full transition-colors ${
-              order.issued_invoice && currentStatus === 5001 ? 'bg-[var(--sky)]' : 'bg-gray-300'
-            } ${currentStatus !== 5001 ? 'opacity-40 cursor-not-allowed' : ''} ${invoiceLoading ? 'opacity-50' : ''}`}
+              order.issued_invoice && order.completed ? 'bg-[var(--sky)]' : 'bg-gray-300'
+            } ${!order.completed ? 'opacity-40 cursor-not-allowed' : ''} ${invoiceLoading ? 'opacity-50' : ''}`}
           >
             <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
               order.issued_invoice ? 'translate-x-5' : ''

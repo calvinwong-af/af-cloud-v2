@@ -300,6 +300,8 @@ export interface ShipmentOrder {
   incoterm_code: string | null;
   status: ShipmentOrderStatus;
   issued_invoice: boolean;                    // V1: maps from issued_invoice. V2: direct field. Default: false
+  completed: boolean;                         // Business completion flag — independent of physical status
+  completed_at: string | null;                // ISO datetime when marked completed
   last_status_updated: string | null;         // ISO datetime. Default: null
   status_history: StatusHistoryEntry[];       // Append-only log. Default: []
 

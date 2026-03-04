@@ -47,6 +47,8 @@ function toShipmentOrder(item: ShipmentListItem): ShipmentOrder {
     incoterm_code: item.incoterm || null,
     status: item.status as ShipmentOrder['status'],
     issued_invoice: false,
+    completed: false,
+    completed_at: null,
     last_status_updated: null,
     status_history: [],
     parent_id: null,

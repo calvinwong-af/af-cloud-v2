@@ -20,13 +20,13 @@ def get_shipment_stats(conn, company_id: str | None = None) -> dict:
     row = conn.execute(text(f"""
         SELECT
             COUNT(*) FILTER (WHERE
-                s.status IN (2001, 3001, 3002, 4001, 4002)
+                s.status IN (2001, 3001, 3002, 4001, 4002) AND s.completed = FALSE
             ) AS active,
             COUNT(*) FILTER (WHERE
-                s.status = 5001
+                s.completed = TRUE
             ) AS completed,
             COUNT(*) FILTER (WHERE
-                s.status = 5001 AND s.issued_invoice = FALSE
+                s.completed = TRUE AND s.issued_invoice = FALSE
             ) AS to_invoice,
             COUNT(*) FILTER (WHERE s.status IN (1001, 1002)) AS draft,
             COUNT(*) FILTER (WHERE s.status = -1) AS cancelled
@@ -53,11 +53,11 @@ def get_shipment_stats(conn, company_id: str | None = None) -> dict:
 def _tab_where(tab: str) -> str:
     """Return the WHERE clause fragment for a tab filter."""
     if tab == "active":
-        return "s.status IN (2001, 3001, 3002, 4001, 4002)"
+        return "s.status IN (2001, 3001, 3002, 4001, 4002) AND s.completed = FALSE"
     if tab == "completed":
-        return "s.status = 5001"
+        return "s.completed = TRUE"
     if tab == "to_invoice":
-        return "(s.status = 5001 AND s.issued_invoice = FALSE)"
+        return "(s.completed = TRUE AND s.issued_invoice = FALSE)"
     if tab == "draft":
         return "s.status IN (1001, 1002)"
     if tab == "cancelled":
@@ -218,6 +218,10 @@ def get_shipment_by_id(conn, shipment_id: str) -> dict | None:
     data["destination_port_un_code"] = data.get("dest_port") or ""
     data["origin_terminal_id"] = data.get("origin_terminal")
     data["destination_terminal_id"] = data.get("dest_terminal")
+
+    # Normalize completed fields
+    data["completed"] = data.get("completed") or False
+    data["completed_at"] = str(data["completed_at"]) if data.get("completed_at") else None
 
     # Timestamps to string
     for key in ("etd", "eta", "created_at", "updated_at", "cargo_ready_date"):

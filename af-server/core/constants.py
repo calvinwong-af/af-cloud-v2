@@ -85,7 +85,10 @@ STATUS_BOOKING_PENDING    = 3001
 STATUS_BOOKING_CONFIRMED  = 3002
 STATUS_DEPARTED           = 4001
 STATUS_ARRIVED            = 4002
-STATUS_COMPLETED          = 5001
+STATUS_COMPLETED          = 5001  # LEGACY — no longer used in pipeline. Retained for
+                                   # historical record compatibility only. Do not use
+                                   # in new code. Completion is now tracked via the
+                                   # shipments.completed boolean flag.
 STATUS_CANCELLED          = -1
 
 V2_ACTIVE_STATUSES = [
@@ -171,12 +174,12 @@ CQ_EXPIRED = "EXPIRED"
 # ---------------------------------------------------------------------------
 
 # Path A: AF owns freight booking (includes 3xxx booking nodes)
-# 1001 → 1002 → 2001 → 3001 → 3002 → 4001 → 4002 → 5001
-STATUS_PATH_A = [1001, 1002, 2001, 3001, 3002, 4001, 4002, 5001]
+# 1001 → 1002 → 2001 → 3001 → 3002 → 4001 → 4002
+STATUS_PATH_A = [1001, 1002, 2001, 3001, 3002, 4001, 4002]
 
 # Path B: AF does not own freight booking (skips 3xxx)
-# 1001 → 1002 → 2001 → 4001 → 4002 → 5001
-STATUS_PATH_B = [1001, 1002, 2001, 4001, 4002, 5001]
+# 1001 → 1002 → 2001 → 4001 → 4002
+STATUS_PATH_B = [1001, 1002, 2001, 4001, 4002]
 
 # Incoterm + transaction_type combos that generate a FREIGHT_BOOKING task → Path A
 # Derived from logic/incoterm_tasks.py _INCOTERM_RULES
