@@ -121,6 +121,9 @@ function ShipmentsPageInner() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<ShipmentOrder[]>([]);
   const [searching, setSearching] = useState(false);
+  const [searchNextCursor, setSearchNextCursor] = useState<string | null>(null);
+  const [searchTotal, setSearchTotal] = useState<number>(0);
+  const [loadingMoreSearch, setLoadingMoreSearch] = useState(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   // Ref to track fetch generation — incremented on each new load call.
@@ -205,13 +208,15 @@ function ShipmentsPageInner() {
 
     if (value.trim().length < 3) {
       setSearchResults([]);
+      setSearchNextCursor(null);
+      setSearchTotal(0);
       setSearching(false);
       return;
     }
 
     setSearching(true);
     searchDebounceRef.current = setTimeout(async () => {
-      const results = await searchShipmentsAction(value.trim(), 'all', 25);
+      const { results, nextCursor, total } = await searchShipmentsAction(value.trim(), 'all', 25, 0);
       setSearchResults(results.map((r) => toShipmentOrder({
         shipment_id: r.shipment_id,
         data_version: r.data_version,
@@ -228,6 +233,8 @@ function ShipmentsPageInner() {
         updated: r.updated,
         issued_invoice: r.issued_invoice ?? false,
       })));
+      setSearchNextCursor(nextCursor);
+      setSearchTotal(total);
       setSearching(false);
     }, 300);
   }
@@ -235,8 +242,35 @@ function ShipmentsPageInner() {
   function clearSearch() {
     setSearchQuery('');
     setSearchResults([]);
+    setSearchNextCursor(null);
+    setSearchTotal(0);
     setSearching(false);
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+  }
+
+  async function loadMoreSearch() {
+    if (!searchNextCursor || loadingMoreSearch) return;
+    setLoadingMoreSearch(true);
+    const offset = parseInt(searchNextCursor, 10);
+    const { results, nextCursor } = await searchShipmentsAction(searchQuery.trim(), 'all', 25, offset);
+    setSearchResults(prev => [...prev, ...results.map((r) => toShipmentOrder({
+      shipment_id: r.shipment_id,
+      data_version: r.data_version,
+      migrated_from_v1: r.migrated_from_v1 ?? false,
+      status: r.status,
+      order_type: r.order_type,
+      transaction_type: r.transaction_type ?? '',
+      incoterm: r.incoterm ?? '',
+      origin_port: r.origin_port,
+      destination_port: r.destination_port,
+      company_id: r.company_id,
+      company_name: r.company_name,
+      cargo_ready_date: r.cargo_ready_date ?? '',
+      updated: r.updated,
+      issued_invoice: r.issued_invoice ?? false,
+    }))]);
+    setSearchNextCursor(nextCursor);
+    setLoadingMoreSearch(false);
   }
 
   const isSearchActive = searchQuery.trim().length >= 3;
@@ -319,7 +353,13 @@ function ShipmentsPageInner() {
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
             <span>Searching across all shipments</span>
-            {!searching && <span className="font-medium" style={{ color: 'var(--text)' }}>· {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}</span>}
+            {!searching && (
+              <span className="font-medium" style={{ color: 'var(--text)' }}>
+                {searchTotal > searchResults.length
+                  ? `· showing ${searchResults.length} of ${searchTotal}`
+                  : `· ${searchResults.length} result${searchResults.length !== 1 ? 's' : ''}`}
+              </span>
+            )}
             {searching && <span className="italic">…</span>}
           </div>
           {!searching && searchResults.length > 0 && (() => {
@@ -394,7 +434,7 @@ function ShipmentsPageInner() {
         onRefresh={() => load(activeTab)}
       />
 
-      {/* Load more */}
+      {/* Load more — tab list */}
       {!isSearchActive && nextCursor && !loading && (
         <div className="flex justify-center">
           <button
@@ -404,6 +444,20 @@ function ShipmentsPageInner() {
                        hover:bg-[var(--surface)] transition-colors disabled:opacity-50"
           >
             {loadingMore ? 'Loading…' : 'Load more'}
+          </button>
+        </div>
+      )}
+
+      {/* Load more — search results */}
+      {isSearchActive && searchNextCursor && (
+        <div className="flex justify-center">
+          <button
+            onClick={loadMoreSearch}
+            disabled={loadingMoreSearch}
+            className="px-6 py-2 text-sm rounded-lg border border-[var(--border)] text-[var(--text-mid)]
+                       hover:bg-[var(--surface)] transition-colors disabled:opacity-50"
+          >
+            {loadingMoreSearch ? 'Loading…' : 'Load more results'}
           </button>
         </div>
       )}

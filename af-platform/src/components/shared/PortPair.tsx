@@ -262,19 +262,23 @@ export default function PortPair({
                 </div>
               </div>
               {/* ATA */}
-              <div>
-                <div className={isLg ? 'text-[10px] text-blue-500 font-medium' : 'text-[9px] text-blue-500 font-medium'}>ATA</div>
-                <div className={isLg ? 'text-xs text-blue-600 font-medium' : 'text-[10px] text-blue-600 font-medium'}>
-                  {originTiming.ata ? formatDate(originTiming.ata) : <span className={dateLabelCls}>—</span>}
+              {originTiming.ata ? (
+                <div>
+                  <div className={isLg ? 'text-[10px] text-blue-500 font-medium' : 'text-[9px] text-blue-500 font-medium'}>ATA</div>
+                  <div className={isLg ? 'text-xs text-blue-600 font-medium' : 'text-[10px] text-blue-600 font-medium'}>
+                    {formatDate(originTiming.ata)}
+                  </div>
                 </div>
-              </div>
+              ) : <div />}
               {/* ATD */}
-              <div>
-                <div className={isLg ? 'text-[10px] text-emerald-500 font-medium' : 'text-[9px] text-emerald-500 font-medium'}>ATD</div>
-                <div className={isLg ? 'text-xs text-emerald-600 font-medium' : 'text-[10px] text-emerald-600 font-medium'}>
-                  {originTiming.atd ? formatDate(originTiming.atd) : <span className={dateLabelCls}>—</span>}
+              {originTiming.atd ? (
+                <div>
+                  <div className={isLg ? 'text-[10px] text-emerald-500 font-medium' : 'text-[9px] text-emerald-500 font-medium'}>ATD</div>
+                  <div className={isLg ? 'text-xs text-emerald-600 font-medium' : 'text-[10px] text-emerald-600 font-medium'}>
+                    {formatDate(originTiming.atd)}
+                  </div>
                 </div>
-              </div>
+              ) : <div />}
             </div>
           ) : <div />}
 

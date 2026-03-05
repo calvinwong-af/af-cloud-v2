@@ -36,7 +36,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${syne.variable} ${outfit.variable} ${jetbrainsMono.variable} antialiased`}
+        className={`${syne.variable} ${outfit.variable} ${jetbrainsMono.variable} antialiased overflow-hidden`}
       >
         {children}
       </body>

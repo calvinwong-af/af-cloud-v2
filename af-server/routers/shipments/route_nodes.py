@@ -19,7 +19,8 @@ from core.db import get_db
 from core.exceptions import NotFoundError
 from core import constants, db_queries
 
-from ._helpers import _parse_jsonb, _log_system_action_pg
+from ._helpers import _parse_jsonb
+from ._status_helpers import _log_system_action_pg
 
 logger = logging.getLogger(__name__)
 

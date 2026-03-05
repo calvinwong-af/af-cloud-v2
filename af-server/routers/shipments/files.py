@@ -24,7 +24,7 @@ from core.constants import (
     FILES_BUCKET_NAME,
 )
 
-from ._helpers import (
+from ._file_helpers import (
     _resolve_gcs_path,
     _file_row_to_dict,
     _save_file_to_gcs,

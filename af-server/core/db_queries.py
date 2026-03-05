@@ -23,10 +23,10 @@ def get_shipment_stats(conn, company_id: str | None = None) -> dict:
                 s.status IN (2001, 3001, 3002, 4001, 4002) AND s.completed = FALSE
             ) AS active,
             COUNT(*) FILTER (WHERE
-                s.completed = TRUE
+                s.completed = TRUE OR s.status = 5001
             ) AS completed,
             COUNT(*) FILTER (WHERE
-                s.completed = TRUE AND s.issued_invoice = FALSE
+                (s.completed = TRUE OR s.status = 5001) AND s.issued_invoice = FALSE
             ) AS to_invoice,
             COUNT(*) FILTER (WHERE s.status IN (1001, 1002)) AS draft,
             COUNT(*) FILTER (WHERE s.status = -1) AS cancelled
@@ -55,9 +55,9 @@ def _tab_where(tab: str) -> str:
     if tab == "active":
         return "s.status IN (2001, 3001, 3002, 4001, 4002) AND s.completed = FALSE"
     if tab == "completed":
-        return "s.completed = TRUE"
+        return "(s.completed = TRUE OR s.status = 5001)"
     if tab == "to_invoice":
-        return "(s.completed = TRUE AND s.issued_invoice = FALSE)"
+        return "((s.completed = TRUE OR s.status = 5001) AND s.issued_invoice = FALSE)"
     if tab == "draft":
         return "s.status IN (1001, 1002)"
     if tab == "cancelled":
@@ -122,9 +122,9 @@ def list_shipments(conn, tab: str, company_id: str | None, limit: int, offset: i
     return items, total
 
 
-def search_shipments(conn, q: str, company_id: str | None, limit: int) -> list[dict]:
+def search_shipments(conn, q: str, company_id: str | None, limit: int, offset: int = 0) -> list[dict]:
     """ILIKE search on id, company name, origin_port, dest_port."""
-    params: dict = {"q": f"%{q}%", "limit": limit}
+    params: dict = {"q": f"%{q}%", "limit": limit, "offset": offset}
     where = "s.trash = FALSE"
     if company_id:
         where += " AND s.company_id = :company_id"
@@ -143,7 +143,7 @@ def search_shipments(conn, q: str, company_id: str | None, limit: int) -> list[d
         WHERE {where}
           AND (s.id ILIKE :q OR c.name ILIKE :q OR s.origin_port ILIKE :q OR s.dest_port ILIKE :q)
         ORDER BY s.countid DESC
-        LIMIT :limit
+        LIMIT :limit OFFSET :offset
     """), params).fetchall()
 
     items = []
@@ -203,7 +203,7 @@ def get_shipment_by_id(conn, shipment_id: str) -> dict | None:
 
     # Parse JSONB columns
     for key in ("cargo", "booking", "parties", "bl_document", "type_details",
-                "exception_data", "route_nodes", "status_history", "creator"):
+                "exception_data", "route_nodes", "status_history", "creator", "scope"):
         data[key] = _parse_jsonb(data.get(key))
 
     # Rename for API compat
@@ -235,6 +235,19 @@ def next_shipment_id(conn) -> tuple[str, int]:
     """Get next shipment ID from sequence. Returns (id_string, countid)."""
     countid = conn.execute(text("SELECT nextval('shipment_countid_seq')")).scalar()
     return f"AF-{countid:06d}", countid
+
+
+def generate_transport_order_id(conn) -> str:
+    """Generate next GT-XXXXXX transport order ID."""
+    row = conn.execute(text(
+        "SELECT transport_order_id FROM ground_transport_orders ORDER BY transport_order_id DESC LIMIT 1"
+    )).fetchone()
+    if row:
+        last_num = int(row[0].replace('GT-', ''))
+        next_num = last_num + 1
+    else:
+        next_num = 1
+    return f"GT-{next_num:06d}"
 
 
 def get_company_name(conn, company_id: str) -> str:

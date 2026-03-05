@@ -30,7 +30,8 @@ from logic.incoterm_tasks import (
     EXPORT_CLEARANCE,
 )
 
-from ._helpers import _parse_jsonb, _sync_route_node_timings
+from ._helpers import _parse_jsonb
+from ._status_helpers import _sync_route_node_timings
 from .core import _lazy_init_tasks_pg
 
 logger = logging.getLogger(__name__)

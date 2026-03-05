@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from core.exceptions import af_exception_handler, AFException
-from routers import shipments, companies, users, geography, files, ports, ai
+from routers import shipments, companies, users, geography, files, ports, ai, ground_transport
 
 app = FastAPI(
     title="AcceleFreight Server V2",
@@ -62,6 +62,7 @@ app.include_router(geography.router, prefix="/api/v2/geography", tags=["Geograph
 app.include_router(files.router,     prefix="/api/v2/files",     tags=["Files"])
 app.include_router(ports.router,     prefix="/api/v2/ports",     tags=["Ports"])
 app.include_router(ai.router,        prefix="/api/v2/ai",        tags=["AI"])
+app.include_router(ground_transport.router, prefix="/api/v2/ground-transport", tags=["Ground Transport"])
 
 
 # ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ import {
   Truck,
   Users,
   Building2,
+  Container,
   Grid3X3,
   Globe,
   ScrollText,
@@ -55,7 +56,10 @@ function getNavSections(accountType: string | null): NavSection[] {
     },
     {
       title: 'OPERATIONS',
-      items: [{ label: 'Shipments', icon: Truck, href: '/shipments' }],
+      items: [
+        { label: 'Shipments', icon: Truck, href: '/shipments' },
+        ...(isAfu ? [{ label: 'Ground Transport', icon: Container, href: '/ground-transport' }] : []),
+      ],
     },
   ];
 

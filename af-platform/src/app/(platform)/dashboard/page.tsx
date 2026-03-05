@@ -340,14 +340,14 @@ export default function DashboardPage() {
         </div>
 
         {/* Desktop: full table */}
-        <div className="hidden sm:block overflow-x-auto">
+        <div className="hidden sm:block overflow-x-auto overflow-y-visible">
           <ShipmentOrderTable orders={activeOrders} loading={loading || !profileLoaded} accountType={accountType} onRefresh={() => load()} />
         </div>
       </div>
 
       {/* To Invoice — hidden on mobile */}
       {toInvoiceOrders.length > 0 && (
-        <div className="hidden sm:block overflow-x-auto">
+        <div className="hidden sm:block overflow-x-auto overflow-y-visible">
           <h2 className="text-sm font-medium text-[var(--text-mid)] mb-3">
             To Invoice ({toInvoiceOrders.length})
           </h2>

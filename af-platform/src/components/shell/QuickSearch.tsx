@@ -87,7 +87,7 @@ export function QuickSearch() {
 
     setLoading(true);
     debounceRef.current = setTimeout(async () => {
-      const res = await searchShipmentsAction(value.trim(), "id", 8);
+      const { results: res } = await searchShipmentsAction(value.trim(), "id", 8);
       setResults(res);
       setSearched(true);
       setLoading(false);

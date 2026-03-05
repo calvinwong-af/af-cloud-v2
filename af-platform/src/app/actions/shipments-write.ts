@@ -1102,6 +1102,68 @@ export async function clearParsedPartiesDiffAction(
 
 
 // ---------------------------------------------------------------------------
+// Update Booking / Transport fields
+// ---------------------------------------------------------------------------
+
+export interface UpdateBookingPayload {
+  // Sea
+  booking_reference?: string | null;
+  carrier_agent?: string | null;
+  vessel_name?: string | null;
+  voyage_number?: string | null;
+  // Air
+  mawb_number?: string | null;
+  hawb_number?: string | null;
+  awb_type?: string | null;
+  flight_number?: string | null;
+  flight_date?: string | null;
+}
+
+export async function updateBookingAction(
+  shipmentId: string,
+  payload: UpdateBookingPayload,
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) return { success: false, error: 'No session token' };
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) return { success: false, error: 'Server URL not configured' };
+
+    const url = new URL(
+      `/api/v2/shipments/${encodeURIComponent(shipmentId)}/booking`,
+      serverUrl,
+    );
+    const res = await fetch(url.toString(), {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const msg = json?.detail ?? `Server responded ${res.status}`;
+      return { success: false, error: msg };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error('[updateBookingAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to update booking' };
+  }
+}
+
+
+// ---------------------------------------------------------------------------
 // Apply AWB
 // ---------------------------------------------------------------------------
 

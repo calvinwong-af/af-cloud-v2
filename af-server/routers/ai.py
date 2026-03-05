@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from core.auth import Claims, require_auth
 from core.db import get_db_direct
-from routers.shipments._helpers import _match_port_un_code
+from routers.shipments._port_helpers import _match_port_un_code
 
 logger = logging.getLogger(__name__)
 

@@ -34,7 +34,8 @@ from core.constants import (
 )
 from logic.incoterm_tasks import generate_tasks as generate_incoterm_tasks
 
-from ._helpers import _parse_jsonb, _log_system_action_pg
+from ._helpers import _parse_jsonb
+from ._status_helpers import _log_system_action_pg
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,7 @@ async def get_shipment_stats(
 async def search_shipments(
     q: str = Query(..., min_length=3),
     limit: int = Query(8, ge=1, le=50),
+    offset: int = Query(0, ge=0),
     search_fields: str = Query("id"),  # "id" or "all"
     claims: Claims = Depends(require_auth),
     conn=Depends(get_db),
@@ -94,10 +96,10 @@ async def search_shipments(
 
     if search_fields == "all":
         # Full search across id, company name, ports
-        items = db_queries.search_shipments(conn, q, effective_company_id, limit)
+        items = db_queries.search_shipments(conn, q, effective_company_id, limit, offset)
     else:
         # ID-only search
-        params: dict = {"q": f"%{q}%", "limit": limit}
+        params: dict = {"q": f"%{q}%", "limit": limit, "offset": offset}
         where = "s.trash = FALSE"
         if effective_company_id:
             where += " AND s.company_id = :company_id"
@@ -114,7 +116,7 @@ async def search_shipments(
             WHERE {where}
               AND s.id ILIKE :q
             ORDER BY s.updated_at DESC
-            LIMIT :limit
+            LIMIT :limit OFFSET :offset
         """), params).fetchall()
 
         items = []
@@ -141,7 +143,11 @@ async def search_shipments(
         if "status_label" not in s:
             s["status_label"] = STATUS_LABELS.get(s.get("status", 0), str(s.get("status", 0)))
 
-    return {"results": items[:limit]}
+    # Approximate total: if we got a full page, there may be more
+    total = offset + len(items)
+    next_cursor = str(offset + limit) if len(items) == limit else None
+
+    return {"results": items[:limit], "total": total, "next_cursor": next_cursor}
 
 
 def _id_matches(shipment_id: str, q_lower: str, q_upper: str, q_digits: str) -> bool:
@@ -751,6 +757,99 @@ async def update_incoterm(
 
     _log_system_action_pg(conn, "INCOTERM_UPDATED", shipment_id, claims.uid, claims.email)
     return {"status": "OK", "msg": "Incoterm updated"}
+
+
+# ---------------------------------------------------------------------------
+# Delete shipment (soft + hard)
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# PATCH /shipments/{shipment_id}/booking — Update booking / transport fields
+# ---------------------------------------------------------------------------
+
+class UpdateBookingRequest(BaseModel):
+    # Sea fields (stored in booking JSONB)
+    booking_reference: Optional[str] = None
+    carrier_agent: Optional[str] = None
+    vessel_name: Optional[str] = None
+    voyage_number: Optional[str] = None
+    # Air fields — flat columns on shipments table
+    mawb_number: Optional[str] = None
+    hawb_number: Optional[str] = None
+    awb_type: Optional[str] = None
+    # Air fields — stored in booking JSONB
+    flight_number: Optional[str] = None
+    flight_date: Optional[str] = None  # YYYY-MM-DD
+
+
+@router.patch("/{shipment_id}/booking")
+async def update_booking(
+    shipment_id: str,
+    body: UpdateBookingRequest,
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    """Update booking / transport fields on a shipment. AFU only."""
+    # 1. Fetch shipment
+    row = conn.execute(text("""
+        SELECT id, booking FROM shipments WHERE id = :id AND trash = FALSE
+    """), {"id": shipment_id}).fetchone()
+    if not row:
+        raise NotFoundError(f"Shipment {shipment_id} not found")
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # 2. Update booking JSONB fields (sea + flight)
+    booking_jsonb_fields = {
+        "booking_reference": body.booking_reference,
+        "carrier_agent": body.carrier_agent,
+        "vessel_name": body.vessel_name,
+        "voyage_number": body.voyage_number,
+        "flight_number": body.flight_number,
+        "flight_date": body.flight_date,
+    }
+
+    # Check which fields were explicitly sent
+    sent_fields = body.__fields_set__
+    jsonb_updates = {k: v for k, v in booking_jsonb_fields.items() if k in sent_fields}
+
+    if jsonb_updates:
+        booking = _parse_jsonb(row[1]) or {}
+        if not isinstance(booking, dict):
+            booking = {}
+        for key, val in jsonb_updates.items():
+            if val == "":
+                booking[key] = None
+            else:
+                booking[key] = val
+        conn.execute(text("""
+            UPDATE shipments SET booking = CAST(:booking AS jsonb), updated_at = :now
+            WHERE id = :id
+        """), {"booking": json.dumps(booking), "now": now, "id": shipment_id})
+
+    # 3. Update air flat columns
+    flat_col_map = {
+        "mawb_number": "mawb_number",
+        "hawb_number": "hawb_number",
+        "awb_type": "awb_type",
+    }
+    flat_updates = {}
+    for field_name, col_name in flat_col_map.items():
+        if field_name in sent_fields:
+            val = getattr(body, field_name)
+            flat_updates[col_name] = None if val == "" else val
+
+    if flat_updates:
+        set_clauses = [f"{col} = :{col}" for col in flat_updates]
+        set_clauses.append("updated_at = :now")
+        params = {**flat_updates, "now": now, "id": shipment_id}
+        conn.execute(text(f"""
+            UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
+        """), params)
+
+    # 4. Log + commit
+    _log_system_action_pg(conn, "BOOKING_UPDATED", shipment_id, claims.uid, claims.email)
+    return {"status": "OK", "msg": "Booking updated"}
 
 
 # ---------------------------------------------------------------------------

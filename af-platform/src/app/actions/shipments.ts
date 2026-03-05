@@ -215,20 +215,27 @@ export async function searchShipmentsAction(
   q: string,
   searchFields: 'id' | 'all' = 'id',
   limit: number = 8,
-): Promise<SearchResult[]> {
+  offset: number = 0,
+): Promise<{
+  results: SearchResult[];
+  nextCursor: string | null;
+  total: number;
+}> {
+  const empty = { results: [], nextCursor: null, total: 0 };
   try {
     const session = await verifySessionAndRole(['AFC-ADMIN', 'AFC-M', 'AFU-ADMIN']);
-    if (!session.valid) return [];
+    if (!session.valid) return empty;
 
     const { cookies } = await import('next/headers');
     const cookieStore = cookies();
     const idToken = cookieStore.get('af-session')?.value;
-    if (!idToken) return [];
+    if (!idToken) return empty;
 
     const url = new URL('/api/v2/shipments/search', process.env.AF_SERVER_URL);
     url.searchParams.set('q', q);
     url.searchParams.set('search_fields', searchFields);
     url.searchParams.set('limit', String(limit));
+    if (offset > 0) url.searchParams.set('offset', String(offset));
 
     const res = await fetch(url.toString(), {
       headers: { Authorization: `Bearer ${idToken}` },
@@ -237,14 +244,18 @@ export async function searchShipmentsAction(
 
     if (!res.ok) {
       console.error('[searchShipmentsAction] af-server responded', res.status);
-      return [];
+      return empty;
     }
 
     const json = await res.json();
-    return json.results ?? [];
+    return {
+      results: json.results ?? [],
+      nextCursor: json.next_cursor ?? null,
+      total: json.total ?? 0,
+    };
   } catch (err) {
     console.error('[searchShipmentsAction]', err instanceof Error ? err.message : err);
-    return [];
+    return empty;
   }
 }
 

@@ -1,6 +1,6 @@
 # AF Platform — Test Master
-**Version:** 2.58
-**Last Updated:** 04 March 2026
+**Version:** 2.59
+**Last Updated:** 05 March 2026
 
 > Individual series detail lives in `claude/tests/series/`. Retired series (MI, V2C, OF, SR, IN, SU) are in `AF-Test-Archive.md`.
 
@@ -16,7 +16,7 @@
 | VD | Vessel Display | 7 | 7 | 0 | 0 | 0 | ✅ Complete | series/VD-vessel-display.md |
 | PP | Port Pair Display | 9 | 9 | 0 | 0 | 0 | ✅ Complete | series/PP-port-pair.md |
 | DS | Datastore Sweep | 4 | 4 | 0 | 0 | 0 | ✅ Complete | series/DS-datastore.md |
-| BUG2 | Bug Fixes | 2 | 1 | 0 | 1 | 0 | 🔵 Active | series/BUG2-bugfixes.md |
+| BUG2 | Bug Fixes | 4 | 3 | 0 | 1 | 0 | ✅ Complete | series/BUG2-bugfixes.md |
 | MB | Mobile | 13 | 2 | 0 | 11 | 0 | 🟡 Deferred | series/MB-mobile.md |
 | AUTH | Authentication | 5 | 3 | 0 | 0 | 2 | ✅ Complete | series/AUTH-authentication.md |
 | PT | Port Terminal | 13 | 13 | 0 | 0 | 0 | ✅ Complete | series/PT-port-terminal.md |
@@ -35,7 +35,7 @@
 | MC | Manual Shipment Create | 6 | 6 | 0 | 0 | 0 | ✅ Complete | series/MC-manual-create.md |
 | SD | Shipment Delete | 3 | 3 | 0 | 0 | 0 | ✅ Complete | series/SD-shipment-delete.md |
 | LO | Loading State UI | 5 | 5 | 0 | 0 | 0 | ✅ Complete | series/LO-loading-state.md |
-| **TOTAL** | | **284** | **270** | **8** | **12** | **9** | | |
+| **TOTAL** | | **286** | **272** | **8** | **12** | **9** | | |
 
 ---
 

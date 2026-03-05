@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  Ship, Package, Calendar, Upload,
+  Package, Calendar, Upload,
   FileText, AlertTriangle, Loader2, Hash,
   ClipboardList, Pencil,
 } from 'lucide-react';
@@ -19,6 +19,7 @@ import ShipmentFilesTab from '@/components/shipments/ShipmentFilesTab';
 import BLPartyDiffModal from '@/components/shipments/BLPartyDiffModal';
 import DocumentParseModal from '@/components/shipments/DocumentParseModal';
 import RouteNodeTimeline from '@/components/shipments/RouteNodeTimeline';
+import type { ScopeFlags } from '@/app/actions/ground-transport';
 import {
   STATUS_STYLES,
   SectionCard,
@@ -30,6 +31,10 @@ import {
   PartiesCard,
   EditPartiesModal,
   CompanyReassignModal,
+  TransportCard,
+  TransportEditModal,
+  ScopeFlagsCard,
+  GroundTransportReconcileCard,
 } from './_components';
 import { createDocResultHandler } from './_doc-handler';
 import ShipmentRouteMapCard from '@/components/maps/ShipmentRouteMapCard';
@@ -51,6 +56,7 @@ export default function ShipmentOrderDetailPage() {
   const [ports, setPorts] = useState<{ un_code: string; name: string; country: string; port_type: string; has_terminals: boolean; terminals: Array<{ terminal_id: string; name: string; is_default: boolean }> }[]>([]);
   const [diffParty, setDiffParty] = useState<'shipper' | 'consignee' | null>(null);
   const [showEditParties, setShowEditParties] = useState(false);
+  const [showTransportEdit, setShowTransportEdit] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'files'>('overview');
   const [fileCount, setFileCount] = useState<number | null>(null);
   const [filesRefreshKey, setFilesRefreshKey] = useState(0);
@@ -438,39 +444,14 @@ export default function ShipmentOrderDetailPage() {
         </SectionCard>
 
         {/* Transport — vessel/voyage from booking dict or flat fields */}
-        {(() => {
-          const bookingRef = bk.booking_reference as string || null;
-          const carrierAgent = bk.carrier_agent as string || null;
-          const etd = routePolEtd;
-          const isAir = order.order_type === 'AIR';
-          const flightNumber = bk.flight_number as string || null;
-          const flightDate = bk.flight_date as string || null;
-
-          if (isAir) {
-            if (!order.mawb_number && !order.hawb_number && !flightNumber && !flightDate && !etd) return null;
-            return (
-              <SectionCard title="Transport" icon={<Ship className="w-4 h-4" />}>
-                <DataRow label="MAWB" value={order.mawb_number} mono />
-                <DataRow label="HAWB" value={order.hawb_number} mono />
-                <DataRow label="AWB Type" value={order.awb_type} />
-                <DataRow label="Flight" value={flightNumber} />
-                <DataRow label="Flight Date" value={flightDate ? formatDate(flightDate) : null} />
-                <DataRow label="ETD" value={etd ? formatDate(etd) : null} />
-              </SectionCard>
-            );
-          }
-
-          if (!vesselName && !voyageNumber && !bookingRef && !carrierAgent && !etd) return null;
-          return (
-            <SectionCard title="Transport" icon={<Ship className="w-4 h-4" />}>
-              <DataRow label="Vessel" value={vesselName} />
-              <DataRow label="Voyage" value={voyageNumber} />
-              <DataRow label="Booking Ref" value={bookingRef} mono />
-              <DataRow label="Carrier / Agent" value={carrierAgent} />
-              <DataRow label="ETD" value={etd ? formatDate(etd) : null} />
-            </SectionCard>
-          );
-        })()}
+        <TransportCard
+          order={order}
+          vesselName={vesselName}
+          voyageNumber={voyageNumber}
+          etd={routePolEtd}
+          accountType={accountType}
+          onEdit={accountType === 'AFU' ? () => setShowTransportEdit(true) : undefined}
+        />
 
         {/* Dates */}
         <SectionCard title="Dates" icon={<Calendar className="w-4 h-4" />}>
@@ -522,6 +503,16 @@ export default function ShipmentOrderDetailPage() {
             <DataRow label="Files" value={`${order.files.length} attached`} />
           )}
         </SectionCard>
+
+        {/* Order Scope */}
+        <ScopeFlagsCard
+          shipmentId={order.quotation_id}
+          scope={((order as unknown as Record<string, unknown>).scope as ScopeFlags | null) ?? null}
+          accountType={accountType}
+        />
+
+        {/* Ground Transport Reconciliation */}
+        <GroundTransportReconcileCard shipmentId={order.quotation_id} />
 
       </div>
 
@@ -586,6 +577,16 @@ export default function ShipmentOrderDetailPage() {
             setShowEditParties(false);
             loadOrder();
           }}
+        />
+      )}
+
+      {/* Transport edit modal */}
+      {showTransportEdit && (
+        <TransportEditModal
+          order={order}
+          shipmentId={order.quotation_id}
+          onSaved={() => { setShowTransportEdit(false); loadOrder(); }}
+          onClose={() => setShowTransportEdit(false)}
         />
       )}
 

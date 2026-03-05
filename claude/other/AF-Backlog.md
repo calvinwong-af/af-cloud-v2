@@ -31,7 +31,7 @@ Items identified during development/testing that are not urgent but should be ad
 
 | # | Item | Context | Notes |
 |---|---|---|---|
-| TD-01 | Refactor `_helpers.py` into domain-specific modules | Session 27 | File growing across multiple concerns (GCS, port matching, incoterm/status logic, task helpers, system logging). Split into: `_helpers.py` (core utils), `_file_helpers.py`, `_port_helpers.py`, `_status_helpers.py`. Trigger: when AI agent features are added or file exceeds ~500 lines with new concerns. |
+| TD-01 | Refactor `_helpers.py` into domain-specific modules | Session 27 | CLOSED — v-TD-01: split into 4 modules, all import sites updated across 7 routers. |
 
 ---
 
@@ -39,11 +39,11 @@ Items identified during development/testing that are not urgent but should be ad
 
 | # | Item | Context | Notes |
 |---|---|---|---|
-| BL-01 | Search results pagination — Load more on search | Session 9 | Search is hard-capped at 25 results with no Load more option. Fix: add offset/cursor to search endpoint + Load more button in search mode. |
-| BL-02 | Search debounce — excessive repeated API calls | Session 9 | 8 requests fired for a single query. Debounce is 300ms — consider increasing to 500ms to reduce noise. |
-| BL-03 | Inline edit of document reference fields on shipment detail page | Session 9 | AFU staff should be able to edit booking ref, MAWB, HAWB, MBL, HBL, and packages directly on the shipment detail Overview tab. Pencil icon per section (Transport card), edit-in-place popover or modal, PATCH to af-server, AFU only. |
-| BL-04 | Company name not showing in DocumentParseModal confirmed company card (manual search) | Session 9 | When user manually searches and selects a company via State C search, confirmed card shows ID twice instead of name. Root cause: onLink callback in BLParseResult.tsx only passes company_id. Fix: change to onLink: (id: string, name: string) => void across CompanyMatchSection and all call sites. |
-| BL-05 | Transport card missing air shipment fields on detail page | Session 9 | For air shipments, the Transport card only shows Booking Ref and ETD. Missing fields: MAWB, HAWB, flight number, flight date. These fields exist in the DB — they just need to be rendered. Conditional display: air fields (MAWB/HAWB/flight) for Air order type, sea fields (vessel/voyage) for Sea order type. |
+| BL-01 | Search results pagination — Load more on search | Session 9 | CLOSED — v4.23: offset/cursor added to search endpoint, Load more button added in search mode, QuickSearch call site updated. |
+| BL-02 | Search debounce — excessive repeated API calls | Session 9 | CLOSED — Root cause is an API/infrastructure setup issue, not a debounce problem. No code change required. |
+| BL-03 | Inline edit of document reference fields on shipment detail page | Session 9 | CLOSED — v4.22: TransportCard + TransportEditModal implemented with sea/air modes, PATCH /booking endpoint added. |
+| BL-04 | Company name not showing in DocumentParseModal confirmed company card (manual search) | Session 9 | CLOSED — Resolved. |
+| BL-05 | Transport card missing air shipment fields on detail page | Session 9 | CLOSED — Resolved. |
 
 ---
 

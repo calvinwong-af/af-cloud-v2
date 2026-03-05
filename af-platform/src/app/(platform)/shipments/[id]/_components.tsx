@@ -2,13 +2,16 @@
 
 import { useState, useEffect, useRef } from 'react';
 import {
-  MapPin, Package, Users, AlertTriangle, Loader2,
+  MapPin, Package, Users, AlertTriangle, Loader2, Ship,
   Container, Weight, Activity, ChevronDown, ChevronRight, Pencil, X,
   Clock, CheckCircle, RotateCcw,
 } from 'lucide-react';
 import { fetchStatusHistoryAction, fetchCompaniesForShipmentAction, reassignShipmentCompanyAction } from '@/app/actions/shipments';
 import type { StatusHistoryEntry } from '@/app/actions/shipments';
-import { updateShipmentStatusAction, updateInvoicedStatusAction, updateCompletedFlagAction, updatePartiesAction, updateShipmentPortAction, updateIncotermAction } from '@/app/actions/shipments-write';
+import { updateShipmentStatusAction, updateInvoicedStatusAction, updateCompletedFlagAction, updatePartiesAction, updateShipmentPortAction, updateIncotermAction, updateBookingAction } from '@/app/actions/shipments-write';
+import type { UpdateBookingPayload } from '@/app/actions/shipments-write';
+import { updateShipmentScopeAction, reconcileShipmentGroundTransportAction } from '@/app/actions/ground-transport';
+import type { ScopeFlags, ReconcileResult, GroundTransportOrder } from '@/app/actions/ground-transport';
 import { formatDate } from '@/lib/utils';
 import type { ShipmentOrder, ShipmentOrderStatus, TypeDetailsFCL, TypeDetailsLCL } from '@/lib/types';
 import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, getStatusPathList } from '@/lib/types';
@@ -852,6 +855,223 @@ export function PartiesCard({ order, onOpenDiff, accountType, onEdit }: {
   );
 }
 
+// ─── Transport edit modal + card ──────────────────────────────────────────────
+
+export function TransportEditModal({
+  order,
+  shipmentId,
+  onSaved,
+  onClose,
+}: {
+  order: ShipmentOrder;
+  shipmentId: string;
+  onSaved: () => void;
+  onClose: () => void;
+}) {
+  const isAir = order.order_type === 'AIR';
+  const bk = (order.booking ?? {}) as Record<string, unknown>;
+
+  // Sea fields
+  const [bookingRef, setBookingRef] = useState((bk.booking_reference as string) ?? '');
+  const [vessel, setVessel] = useState((bk.vessel_name as string) ?? '');
+  const [voyage, setVoyage] = useState((bk.voyage_number as string) ?? '');
+  const [carrier, setCarrier] = useState((bk.carrier_agent as string) ?? '');
+
+  // Air fields
+  const [mawb, setMawb] = useState(order.mawb_number ?? '');
+  const [hawb, setHawb] = useState(order.hawb_number ?? '');
+  const [awbType, setAwbType] = useState(order.awb_type ?? '');
+  const [flightNo, setFlightNo] = useState((bk.flight_number as string) ?? '');
+  const [flightDate, setFlightDate] = useState((bk.flight_date as string) ?? '');
+
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const inputCls = 'w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)]';
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      const payload: UpdateBookingPayload = isAir
+        ? {
+            mawb_number: mawb || null,
+            hawb_number: hawb || null,
+            awb_type: awbType || null,
+            flight_number: flightNo || null,
+            flight_date: flightDate || null,
+          }
+        : {
+            booking_reference: bookingRef || null,
+            vessel_name: vessel || null,
+            voyage_number: voyage || null,
+            carrier_agent: carrier || null,
+          };
+
+      const result = await updateBookingAction(shipmentId, payload);
+      if (!result) { setError('No response'); setSaving(false); return; }
+      if (!result.success) { setError(result.error); setSaving(false); return; }
+      onSaved();
+    } catch {
+      setError('Failed to update transport');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-sm mx-4 max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
+          <h3 className="text-sm font-semibold text-[var(--text)]">Edit Transport</h3>
+          <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text)]">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 p-4 space-y-3">
+          {isAir ? (
+            <>
+              <div>
+                <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">MAWB</label>
+                <input type="text" value={mawb} onChange={e => setMawb(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">HAWB</label>
+                <input type="text" value={hawb} onChange={e => setHawb(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">AWB Type</label>
+                <select value={awbType} onChange={e => setAwbType(e.target.value)} className={inputCls}>
+                  <option value="">—</option>
+                  <option value="HAWB">HAWB</option>
+                  <option value="MAWB">MAWB</option>
+                  <option value="Direct">Direct</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Flight Number</label>
+                <input type="text" value={flightNo} onChange={e => setFlightNo(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Flight Date</label>
+                <input type="date" value={flightDate} onChange={e => setFlightDate(e.target.value)} className={inputCls} />
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Booking Reference</label>
+                <input type="text" value={bookingRef} onChange={e => setBookingRef(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Vessel</label>
+                <input type="text" value={vessel} onChange={e => setVessel(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Voyage</label>
+                <input type="text" value={voyage} onChange={e => setVoyage(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Carrier / Agent</label>
+                <input type="text" value={carrier} onChange={e => setCarrier(e.target.value)} className={inputCls} />
+              </div>
+            </>
+          )}
+
+          {error && (
+            <p className="text-xs text-red-600">{error}</p>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 p-4 border-t border-[var(--border)]">
+          <button onClick={onClose} className="px-3 py-1.5 text-xs font-medium border border-[var(--border)] rounded-lg text-[var(--text-muted)] hover:bg-[var(--surface)]">
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-3 py-1.5 text-xs font-medium bg-[var(--sky)] text-white rounded-lg hover:bg-[var(--sky-dark)] disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function TransportCard({
+  order,
+  vesselName,
+  voyageNumber,
+  etd,
+  accountType,
+  onEdit,
+}: {
+  order: ShipmentOrder;
+  vesselName: string | null;
+  voyageNumber: string | null;
+  etd: string | null;
+  accountType: string | null;
+  onEdit?: () => void;
+}) {
+  const bk = (order.booking ?? {}) as Record<string, unknown>;
+  const bookingRef = bk.booking_reference as string || null;
+  const carrierAgent = bk.carrier_agent as string || null;
+  const flightNumber = bk.flight_number as string || null;
+  const flightDate = bk.flight_date as string || null;
+  const isAir = order.order_type === 'AIR';
+
+  if (isAir) {
+    if (!order.mawb_number && !order.hawb_number && !flightNumber && !flightDate && !etd) return null;
+    return (
+      <SectionCard
+        title="Transport"
+        icon={<Ship className="w-4 h-4" />}
+        action={accountType === 'AFU' && onEdit ? (
+          <button
+            onClick={onEdit}
+            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
+            title="Edit transport"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+        ) : undefined}
+      >
+        <DataRow label="MAWB" value={order.mawb_number} mono />
+        <DataRow label="HAWB" value={order.hawb_number} mono />
+        <DataRow label="AWB Type" value={order.awb_type} />
+        <DataRow label="Flight" value={flightNumber} />
+        <DataRow label="Flight Date" value={flightDate ? formatDate(flightDate) : null} />
+        <DataRow label="ETD" value={etd ? formatDate(etd) : null} />
+      </SectionCard>
+    );
+  }
+
+  if (!vesselName && !voyageNumber && !bookingRef && !carrierAgent && !etd) return null;
+  return (
+    <SectionCard
+      title="Transport"
+      icon={<Ship className="w-4 h-4" />}
+      action={accountType === 'AFU' && onEdit ? (
+        <button
+          onClick={onEdit}
+          className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
+          title="Edit transport"
+        >
+          <Pencil className="w-3.5 h-3.5" />
+        </button>
+      ) : undefined}
+    >
+      <DataRow label="Vessel" value={vesselName} />
+      <DataRow label="Voyage" value={voyageNumber} />
+      <DataRow label="Booking Ref" value={bookingRef} mono />
+      <DataRow label="Carrier / Agent" value={carrierAgent} />
+      <DataRow label="ETD" value={etd ? formatDate(etd) : null} />
+    </SectionCard>
+  );
+}
+
 // ─── Status card (v2.18 — redesigned) ─────────────────────────────────────────
 
 /** Node labels — keyed by thousands digit */
@@ -1305,7 +1525,7 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
       )}
 
       {/* Mark as Completed — AFU only, status >= 3002 and not cancelled */}
-      {isAfu && currentStatus >= 3002 && currentStatus !== -1 && (
+      {isAfu && currentStatus >= 3002 && currentStatus !== 5001 && currentStatus !== -1 && (
         <div className="mt-3 flex items-center gap-3">
           {order.completed ? (
             <button
@@ -1674,3 +1894,278 @@ export function CompanyReassignModal({ shipmentId, currentCompanyId, onClose, on
   );
 }
 
+// ─── Scope Flags Card ────────────────────────────────────────────────────────
+
+const SCOPE_LABELS: Record<string, string> = {
+  first_mile_haulage:  'First Mile Haulage',
+  first_mile_trucking: 'First Mile Trucking',
+  export_clearance:    'Export Clearance',
+  sea_freight:         'Sea / Air Freight',
+  import_clearance:    'Import Clearance',
+  last_mile_haulage:   'Last Mile Haulage',
+  last_mile_trucking:  'Last Mile Trucking',
+};
+
+const SCOPE_KEYS: (keyof ScopeFlags)[] = [
+  'first_mile_haulage', 'first_mile_trucking', 'export_clearance',
+  'sea_freight', 'import_clearance', 'last_mile_haulage', 'last_mile_trucking',
+];
+
+function ScopeEditModal({
+  shipmentId,
+  scope,
+  onSaved,
+  onClose,
+}: {
+  shipmentId: string;
+  scope: ScopeFlags;
+  onSaved: (updated: ScopeFlags) => void;
+  onClose: () => void;
+}) {
+  const [values, setValues] = useState<ScopeFlags>({ ...scope });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function toggle(key: keyof ScopeFlags) {
+    setValues((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    const changed: Partial<ScopeFlags> = {};
+    for (const key of SCOPE_KEYS) {
+      if (values[key] !== scope[key]) {
+        changed[key] = values[key];
+      }
+    }
+    if (Object.keys(changed).length === 0) {
+      onClose();
+      return;
+    }
+    try {
+      const result = await updateShipmentScopeAction(shipmentId, changed);
+      if (!result) { setError('No response'); setSaving(false); return; }
+      if (result.success) { onSaved(result.data); onClose(); }
+      else { setError(result.error); }
+    } catch { setError('Failed to update scope'); }
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
+          <h2 className="text-base font-semibold text-[var(--text)]">Edit Scope</h2>
+          <button onClick={onClose} className="p-1 rounded hover:bg-[var(--surface)]"><X size={16} /></button>
+        </div>
+        <div className="px-5 py-4 space-y-2">
+          {SCOPE_KEYS.map((key) => (
+            <label key={key} className="flex items-center gap-3 cursor-pointer py-1.5">
+              <input
+                type="checkbox"
+                checked={values[key]}
+                onChange={() => toggle(key)}
+                className="rounded border-[var(--border)]"
+              />
+              <span className="text-sm text-[var(--text)]">{SCOPE_LABELS[key]}</span>
+            </label>
+          ))}
+          {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-[var(--border)]">
+          <button onClick={onClose} className="px-4 py-2 text-sm border border-[var(--border)] rounded-lg text-[var(--text-mid)]">Cancel</button>
+          <button onClick={handleSave} disabled={saving} className="px-4 py-2 text-sm bg-[var(--sky)] text-white rounded-lg disabled:opacity-50 flex items-center gap-2">
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ScopeFlagsCard({
+  shipmentId,
+  scope: initialScope,
+  accountType,
+}: {
+  shipmentId: string;
+  scope: ScopeFlags | null;
+  accountType: string | null;
+}) {
+  const [scope, setScope] = useState<ScopeFlags | null>(initialScope);
+  const [showEdit, setShowEdit] = useState(false);
+
+  useEffect(() => { setScope(initialScope); }, [initialScope]);
+
+  if (!scope) return null;
+
+  return (
+    <>
+      <SectionCard
+        title="Order Scope"
+        icon={<Activity className="w-4 h-4" />}
+        action={
+          accountType === 'AFU' ? (
+            <button
+              onClick={() => setShowEdit(true)}
+              className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
+              title="Edit scope"
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+          ) : undefined
+        }
+      >
+        <div className="space-y-1">
+          {SCOPE_KEYS.map((key) => (
+            <div key={key} className="flex items-center justify-between py-1">
+              <span className="text-xs text-[var(--text-mid)]">{SCOPE_LABELS[key]}</span>
+              <span className={`w-2 h-2 rounded-full ${scope[key] ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+            </div>
+          ))}
+        </div>
+      </SectionCard>
+
+      {showEdit && (
+        <ScopeEditModal
+          shipmentId={shipmentId}
+          scope={scope}
+          onSaved={(updated) => setScope(updated)}
+          onClose={() => setShowEdit(false)}
+        />
+      )}
+    </>
+  );
+}
+
+// ─── Ground Transport Reconciliation Card ────────────────────────────────────
+
+const GT_RECONCILE_STATUS_STYLES: Record<string, string> = {
+  draft:       'bg-gray-100 text-gray-700',
+  confirmed:   'bg-blue-100 text-blue-800',
+  dispatched:  'bg-sky-100 text-sky-800',
+  in_transit:  'bg-amber-100 text-amber-800',
+  detained:    'bg-orange-100 text-orange-800',
+  completed:   'bg-emerald-100 text-emerald-800',
+  cancelled:   'bg-red-100 text-red-700',
+};
+
+const GAP_LABELS: Record<string, { label: string; legType: 'first_mile' | 'last_mile' }> = {
+  first_mile_haulage:  { label: 'First Mile Haulage', legType: 'first_mile' },
+  first_mile_trucking: { label: 'First Mile Trucking', legType: 'first_mile' },
+  last_mile_haulage:   { label: 'Last Mile Haulage', legType: 'last_mile' },
+  last_mile_trucking:  { label: 'Last Mile Trucking', legType: 'last_mile' },
+};
+
+export function GroundTransportReconcileCard({
+  shipmentId,
+}: {
+  shipmentId: string;
+}) {
+  const [data, setData] = useState<ReconcileResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  async function fetchData() {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await reconcileShipmentGroundTransportAction(shipmentId);
+      if (!result) { setError('No response'); setLoading(false); return; }
+      if (result.success) { setData(result.data); }
+      else { setError(result.error); }
+    } catch { setError('Failed to load'); }
+    setLoading(false);
+  }
+
+  useEffect(() => { fetchData(); }, [shipmentId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const hasScope = data?.scope && SCOPE_KEYS.some((k) => data.scope[k]);
+  const hasOrders = data?.orders && data.orders.length > 0;
+
+  if (!loading && !error && !hasScope && !hasOrders) {
+    return (
+      <SectionCard title="Ground Transport" icon={<Container className="w-4 h-4" />}>
+        <p className="text-sm text-[var(--text-muted)] italic">No ground transport in scope</p>
+      </SectionCard>
+    );
+  }
+
+  return (
+    <SectionCard title="Ground Transport" icon={<Container className="w-4 h-4" />}>
+      {loading && (
+        <div className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading…
+        </div>
+      )}
+
+      {error && (
+        <div className="text-sm text-red-600 flex items-center gap-2">
+          <AlertTriangle className="w-3.5 h-3.5" />
+          {error}
+          <button onClick={fetchData} className="ml-auto text-xs underline">Retry</button>
+        </div>
+      )}
+
+      {!loading && !error && data && (
+        <div className="space-y-2">
+          {data.orders.map((order: GroundTransportOrder) => (
+            <div
+              key={order.transport_order_id}
+              className="flex items-center justify-between py-1.5 border-b border-[var(--border)] last:border-0"
+            >
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.open(`/ground-transport/${order.transport_order_id}`, '_blank')}
+                  className="text-xs font-mono text-[var(--sky)] hover:underline"
+                >
+                  {order.transport_order_id}
+                </button>
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
+                  order.transport_type === 'haulage' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
+                }`}>
+                  {order.transport_type.toUpperCase()}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${GT_RECONCILE_STATUS_STYLES[order.status] ?? 'bg-gray-100 text-gray-700'}`}>
+                  {order.status.replace(/_/g, ' ')}
+                </span>
+                <span className="text-[10px] text-[var(--text-muted)]">
+                  {order.legs?.length ?? 0} leg{(order.legs?.length ?? 0) !== 1 ? 's' : ''}
+                </span>
+              </div>
+            </div>
+          ))}
+
+          {data.gaps.map((gap) => {
+            const info = GAP_LABELS[gap];
+            return (
+              <div
+                key={gap}
+                className="flex items-center justify-between py-1.5 border-b border-[var(--border)] last:border-0"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-[var(--text-mid)]">{info?.label ?? gap}</span>
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">
+                    Not arranged
+                  </span>
+                </div>
+                {info && (
+                  <button
+                    onClick={() => window.open(`/ground-transport?create=1&parent=${shipmentId}&leg_type=${info.legType}`, '_blank')}
+                    className="text-xs text-[var(--sky)] hover:underline font-medium"
+                  >
+                    Create
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </SectionCard>
+  );
+}

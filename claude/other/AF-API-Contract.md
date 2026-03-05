@@ -1,7 +1,7 @@
 # AcceleFreight — AF Server V2 API Contract
 **Base URL:** `https://af-server-667020632236.asia-northeast1.run.app/api/v2` (prod) · `http://localhost:8000/api/v2` (local)  
 **Auth:** Firebase ID token — `Authorization: Bearer <token>` on all protected routes  
-**Version:** Contract v1.3 — 03 March 2026  
+**Version:** Contract v1.5 — 05 March 2026  
 **Status:** Living document — update when endpoints change
 
 ---
@@ -42,11 +42,11 @@ Error body:
 | Role token | Who | Permissions |
 |---|---|---|
 | `require_auth` | Any authenticated user | Read own data |
-| `require_afu` | AFU staff (any AFU role: AFU-ADMIN, AFU-SM, AFU-SE) | Read all data |
+| `require_afu` | AFU staff (any AFU role) | Read all data |
 | `require_afu_admin` | AFU-ADMIN only | Write / create / delete |
 | `require_super_admin` | Named super-admins only (calvin, isaac) | Dangerous ops |
 
-**AFU Roles:** `AFU-ADMIN` · `AFU-SM` (Sales Manager) · `AFU-SE` (Sales Executive)  
+**AFU Roles:** `AFU-ADMIN` · `AFU-STAFF` · `AFU-OPS`  
 **AFC Roles:** `AFC-ADMIN` · `AFC-M` (Manager)
 
 AFC users (`is_afc()`) are automatically scoped to their own `company_id` — they can never see data from other companies regardless of which endpoint they call.
@@ -122,7 +122,7 @@ Query params:
 
 AFC users are auto-scoped. AFU sees all.
 
-**Response:** (no envelope — direct object)
+**Response:** (no envelope)
 ```json
 {
   "results": [
@@ -224,6 +224,8 @@ Accepts `AF-XXXXXX` or `AFCQ-XXXXXX` (resolves transparently).
   "company_id": "AFC-000412",
   "company_name": "Acme Corp Sdn Bhd",
   "issued_invoice": false,
+  "completed": false,
+  "completed_at": null,
   "cargo_ready_date": "2026-02-15",
   "etd": "2026-03-10",
   "eta": "2026-03-25",
@@ -288,17 +290,7 @@ Accepts `AF-XXXXXX` or `AFCQ-XXXXXX` (resolves transparently).
       "note": "Manually created"
     }
   ],
-  "workflow_tasks": [
-    {
-      "task_id": "booking",
-      "label": "Arrange Booking",
-      "status": "pending",
-      "due_date": "2026-03-05",
-      "completed_at": null,
-      "completed_by": null,
-      "notes": null
-    }
-  ],
+  "workflow_tasks": [ <TaskObject>, ... ],
   "creator": { "uid": "abc123", "email": "calvin@accelefreight.com" },
   "created_at": "2026-02-28T10:32:00+00:00",
   "updated_at": "2026-03-01T08:15:00+00:00"
@@ -332,15 +324,7 @@ Auth: `require_afu_admin`
     { "container_size": "40HC", "container_type": "DRY", "quantity": 2 }
   ],
   "packages": null,
-  "shipper": {
-    "name": "Supplier Vietnam Ltd",
-    "address": "...",
-    "contact_person": "...",
-    "phone": "...",
-    "email": "...",
-    "company_id": null,
-    "company_contact_id": null
-  },
+  "shipper": { ... },
   "consignee": { ... },
   "notify_party": { ... },
   "cargo_ready_date": "2026-02-15",
@@ -349,7 +333,7 @@ Auth: `require_afu_admin`
 }
 ```
 
-`order_type` values: `SEA_FCL` | `SEA_LCL` | `AIR` | `CROSS_BORDER` | `GROUND` (last two reserved — not yet validated in create endpoint)  
+`order_type` values: `SEA_FCL` | `SEA_LCL` | `AIR`  
 `transaction_type` values: `IMPORT` | `EXPORT` | `DOMESTIC`  
 `containers` required for `SEA_FCL`. `packages` for `SEA_LCL` / `AIR`.
 
@@ -374,11 +358,7 @@ Soft delete sets `trash=TRUE`. Hard delete removes rows from `shipments`, `shipm
 
 **Response:**
 ```json
-{
-  "deleted": true,
-  "shipment_id": "AF-003874",
-  "mode": "soft"
-}
+{ "deleted": true, "shipment_id": "AF-003874", "mode": "soft" }
 ```
 
 ---
@@ -416,20 +396,22 @@ Updates the status and appends to status history in both `shipments` and `shipme
 | `-1` | Cancelled |
 
 **Path A** (booking relevant — AcceleFreight controls freight): `1002 → 2001 → 3001 → 3002 → 4001 → 4002 → 5001`  
-**Path B** (booking not relevant — freight arranged by other party): `1002 → 2001 → 4001 → 4002 → 5001`
+**Path B** (booking not relevant): `1002 → 2001 → 4001 → 4002 → 5001`
 
-**Booking relevance is determined by incoterm + transaction_type:**
+**Booking relevance by incoterm + transaction_type:**
 
 | Classification | Incoterm + Type |
 |---|---|
-| Path A (relevant) | EXW import, FOB import, FCA import, CFR/CNF/CIF export, DDP export, DAP export, CPT export |
-| Path B (not relevant) | FOB export, FCA export, CNF/CFR/CIF import, DDP import, DAP import, CPT import |
-| Blocked combination | EXW export — hard blocked in UI, not a valid combination |
+| Path A | EXW import, FOB import, FCA import, CFR/CNF/CIF export, DDP export, DAP export, CPT export |
+| Path B | FOB export, FCA export, CNF/CFR/CIF import, DDP import, DAP import, CPT import |
+| Blocked | EXW export — hard blocked in UI |
 
 **Auto-advance on document apply:**
-- BC apply → always advances to Booking Confirmed (3002)
+- BC apply → advances to Booking Confirmed (3002) — unless incoterm classification puts it further (see `_resolve_document_status`)
 - BL/AWB apply on Path A → advances to Booking Confirmed (3002)
-- BL/AWB apply on Path B (import, freight not ours) → advances to Departed (4001) if on_board_date ≤ today, else Booking Confirmed (3002)
+- BL/AWB apply on Path B → advances to Departed (4001) if `on_board_date` ≤ today, else Booking Confirmed (3002)
+- ATD set (actual departure) → auto-advances to Departed (4001) if not already there
+- ATA set (actual arrival) → auto-advances to Arrived (4002) if not already there
 
 **Response:**
 ```json
@@ -444,8 +426,6 @@ Updates the status and appends to status history in both `shipments` and `shipme
 
 #### `GET /shipments/{shipment_id}/status-history`
 Auth: `require_auth`
-
-Returns the full status history array.
 
 **Response:**
 ```json
@@ -465,11 +445,39 @@ Returns the full status history array.
 
 ---
 
-### 2.8 Invoiced Flag
+### 2.8 Completed Flag
+
+#### `PATCH /shipments/{shipment_id}/complete`
+Auth: `require_afu`  
+Shipment must be at status `3002` (Booking Confirmed) or beyond to mark as completed. Sets/clears a separate `completed` boolean and `completed_at` timestamp — independent of the numeric status field.
+
+**Request body:**
+```json
+{ "completed": true, "note": "All charges cleared" }
+```
+
+`note` is optional.
+
+**Response:**
+```json
+{
+  "status": "OK",
+  "data": {
+    "completed": true,
+    "completed_at": "2026-03-05T10:00:00+00:00"
+  }
+}
+```
+
+⚠️ `completed` is a separate flag from `status`. A shipment at status 4002 (Arrived) can be marked completed. Uncompleting clears `completed_at`.
+
+---
+
+### 2.9 Invoiced Flag
 
 #### `PATCH /shipments/{shipment_id}/invoiced`
 Auth: `require_afu`  
-Shipment must be at status `5001` (Completed).
+Shipment must have `completed = TRUE`.
 
 **Request body:**
 ```json
@@ -485,19 +493,18 @@ Shipment must be at status `5001` (Completed).
 }
 ```
 
+⚠️ Gate changed from `status=5001` to `completed=TRUE` — the `5001` status code is retained for backward compatibility but `completed` is the actual gate.
+
 ---
 
-### 2.9 Exception Flag
+### 2.10 Exception Flag
 
 #### `PATCH /shipments/{shipment_id}/exception`
 Auth: `require_auth` (AFC: admin/manager only; AFU: all)
 
 **Request body:**
 ```json
-{
-  "flagged": true,
-  "notes": "Container damaged on arrival"
-}
+{ "flagged": true, "notes": "Container damaged on arrival" }
 ```
 
 **Response:**
@@ -518,7 +525,7 @@ Auth: `require_auth` (AFC: admin/manager only; AFU: all)
 
 ---
 
-### 2.10 Reassign Company
+### 2.11 Reassign Company
 
 #### `PATCH /shipments/{shipment_id}/company`
 Auth: `require_afu`
@@ -539,7 +546,65 @@ Auth: `require_afu`
 
 ---
 
-### 2.11 Bill of Lading (BL)
+### 2.12 Update Incoterm
+
+#### `PATCH /shipments/{shipment_id}/incoterm`
+Auth: `require_afu`
+
+**Request body:**
+```json
+{ "incoterm_code": "FOB" }
+```
+
+`incoterm_code: null` clears the value.
+
+**Response:** `{ "status": "OK", "msg": "Incoterm updated" }`
+
+⚠️ Status correction after incoterm change is manual — the server does not retroactively recompute path or auto-advance status.
+
+---
+
+### 2.13 Update Port
+
+#### `PATCH /shipments/{shipment_id}/port`
+Auth: `require_afu`
+
+Updates origin or destination port on an existing shipment. Also updates the corresponding route node if one is saved.
+
+**Request body:**
+```json
+{
+  "field": "origin_port_un_code",
+  "port_un_code": "SGSIN",
+  "terminal_id": null
+}
+```
+
+`field` must be `"origin_port_un_code"` or `"destination_port_un_code"`.
+
+**Response:** `{ "status": "OK" }`
+
+---
+
+### 2.14 Update Cargo (DG Flag)
+
+#### `PATCH /shipments/{shipment_id}/cargo`
+Auth: `require_afu_admin`
+
+Updates the `is_dg` (dangerous goods) flag and optional `dg_description` on the shipment cargo JSONB.
+
+**Request body:**
+```json
+{ "is_dg": true, "dg_description": "Class 3 Flammable Liquid" }
+```
+
+`dg_description` is optional.
+
+**Response:** `{ "status": "OK", "data": { "is_dg": true } }`
+
+---
+
+### 2.15 Bill of Lading (BL) & Document Parsing
 
 #### `POST /shipments/parse-bl`
 Auth: `require_afu`  
@@ -552,20 +617,33 @@ Classifies the document (BL / AWB / Booking Confirmation) then extracts structur
 {
   "parsed": {
     "waybill_number": "COSCO12345678",
+    "booking_number": "COSCO12345678",
+    "carrier_agent": "COSCO Shipping Lines",
     "vessel_name": "CSCL GLOBE",
     "voyage_number": "V0123",
     "port_of_loading": "Ho Chi Minh City",
     "port_of_discharge": "Port Klang",
     "on_board_date": "2026-03-10",
+    "freight_terms": "PREPAID",
     "shipper_name": "Supplier Vietnam Ltd",
     "shipper_address": "123 Industrial Rd, HCMC",
     "consignee_name": "Acme Corp Sdn Bhd",
     "consignee_address": "...",
     "notify_party_name": null,
     "cargo_description": "Electronic Components",
+    "total_weight_kg": 5000.0,
+    "total_packages": "20 PALLETS",
+    "delivery_status": null,
     "containers": [
-      { "container_number": "COSCU1234567", "container_type": "40HC", "seal_number": "SL001" }
-    ]
+      {
+        "container_number": "COSCU1234567",
+        "container_type": "40HC",
+        "seal_number": "SL001",
+        "packages": "20",
+        "weight_kg": 5000.0
+      }
+    ],
+    "cargo_items": null
   },
   "doc_type": "BL",
   "order_type": "SEA_FCL",
@@ -579,14 +657,15 @@ Classifies the document (BL / AWB / Booking Confirmation) then extracts structur
   ]
 }
 ```
+
 `doc_type` values: `BL` | `AWB` | `BOOKING_CONFIRMATION`  
-For `AWB` responses, `parsed` contains AWB-specific fields (`origin_iata`, `dest_iata`, `mawb_number`, `hawb_number`, etc.).
+For `AWB` responses, `parsed` contains AWB-specific fields (`origin_iata`, `dest_iata`, `mawb_number`, `hawb_number`, `awb_type`, etc.).  
+For `BOOKING_CONFIRMATION` responses, `parsed` is normalised into the BL shape (`waybill_number` = booking reference, containers use `container_type` for size).
 
 ---
 
 #### `POST /shipments/create-from-bl`
-Auth: `require_afu`  
-Create a new V2 shipment from parsed BL/AWB/BC data. Creates shipment + workflow + auto-generates tasks.
+Auth: `require_afu`
 
 **Request body:**
 ```json
@@ -628,10 +707,7 @@ Create a new V2 shipment from parsed BL/AWB/BC data. Creates shipment + workflow
 }
 ```
 
-**Response:**
-```json
-{ "status": "OK", "data": { "shipment_id": "AF-003874" }, "msg": "Shipment created from BL" }
-```
+**Response:** `{ "status": "OK", "data": { "shipment_id": "AF-003874" }, "msg": "Shipment created from BL" }`
 
 ---
 
@@ -639,31 +715,39 @@ Create a new V2 shipment from parsed BL/AWB/BC data. Creates shipment + workflow
 Auth: `require_afu`  
 Request: `multipart/form-data`
 
-Apply parsed BL data to an existing shipment. Merges booking fields, parties, containers, and optionally uploads the BL file. Parties only overwrite if empty unless `force_update=true`.
+Apply parsed BL data to an existing shipment. Merges booking fields, parties, containers/cargo_items, and optionally uploads the BL file. Auto-advances status based on incoterm classification.
 
 **Form fields:**
 
 | Field | Type | Notes |
 |---|---|---|
 | `waybill_number` | string | Booking reference / BL number |
-| `carrier` | string | |
-| `carrier_agent` | string | Preferred over `carrier` |
+| `carrier` | string | Fallback if `carrier_agent` not set |
+| `carrier_agent` | string | Preferred — stored as `booking.carrier_agent` |
 | `vessel_name` | string | |
 | `voyage_number` | string | |
-| `etd` | string | YYYY-MM-DD |
+| `etd` | string | YYYY-MM-DD — BL on_board_date (actual departure) |
 | `shipper_name` | string | |
 | `shipper_address` | string | |
 | `consignee_name` | string | |
 | `consignee_address` | string | |
 | `notify_party_name` | string | |
 | `bl_shipper_name` | string | Raw parsed value — stored in `bl_document` |
+| `bl_shipper_address` | string | Raw parsed value — stored in `bl_document` |
 | `bl_consignee_name` | string | Raw parsed value — stored in `bl_document` |
-| `containers` | JSON string | Array of container objects |
-| `cargo_items` | JSON string | Array of cargo items (LCL) |
-| `origin_port` | string | UN code |
-| `dest_port` | string | UN code |
+| `bl_consignee_address` | string | Raw parsed value — stored in `bl_document` |
+| `containers` | JSON string | Array of container objects (FCL) |
+| `cargo_items` | JSON string | Array of cargo line items (LCL) |
+| `cargo_description` | string | Overwrites `cargo.description` |
+| `total_weight_kg` | string | Overwrites `cargo.weight_kg` |
+| `lcl_container_number` | string | Consolidation container number (LCL only) |
+| `lcl_seal_number` | string | Consolidation seal number (LCL only) |
+| `origin_port` | string | UN code — updates flat `origin_port` |
+| `dest_port` | string | UN code — updates flat `dest_port` |
+| `origin_terminal` | string | Terminal ID |
+| `dest_terminal` | string | Terminal ID |
 | `force_update` | string | `"true"` to overwrite existing party data |
-| `file` | binary | Optional BL PDF to attach |
+| `file` | binary | Optional BL PDF — auto-saved with tag `bl` |
 
 **Response:**
 ```json
@@ -674,9 +758,9 @@ Apply parsed BL data to an existing shipment. Merges booking fields, parties, co
     "booking": { "booking_reference": "COSCO12345678", "vessel_name": "CSCL GLOBE", ... },
     "parties": { "shipper": { ... }, "consignee": { ... } },
     "bl_document": { "shipper": { ... }, "consignee": { ... } },
-    "etd": "2026-03-10",
-    "origin_port": null,
-    "dest_port": null
+    "origin_port": "VNSGN",
+    "dest_port": "MYPKG",
+    "new_status": 4001
   },
   "msg": "Shipment updated from BL"
 }
@@ -685,8 +769,7 @@ Apply parsed BL data to an existing shipment. Merges booking fields, parties, co
 ---
 
 #### `PATCH /shipments/{shipment_id}/parties`
-Auth: `require_afu`  
-Update shipper/consignee/notify_party directly (without a BL upload). Empty string clears a field; `null` / omitted = no change.
+Auth: `require_afu`
 
 **Request body:**
 ```json
@@ -700,16 +783,32 @@ Update shipper/consignee/notify_party directly (without a BL upload). Empty stri
 }
 ```
 
-**Response:**
+Empty string (`""`) clears the field. `null` / omitted = no change.
+
+**Response:** `{ "status": "OK", "data": { "parties": { ... } } }`
+
+---
+
+#### `PATCH /shipments/{shipment_id}/clear-parsed-diff`
+Auth: `require_afu`
+
+Clears parsed party data from `bl_document` after the user resolves a party diff (keeps current values or applies BL values). Prevents stale diff banners from re-appearing.
+
+**Request body:**
 ```json
-{ "status": "OK", "data": { "parties": { ... } } }
+{ "party": "shipper" }
 ```
+
+`party` values: `"shipper"` | `"consignee"` | `"all"`
+
+**Response:** `{ "status": "OK" }`
 
 ---
 
 #### `POST /shipments/{shipment_id}/apply-booking-confirmation`
-Auth: `require_afu`  
-Apply booking confirmation data to an existing shipment. Updates `booking` JSONB, flat `etd`/`eta` columns, route node timings if nodes exist, `type_details.containers`, and auto-advances status to Booking Confirmed (3002).
+Auth: `require_afu`
+
+Apply booking confirmation data to an existing shipment. Updates `booking` JSONB, flat ETD/ETA, route node timings, `type_details.containers`. Auto-advances status based on incoterm classification.
 
 **Request body:**
 ```json
@@ -722,22 +821,26 @@ Apply booking confirmation data to an existing shipment. Updates `booking` JSONB
   "pod_code": "MYPKG",
   "etd": "2026-03-10",
   "eta_pod": "2026-03-25",
-  "containers": [{"size": "40HC", "quantity": 2}],
+  "containers": [{ "size": "40HC", "quantity": 2 }],
   "cargo_description": null,
   "hs_code": null,
-  "cargo_weight_kg": null
+  "cargo_weight_kg": null,
+  "shipper_name": null
 }
 ```
 
+`shipper_name` is optional — if provided, written to `bl_document.shipper`.
+
 **Response:** `{ "shipment_id": "AF-003873", "status": "OK", "new_status": 3002 }`
 
-⚠️ Always advances status to 3002 (Booking Confirmed) regardless of incoterm.
+⚠️ `new_status` reflects incoterm-aware classification — typically 3002 for booking confirmations.
 
 ---
 
 #### `POST /shipments/{shipment_id}/apply-awb`
-Auth: `require_afu`  
-Apply AWB data to an existing AIR shipment. Updates flat AWB columns, `booking` JSONB, `parties` JSONB, and flat `etd` (from `flight_date`).
+Auth: `require_afu`
+
+Apply AWB data to an existing AIR shipment.
 
 **Request body:**
 ```json
@@ -762,20 +865,25 @@ Apply AWB data to an existing AIR shipment. Updates flat AWB columns, `booking` 
 }
 ```
 
-**Response:** `{ "shipment_id": "AF-003873", "status": "OK" }`
+**Response:** `{ "shipment_id": "AF-003873", "status": "OK", "new_status": 4001 }`
+
+`new_status` is incoterm-aware. If `flight_date` is today or past, ATD check may further advance to Departed (4001).
 
 ---
 
 #### `POST /shipments/{shipment_id}/save-document-file`
 Auth: `require_afu`  
-Request: `multipart/form-data` with `file` (binary) and `doc_type` (string: `AWB` | `BC` | `BL`).  
-Saves an uploaded document to GCS and creates a `shipment_files` record with the appropriate tag. Called by the frontend after `apply-awb` or `apply-booking-confirmation` succeeds.
+Request: `multipart/form-data` with `file` (binary) and `doc_type` (string: `AWB` | `BC` | `BL`).
+
+Saves an uploaded document to GCS and creates a `shipment_files` record.
+
+⚠️ **Deprecated for frontend use** — `PATCH /bl` now saves the BL file inline. For AWB and BC, the frontend calls `POST /files` directly after a successful apply. This endpoint is retained for compatibility only.
 
 **Response:** `{ "status": "OK", "data": <FileRecord> }`
 
 ---
 
-### 2.12 Shipment Files
+### 2.16 Shipment Files
 
 #### `GET /shipments/{shipment_id}/files`
 Auth: `require_auth`  
@@ -801,10 +909,9 @@ AFC regular users only see files with `visibility=true`. AFC Admin/Manager and A
   ]
 }
 ```
-⚠️ No signed download URL in the list response — use the separate download endpoint.
 
 #### `POST /shipments/{shipment_id}/files`
-Auth: `require_auth` (AFU all; AFC Admin/Manager only — AFC regular is 403)  
+Auth: `require_auth` (AFU all; AFC Admin/Manager only)  
 Request: `multipart/form-data`
 
 | Field | Type | Notes |
@@ -817,74 +924,46 @@ Request: `multipart/form-data`
 
 #### `GET /shipments/{shipment_id}/files/{file_id}/download`
 Auth: `require_auth`  
-Generates a 15-minute signed GCS URL for the file. AFC regular users cannot download hidden files.
+Generates a 15-minute signed GCS URL.
 
 **Response:** `{ "download_url": "https://storage.googleapis.com/...?X-Goog-Signature=..." }`
 
 #### `PATCH /shipments/{shipment_id}/files/{file_id}`
-Auth: `require_auth` (AFU all; AFC Admin/Manager only)  
-All fields optional.
+Auth: `require_auth` (AFU all; AFC Admin/Manager only)
 
-**Request body:**
-```json
-{ "file_tags": ["hbl"], "visibility": true }
-```
-⚠️ AFC Admin/Manager cannot change `visibility` — only AFU staff can.
+**Request body:** `{ "file_tags": ["hbl"], "visibility": true }`
+
+⚠️ AFC Admin/Manager cannot change `visibility` — AFU only.
 
 **Response:** `{ "status": "OK", "data": <FileRecord>, "msg": "File updated" }`
 
 #### `DELETE /shipments/{shipment_id}/files/{file_id}`
 Auth: `require_afu`  
-Soft delete only — sets `trash=TRUE`. No hard delete on files.
+Soft delete only — sets `trash=TRUE`.
 
 **Response:** `{ "deleted": true, "file_id": 1234 }`
 
 ---
 
-### 2.13 Workflow Tasks
+### 2.17 Workflow Tasks
 
 #### `GET /shipments/{shipment_id}/tasks`
 Auth: `require_auth`  
-Auto-generates tasks on first access if none exist. AFC regular users have hidden tasks (`visibility=HIDDEN`) filtered out.
+Auto-generates tasks on first access. AFC regular users have `HIDDEN` tasks filtered out.
 
 **Response:** (no envelope)
 ```json
 {
   "shipment_id": "AF-003873",
-  "tasks": [
-    {
-      "task_id": "booking",
-      "task_type": "FREIGHT_BOOKING",
-      "label": "Arrange Booking",
-      "status": "pending",
-      "mode": "ASSIGNED",
-      "assigned_to": "AF",
-      "visibility": "VISIBLE",
-      "due_date": "2026-03-05",
-      "due_date_override": false,
-      "scheduled_start": null,
-      "scheduled_end": "2026-03-05",
-      "actual_start": null,
-      "actual_end": null,
-      "completed_at": null,
-      "third_party_name": null,
-      "notes": null,
-      "updated_by": null,
-      "updated_at": null
-    }
-  ]
+  "tasks": [ <TaskObject>, ... ]
 }
 ```
-
-**Task status values:** `pending` | `in_progress` | `completed` | `blocked`  
-**Task mode values:** `ASSIGNED` | `TRACKED` | `IGNORED`  
-**assigned_to values:** `AF` | `CUSTOMER` | `THIRD_PARTY`
 
 #### `PATCH /shipments/{shipment_id}/tasks/{task_id}`
 Auth: `require_auth`  
 Permissions: AFU — all fields. AFC Admin/Manager — all except `visibility`. AFC regular — 403.
 
-**Request body:** (all fields optional)
+**Request body:** (all optional)
 ```json
 {
   "status": "completed",
@@ -902,16 +981,20 @@ Permissions: AFU — all fields. AFC Admin/Manager — all except `visibility`. 
 }
 ```
 
-**Response:** `{ "status": "OK", "data": <TaskObject>, "msg": "Task updated", "warning": "..." (optional) }`  
-⚠️ If `FREIGHT_BOOKING` task is completed but `booking_reference` is not set on the shipment, a `warning` field is returned and `EXPORT_CLEARANCE` remains `BLOCKED`.
+**Auto status progression (new):**
+- TRACKED `POL` task with `actual_end` set → auto-advances shipment to Departed (4001)
+- TRACKED `POD` task with `actual_start` set → auto-advances shipment to Arrived (4002)
+
+**Response:** `{ "status": "OK", "data": <TaskObject>, "msg": "Task updated", "warning": "..." (optional) }`
+
+⚠️ If `FREIGHT_BOOKING` task is completed but `booking_reference` is not set, `warning` is returned and `EXPORT_CLEARANCE` remains BLOCKED.
 
 ---
 
-### 2.14 Route Nodes
+### 2.18 Route Nodes
 
 #### `GET /shipments/{shipment_id}/route-nodes`
-Auth: `require_auth`  
-If no route nodes are saved, derives them from the shipment's `origin_port` and `dest_port` fields. Enriches all nodes with port names from the `ports` table.
+Auth: `require_auth`
 
 **Response:** (no envelope)
 ```json
@@ -929,73 +1012,53 @@ If no route nodes are saved, derives them from the shipment's `origin_port` and 
       "actual_eta": null,
       "scheduled_etd": "2026-03-10",
       "actual_etd": null
-    },
-    {
-      "port_un_code": "MYPKG",
-      "port_name": "Port Klang",
-      "country": "MY",
-      "port_type": "SEA",
-      "role": "DESTINATION",
-      "sequence": 2,
-      "scheduled_eta": "2026-03-25",
-      "actual_eta": null,
-      "scheduled_etd": null,
-      "actual_etd": null
     }
   ],
   "derived": true
 }
 ```
-`derived: true` means nodes were inferred from port fields, not saved explicitly.
+
+`derived: true` — nodes inferred from port fields, not explicitly saved.
 
 #### `PUT /shipments/{shipment_id}/route-nodes`
 Auth: `require_auth` (AFC Admin/Manager or AFU)  
-Replaces the full route nodes array. Validates exactly one ORIGIN and one DESTINATION. Auto-assigns sequence numbers. Syncs ORIGIN `scheduled_etd` → flat `etd` and DESTINATION `scheduled_eta` → flat `eta`.
+Replaces full route nodes array. Syncs ORIGIN `scheduled_etd` → flat `etd`, DESTINATION `scheduled_eta` → flat `eta`.
 
-**Request body:** Array of node objects:
-```json
-[
-  { "port_un_code": "VNSGN", "port_name": "Ho Chi Minh City", "role": "ORIGIN", "scheduled_etd": "2026-03-10" },
-  { "port_un_code": "SGSIN", "port_name": "Singapore", "role": "TRANSHIP", "scheduled_eta": "2026-03-14", "scheduled_etd": "2026-03-15" },
-  { "port_un_code": "MYPKG", "port_name": "Port Klang", "role": "DESTINATION", "scheduled_eta": "2026-03-25" }
-]
-```
-`role` values: `ORIGIN` | `TRANSHIP` | `DESTINATION`
+**Request body:** Array of node objects (role: `ORIGIN` | `TRANSHIP` | `DESTINATION`).
 
-**Response:** `{ "shipment_id": "AF-003873", "route_nodes": [ ... ] }` (enriched with port details)
+**Response:** `{ "shipment_id": "AF-003873", "route_nodes": [ ... ] }`
 
 #### `PATCH /shipments/{shipment_id}/route-nodes/{sequence}`
-Auth: `require_auth` (AFC Admin/Manager or AFU)  
-Update timing fields on a single node by sequence number. Syncs flat `etd`/`eta` if ORIGIN/DESTINATION node.
+Auth: `require_auth` (AFC Admin/Manager or AFU)
 
-**Request body:** (all optional)
+**Request body:** `{ "scheduled_eta", "actual_eta", "scheduled_etd", "actual_etd" }` (all optional)
+
+**Auto status progression (new):**
+- `actual_etd` set on ORIGIN node → auto-advances to Departed (4001)
+- `actual_eta` set on DESTINATION node → auto-advances to Arrived (4002)
+
+**Response:**
 ```json
 {
-  "scheduled_eta": null,
-  "actual_eta": null,
-  "scheduled_etd": "2026-03-10",
-  "actual_etd": null
+  "shipment_id": "AF-003873",
+  "node": { ... },
+  "auto_status_changed": true,
+  "new_status": 4001
 }
 ```
 
-**Response:** `{ "shipment_id": "AF-003873", "node": { ... } }`
-
 ---
 
-### 2.15 File Tags
+### 2.19 File Tags
 
 #### `GET /shipments/file-tags`
 Auth: `require_auth`
-
-Returns all available file tags.
 
 **Response:**
 ```json
 {
   "status": "OK",
-  "data": [
-    { "tag_id": "hbl", "name": "House Bill of Lading", "color": "#3b9eff" }
-  ]
+  "data": [ { "tag_id": "hbl", "name": "House Bill of Lading", "color": "#3b9eff" } ]
 }
 ```
 
@@ -1015,23 +1078,7 @@ Query params: `search` (optional), `limit` (default 200, max 500)
 ```json
 {
   "status": "OK",
-  "data": [
-    {
-      "company_id": "AFC-000412",
-      "id": "AFC-000412",
-      "name": "Acme Corp Sdn Bhd",
-      "short_name": "Acme",
-      "account_type": "AFC",
-      "email": "admin@acme.com",
-      "phone": "+60 3 1234 5678",
-      "approved": true,
-      "has_platform_access": true,
-      "xero_contact_id": "uuid...",
-      "trash": false,
-      "created_at": "2023-01-15T08:00:00+00:00",
-      "updated_at": "2026-02-01T10:00:00+00:00"
-    }
-  ],
+  "data": [ <CompanyRecord>, ... ],
   "msg": "200 companies"
 }
 ```
@@ -1045,12 +1092,7 @@ Auth: `require_afu`
 ```json
 {
   "status": "OK",
-  "data": {
-    "total": 641,
-    "approved": 589,
-    "with_access": 412,
-    "xero_synced": 398
-  }
+  "data": { "total": 641, "approved": 589, "with_access": 412, "xero_synced": 398 }
 }
 ```
 
@@ -1071,13 +1113,7 @@ Auth: `require_auth`
     "account_type": "AFC",
     "email": "admin@acme.com",
     "phone": "+60 3 1234 5678",
-    "address": {
-      "line1": "Suite 5A, Menara ABC",
-      "city": "Petaling Jaya",
-      "state": "Selangor",
-      "postcode": "47810",
-      "country": "Malaysia"
-    },
+    "address": { "line1": "Suite 5A, Menara ABC", "city": "Petaling Jaya", "state": "Selangor", "postcode": "47810", "country": "Malaysia" },
     "xero_contact_id": "uuid...",
     "approved": true,
     "has_platform_access": true,
@@ -1105,46 +1141,23 @@ Auth: `require_afu_admin`
 }
 ```
 
-**Response:**
-```json
-{
-  "status": "OK",
-  "data": { "company_id": "AFC-000642", "name": "New Logistics Sdn Bhd" },
-  "msg": "Company created"
-}
-```
+**Response:** `{ "status": "OK", "data": { "company_id": "AFC-000642", "name": "New Logistics Sdn Bhd" }, "msg": "Company created" }`
 
 ### 3.5 Update Company
 
 #### `PATCH /companies/{company_id}`
 Auth: `require_afu`  
-All fields optional — only provided fields are updated.
+Updatable fields: `name`, `short_name`, `email`, `phone`, `approved`, `has_platform_access`.
 
-**Request body:**
-```json
-{
-  "name": "Updated Name Sdn Bhd",
-  "email": "new@email.com",
-  "approved": true,
-  "has_platform_access": false
-}
-```
-
-**Response:**
-```json
-{ "status": "OK", "msg": "Company updated" }
-```
+**Response:** `{ "status": "OK", "msg": "Company updated" }`
 
 ---
 
 ## 4. Users
 
-Base path: `/api/v2/users`  
-**Status:** Complete — implemented in v2.81. `_build_claims` in `auth.py` now reads from the PostgreSQL `users` table on every authenticated request (single keyed lookup by UID).
+Base path: `/api/v2/users`
 
 ### User Record Shape
-
-All user endpoints return this shape:
 
 ```json
 {
@@ -1164,44 +1177,27 @@ All user endpoints return this shape:
 }
 ```
 
-`company_name` is resolved from `companies.short_name` (falls back to `companies.name`). `validated` is `email_validated` from the `users` table.
-
----
+`company_name` resolved from `companies.short_name` (falls back to `companies.name`). `validated` = `email_validated` column.
 
 ### 4.1 Get Current User
 
 #### `GET /users/me`
 Auth: `require_auth`
 
-Returns the profile of the currently authenticated user. This is also the endpoint called by `verifySessionAndRole` in af-platform on every protected page load.
-
-**Response:**
-```json
-{ "status": "OK", "data": <UserRecord> }
-```
-
----
+**Response:** `{ "status": "OK", "data": <UserRecord> }`
 
 ### 4.2 List Users
 
 #### `GET /users`
-Auth: `require_afu_admin`
+Auth: `require_afu_admin`  
+Returns all users — AFU first, then alphabetical by last name.
 
-Returns all users ordered AFU first, then alphabetical by last name.
-
-**Response:**
-```json
-{ "status": "OK", "data": [ <UserRecord>, ... ] }
-```
-
----
+**Response:** `{ "status": "OK", "data": [ <UserRecord>, ... ] }`
 
 ### 4.3 Create User
 
 #### `POST /users`
 Auth: `require_afu_admin`
-
-Creates a Firebase Auth user and inserts into the `users` PostgreSQL table. User is active (`valid_access=TRUE`) by default.
 
 **Request body:**
 ```json
@@ -1219,86 +1215,63 @@ Creates a Firebase Auth user and inserts into the `users` PostgreSQL table. User
 
 `phone_number` and `company_id` are optional.
 
-**Response:**
-```json
-{ "status": "OK", "data": { "uid": "firebase_uid_abc" } }
-```
+**Response:** `{ "status": "OK", "data": { "uid": "firebase_uid_abc" } }`
 
-**Errors:**
-- `409` — email already registered in Firebase Auth
-- `400` — weak password or invalid email
-
----
+**Errors:** `409` — email exists. `400` — weak password or invalid email.
 
 ### 4.4 Update User
 
 #### `PATCH /users/{uid}`
-Auth: `require_afu_admin`
+Auth: `require_afu_admin`  
+Updatable: `first_name`, `last_name`, `phone_number`, `role`, `valid_access`, `company_id`. Syncs to Firebase Auth.
 
-All fields optional — only provided fields are updated. Syncs `display_name` and `disabled` flag to Firebase Auth automatically.
-
-**Request body:**
-```json
-{
-  "first_name": "Jane",
-  "last_name": "Smith",
-  "phone_number": "+60 12 345 6789",
-  "role": "AFC-ADMIN",
-  "valid_access": true,
-  "company_id": "AFC-000413"
-}
-```
-
-⚠️ Setting `valid_access: false` disables the Firebase Auth account immediately — the user cannot log in on their next request.
+⚠️ `valid_access: false` disables Firebase Auth immediately.
 
 **Response:** `{ "status": "OK" }`
-
----
 
 ### 4.5 Delete User
 
 #### `DELETE /users/{uid}`
-Auth: `require_afu_admin`
-
-Permanently deletes the user from Firebase Auth and the `users` table. Non-fatal if the Firebase Auth user is already gone.
+Auth: `require_afu_admin`  
+Permanently deletes from Firebase Auth and `users` table.
 
 **Response:** `{ "status": "OK" }`
 
----
-
-### 4.6 Reset Password (Admin Set)
+### 4.6 Reset Password
 
 #### `POST /users/{uid}/reset-password`
 Auth: `require_afu_admin`
 
-Sets a new password directly via Firebase Auth Admin SDK. Minimum 8 characters.
-
-**Request body:**
-```json
-{ "new_password": "NewSecure456!" }
-```
+**Request body:** `{ "new_password": "NewSecure456!" }`
 
 **Response:** `{ "status": "OK" }`
-
-**Errors:**
-- `400` — password too short or too weak
-- `404` — user not found in Firebase Auth
-
----
 
 ### 4.7 Send Password Reset Email
 
 #### `POST /users/{uid}/send-reset-email`
 Auth: `require_afu_admin`
 
-Sends a Firebase password reset email to the user's registered address via the Firebase Identity Toolkit REST API. Requires `FIREBASE_API_KEY` env var on the server.
+**Response:** `{ "status": "OK" }`
+
+**Errors:** `404` — user not found. `400` — no email. `502` — Firebase call failed.
+
+### 4.8 Promote to Staff
+
+#### `PATCH /users/{uid}/promote-to-staff`
+Auth: `require_afu_admin`
+
+Promotes a customer (AFC) user to an internal staff (AFU) account. Sets `account_type = 'AFU'`, assigns role, and clears `company_id`.
+
+**Request body:**
+```json
+{ "role": "AFU-STAFF" }
+```
+
+`role` must be one of: `AFU-ADMIN` | `AFU-STAFF` | `AFU-OPS`
 
 **Response:** `{ "status": "OK" }`
 
-**Errors:**
-- `404` — user not found in Firebase Auth
-- `400` — user has no email address
-- `502` — Firebase REST API call failed
+**Errors:** `400` — invalid role or user is already AFU. `404` — user not found.
 
 ---
 
@@ -1309,167 +1282,125 @@ Base path: `/api/v2/geography`
 ### 5.1 List Ports
 
 #### `GET /geography/ports`
-Auth: `require_auth`  
-10-minute in-memory cache on server.
+Auth: `require_auth` · 10-minute cache
 
-**Response:**
+**Response shape per port:**
 ```json
 {
-  "status": "OK",
-  "data": [
-    {
-      "un_code": "MYPKG",
-      "name": "Port Klang",
-      "country": "Malaysia",
-      "country_code": "MY",
-      "port_type": "SEA",
-      "has_terminals": true,
-      "terminals": [
-        { "terminal_id": "MYPKG_W", "name": "Westports", "label": "Westports" },
-        { "terminal_id": "MYPKG_N", "name": "Northport", "label": "Northport" }
-      ]
-    }
-  ]
+  "un_code": "MYPKG",
+  "name": "Port Klang",
+  "country": "Malaysia",
+  "country_code": "MY",
+  "port_type": "SEA",
+  "has_terminals": true,
+  "terminals": [
+    { "terminal_id": "MYPKG_W", "name": "Westports", "label": "Westports" },
+    { "terminal_id": "MYPKG_N", "name": "Northport", "label": "Northport" }
+  ],
+  "lat": 2.9996,
+  "lng": 101.3851
 }
 ```
+
+`lat` / `lng` are `number | null`. Legacy ports without coordinates return `null`.
 
 ### 5.2 Get Port
 
 #### `GET /geography/ports/{un_code}`
-Auth: `require_auth`
-
+Auth: `require_auth`  
 Returns single port. Same shape as list item above.
 
-### 5.3 States
+### 5.3 Update Port Coordinates
+
+#### `PATCH /geography/ports/{un_code}`
+Auth: `require_afu`
+
+**Request body:** `{ "lat": 2.9996, "lng": 101.3851 }`
+
+Both fields are optional/nullable. Invalidates port cache on success.
+
+**Response:** `{ "status": "OK" }`
+
+---
+
+### 5.4 States
 
 #### `GET /geography/states`
-Auth: `require_auth`  
-10-minute in-memory cache on server.
+Auth: `require_auth` · 10-minute cache  
+Returns active states only.
 
-**Response:**
-```json
-{
-  "status": "OK",
-  "data": [
-    {
-      "state_code": "MY-SGR",
-      "name": "Selangor",
-      "country_code": "MY",
-      "is_active": true
-    }
-  ]
-}
-```
+**Response shape per state:** `{ "state_code": "MY-SGR", "name": "Selangor", "country_code": "MY", "is_active": true }`
 
 #### `GET /geography/states/{state_code}`
 Auth: `require_auth`
 
-Returns single state. Same shape as list item above.
-
 ---
 
-### 5.4 Cities
+### 5.5 Cities
 
 #### `GET /geography/cities`
-Auth: `require_auth`  
-Query params: `state_code` (optional, e.g. `?state_code=MY-SGR`)  
-10-minute in-memory cache on server.
+Auth: `require_auth` · 10-minute cache (bypassed when `?state_code=` filter applied)  
+Query params: `state_code` (optional)
 
-**Response:**
+**Response shape per city:**
 ```json
 {
-  "status": "OK",
-  "data": [
-    {
-      "city_id": 1,
-      "name": "Shah Alam",
-      "state_code": "MY-SGR",
-      "state_name": "Selangor",
-      "lat": 3.073050,
-      "lng": 101.518200,
-      "is_active": true
-    }
-  ]
+  "city_id": 1,
+  "name": "Shah Alam",
+  "state_code": "MY-SGR",
+  "state_name": "Selangor",
+  "lat": 3.073050,
+  "lng": 101.518200,
+  "is_active": true
 }
 ```
 
 #### `GET /geography/cities/{city_id}`
 Auth: `require_auth`
 
-Returns single city. Same shape as list item above.
-
 #### `POST /geography/cities`
-Auth: `require_afu`  
-AFC users receive 403.
+Auth: `require_afu`
 
-**Request body:**
-```json
-{
-  "name": "Shah Alam",
-  "state_code": "MY-SGR",
-  "lat": 3.073050,
-  "lng": 101.518200
-}
-```
-`lat` and `lng` are optional.
+**Request body:** `{ "name": "Shah Alam", "state_code": "MY-SGR", "lat": 3.073050, "lng": 101.518200 }`  
+`lat` and `lng` optional. Validates `state_code` exists.
 
-**Response:** `{ "status": "OK", "data": <City> }`
+**Response:** `{ "status": "OK", "data": { "city_id": 1, "name": "Shah Alam" } }`
 
 #### `PATCH /geography/cities/{city_id}`
 Auth: `require_afu`  
-AFC users receive 403.  
-All fields optional — only provided fields updated.
+Updatable: `name`, `is_active`, `lat`, `lng`.
 
-**Request body:**
-```json
-{
-  "name": "Shah Alam",
-  "is_active": true,
-  "lat": 3.073050,
-  "lng": 101.518200
-}
-```
-
-**Response:** `{ "status": "OK", "data": <City> }`
+**Response:** `{ "status": "OK" }`
 
 ---
 
-### 5.5 Haulage Areas
+### 5.6 Haulage Areas
 
 #### `GET /geography/haulage-areas`
-Auth: `require_auth`  
-Query params: `port_un_code` (optional), `state_code` (optional)  
-No cache.
+Auth: `require_auth` · No cache  
+Query params: `port_un_code` (optional), `state_code` (optional)
 
-**Response:**
+**Response shape per area:**
 ```json
 {
-  "status": "OK",
-  "data": [
-    {
-      "area_id": 1,
-      "area_code": "KL035",
-      "area_name": "Klang / Shah Alam",
-      "port_un_code": "MYPKG",
-      "state_code": "MY-SGR",
-      "city_id": 1,
-      "city_name": "Shah Alam",
-      "lat": 3.073050,
-      "lng": 101.518200,
-      "is_active": true
-    }
-  ]
+  "area_id": 1,
+  "area_code": "KL035",
+  "area_name": "Klang / Shah Alam",
+  "port_un_code": "MYPKG",
+  "state_code": "MY-SGR",
+  "city_id": 1,
+  "city_name": "Shah Alam",
+  "lat": 3.073050,
+  "lng": 101.518200,
+  "is_active": true
 }
 ```
 
 #### `GET /geography/haulage-areas/{area_id}`
 Auth: `require_auth`
 
-Returns single haulage area. Same shape as list item above.
-
 #### `POST /geography/haulage-areas`
-Auth: `require_afu`  
-AFC users receive 403.
+Auth: `require_afu`
 
 **Request body:**
 ```json
@@ -1483,73 +1414,35 @@ AFC users receive 403.
   "lng": null
 }
 ```
-`state_code`, `city_id`, `lat`, `lng` are optional.  
-`area_code` is stored uppercase. Combination of `(area_code, port_un_code)` must be unique — returns 400 if duplicate.
 
-**Response:** `{ "status": "OK", "data": <HaulageArea> }`
+`state_code`, `city_id`, `lat`, `lng` optional. `area_code` stored uppercase. `(area_code, port_un_code)` must be unique — `400` if duplicate.
+
+**Response:** `{ "status": "OK", "data": { "area_id": 1, "area_code": "KL035" } }`
 
 #### `PATCH /geography/haulage-areas/{area_id}`
 Auth: `require_afu`  
-AFC users receive 403.  
 All fields optional.
 
-**Request body:**
-```json
-{
-  "area_code": "KL035",
-  "area_name": "Klang / Shah Alam",
-  "port_un_code": "MYPKG",
-  "state_code": "MY-SGR",
-  "city_id": 1,
-  "lat": 3.073050,
-  "lng": 101.518200,
-  "is_active": true
-}
-```
-
-**Response:** `{ "status": "OK", "data": <HaulageArea> }`
+**Response:** `{ "status": "OK" }`
 
 #### `DELETE /geography/haulage-areas/{area_id}`
 Auth: `require_afu`  
-AFC users receive 403.  
-Soft delete only — sets `is_active = false`.
+Soft delete — sets `is_active = false`.
 
-**Response:** `{ "status": "OK", "data": { "area_id": 1, "is_active": false } }`
+**Response:** `{ "status": "OK" }`
+
+⚠️ Response shape changed from v1.4 — no longer returns `data` object. Check `status: "OK"` only.
 
 ---
 
-### 5.6 Port Resolution (AI-Assisted)
+### 5.7 Port Resolution (AI-Assisted)
 
 #### `POST /geography/ports/resolve`
-Auth: `require_afu`  
-AFC users receive 403.
+Auth: `require_afu`
 
-Checks if the code already exists in the `ports` table. If not, calls the Claude API to resolve the code to structured port/airport data and returns a candidate for staff review.
+**Request body:** `{ "code": "MUC" }`
 
-**Request body:**
-```json
-{ "code": "MUC" }
-```
-
-**Response (code already exists):**
-```json
-{
-  "status": "OK",
-  "already_exists": true,
-  "candidate": {
-    "un_code": "DEMUC",
-    "name": "Munich Airport",
-    "country": "Germany",
-    "country_code": "DE",
-    "port_type": "AIR",
-    "lat": 48.353802,
-    "lng": 11.786085,
-    "confidence": "HIGH"
-  }
-}
-```
-
-**Response (resolved via Claude):**
+**Response:**
 ```json
 {
   "status": "OK",
@@ -1567,117 +1460,165 @@ Checks if the code already exists in the `ports` table. If not, calls the Claude
 }
 ```
 
-`confidence` values: `HIGH` | `LOW`  
-`port_type` values: `SEA` | `AIR`  
-`lat` / `lng` may be `null` if Claude cannot determine coordinates.
+`confidence` values: `HIGH` | `LOW`
 
 #### `POST /geography/ports/confirm`
-Auth: `require_afu`  
-AFC users receive 403.
+Auth: `require_afu`
 
-Inserts the confirmed port into the `ports` table and invalidates the port in-memory cache.
+Inserts resolved port into `ports` table and invalidates cache.
 
-**Request body:** Full port candidate object (staff may have edited any field before confirming):
-```json
-{
-  "un_code": "DEMUC",
-  "name": "Munich Airport",
-  "country": "Germany",
-  "country_code": "DE",
-  "port_type": "AIR",
-  "lat": 48.353802,
-  "lng": 11.786085
-}
-```
+**Request body:** Full candidate object (all fields from resolve response, minus `confidence`).
 
-**Response:**
-```json
-{
-  "status": "OK",
-  "data": {
-    "un_code": "DEMUC",
-    "name": "Munich Airport",
-    "country": "Germany",
-    "country_code": "DE",
-    "port_type": "AIR",
-    "has_terminals": false,
-    "terminals": [],
-    "lat": 48.353802,
-    "lng": 11.786085
-  }
-}
-```
+**Response:** Full port record (same shape as `GET /geography/ports/{un_code}`).
 
-**Errors:**
-- `409` — port with this `un_code` already exists in the table
+**Errors:** `409` — port already exists.
 
 ---
 
-### 5.7 Updated Port Response Shape
-
-The existing `/geography/ports` and `/geography/ports/{un_code}` responses now include coordinate fields added in v4.01:
-
-```json
-{
-  "un_code": "MYPKG",
-  "name": "Port Klang",
-  "country": "Malaysia",
-  "country_code": "MY",
-  "port_type": "SEA",
-  "has_terminals": true,
-  "terminals": [
-    { "terminal_id": "MYPKG_W", "name": "Westports", "label": "Westports" },
-    { "terminal_id": "MYPKG_N", "name": "Northport", "label": "Northport" }
-  ],
-  "lat": 2.9996,
-  "lng": 101.3851
-}
-```
-`lat` and `lng` are `number | null`. Newly seeded ports will have coordinates; legacy ports will return `null` until updated.
-
-### 5.8 List Countries
+### 5.8 Countries
 
 #### `GET /geography/countries`
-Auth: `require_auth`  
-**Status:** Stub — returns empty array.
+Auth: `require_auth` · 10-minute cache  
+Returns all active countries ordered by name.
+
+**Response shape per country:**
+```json
+{
+  "country_code": "MY",
+  "name": "Malaysia",
+  "currency_code": "MYR",
+  "tax_label": "SST",
+  "tax_rate": 8.0,
+  "tax_applicable": true,
+  "is_active": true
+}
+```
+
+#### `GET /geography/countries/{country_code}`
+Auth: `require_auth`
+
+Returns single country. Same shape as list item above.
+
+#### `PATCH /geography/countries/{country_code}`
+Auth: `require_afu`
+
+Update tax and currency fields. Country `name` is not updatable via API.
+
+**Request body:** (all optional)
+```json
+{
+  "currency_code": "MYR",
+  "tax_label": "SST",
+  "tax_rate": 8.0,
+  "tax_applicable": true,
+  "is_active": true
+}
+```
+
+**Response:** `{ "status": "OK" }`
 
 ---
 
 ## 6. Ports (Legacy Endpoint)
 
 Base path: `/api/v2/ports`  
-**Note:** Unauthenticated version of the geography ports endpoint. Use `/geography/ports` for authenticated callers going forward. This endpoint exists for backward compatibility.
+**Note:** Unauthenticated version of the geography ports endpoint. Use `/geography/ports` for authenticated callers. Retained for backward compatibility.
 
 #### `GET /ports`
-No auth required. Returns all ports.
+No auth. Returns all ports (same shape as `/geography/ports` list items, including `lat`/`lng`).
 
 #### `GET /ports/{un_code}`
-No auth required. Returns single port.
+No auth. Returns single port.
 
 ---
 
 ## 7. Files
 
 Base path: `/api/v2/files`  
-**Status:** Implementation in progress — refer to shipment files sub-endpoints (`/shipments/{id}/files`) for current file operations.
+**Status:** Stub only — `GET /files/upload-url` returns `null`. All active file operations are under `/shipments/{id}/files`.
 
 ---
 
 ## 8. AI
 
-Base path: `/api/v2/ai`  
-**Status:** Stub — future Claude-powered backend workers.
+Base path: `/api/v2/ai`
 
-Planned endpoints:
-- `POST /ai/parse-bl` — BL PDF parsing
-- `POST /ai/generate-tasks` — Incoterm task generation from shipment context
-- `POST /ai/extract-supplier-data` — Email supplier data extraction
+### `POST /ai/parse-document`
+Auth: `require_auth`
+
+General-purpose freight document parser. Accepts a base64-encoded PDF and an optional hint. Classifies the document then extracts structured fields in a single response. Unlike `POST /shipments/parse-bl`, this endpoint uses async Claude API calls and accepts base64 input (not multipart). Intended for use by the af-platform's document upload modal.
+
+**Request body:**
+```json
+{
+  "file_base64": "<base64 encoded PDF>",
+  "file_name": "HBL_001.pdf",
+  "hint": "BL"
+}
+```
+
+`hint` is optional. Values: `"BL"` | `"AWB"` | `"BOOKING_CONFIRMATION"`. If provided, skips the classification step.
+
+**Response:**
+```json
+{
+  "status": "OK",
+  "doc_type": "BL",
+  "confidence": "HIGH",
+  "data": {
+    "waybill_number": "COSCO12345678",
+    "booking_number": null,
+    "carrier_agent": "COSCO Shipping Lines",
+    "vessel_name": "CSCL GLOBE",
+    "voyage_number": "V0123",
+    "port_of_loading": "Ho Chi Minh City",
+    "port_of_discharge": "Port Klang",
+    "on_board_date": "2026-03-10",
+    "freight_terms": "PREPAID",
+    "shipper_name": "Supplier Vietnam Ltd",
+    "shipper_address": "...",
+    "consignee_name": "Acme Corp Sdn Bhd",
+    "consignee_address": "...",
+    "notify_party_name": null,
+    "cargo_description": "Electronic Components",
+    "total_weight_kg": 5000.0,
+    "total_packages": "20 PALLETS",
+    "delivery_status": null,
+    "containers": [
+      {
+        "container_number": "COSCU1234567",
+        "container_type": "40HC",
+        "seal_number": "SL001",
+        "packages": "20",
+        "weight_kg": 5000.0
+      }
+    ],
+    "cargo_items": null,
+    "pol_code": "VNSGN",
+    "pod_code": "MYPKG"
+  }
+}
+```
+
+**doc_type values:** `BL` | `AWB` | `BOOKING_CONFIRMATION` | `UNKNOWN`  
+**confidence values:** `HIGH` | `MEDIUM` | `LOW`
+
+For `AWB`, `data` contains AWB-specific fields: `awb_type`, `hawb_number`, `mawb_number`, `origin_iata`, `dest_iata`, `flight_number`, `flight_date`, `pieces`, `gross_weight_kg`, `chargeable_weight_kg`.  
+For `BOOKING_CONFIRMATION`, `data` contains BC fields: `booking_reference`, `carrier`, `pol_name`, `pol_code`, `pod_name`, `pod_code`, `etd`, `eta_pol`, `eta_pod`, `cut_off_date`, `containers`.  
+For `UNKNOWN`, `data` is `{}`.
+
+Port codes (`pol_code`, `pod_code`) are resolved from the `ports` table where possible (non-fatal — omitted if resolution fails).
+
+**Errors:**
+- `503` — Claude API timeout (retry)
+- `500` — `ANTHROPIC_API_KEY` not configured
+- `{"status": "ERROR", ...}` — Claude returned invalid JSON (soft error, not HTTP 4xx)
 
 ---
 
 ## 9. Data Objects — Reference Shapes
 
-### 9.1 Party Object (shipper / consignee / notify_party)
+### 9.1 Party Object
 ```json
 {
   "name": "Supplier Name Ltd",
@@ -1689,7 +1630,6 @@ Planned endpoints:
   "company_contact_id": null
 }
 ```
-`company_id` and `company_contact_id` are set when the party is a registered AF company. Otherwise `null`.
 
 ### 9.2 Container Object
 ```json
@@ -1701,7 +1641,6 @@ Planned endpoints:
   "seal_number": "SL001"
 }
 ```
-`container_number` and `seal_number` are populated post-booking; `null` at creation.
 
 ### 9.3 Package Object (LCL / AIR)
 ```json
@@ -1713,16 +1652,52 @@ Planned endpoints:
 }
 ```
 
-### 9.4 Port Terminal Object
+### 9.4 Cargo Object
 ```json
 {
-  "terminal_id": "MYPKG_W",
-  "name": "Westports",
-  "label": "Westports"
+  "description": "Electronic Components",
+  "hs_code": "8542.31",
+  "is_dg": false,
+  "dg_class": null,
+  "dg_un_number": null,
+  "dg_description": null,
+  "weight_kg": 5000.0
 }
 ```
 
-### 9.5 Origin / Destination Object
+`dg_description` is present when `is_dg = true`.  
+⚠️ V1 migrated shipments may have `dg_classification` as a nested object instead of `is_dg` boolean — normalise on read.
+
+### 9.5 Workflow Task Object
+```json
+{
+  "task_id": "booking",
+  "task_type": "FREIGHT_BOOKING",
+  "label": "Arrange Booking",
+  "status": "pending",
+  "mode": "ASSIGNED",
+  "assigned_to": "AF",
+  "visibility": "VISIBLE",
+  "due_date": "2026-03-05",
+  "due_date_override": false,
+  "scheduled_start": null,
+  "scheduled_end": "2026-03-05",
+  "actual_start": null,
+  "actual_end": null,
+  "completed_at": null,
+  "third_party_name": null,
+  "notes": null,
+  "updated_by": null,
+  "updated_at": null
+}
+```
+
+`status` values: `pending` | `in_progress` | `completed` | `blocked`  
+`mode` values: `ASSIGNED` | `TRACKED` | `IGNORED`  
+`assigned_to` values: `AF` | `CUSTOMER` | `THIRD_PARTY`  
+`visibility` values: `VISIBLE` | `HIDDEN`
+
+### 9.6 Origin / Destination Object
 ```json
 {
   "type": "PORT",
@@ -1734,9 +1709,8 @@ Planned endpoints:
   "label": "Port Klang (Westports)"
 }
 ```
-`type` is always `"PORT"` for V2 shipments. `city_id` and `address` reserved for future inland/door-to-door.
 
-### 9.6 Exception Data Object
+### 9.7 Exception Data Object
 ```json
 {
   "flagged": false,
@@ -1746,31 +1720,18 @@ Planned endpoints:
 }
 ```
 
-### 9.7 Cargo Object
+### 9.8 Country Object
 ```json
 {
-  "description": "Electronic Components",
-  "hs_code": "8542.31",
-  "is_dg": false,
-  "dg_class": null,
-  "dg_un_number": null
+  "country_code": "MY",
+  "name": "Malaysia",
+  "currency_code": "MYR",
+  "tax_label": "SST",
+  "tax_rate": 8.0,
+  "tax_applicable": true,
+  "is_active": true
 }
 ```
-⚠️ V1 migrated shipments may have `dg_classification` as a nested object instead of `is_dg` boolean — normalise on read.
-
-### 9.8 Workflow Task Object
-```json
-{
-  "task_id": "booking",
-  "label": "Arrange Booking",
-  "status": "pending",
-  "due_date": "2026-03-05",
-  "completed_at": null,
-  "completed_by": null,
-  "notes": null
-}
-```
-`status` values: `pending` | `in_progress` | `completed` | `blocked` | `n/a`
 
 ---
 
@@ -1778,23 +1739,20 @@ Planned endpoints:
 
 | Item | Detail | Target |
 |---|---|---|
-| Users router | ✅ Complete — implemented v2.81, `_build_claims` migrated to PostgreSQL | Done |
-| DG cargo | `Cargo.is_dg` vs `dg_classification` mismatch from V1 migration | v2.82 |
-| Invoice endpoints | No endpoints defined yet — V1 reads still from Datastore | Future |
+| Invoice endpoints | No dedicated endpoints — V1 reads still from Datastore | Future |
 | Quotation endpoints | Not yet built for V2 | Future |
-| Geography/countries | Stub — no implementation | Future |
-| Files base router | `/api/v2/files` not yet wired up | Future |
-| `GET /shipments/{id}/bl` | No dedicated GET endpoint — `bl_document` is returned in `GET /shipments/{id}` | N/A — by design |
-| Pagination standard | List responses use different cursor formats — standardise | Future |
-| Envelope consistency | Some list endpoints return no envelope — standardise | Future |
-| Pricing endpoints | Not in V2 yet | Future |
-| Xero webhook | Invoice sync not in V2 yet | Future |
+| Files base router | `/api/v2/files` stub only — upload-url returns null | Future |
+| `GET /shipments/{id}/bl` | No dedicated GET — `bl_document` returned in `GET /shipments/{id}` | By design |
+| Pagination standard | List responses use different cursor formats | Future |
+| Envelope consistency | Some list endpoints return no envelope | Future |
+| Xero webhook | Invoice sync not in V2 | Future |
+| DG cargo legacy | V1 migrated `dg_classification` object vs V2 `is_dg` boolean — normalise on read | Ongoing |
+| Countries — create/delete | `PATCH` only — no POST or DELETE on countries | Future |
+| Geography — admin UI | No admin console yet for managing ports, cities, haulage areas via UI | Future |
 
 ---
 
 ## 11. Auth Dependency Map
-
-Quick reference — which auth level each endpoint requires:
 
 | Endpoint | Auth |
 |---|---|
@@ -1803,6 +1761,7 @@ Quick reference — which auth level each endpoint requires:
 | `GET /ports/{code}` | None |
 | `GET /geography/ports` | `require_auth` |
 | `GET /geography/ports/{code}` | `require_auth` |
+| `PATCH /geography/ports/{code}` | `require_afu` |
 | `GET /geography/states` | `require_auth` |
 | `GET /geography/states/{code}` | `require_auth` |
 | `GET /geography/cities` | `require_auth` |
@@ -1816,36 +1775,43 @@ Quick reference — which auth level each endpoint requires:
 | `DELETE /geography/haulage-areas/{area_id}` | `require_afu` |
 | `POST /geography/ports/resolve` | `require_afu` |
 | `POST /geography/ports/confirm` | `require_afu` |
+| `GET /geography/countries` | `require_auth` |
+| `GET /geography/countries/{code}` | `require_auth` |
+| `PATCH /geography/countries/{code}` | `require_afu` |
 | `GET /shipments/stats` | `require_auth` |
 | `GET /shipments/search` | `require_auth` |
 | `GET /shipments/` | `require_auth` |
+| `GET /shipments/file-tags` | `require_auth` |
 | `GET /shipments/{id}` | `require_auth` |
 | `GET /shipments/{id}/status-history` | `require_auth` |
 | `GET /shipments/{id}/files` | `require_auth` |
 | `GET /shipments/{id}/tasks` | `require_auth` |
-| `GET /shipments/file-tags` | `require_auth` |
+| `GET /shipments/{id}/route-nodes` | `require_auth` |
+| `GET /shipments/{id}/files/{fid}/download` | `require_auth` |
 | `POST /shipments/` | `require_afu_admin` |
 | `DELETE /shipments/{id}` | `require_afu_admin` |
+| `PATCH /shipments/{id}/cargo` | `require_afu_admin` |
 | `PATCH /shipments/{id}/status` | `require_afu` |
+| `PATCH /shipments/{id}/complete` | `require_afu` |
 | `PATCH /shipments/{id}/invoiced` | `require_afu` |
-| `PATCH /shipments/{id}/exception` | `require_auth` (AFC role-gated internally) |
+| `PATCH /shipments/{id}/incoterm` | `require_afu` |
+| `PATCH /shipments/{id}/port` | `require_afu` |
 | `PATCH /shipments/{id}/company` | `require_afu` |
-| `POST /shipments/{id}/files` | `require_auth` (AFC role-gated internally) |
-| `GET /shipments/{id}/files/{fid}/download` | `require_auth` |
-| `PATCH /shipments/{id}/files/{fid}` | `require_auth` (AFC role-gated internally) |
-| `DELETE /shipments/{id}/files/{fid}` | `require_afu` |
-| `GET /shipments/{id}/tasks` | `require_auth` |
-| `PATCH /shipments/{id}/tasks/{tid}` | `require_auth` (AFC role-gated internally) |
-| `GET /shipments/{id}/route-nodes` | `require_auth` |
-| `PUT /shipments/{id}/route-nodes` | `require_auth` (AFC role-gated internally) |
-| `PATCH /shipments/{id}/route-nodes/{seq}` | `require_auth` (AFC role-gated internally) |
-| `POST /shipments/parse-bl` | `require_afu` |
-| `POST /shipments/create-from-bl` | `require_afu` |
 | `PATCH /shipments/{id}/bl` | `require_afu` |
 | `PATCH /shipments/{id}/parties` | `require_afu` |
+| `PATCH /shipments/{id}/clear-parsed-diff` | `require_afu` |
 | `POST /shipments/{id}/apply-booking-confirmation` | `require_afu` |
 | `POST /shipments/{id}/apply-awb` | `require_afu` |
 | `POST /shipments/{id}/save-document-file` | `require_afu` |
+| `POST /shipments/parse-bl` | `require_afu` |
+| `POST /shipments/create-from-bl` | `require_afu` |
+| `PATCH /shipments/{id}/exception` | `require_auth` (AFC role-gated internally) |
+| `POST /shipments/{id}/files` | `require_auth` (AFC role-gated internally) |
+| `PATCH /shipments/{id}/files/{fid}` | `require_auth` (AFC role-gated internally) |
+| `PATCH /shipments/{id}/tasks/{tid}` | `require_auth` (AFC role-gated internally) |
+| `PUT /shipments/{id}/route-nodes` | `require_auth` (AFC role-gated internally) |
+| `PATCH /shipments/{id}/route-nodes/{seq}` | `require_auth` (AFC role-gated internally) |
+| `DELETE /shipments/{id}/files/{fid}` | `require_afu` |
 | `GET /companies` | `require_afu` |
 | `GET /companies/stats` | `require_afu` |
 | `GET /companies/{id}` | `require_auth` |
@@ -1858,8 +1824,29 @@ Quick reference — which auth level each endpoint requires:
 | `DELETE /users/{uid}` | `require_afu_admin` |
 | `POST /users/{uid}/reset-password` | `require_afu_admin` |
 | `POST /users/{uid}/send-reset-email` | `require_afu_admin` |
+| `PATCH /users/{uid}/promote-to-staff` | `require_afu_admin` |
+| `POST /ai/parse-document` | `require_auth` |
 
 ---
 
-*Last updated: 04 March 2026 — Contract v1.4*  
-*v1.4 changes: Added Geography sections 5.3–5.8 (states, cities, haulage areas, port resolution, updated port shape). Added new auth map entries for all geography write endpoints.*
+*Last updated: 05 March 2026 — Contract v1.5*
+
+**v1.5 changes:**
+- Section 0.3: AFU roles updated to `AFU-ADMIN`, `AFU-STAFF`, `AFU-OPS` (reflecting actual codebase)
+- Section 2.8: New `PATCH /shipments/{id}/complete` endpoint documented
+- Section 2.9: `PATCH /shipments/{id}/invoiced` gate changed from `status=5001` to `completed=TRUE`
+- Section 2.12: New `PATCH /shipments/{id}/incoterm` endpoint documented
+- Section 2.13: New `PATCH /shipments/{id}/port` endpoint documented
+- Section 2.14: New `PATCH /shipments/{id}/cargo` (DG flag) endpoint documented
+- Section 2.15: `PATCH /bl` — added new form fields (`cargo_description`, `total_weight_kg`, `lcl_container_number`, `lcl_seal_number`, `origin_terminal`, `dest_terminal`, `bl_shipper_address`, `bl_consignee_address`); response now includes `new_status`
+- Section 2.15: New `PATCH /shipments/{id}/clear-parsed-diff` endpoint documented
+- Section 2.15: `POST /apply-booking-confirmation` — added `shipper_name` field; `new_status` now incoterm-aware (not always 3002); `save-document-file` marked deprecated for frontend use
+- Section 2.15: `POST /apply-awb` — response now includes `new_status`
+- Section 2.17: Task PATCH — auto status progression documented (POL ATD → Departed, POD ATA → Arrived)
+- Section 2.18: Route node PATCH — auto status progression documented; response now includes `auto_status_changed` and `new_status`
+- Section 4.8: New `PATCH /users/{uid}/promote-to-staff` endpoint documented
+- Section 5.3: New `PATCH /geography/ports/{un_code}` (coordinate update) documented
+- Section 5.8: Countries endpoints fully documented (was stub in v1.4) — list, get, patch
+- Section 8: AI section completely replaced — `POST /ai/parse-document` fully documented (was stub)
+- Section 9.4: Cargo object updated with `dg_description` and `weight_kg` fields
+- Section 11: Auth map updated with all new endpoints
