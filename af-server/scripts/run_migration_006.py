@@ -29,8 +29,10 @@ def main():
 
     engine = get_engine()
     with engine.connect() as conn:
-        # Split on semicolons and run each statement
-        statements = [s.strip() for s in sql.split(';') if s.strip() and not s.strip().startswith('--')]
+        # Strip SQL comments then split on semicolons
+        import re
+        cleaned = re.sub(r'--[^\n]*', '', sql)
+        statements = [s.strip() for s in cleaned.split(';') if s.strip()]
         for stmt in statements:
             conn.execute(text(stmt))
         conn.commit()

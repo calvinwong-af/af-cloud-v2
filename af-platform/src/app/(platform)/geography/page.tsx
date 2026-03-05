@@ -11,11 +11,11 @@ import { useState } from 'react';
 import { Globe } from 'lucide-react';
 import { StatesTab, CitiesTab, HaulageAreasTab, PortsTab, CountriesTab } from './_components';
 
-const TABS = ['States', 'Cities', 'Haulage Areas', 'Ports', 'Countries'] as const;
+const TABS = ['Countries', 'States', 'Cities', 'Haulage Areas', 'Ports'] as const;
 type Tab = (typeof TABS)[number];
 
 export default function GeographyPage() {
-  const [tab, setTab] = useState<Tab>('States');
+  const [tab, setTab] = useState<Tab>('Countries');
 
   return (
     <div className="p-6 space-y-6">
@@ -26,7 +26,7 @@ export default function GeographyPage() {
           <h1 className="text-2xl font-semibold text-[var(--text)]">Geography</h1>
         </div>
         <p className="text-sm text-[var(--text-muted)] mt-0.5">
-          Manage states, cities, haulage areas, and ports
+          Manage countries, states, cities, haulage areas, and ports
         </p>
       </div>
 

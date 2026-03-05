@@ -705,7 +705,7 @@ async def list_countries(
         return {"status": "OK", "data": _countries_cache}
 
     rows = conn.execute(text("""
-        SELECT country_code, name, currency_code, currency_symbol,
+        SELECT country_code, name, currency_code,
                tax_label, tax_rate, tax_applicable, is_active
         FROM countries WHERE is_active = TRUE
         ORDER BY name
@@ -716,11 +716,10 @@ async def list_countries(
             "country_code": r[0],
             "name": r[1],
             "currency_code": r[2],
-            "currency_symbol": r[3],
-            "tax_label": r[4],
-            "tax_rate": float(r[5]) if r[5] is not None else None,
-            "tax_applicable": r[6],
-            "is_active": r[7],
+            "tax_label": r[3],
+            "tax_rate": float(r[4]) if r[4] is not None else None,
+            "tax_applicable": r[5],
+            "is_active": r[6],
         }
         for r in rows
     ]
@@ -738,7 +737,7 @@ async def get_country(
 ):
     """Get a single country by code."""
     row = conn.execute(text("""
-        SELECT country_code, name, currency_code, currency_symbol,
+        SELECT country_code, name, currency_code,
                tax_label, tax_rate, tax_applicable, is_active
         FROM countries WHERE country_code = :code
     """), {"code": country_code}).fetchone()
@@ -750,17 +749,15 @@ async def get_country(
         "country_code": row[0],
         "name": row[1],
         "currency_code": row[2],
-        "currency_symbol": row[3],
-        "tax_label": row[4],
-        "tax_rate": float(row[5]) if row[5] is not None else None,
-        "tax_applicable": row[6],
-        "is_active": row[7],
+        "tax_label": row[3],
+        "tax_rate": float(row[4]) if row[4] is not None else None,
+        "tax_applicable": row[5],
+        "is_active": row[6],
     }}
 
 
 class CountryUpdate(BaseModel):
     currency_code: str | None = None
-    currency_symbol: str | None = None
     tax_label: str | None = None
     tax_rate: float | None = None
     tax_applicable: bool | None = None
@@ -783,7 +780,7 @@ async def update_country(
     updates = []
     params: dict = {"code": country_code}
 
-    for field in ["currency_code", "currency_symbol", "tax_label", "tax_rate", "tax_applicable", "is_active"]:
+    for field in ["currency_code", "tax_label", "tax_rate", "tax_applicable", "is_active"]:
         val = getattr(body, field, None)
         if val is not None:
             updates.append(f"{field} = :{field}")

@@ -1,5 +1,17 @@
 # Prompt Completion Log — v4.11–v4.20
 
+### [2026-03-05 18:45 UTC] — v-GEO-03: Geography Page 5 Bug Fixes
+- **Status:** Completed
+- **Tasks:**
+  - **Issues 1&2:** Fixed duplicate "China" and filter defaulting to "— China" in HaulageAreasTab by filtering out ports with falsy `country_code` in `countryOptions` construction.
+  - **Issue 3:** Countries table was missing from production Cloud SQL. Ran migration 006 to create table and seed 193 countries. Fixed migration script bug where `--` comment prefix caused INSERT statement to be silently skipped.
+  - **Issue 4:** Reordered TABS to put Countries first, changed default tab to Countries, updated subtitle.
+  - **Issue 5:** Added `FilterCombobox` country filter to StatesTab, CitiesTab, and PortsTab. Converted CitiesTab state filter from `<select>` to `FilterCombobox`. Country filter resets dependent filters on change.
+- **Files Modified:**
+  - `af-platform/src/app/(platform)/geography/page.tsx`
+  - `af-platform/src/app/(platform)/geography/_components.tsx`
+  - `af-server/scripts/run_migration_006.py`
+
 ### [2026-03-05 17:30 UTC] — v-GEO-02: Geography Countries Backend + Countries Tab + Haulage Areas Combobox Filters
 - **Status:** Completed
 - **Tasks:**

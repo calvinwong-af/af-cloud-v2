@@ -41,7 +41,7 @@ export function getPortLabel(unCode: string | null | undefined, terminalId: stri
   const port = ports.find(p => p.un_code === unCode);
   if (!port) return unCode;
 
-  let label = port.name;
+  let label = port.name.replace(/^[\s\u2014\u2013\-]+/, '').trim();
   if (terminalId && port.has_terminals) {
     const terminal = port.terminals.find(t => t.terminal_id === terminalId);
     if (terminal) label += ` (${terminal.name})`;

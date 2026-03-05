@@ -437,6 +437,28 @@ export function RouteCard({ order, accountType, polEta, polEtd, polAta, polAtd, 
 
 // ─── Type details card ────────────────────────────────────────────────────────
 
+const TYPE_SUFFIX_MAP: Record<string, string> = {
+  'GP': 'GP', 'ST': 'GP', 'G0': 'GP', 'G1': 'GP',
+  'HC': 'HC', 'HQ': 'HC', 'H0': 'HC', 'H1': 'HC',
+  'FR': 'FR', 'FF': 'FR', 'PF': 'FR', 'P0': 'FR',
+  'OT': 'OT', 'UT': 'OT', 'U0': 'OT', 'U1': 'OT',
+  'RF': 'RF', 'RE': 'RF', 'R0': 'RF', 'R1': 'RF',
+  'TK': 'TK', 'TN': 'TK', 'T1': 'TK',
+  'BU': 'BU', 'BK': 'BU',
+};
+
+function normaliseContainerSize(raw: string | null | undefined): string {
+  if (!raw) return '—';
+  const upper = raw.trim().toUpperCase();
+  const match = upper.match(/^(\d+)([A-Z0-9]+)$/);
+  if (!match) return raw;
+  const size = match[1];
+  const suffix = match[2];
+  const canonicalType = TYPE_SUFFIX_MAP[suffix];
+  if (!canonicalType) return raw;
+  return size + "' " + canonicalType;
+}
+
 export function TypeDetailsCard({ order, orderType }: { order: ShipmentOrder; orderType: string }) {
   const td = order.type_details;
 
@@ -467,7 +489,7 @@ export function TypeDetailsCard({ order, orderType }: { order: ShipmentOrder; or
                       <div className="flex items-center gap-2">
                         {c.container_size && (
                           <span className="px-2 py-0.5 bg-[var(--surface)] border border-[var(--border)] rounded text-xs font-mono font-semibold text-[var(--text-mid)]">
-                            {c.container_size}
+                            {normaliseContainerSize(c.container_size)}
                           </span>
                         )}
                         <span className="text-sm text-[var(--text-mid)]">{c.container_type}</span>

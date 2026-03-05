@@ -16,7 +16,6 @@ export interface Country {
   country_code: string;
   name: string;
   currency_code: string | null;
-  currency_symbol: string | null;
   tax_label: string | null;
   tax_rate: number | null;
   tax_applicable: boolean;
@@ -226,7 +225,6 @@ export async function updateCountryAction(
   countryCode: string,
   data: {
     currency_code?: string | null;
-    currency_symbol?: string | null;
     tax_label?: string | null;
     tax_rate?: number | null;
     tax_applicable?: boolean;

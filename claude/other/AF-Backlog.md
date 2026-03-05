@@ -13,6 +13,8 @@ Items identified during development/testing that are not urgent but should be ad
 | UI-03 | Port edit pencil icon position on RouteCard | Session 9 | Current absolute-positioned pencil icons not well-placed visually. Revisit placement — consider inline next to port code/name text rather than floating over the PortPair component. |
 | UI-04 | Port edit modal — no freight type filtering | Session 9 | PortEditModal shows all ports regardless of shipment type. Filter by order.order_type before passing ports to modal. Same underlying issue as UI-02. |
 | UI-05 | No ability to edit order details on shipment detail page | Session 9 | CLOSED — Incoterm is editable via pencil icon on RouteCard (IncotermEditModal). order_type and transaction_type scoped as read-only by design decision Session 19. |
+| TODO-UI-01 | Incoterm edit control with pencil icon | Session 31 | CLOSED — IncotermEditModal with pencil icon implemented on RouteCard. |
+| TODO-UI-02 | Incoterm badge styling consistency | Session 31 | CLOSED — resolved as part of incoterm edit implementation. |
 | UI-07 | BL apply — packages not updated for LCL shipments | Session 17 | CLOSED — confirmed via screenshot Session 20: packages writing correctly (1x PALLET, 197kg, 0.73 CBM). |
 | UI-08 | BL apply — cargo description not updated | Session 17 | CLOSED — confirmed via screenshot Session 20: cargo description (EPOGARDE SF 100 I-13992) writing correctly. |
 | UI-09 | "Read File" re-opens old legacy dialog instead of new parser | Session 17 | CLOSED — ShipmentFilesTab always routed through DocumentParseModal (v3.11). BLUpdateModal deleted in v3.15 removes the last legacy path. No further action needed. |
