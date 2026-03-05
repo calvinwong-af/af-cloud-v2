@@ -29,6 +29,13 @@ export interface GroundTransportLeg {
   updated_at?: string | null;
 }
 
+export interface VehicleType {
+  vehicle_type_id: string;
+  label: string;
+  category: string;
+  sort_order: number;
+}
+
 export interface GroundTransportOrder {
   transport_order_id: string;
   transport_type: 'haulage' | 'trucking';
@@ -48,6 +55,7 @@ export interface GroundTransportOrder {
   detention_mode: string | null;
   detention_free_days: number | null;
   container_yard_id: number | null;
+  vehicle_type_id: string | null;
   notes: string | null;
   created_by: string | null;
   created_at: string | null;
@@ -115,6 +123,7 @@ export interface GroundTransportCreatePayload {
   detention_mode?: 'direct' | 'detained' | null;
   detention_free_days?: number | null;
   container_yard_id?: number | null;
+  vehicle_type_id?: string | null;
   notes?: string | null;
   legs?: GroundTransportLeg[];
 }
@@ -432,6 +441,112 @@ export async function updateShipmentScopeAction(
   } catch (err) {
     console.error('[updateShipmentScopeAction]', err instanceof Error ? err.message : err);
     return { success: false, error: 'Failed to update shipment scope' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fetch Vehicle Types
+// ---------------------------------------------------------------------------
+
+export async function fetchVehicleTypesAction(): Promise<
+  { success: true; data: VehicleType[] } | { success: false; error: string }
+> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const auth = await getAuthHeaders();
+    if (!auth) return { success: false, error: 'No session token or server URL' };
+
+    const res = await fetch(`${auth.serverUrl}/api/v2/ground-transport/vehicle-types`, {
+      headers: { Authorization: `Bearer ${auth.token}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: json?.detail ?? `Server responded ${res.status}` };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data ?? [] };
+  } catch (err) {
+    console.error('[fetchVehicleTypesAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to fetch vehicle types' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Place Autocomplete
+// ---------------------------------------------------------------------------
+
+export async function fetchPlaceAutocompleteAction(
+  input: string,
+  sessiontoken?: string,
+): Promise<{ success: true; data: { place_id: string; description: string }[] } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const auth = await getAuthHeaders();
+    if (!auth) return { success: false, error: 'No session token or server URL' };
+
+    const url = new URL('/api/v2/ground-transport/geocode/autocomplete', auth.serverUrl);
+    url.searchParams.set('input', input);
+    if (sessiontoken) url.searchParams.set('sessiontoken', sessiontoken);
+
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${auth.token}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: json?.detail ?? `Server responded ${res.status}` };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data ?? [] };
+  } catch (err) {
+    console.error('[fetchPlaceAutocompleteAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to fetch autocomplete suggestions' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Place Details
+// ---------------------------------------------------------------------------
+
+export async function fetchPlaceDetailsAction(
+  place_id: string,
+  sessiontoken?: string,
+): Promise<{ success: true; data: GeocodeResult } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const auth = await getAuthHeaders();
+    if (!auth) return { success: false, error: 'No session token or server URL' };
+
+    const url = new URL('/api/v2/ground-transport/geocode/place', auth.serverUrl);
+    url.searchParams.set('place_id', place_id);
+    if (sessiontoken) url.searchParams.set('sessiontoken', sessiontoken);
+
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${auth.token}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: json?.detail ?? `Server responded ${res.status}` };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data };
+  } catch (err) {
+    console.error('[fetchPlaceDetailsAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to fetch place details' };
   }
 }
 

@@ -1080,7 +1080,7 @@ export const NODE_LABELS: Record<number, string> = {
   2: 'Confirmed',
   3: 'Booking',
   4: 'In Transit',
-  5: 'Completed',
+  5: 'End',
 };
 
 /** Sub-step labels for display below parent node */
@@ -1129,10 +1129,6 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
   // Find current position in path
   const currentIdx = pathList.indexOf(currentStatus);
   const displayIdx = currentIdx >= 0 ? currentIdx : 0;
-
-  // Next step on path
-  const nextStatus = displayIdx < pathList.length - 1 ? pathList[displayIdx + 1] : null;
-  const advanceStatus = nextStatus && !isTerminal && nextStatus !== 5001 ? nextStatus : null;
 
   // Exception flag state
   const exceptionFlagged = order.exception?.flagged === true;
@@ -1469,27 +1465,6 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
       {/* Action Buttons — AFU only */}
       {isAfu && !isTerminal && (
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Main advance button */}
-          {advanceStatus && (
-            <button
-              onClick={() => {
-                if (advanceStatus === -1) {
-                  setConfirmAction({ status: advanceStatus, label: SHIPMENT_STATUS_LABELS[advanceStatus] ?? `${advanceStatus}` });
-                } else {
-                  executeStatusChange(advanceStatus);
-                }
-              }}
-              disabled={anyLoading}
-              className="px-4 py-2 bg-[var(--sky)] text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2"
-            >
-              {(advanceLoading || revertLoading) ? (
-                <><Loader2 className={`w-3.5 h-3.5 animate-spin ${revertLoading ? 'text-amber-300' : ''}`} /> Updating…</>
-              ) : (
-                <>Advance to {advanceStatus === 4001 ? 'In Transit' : SHIPMENT_STATUS_LABELS[advanceStatus]}</>
-              )}
-            </button>
-          )}
-
           {/* Exception flag/clear button */}
           <button
             onClick={handleExceptionToggle}
@@ -1521,41 +1496,41 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
               )}
             </button>
           )}
-        </div>
-      )}
 
-      {/* Mark as Completed — AFU only, status >= 3002 and not cancelled */}
-      {isAfu && currentStatus >= 3002 && currentStatus !== 5001 && currentStatus !== -1 && (
-        <div className="mt-3 flex items-center gap-3">
-          {order.completed ? (
-            <button
-              onClick={handleCompletedToggle}
-              disabled={anyLoading}
-              className="px-4 py-2 border border-gray-300 text-gray-500 bg-white text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
-            >
-              {completedLoading ? (
-                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating…</>
-              ) : (
-                <><RotateCcw className="w-3.5 h-3.5" /> Undo Completed</>
+          {/* Mark Complete — right-aligned, status >= 3002 */}
+          {currentStatus >= 3002 && currentStatus !== 5001 && (
+            <div className="ml-auto flex items-center gap-2">
+              {order.completed && order.completed_at && (
+                <span className="text-xs text-[var(--text-muted)]">
+                  Completed {formatDate(order.completed_at)}
+                </span>
               )}
-            </button>
-          ) : (
-            <button
-              onClick={handleCompletedToggle}
-              disabled={anyLoading}
-              className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-2"
-            >
-              {completedLoading ? (
-                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating…</>
+              {order.completed ? (
+                <button
+                  onClick={handleCompletedToggle}
+                  disabled={anyLoading}
+                  className="px-3 py-2 border border-gray-300 text-gray-500 bg-white text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {completedLoading ? (
+                    <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating…</>
+                  ) : (
+                    <><RotateCcw className="w-3.5 h-3.5" /> Undo</>
+                  )}
+                </button>
               ) : (
-                <><CheckCircle className="w-3.5 h-3.5" /> Mark as Completed</>
+                <button
+                  onClick={handleCompletedToggle}
+                  disabled={anyLoading}
+                  className="px-3 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {completedLoading ? (
+                    <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating…</>
+                  ) : (
+                    <><CheckCircle className="w-3.5 h-3.5" /> Mark Complete</>
+                  )}
+                </button>
               )}
-            </button>
-          )}
-          {order.completed && order.completed_at && (
-            <span className="text-xs text-[var(--text-muted)]">
-              Completed {formatDate(order.completed_at)}
-            </span>
+            </div>
           )}
         </div>
       )}

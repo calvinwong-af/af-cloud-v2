@@ -62,6 +62,7 @@ class GroundTransportCreate(BaseModel):
     detention_free_days: Optional[int] = None
     container_yard_id: Optional[int] = None
     notes: Optional[str] = None
+    vehicle_type_id: Optional[str] = None
     legs: List[LegCreate] = []
 
 
@@ -81,6 +82,7 @@ class GroundTransportUpdate(BaseModel):
     detention_free_days: Optional[int] = None
     container_yard_id: Optional[int] = None
     notes: Optional[str] = None
+    vehicle_type_id: Optional[str] = None
 
 
 class LegUpdate(BaseModel):
@@ -139,6 +141,7 @@ def _order_row_to_dict(row) -> dict:
         "created_by": row[19],
         "created_at": str(row[20]) if row[20] else None,
         "updated_at": str(row[21]) if row[21] else None,
+        "vehicle_type_id": row[22] if len(row) > 22 else None,
     }
 
 
@@ -148,7 +151,8 @@ _ORDER_SELECT = """
            weight_kg, volume_cbm, driver_name, driver_contact,
            vehicle_plate, equipment_type, equipment_number,
            detention_mode, detention_free_days, container_yard_id,
-           notes, created_by, created_at, updated_at
+           notes, created_by, created_at, updated_at,
+           vehicle_type_id
     FROM ground_transport_orders
 """
 
@@ -196,6 +200,36 @@ def _get_legs(conn, transport_order_id: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# GET /vehicle-types — List active vehicle types
+# ---------------------------------------------------------------------------
+
+@router.get("/vehicle-types")
+async def list_vehicle_types(
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    """Return all active vehicle types ordered by sort_order."""
+    rows = conn.execute(text("""
+        SELECT vehicle_type_id, label, category, sort_order
+        FROM vehicle_types
+        WHERE is_active = TRUE
+        ORDER BY sort_order
+    """)).fetchall()
+    return {
+        "status": "OK",
+        "data": [
+            {
+                "vehicle_type_id": r[0],
+                "label": r[1],
+                "category": r[2],
+                "sort_order": r[3],
+            }
+            for r in rows
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
 # POST / — Create ground transport order
 # ---------------------------------------------------------------------------
 
@@ -216,14 +250,14 @@ async def create_ground_transport_order(
             weight_kg, volume_cbm, driver_name, driver_contact,
             vehicle_plate, equipment_type, equipment_number,
             detention_mode, detention_free_days, container_yard_id,
-            notes, created_by, created_at, updated_at
+            notes, created_by, created_at, updated_at, vehicle_type_id
         ) VALUES (
             :id, :transport_type, :leg_type, :parent_shipment_id,
             :vendor_id, 'draft', :cargo_description, CAST(:container_numbers AS jsonb),
             :weight_kg, :volume_cbm, :driver_name, :driver_contact,
             :vehicle_plate, :equipment_type, :equipment_number,
             :detention_mode, :detention_free_days, :container_yard_id,
-            :notes, :created_by, :now, :now
+            :notes, :created_by, :now, :now, :vehicle_type_id
         )
     """), {
         "id": order_id,
@@ -246,6 +280,7 @@ async def create_ground_transport_order(
         "notes": body.notes,
         "created_by": claims.email,
         "now": now,
+        "vehicle_type_id": body.vehicle_type_id,
     })
 
     # Insert legs
@@ -382,6 +417,7 @@ async def update_ground_transport_order(
         "detention_free_days": "detention_free_days",
         "container_yard_id": "container_yard_id",
         "notes": "notes",
+        "vehicle_type_id": "vehicle_type_id",
     }
 
     for field, col in field_col_map.items():
@@ -636,6 +672,119 @@ async def update_shipment_scope(
     """), {"scope": json.dumps(scope), "now": datetime.now(timezone.utc).isoformat(), "id": shipment_id})
 
     return {"status": "OK", "data": scope}
+
+
+# ---------------------------------------------------------------------------
+# GET /geocode/autocomplete — Places API (New) autocomplete
+# ---------------------------------------------------------------------------
+
+@router.get("/geocode/autocomplete")
+async def autocomplete_address(
+    input: str = Query(..., min_length=3),
+    sessiontoken: Optional[str] = Query(None),
+    claims: Claims = Depends(require_afu),
+):
+    """Return up to 5 place suggestions from Places API (New)."""
+    api_key = os.environ.get("GOOGLE_MAPS_API_KEY")
+    if not api_key:
+        logger.warning("[autocomplete] GOOGLE_MAPS_API_KEY not set")
+        return {"status": "OK", "data": []}
+
+    try:
+        body: dict = {
+            "input": input,
+        }
+        if sessiontoken:
+            body["sessionToken"] = sessiontoken
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                "https://places.googleapis.com/v1/places:autocomplete",
+                json=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Goog-Api-Key": api_key,
+                },
+            )
+            data = resp.json()
+
+        suggestions = data.get("suggestions", [])[:5]
+        results = []
+        for s in suggestions:
+            pp = s.get("placePrediction", {})
+            place_id = pp.get("placeId")
+            description = pp.get("text", {}).get("text")
+            if place_id and description:
+                results.append({"place_id": place_id, "description": description})
+
+        return {"status": "OK", "data": results}
+    except Exception as e:
+        logger.warning("[autocomplete] Error: %s", e)
+        return {"status": "OK", "data": []}
+
+
+# ---------------------------------------------------------------------------
+# GET /geocode/place — Place Details via Places API (New)
+# ---------------------------------------------------------------------------
+
+@router.get("/geocode/place")
+async def get_place_details(
+    place_id: str = Query(...),
+    sessiontoken: Optional[str] = Query(None),
+    claims: Claims = Depends(require_afu),
+):
+    """Resolve a place_id to coordinates and address components."""
+    empty = {"lat": None, "lng": None, "formatted_address": None, "city": None, "state": None, "country": None}
+
+    api_key = os.environ.get("GOOGLE_MAPS_API_KEY")
+    if not api_key:
+        logger.warning("[place_details] GOOGLE_MAPS_API_KEY not set")
+        return {"status": "OK", "data": empty}
+
+    try:
+        params = {}
+        if sessiontoken:
+            params["sessionToken"] = sessiontoken
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"https://places.googleapis.com/v1/places/{place_id}",
+                params=params,
+                headers={
+                    "X-Goog-Api-Key": api_key,
+                    "X-Goog-FieldMask": "location,formattedAddress,addressComponents",
+                },
+            )
+            data = resp.json()
+
+        location = data.get("location", {})
+        lat = location.get("latitude")
+        lng = location.get("longitude")
+        formatted_address = data.get("formattedAddress")
+
+        city = None
+        state = None
+        country = None
+        for comp in data.get("addressComponents", []):
+            types = comp.get("types", [])
+            if "locality" in types:
+                city = comp.get("longText")
+            elif "administrative_area_level_1" in types:
+                state = comp.get("longText")
+            elif "country" in types:
+                country = comp.get("shortText")
+
+        return {"status": "OK", "data": {
+            "lat": lat,
+            "lng": lng,
+            "formatted_address": formatted_address,
+            "city": city,
+            "state": state,
+            "country": country,
+        }}
+    except Exception as e:
+        logger.error("[place_details] Error: %s", e)
+        return {"status": "OK", "data": empty}
 
 
 # ---------------------------------------------------------------------------

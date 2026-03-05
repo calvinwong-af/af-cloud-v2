@@ -1,5 +1,50 @@
 # Prompt Completion Log — v4.21–v4.30
 
+### [2026-03-06 01:15 UTC] — GT-03: Address Autocomplete (Places API New)
+- **Status:** Completed
+- **Tasks:**
+  - Backend: Added `GET /geocode/autocomplete` endpoint (Places API New autocomplete, location bias SEA, up to 5 suggestions)
+  - Backend: Added `GET /geocode/place` endpoint (Places API New place details, extracts lat/lng/address components)
+  - Frontend actions: Added `fetchPlaceAutocompleteAction` and `fetchPlaceDetailsAction` server actions
+  - Frontend AddressInput: Replaced geocode-based address input with Places autocomplete dropdown (debounced 300ms, session token management, keyboard nav, X clear button, click-outside close)
+  - Kept existing `/geocode` endpoint and `geocodeAddressAction` untouched
+  - Fixed pre-existing lint errors: removed unused `advanceStatus`/`nextStatus` in shipments _components.tsx
+- **Files Modified:**
+  - `af-server/routers/ground_transport.py`
+  - `af-platform/src/app/actions/ground-transport.ts`
+  - `af-platform/src/components/ground-transport/AddressInput.tsx`
+  - `af-platform/src/app/(platform)/shipments/[id]/_components.tsx` (lint fix)
+
+### [2026-03-06 00:45 UTC] — GT-02: Zone Combobox with Country Filter
+- **Status:** Completed
+- **Tasks:**
+  - Replaced native `<select>` dropdown in zone mode with custom searchable combobox
+  - Added country filter pills row (All + per-country) derived from haulage areas' `state_code`
+  - Dropdown with areas grouped by "State, Country" headers, max-height 240px scroll
+  - Search input filters areas by name (case-insensitive substring match)
+  - X button to clear selection, keyboard navigation (ArrowUp/Down, Enter, Escape)
+  - Click-outside close via onBlur with setTimeout delay
+  - Moved COUNTRY_NAMES to module-level constant, removed unused old grouping code
+- **Files Modified:**
+  - `af-platform/src/components/ground-transport/AddressInput.tsx`
+
+### [2026-03-06 00:15 UTC] — GT-01: Add vehicle_type to Ground Transport
+- **Status:** Completed
+- **Tasks:**
+  - Created `009_vehicle_types.sql` migration: `vehicle_types` reference table with 6 seeded types, `vehicle_type_id` FK column on `ground_transport_orders`
+  - Backend: Added `vehicle_type_id` to Pydantic models (GroundTransportCreate, GroundTransportUpdate), _ORDER_SELECT, _order_row_to_dict, INSERT, PATCH field_col_map
+  - Backend: Added `GET /vehicle-types` endpoint returning active vehicle types ordered by sort_order
+  - Frontend action: Added `VehicleType` interface, `vehicle_type_id` to `GroundTransportOrder` and `GroundTransportCreatePayload`, added `fetchVehicleTypesAction`
+  - Frontend modal: Replaced hardcoded `truckSize` dropdown with dynamic `vehicleTypeId` backed by `vehicleTypes` prop from API
+  - Frontend list page: Added `fetchVehicleTypesAction` to mount fetch, passed `vehicleTypes` to `CreateGroundTransportModal`
+  - Kept `equipment_type` unchanged for haulage orders
+- **Files Modified:**
+  - `af-server/migrations/009_vehicle_types.sql` (new)
+  - `af-server/routers/ground_transport.py`
+  - `af-platform/src/app/actions/ground-transport.ts`
+  - `af-platform/src/components/ground-transport/CreateGroundTransportModal.tsx`
+  - `af-platform/src/app/(platform)/ground-transport/page.tsx`
+
 ### [2026-03-05 23:00 UTC] — v4.25: Ground Transport UI
 - **Status:** Completed
 - **Tasks:**

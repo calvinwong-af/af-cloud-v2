@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation';
 import { Package, Container, Truck, CheckCircle2, RefreshCw, Plus } from 'lucide-react';
 import {
   listGroundTransportOrdersAction,
+  fetchVehicleTypesAction,
 } from '@/app/actions/ground-transport';
-import type { GroundTransportOrder } from '@/app/actions/ground-transport';
+import type { GroundTransportOrder, VehicleType } from '@/app/actions/ground-transport';
 import { fetchCitiesAction, fetchHaulageAreasAction } from '@/app/actions/geography';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
 import { KpiCard } from '@/components/shared/KpiCard';
@@ -85,6 +86,7 @@ function GroundTransportPageInner() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [cities, setCities] = useState<City[]>([]);
   const [haulageAreas, setHaulageAreas] = useState<HaulageArea[]>([]);
+  const [vehicleTypes, setVehicleTypes] = useState<VehicleType[]>([]);
 
   const fetchIdRef = useRef(0);
 
@@ -94,13 +96,15 @@ function GroundTransportPageInner() {
       getCurrentUserProfileAction(),
       fetchCitiesAction(),
       fetchHaulageAreasAction(),
-    ]).then(([profile, citiesRes, areasRes]) => {
+      fetchVehicleTypesAction(),
+    ]).then(([profile, citiesRes, areasRes, vtRes]) => {
       if (profile.account_type !== 'AFU') {
         router.replace('/dashboard');
         return;
       }
       if (citiesRes.success) setCities(citiesRes.data);
       if (areasRes.success) setHaulageAreas(areasRes.data);
+      if (vtRes.success) setVehicleTypes(vtRes.data);
       setProfileLoaded(true);
     });
   }, [router]);
@@ -318,6 +322,7 @@ function GroundTransportPageInner() {
           onCreated={() => load(activeTab)}
           cities={cities}
           haulageAreas={haulageAreas}
+          vehicleTypes={vehicleTypes}
         />
       )}
     </div>

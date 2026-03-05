@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { createGroundTransportOrderAction } from '@/app/actions/ground-transport';
-import type { GroundTransportCreatePayload } from '@/app/actions/ground-transport';
+import type { GroundTransportCreatePayload, VehicleType } from '@/app/actions/ground-transport';
 import { AddressInput } from './AddressInput';
 import type { AddressValue } from './AddressInput';
 import type { City, HaulageArea } from '@/lib/types';
@@ -13,6 +13,7 @@ interface CreateGroundTransportModalProps {
   onCreated?: () => void;
   cities: City[];
   haulageAreas: HaulageArea[];
+  vehicleTypes: VehicleType[];
   prefillParentShipmentId?: string;
   prefillLegType?: 'first_mile' | 'last_mile';
 }
@@ -36,6 +37,7 @@ export default function CreateGroundTransportModal({
   onCreated,
   cities,
   haulageAreas,
+  vehicleTypes,
   prefillParentShipmentId,
   prefillLegType,
 }: CreateGroundTransportModalProps) {
@@ -45,6 +47,7 @@ export default function CreateGroundTransportModal({
 
   // Step 1
   const [transportType, setTransportType] = useState<TransportType>('trucking');
+  const [vehicleTypeId, setVehicleTypeId] = useState('');
   const [legType, setLegType] = useState<LegType>(prefillLegType ?? 'standalone');
   const [parentShipmentId, setParentShipmentId] = useState(prefillParentShipmentId ?? '');
   const [detentionMode, setDetentionMode] = useState<'direct' | 'detained'>('direct');
@@ -85,6 +88,7 @@ export default function CreateGroundTransportModal({
       volume_cbm: volumeCbm ? parseFloat(volumeCbm) : null,
       equipment_type: transportType === 'haulage' && equipmentType ? equipmentType : null,
       equipment_number: transportType === 'haulage' && equipmentNumber ? equipmentNumber : null,
+      vehicle_type_id: transportType === 'trucking' ? (vehicleTypeId || null) : null,
       detention_mode: transportType === 'haulage' ? detentionMode : null,
       legs: [
         {
@@ -150,7 +154,7 @@ export default function CreateGroundTransportModal({
                   Transport Type
                 </label>
                 <div className="flex gap-3 mt-2">
-                  {(['haulage', 'trucking'] as const).map((t) => (
+                  {(['trucking', 'haulage'] as const).map((t) => (
                     <label key={t} className="flex items-start gap-2 cursor-pointer flex-1 border border-[var(--border)] rounded-lg p-3 hover:bg-[var(--surface)] transition-colors">
                       <input
                         type="radio"
@@ -160,7 +164,7 @@ export default function CreateGroundTransportModal({
                         className="mt-0.5"
                       />
                       <div>
-                        <div className="text-sm font-medium text-[var(--text)] capitalize">{t}</div>
+                        <div className="text-sm font-medium text-[var(--text)]">{t === 'trucking' ? 'Standard Trucking' : 'Haulage'}</div>
                         <div className="text-xs text-[var(--text-muted)]">
                           {t === 'haulage' ? 'Equipment-based (containers, flatbeds)' : 'Cargo-based, point-to-point'}
                         </div>
@@ -248,40 +252,60 @@ export default function CreateGroundTransportModal({
                 />
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">
-                  Container Numbers
-                </label>
-                <div className="flex gap-2 mt-1">
-                  <input
-                    type="text"
-                    value={containerInput}
-                    onChange={(e) => setContainerInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addContainer(); } }}
-                    placeholder="Type and press Enter"
-                    className={inputCls}
-                  />
-                </div>
-                {containerNumbers.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {containerNumbers.map((cn) => (
-                      <span
-                        key={cn}
-                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-mono bg-[var(--surface)] border border-[var(--border)] rounded"
-                      >
-                        {cn}
-                        <button
-                          type="button"
-                          onClick={() => setContainerNumbers((prev) => prev.filter((c) => c !== cn))}
-                          className="text-[var(--text-muted)] hover:text-red-500"
-                        >
-                          <X size={10} />
-                        </button>
-                      </span>
+              {transportType === 'trucking' ? (
+                <div>
+                  <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">
+                    Vehicle Type
+                  </label>
+                  <select
+                    value={vehicleTypeId}
+                    onChange={(e) => setVehicleTypeId(e.target.value)}
+                    className={`${inputCls} mt-1`}
+                  >
+                    <option value="">Select vehicle type...</option>
+                    {vehicleTypes.map(vt => (
+                      <option key={vt.vehicle_type_id} value={vt.vehicle_type_id}>
+                        {vt.label}
+                      </option>
                     ))}
+                  </select>
+                </div>
+              ) : (
+                <div>
+                  <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">
+                    Container Numbers
+                  </label>
+                  <div className="flex gap-2 mt-1">
+                    <input
+                      type="text"
+                      value={containerInput}
+                      onChange={(e) => setContainerInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addContainer(); } }}
+                      placeholder="Type and press Enter"
+                      className={inputCls}
+                    />
                   </div>
-                )}
-              </div>
+                  {containerNumbers.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {containerNumbers.map((cn) => (
+                        <span
+                          key={cn}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-mono bg-[var(--surface)] border border-[var(--border)] rounded"
+                        >
+                          {cn}
+                          <button
+                            type="button"
+                            onClick={() => setContainerNumbers((prev) => prev.filter((c) => c !== cn))}
+                            className="text-[var(--text-muted)] hover:text-red-500"
+                          >
+                            <X size={10} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -400,7 +424,20 @@ export default function CreateGroundTransportModal({
             </button>
             {step < 3 ? (
               <button
-                onClick={() => setStep(step + 1)}
+                onClick={() => {
+                  if (step === 2) {
+                    if (transportType === 'trucking' && !vehicleTypeId) {
+                      setError('Please select a vehicle type.');
+                      return;
+                    }
+                    if (transportType === 'haulage' && !equipmentType.trim()) {
+                      setError('Please enter an equipment type.');
+                      return;
+                    }
+                  }
+                  setError(null);
+                  setStep(step + 1);
+                }}
                 className="px-4 py-2 text-sm bg-[var(--sky)] text-white rounded-lg hover:opacity-90"
               >
                 Next
