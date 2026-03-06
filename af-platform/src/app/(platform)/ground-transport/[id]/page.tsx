@@ -3,23 +3,23 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  Loader2, AlertTriangle, Package, User, Pencil, Container,
+  Loader2, AlertTriangle, Package, Pencil, Container,
 } from 'lucide-react';
 import {
   getGroundTransportOrderAction,
   cancelGroundTransportOrderAction,
 } from '@/app/actions/ground-transport';
-import type { GroundTransportOrder, GroundTransportLeg } from '@/app/actions/ground-transport';
-import { fetchCitiesAction, fetchHaulageAreasAction } from '@/app/actions/geography';
+import type { GroundTransportOrder, OrderLeg } from '@/app/actions/ground-transport';
+import { fetchCitiesAction, fetchAreasAction } from '@/app/actions/geography';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
-import type { City, HaulageArea } from '@/lib/types';
+import type { City, Area } from '@/lib/types';
 import {
   GT_STATUS_STYLES,
   StatusDropdown,
   GTSectionCard,
   GTDataRow,
   EditOrderModal,
-  AddLegModal,
+  AddStopModal,
   EditLegModal,
   LegsCard,
 } from './_components';
@@ -41,10 +41,10 @@ export default function GroundTransportDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [accountType, setAccountType] = useState<string | null>(null);
   const [cities, setCities] = useState<City[]>([]);
-  const [haulageAreas, setHaulageAreas] = useState<HaulageArea[]>([]);
+  const [areas, setAreas] = useState<Area[]>([]);
   const [showEditOrder, setShowEditOrder] = useState(false);
-  const [showAddLeg, setShowAddLeg] = useState(false);
-  const [editingLeg, setEditingLeg] = useState<GroundTransportLeg | null>(null);
+  const [showAddStop, setShowAddStop] = useState(false);
+  const [editingLeg, setEditingLeg] = useState<OrderLeg | null>(null);
   const [cancelling, setCancelling] = useState(false);
 
   const loadOrder = useCallback(async () => {
@@ -68,7 +68,7 @@ export default function GroundTransportDetailPage() {
       const [profile, citiesRes, areasRes] = await Promise.all([
         getCurrentUserProfileAction(),
         fetchCitiesAction(),
-        fetchHaulageAreasAction(),
+        fetchAreasAction(),
       ]);
       setAccountType(profile.account_type);
       if (profile.account_type !== 'AFU') {
@@ -76,7 +76,7 @@ export default function GroundTransportDetailPage() {
         return;
       }
       if (citiesRes.success) setCities(citiesRes.data);
-      if (areasRes.success) setHaulageAreas(areasRes.data);
+      if (areasRes.success) setAreas(areasRes.data);
       await loadOrder();
       setLoading(false);
     }
@@ -84,7 +84,7 @@ export default function GroundTransportDetailPage() {
   }, [loadOrder, router]);
 
   useEffect(() => {
-    if (order) document.title = `${order.transport_order_id} | Ground Transport`;
+    if (order) document.title = `${order.order_id} | Ground Transport`;
     return () => { document.title = 'AcceleFreight'; };
   }, [order]);
 
@@ -92,7 +92,7 @@ export default function GroundTransportDetailPage() {
     if (!order) return;
     setCancelling(true);
     try {
-      const result = await cancelGroundTransportOrderAction(order.transport_order_id);
+      const result = await cancelGroundTransportOrderAction(order.order_id);
       if (result && result.success) loadOrder();
     } catch { /* ignore */ }
     setCancelling(false);
@@ -128,27 +128,27 @@ export default function GroundTransportDetailPage() {
           <div>
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-xl font-semibold font-mono text-[var(--text)]">
-                {order.transport_order_id}
+                {order.order_id}
               </h1>
               <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                order.transport_type === 'haulage' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
+                order.transport_mode === 'haulage' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
               }`}>
-                {order.transport_type.toUpperCase()}
+                {order.transport_mode.toUpperCase()}
               </span>
               <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${GT_STATUS_STYLES[order.status] ?? 'bg-gray-100 text-gray-700'}`}>
-                {order.status.replace(/_/g, ' ')}
+                {order.status.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase())}
               </span>
             </div>
             <div className="flex items-center gap-2 mt-2 flex-wrap text-sm text-[var(--text-mid)]">
               <span>{LEG_TYPE_LABELS[order.leg_type] ?? order.leg_type}</span>
-              {order.parent_shipment_id && (
+              {order.parent_order_id && (
                 <>
                   <span className="text-[var(--border)]">·</span>
                   <button
-                    onClick={() => window.open(`/shipments/${order.parent_shipment_id}`, '_blank')}
+                    onClick={() => window.open(`/shipments/${order.parent_order_id}`, '_blank')}
                     className="font-mono text-xs text-[var(--sky)] hover:underline"
                   >
-                    {order.parent_shipment_id}
+                    {order.parent_order_id}
                   </button>
                 </>
               )}
@@ -187,13 +187,12 @@ export default function GroundTransportDetailPage() {
             ) : undefined
           }
         >
-          <GTDataRow label="Transport Type" value={order.transport_type} />
-          <GTDataRow label="Leg Type" value={LEG_TYPE_LABELS[order.leg_type]} />
-          <GTDataRow label="Parent Shipment" value={order.parent_shipment_id} mono />
+          <GTDataRow label="Transport mode" value={order.transport_mode.charAt(0).toUpperCase() + order.transport_mode.slice(1).toLowerCase()} />
+          <GTDataRow label="Leg type" value={LEG_TYPE_LABELS[order.leg_type]} />
+          <GTDataRow label="Created" value={order.created_at ? order.created_at.slice(0, 10) : null} />
+          <GTDataRow label="Parent Order" value={order.parent_order_id} mono />
           <GTDataRow label="Vendor" value={order.vendor_id} mono />
-          <GTDataRow label="Equipment Type" value={order.equipment_type} />
-          <GTDataRow label="Equipment Number" value={order.equipment_number} mono />
-          {order.transport_type === 'haulage' && (
+          {order.transport_mode === 'haulage' && (
             <>
               <GTDataRow label="Detention Mode" value={order.detention_mode} />
               <GTDataRow label="Detention Free Days" value={order.detention_free_days} />
@@ -235,35 +234,12 @@ export default function GroundTransportDetailPage() {
           <GTDataRow label="Volume" value={order.volume_cbm != null ? `${order.volume_cbm} CBM` : null} />
         </GTSectionCard>
 
-        {/* Driver & Vehicle */}
-        <GTSectionCard
-          title="Driver & Vehicle"
-          icon={<User className="w-4 h-4" />}
-          action={
-            accountType === 'AFU' ? (
-              <button
-                onClick={() => setShowEditOrder(true)}
-                className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
-                title="Edit driver"
-              >
-                <Pencil className="w-3 h-3" />
-              </button>
-            ) : undefined
-          }
-        >
-          <GTDataRow label="Driver Name" value={order.driver_name} />
-          <GTDataRow label="Driver Contact" value={order.driver_contact} />
-          <GTDataRow label="Vehicle Plate" value={order.vehicle_plate} mono />
-          {!order.driver_name && !order.driver_contact && !order.vehicle_plate && (
-            <p className="text-sm text-[var(--text-muted)] italic">No driver assigned</p>
-          )}
-        </GTSectionCard>
       </div>
 
-      {/* Legs */}
+      {/* Stops & Legs */}
       <LegsCard
         order={order}
-        onAddLeg={() => setShowAddLeg(true)}
+        onAddStop={() => setShowAddStop(true)}
         onEditLeg={setEditingLeg}
       />
 
@@ -276,23 +252,21 @@ export default function GroundTransportDetailPage() {
         />
       )}
 
-      {showAddLeg && (
-        <AddLegModal
-          transportOrderId={order.transport_order_id}
-          nextSequence={(order.legs?.length ?? 0) + 1}
+      {showAddStop && (
+        <AddStopModal
+          orderId={order.order_id}
+          nextSequence={(order.stops?.length ?? 0) + 1}
           cities={cities}
-          haulageAreas={haulageAreas}
+          areas={areas}
           onSaved={loadOrder}
-          onClose={() => setShowAddLeg(false)}
+          onClose={() => setShowAddStop(false)}
         />
       )}
 
       {editingLeg && (
         <EditLegModal
-          transportOrderId={order.transport_order_id}
+          orderId={order.order_id}
           leg={editingLeg}
-          cities={cities}
-          haulageAreas={haulageAreas}
           onSaved={loadOrder}
           onClose={() => setEditingLeg(null)}
         />

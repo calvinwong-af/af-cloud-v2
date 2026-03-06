@@ -1,11 +1,11 @@
 'use server';
 /**
- * Geography Server Actions — states, cities, haulage areas, port resolution.
+ * Geography Server Actions — states, cities, areas, port resolution.
  */
 
 import { verifySessionAndRole } from '@/lib/auth-server';
-import { fetchStates, fetchCities, fetchHaulageAreas, fetchGeoPorts } from '@/lib/geography';
-import type { State, City, HaulageArea } from '@/lib/types';
+import { fetchStates, fetchCities, fetchAreas, fetchGeoPorts } from '@/lib/geography';
+import type { State, City, Area } from '@/lib/types';
 import type { Port } from '@/lib/ports';
 
 type ActionResult<T> =
@@ -58,18 +58,18 @@ export async function fetchCitiesAction(stateCode?: string): Promise<ActionResul
   }
 }
 
-export async function fetchHaulageAreasAction(
+export async function fetchAreasAction(
   filters?: { port_un_code?: string; state_code?: string }
-): Promise<ActionResult<HaulageArea[]>> {
+): Promise<ActionResult<Area[]>> {
   try {
     const session = await verifySessionAndRole(['AFC-ADMIN', 'AFC-M', 'AFU-ADMIN']);
     if (!session.valid) return { success: false, error: 'Unauthorised' };
     const token = await getToken();
     if (!token) return { success: false, error: 'No session token' };
-    const data = await fetchHaulageAreas(token, filters);
+    const data = await fetchAreas(token, filters);
     return { success: true, data };
   } catch (e) {
-    return { success: false, error: e instanceof Error ? e.message : 'Failed to fetch haulage areas' };
+    return { success: false, error: e instanceof Error ? e.message : 'Failed to fetch areas' };
   }
 }
 
@@ -133,20 +133,20 @@ export async function updateCityAction(cityId: number, data: { name?: string; is
   return afuWriteAction(`/api/v2/geography/cities/${cityId}`, 'PATCH', data);
 }
 
-// Haulage Areas
-export async function createHaulageAreaAction(data: {
+// Areas
+export async function createAreaAction(data: {
   area_code: string; area_name: string; port_un_code: string;
   state_code?: string | null; city_id?: number | null; lat?: number | null; lng?: number | null;
 }) {
-  return afuWriteAction('/api/v2/geography/haulage-areas', 'POST', data);
+  return afuWriteAction('/api/v2/geography/areas', 'POST', data);
 }
 
-export async function updateHaulageAreaAction(areaId: number, data: Record<string, unknown>) {
-  return afuWriteAction(`/api/v2/geography/haulage-areas/${areaId}`, 'PATCH', data);
+export async function updateAreaAction(areaId: number, data: Record<string, unknown>) {
+  return afuWriteAction(`/api/v2/geography/areas/${areaId}`, 'PATCH', data);
 }
 
-export async function deleteHaulageAreaAction(areaId: number) {
-  return afuWriteAction(`/api/v2/geography/haulage-areas/${areaId}`, 'DELETE');
+export async function deleteAreaAction(areaId: number) {
+  return afuWriteAction(`/api/v2/geography/areas/${areaId}`, 'DELETE');
 }
 
 // Ports — coordinate update

@@ -1,0 +1,42 @@
+# Prompt Completion Log — v5.00–v5.10
+
+### [2026-03-05 16:00 UTC] — v5.00: Unified Orders Architecture
+- **Status:** Completed
+- **Tasks:**
+  - Phase 1A: Created migration 010 (rename haulage_areas → areas)
+  - Phase 1B: Created migration 011 (unified orders schema — orders, shipment_details, order_stops, order_legs + data migration from shipments/ground_transport_orders + legacy table rename)
+  - Phase 2A: Rewrote db_queries.py for orders + shipment_details JOIN queries with string status
+  - Phase 2B: Updated constants.py with string-based STATUS_LABELS, NUMERIC_TO_STRING_STATUS, STR_STATUS_PATH_A/B
+  - Phase 2B: Updated all shipment routers (core.py, status.py, tasks.py, bl.py, doc_apply.py, files.py, route_nodes.py, _helpers.py, _status_helpers.py, _file_helpers.py) to use orders + shipment_details tables, order_id references
+  - Phase 2C: Full rewrite of ground_transport.py for stops/legs model (orders + order_stops + order_legs, auto-derive legs from stops)
+  - Phase 2D: Renamed haulage_areas → areas in geography.py (table refs, endpoints, Pydantic models)
+  - Phase 3: Updated all frontend files — types.ts (HaulageArea→Area), actions/ground-transport.ts (stops model, field renames), actions/geography.ts (areas rename), ground-transport pages (order_id, transport_mode, stops/legs), geography _components.tsx (areas), AddressInput.tsx (area_id), CreateGroundTransportModal.tsx (stops)
+  - Phase 4: Created run_migration_010_011.py script with row count verification
+- **Files Modified:**
+  - `af-server/migrations/010_rename_haulage_areas.sql` (new)
+  - `af-server/migrations/011_unified_orders.sql` (new)
+  - `af-server/scripts/run_migration_010_011.py` (new)
+  - `af-server/core/db_queries.py`
+  - `af-server/core/constants.py`
+  - `af-server/routers/ground_transport.py`
+  - `af-server/routers/geography.py`
+  - `af-server/routers/shipments/core.py`
+  - `af-server/routers/shipments/status.py`
+  - `af-server/routers/shipments/tasks.py`
+  - `af-server/routers/shipments/bl.py`
+  - `af-server/routers/shipments/doc_apply.py`
+  - `af-server/routers/shipments/files.py`
+  - `af-server/routers/shipments/route_nodes.py`
+  - `af-server/routers/shipments/_helpers.py`
+  - `af-server/routers/shipments/_status_helpers.py`
+  - `af-server/routers/shipments/_file_helpers.py`
+  - `af-platform/src/lib/types.ts`
+  - `af-platform/src/app/actions/ground-transport.ts`
+  - `af-platform/src/app/actions/geography.ts`
+  - `af-platform/src/app/(platform)/ground-transport/page.tsx`
+  - `af-platform/src/app/(platform)/ground-transport/[id]/page.tsx`
+  - `af-platform/src/app/(platform)/ground-transport/[id]/_components.tsx`
+  - `af-platform/src/app/(platform)/geography/_components.tsx`
+  - `af-platform/src/components/ground-transport/AddressInput.tsx`
+  - `af-platform/src/components/ground-transport/CreateGroundTransportModal.tsx`
+- **Notes:** Legacy tables preserved as _legacy_shipments, _legacy_ground_transport_orders, _legacy_ground_transport_legs. Migration script verifies row counts. DO NOT run migration on production until Calvin has verified locally. shipment_workflows and shipment_files FK columns renamed to order_id.

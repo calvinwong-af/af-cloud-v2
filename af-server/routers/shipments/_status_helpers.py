@@ -38,7 +38,7 @@ def _check_atd_advancement_pg(
 
     now = datetime.now(timezone.utc).isoformat()
     wf_row = conn.execute(
-        text("SELECT workflow_tasks FROM shipment_workflows WHERE shipment_id = :id"),
+        text("SELECT workflow_tasks FROM shipment_workflows WHERE order_id = :id"),
         {"id": shipment_id}
     ).fetchone()
     if not wf_row:
@@ -53,7 +53,12 @@ def _check_atd_advancement_pg(
         return current_status
 
     cur = conn.execute(
-        text("SELECT status, status_history FROM shipments WHERE id = :id"),
+        text("""
+            SELECT o.status, sd.status_history
+            FROM orders o
+            JOIN shipment_details sd ON sd.order_id = o.order_id
+            WHERE o.order_id = :id
+        """),
         {"id": shipment_id}
     ).fetchone()
     if not cur or (cur[0] or 0) >= STATUS_DEPARTED:
@@ -68,13 +73,20 @@ def _check_atd_advancement_pg(
         "note": note,
     })
     conn.execute(text("""
-        UPDATE shipments
-        SET status = :status, status_history = CAST(:history AS jsonb), updated_at = :now
-        WHERE id = :id
+        UPDATE orders
+        SET status = :status, updated_at = :now
+        WHERE order_id = :id
     """), {
         "status": STATUS_DEPARTED,
-        "history": json.dumps(history),
         "now": now,
+        "id": shipment_id,
+    })
+    conn.execute(text("""
+        UPDATE shipment_details
+        SET status_history = CAST(:history AS jsonb)
+        WHERE order_id = :id
+    """), {
+        "history": json.dumps(history),
         "id": shipment_id,
     })
     logger.info("[atd_check] Auto-advanced %s to Departed (4001)", shipment_id)
@@ -84,7 +96,7 @@ def _check_atd_advancement_pg(
 def _maybe_unblock_export_clearance_pg(conn, shipment_id: str, user_id: str):
     """Unblock EXPORT_CLEARANCE if FREIGHT_BOOKING is completed and waybill is set."""
     wf_row = conn.execute(text("""
-        SELECT workflow_tasks FROM shipment_workflows WHERE shipment_id = :id
+        SELECT workflow_tasks FROM shipment_workflows WHERE order_id = :id
     """), {"id": shipment_id}).fetchone()
 
     if not wf_row:
@@ -117,7 +129,7 @@ def _maybe_unblock_export_clearance_pg(conn, shipment_id: str, user_id: str):
         conn.execute(text("""
             UPDATE shipment_workflows
             SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
-            WHERE shipment_id = :id
+            WHERE order_id = :id
         """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
         logger.info("EXPORT_CLEARANCE unblocked for %s", shipment_id)
 
@@ -155,7 +167,7 @@ def _sync_route_node_timings(
     For derived (unsaved) route nodes, builds and saves minimal nodes first.
     """
     row = conn.execute(
-        text("SELECT route_nodes, origin_port, dest_port FROM shipments WHERE id = :id"),
+        text("SELECT route_nodes, origin_port, dest_port FROM shipment_details WHERE order_id = :id"),
         {"id": shipment_id},
     ).fetchone()
     if not row:
@@ -218,7 +230,7 @@ def _sync_route_node_timings(
 
     if modified:
         conn.execute(text("""
-            UPDATE shipments
-            SET route_nodes = CAST(:nodes AS jsonb), updated_at = :now
-            WHERE id = :id
-        """), {"nodes": json.dumps(nodes), "now": now, "id": shipment_id})
+            UPDATE shipment_details
+            SET route_nodes = CAST(:nodes AS jsonb)
+            WHERE order_id = :id
+        """), {"nodes": json.dumps(nodes), "id": shipment_id})

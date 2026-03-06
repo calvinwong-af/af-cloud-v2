@@ -4,13 +4,13 @@ import { useState } from 'react';
 import { Loader2, X, Pencil } from 'lucide-react';
 import {
   updateGroundTransportOrderAction,
-  addLegAction,
+  addStopAction,
   updateLegAction,
 } from '@/app/actions/ground-transport';
-import type { GroundTransportOrder, GroundTransportLeg } from '@/app/actions/ground-transport';
+import type { GroundTransportOrder, OrderLeg } from '@/app/actions/ground-transport';
 import { AddressInput } from '@/components/ground-transport/AddressInput';
 import type { AddressValue } from '@/components/ground-transport/AddressInput';
-import type { City, HaulageArea } from '@/lib/types';
+import type { City, Area } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
 // Shared styles
@@ -32,11 +32,10 @@ const LEG_STATUS_STYLES: Record<string, string> = {
   completed:  'bg-emerald-100 text-emerald-800',
 };
 
-const LEG_TYPE_LABELS: Record<string, string> = {
-  delivery: 'Delivery',
+const STOP_TYPE_LABELS: Record<string, string> = {
   pickup:   'Pickup',
-  transfer: 'Transfer',
-  return:   'Return',
+  dropoff:  'Dropoff',
+  waypoint: 'Waypoint',
 };
 
 const inputCls =
@@ -81,7 +80,7 @@ export function StatusDropdown({
     setSaving(true);
     setOpen(false);
     try {
-      const result = await updateGroundTransportOrderAction(order.transport_order_id, { status: newStatus });
+      const result = await updateGroundTransportOrderAction(order.order_id, { status: newStatus });
       if (result && result.success) onUpdated();
     } catch { /* handled by caller */ }
     setSaving(false);
@@ -105,7 +104,7 @@ export function StatusDropdown({
               className="block w-full text-left px-3 py-2 text-sm text-[var(--text)] hover:bg-[var(--surface)] transition-colors first:rounded-t-lg last:rounded-b-lg"
             >
               <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold mr-2 ${GT_STATUS_STYLES[s] ?? ''}`}>
-                {s.replace(/_/g, ' ')}
+                {s.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase())}
               </span>
             </button>
           ))}
@@ -165,11 +164,6 @@ export function EditOrderModal({
   onClose: () => void;
 }) {
   const [vendorId, setVendorId] = useState(order.vendor_id ?? '');
-  const [driverName, setDriverName] = useState(order.driver_name ?? '');
-  const [driverContact, setDriverContact] = useState(order.driver_contact ?? '');
-  const [vehiclePlate, setVehiclePlate] = useState(order.vehicle_plate ?? '');
-  const [equipmentType, setEquipmentType] = useState(order.equipment_type ?? '');
-  const [equipmentNumber, setEquipmentNumber] = useState(order.equipment_number ?? '');
   const [detentionMode, setDetentionMode] = useState(order.detention_mode ?? '');
   const [detentionFreeDays, setDetentionFreeDays] = useState(order.detention_free_days?.toString() ?? '');
   const [notes, setNotes] = useState(order.notes ?? '');
@@ -182,11 +176,6 @@ export function EditOrderModal({
     try {
       const payload: Record<string, unknown> = {};
       if (vendorId !== (order.vendor_id ?? '')) payload.vendor_id = vendorId || null;
-      if (driverName !== (order.driver_name ?? '')) payload.driver_name = driverName || null;
-      if (driverContact !== (order.driver_contact ?? '')) payload.driver_contact = driverContact || null;
-      if (vehiclePlate !== (order.vehicle_plate ?? '')) payload.vehicle_plate = vehiclePlate || null;
-      if (equipmentType !== (order.equipment_type ?? '')) payload.equipment_type = equipmentType || null;
-      if (equipmentNumber !== (order.equipment_number ?? '')) payload.equipment_number = equipmentNumber || null;
       if (detentionMode !== (order.detention_mode ?? '')) payload.detention_mode = detentionMode || null;
       if (detentionFreeDays !== (order.detention_free_days?.toString() ?? ''))
         payload.detention_free_days = detentionFreeDays ? parseInt(detentionFreeDays, 10) : null;
@@ -197,7 +186,7 @@ export function EditOrderModal({
         return;
       }
 
-      const result = await updateGroundTransportOrderAction(order.transport_order_id, payload);
+      const result = await updateGroundTransportOrderAction(order.order_id, payload);
       if (!result) { setError('No response'); setSaving(false); return; }
       if (result.success) { onSaved(); onClose(); } else { setError(result.error); }
     } catch { setError('Failed to update'); }
@@ -213,13 +202,8 @@ export function EditOrderModal({
         </div>
         <div className="px-5 py-4 space-y-3">
           <div><label className="text-xs text-[var(--text-muted)]">Vendor ID</label><input type="text" value={vendorId} onChange={(e) => setVendorId(e.target.value)} className={inputCls} /></div>
-          <div><label className="text-xs text-[var(--text-muted)]">Driver Name</label><input type="text" value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} /></div>
-          <div><label className="text-xs text-[var(--text-muted)]">Driver Contact</label><input type="text" value={driverContact} onChange={(e) => setDriverContact(e.target.value)} className={inputCls} /></div>
-          <div><label className="text-xs text-[var(--text-muted)]">Vehicle Plate</label><input type="text" value={vehiclePlate} onChange={(e) => setVehiclePlate(e.target.value)} className={inputCls} /></div>
-          {order.transport_type === 'haulage' && (
+          {order.transport_mode === 'haulage' && (
             <>
-              <div><label className="text-xs text-[var(--text-muted)]">Equipment Type</label><input type="text" value={equipmentType} onChange={(e) => setEquipmentType(e.target.value)} className={inputCls} /></div>
-              <div><label className="text-xs text-[var(--text-muted)]">Equipment Number</label><input type="text" value={equipmentNumber} onChange={(e) => setEquipmentNumber(e.target.value)} className={inputCls} /></div>
               <div><label className="text-xs text-[var(--text-muted)]">Detention Mode</label>
                 <select value={detentionMode} onChange={(e) => setDetentionMode(e.target.value)} className={inputCls}>
                   <option value="">None</option>
@@ -246,28 +230,27 @@ export function EditOrderModal({
 }
 
 // ---------------------------------------------------------------------------
-// Add Leg Modal
+// Add Stop Modal
 // ---------------------------------------------------------------------------
 
-export function AddLegModal({
-  transportOrderId,
+export function AddStopModal({
+  orderId,
   nextSequence,
   cities,
-  haulageAreas,
+  areas,
   onSaved,
   onClose,
 }: {
-  transportOrderId: string;
+  orderId: string;
   nextSequence: number;
   cities: City[];
-  haulageAreas: HaulageArea[];
+  areas: Area[];
   onSaved: () => void;
   onClose: () => void;
 }) {
-  const [legType, setLegType] = useState<'delivery' | 'pickup' | 'transfer' | 'return'>('delivery');
-  const [origin, setOrigin] = useState<AddressValue>({ address_line: null, city_id: null, haulage_area_id: null, lat: null, lng: null });
-  const [destination, setDestination] = useState<AddressValue>({ address_line: null, city_id: null, haulage_area_id: null, lat: null, lng: null });
-  const [scheduledDate, setScheduledDate] = useState('');
+  const [stopType, setStopType] = useState<'pickup' | 'dropoff' | 'waypoint'>('dropoff');
+  const [address, setAddress] = useState<AddressValue>({ address_line: null, city_id: null, area_id: null, lat: null, lng: null });
+  const [scheduledArrival, setScheduledArrival] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -276,25 +259,20 @@ export function AddLegModal({
     setSaving(true);
     setError(null);
     try {
-      const result = await addLegAction(transportOrderId, {
-        leg_sequence: nextSequence,
-        leg_type: legType,
-        origin_city_id: origin.city_id,
-        origin_haulage_area_id: origin.haulage_area_id,
-        origin_address_line: origin.address_line,
-        origin_lat: origin.lat,
-        origin_lng: origin.lng,
-        dest_city_id: destination.city_id,
-        dest_haulage_area_id: destination.haulage_area_id,
-        dest_address_line: destination.address_line,
-        dest_lat: destination.lat,
-        dest_lng: destination.lng,
-        scheduled_date: scheduledDate || null,
+      const result = await addStopAction(orderId, {
+        sequence: nextSequence,
+        stop_type: stopType,
+        address_line: address.address_line,
+        area_id: address.area_id,
+        city_id: address.city_id,
+        lat: address.lat,
+        lng: address.lng,
+        scheduled_arrival: scheduledArrival || null,
         notes: notes || null,
       });
       if (!result) { setError('No response'); setSaving(false); return; }
       if (result.success) { onSaved(); onClose(); } else { setError(result.error); }
-    } catch { setError('Failed to add leg'); }
+    } catch { setError('Failed to add stop'); }
     setSaving(false);
   }
 
@@ -302,24 +280,22 @@ export function AddLegModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
-          <h2 className="text-base font-semibold text-[var(--text)]">Add Leg #{nextSequence}</h2>
+          <h2 className="text-base font-semibold text-[var(--text)]">Add Stop #{nextSequence}</h2>
           <button onClick={onClose} className="p-1 rounded hover:bg-[var(--surface)]"><X size={16} /></button>
         </div>
         <div className="px-5 py-4 space-y-4">
           <div>
-            <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Leg Type</label>
-            <select value={legType} onChange={(e) => setLegType(e.target.value as typeof legType)} className={`${inputCls} mt-1`}>
-              <option value="delivery">Delivery</option>
+            <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Stop Type</label>
+            <select value={stopType} onChange={(e) => setStopType(e.target.value as typeof stopType)} className={`${inputCls} mt-1`}>
               <option value="pickup">Pickup</option>
-              <option value="transfer">Transfer</option>
-              <option value="return">Return</option>
+              <option value="dropoff">Dropoff</option>
+              <option value="waypoint">Waypoint</option>
             </select>
           </div>
-          <AddressInput label="Origin" value={origin} onChange={setOrigin} haulageAreas={haulageAreas} cities={cities} />
-          <AddressInput label="Destination" value={destination} onChange={setDestination} haulageAreas={haulageAreas} cities={cities} />
+          <AddressInput label="Address" value={address} onChange={setAddress} areas={areas} cities={cities} />
           <div>
-            <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Scheduled Date</label>
-            <input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} className={`${inputCls} mt-1`} />
+            <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Scheduled Arrival</label>
+            <input type="date" value={scheduledArrival} onChange={(e) => setScheduledArrival(e.target.value)} className={`${inputCls} mt-1`} />
           </div>
           <div>
             <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Notes</label>
@@ -331,7 +307,7 @@ export function AddLegModal({
           <button onClick={onClose} className="px-4 py-2 text-sm border border-[var(--border)] rounded-lg text-[var(--text-mid)]">Cancel</button>
           <button onClick={handleSave} disabled={saving} className="px-4 py-2 text-sm bg-[var(--sky)] text-white rounded-lg disabled:opacity-50 flex items-center gap-2">
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            {saving ? 'Adding…' : 'Add Leg'}
+            {saving ? 'Adding…' : 'Add Stop'}
           </button>
         </div>
       </div>
@@ -344,36 +320,22 @@ export function AddLegModal({
 // ---------------------------------------------------------------------------
 
 export function EditLegModal({
-  transportOrderId,
+  orderId,
   leg,
-  cities,
-  haulageAreas,
   onSaved,
   onClose,
 }: {
-  transportOrderId: string;
-  leg: GroundTransportLeg;
-  cities: City[];
-  haulageAreas: HaulageArea[];
+  orderId: string;
+  leg: OrderLeg;
   onSaved: () => void;
   onClose: () => void;
 }) {
-  const [origin, setOrigin] = useState<AddressValue>({
-    address_line: leg.origin_address_line ?? null,
-    city_id: leg.origin_city_id ?? null,
-    haulage_area_id: leg.origin_haulage_area_id ?? null,
-    lat: leg.origin_lat ?? null,
-    lng: leg.origin_lng ?? null,
-  });
-  const [destination, setDestination] = useState<AddressValue>({
-    address_line: leg.dest_address_line ?? null,
-    city_id: leg.dest_city_id ?? null,
-    haulage_area_id: leg.dest_haulage_area_id ?? null,
-    lat: leg.dest_lat ?? null,
-    lng: leg.dest_lng ?? null,
-  });
-  const [scheduledDate, setScheduledDate] = useState(leg.scheduled_date ?? '');
-  const [actualDate, setActualDate] = useState(leg.actual_date ?? '');
+  const [driverName, setDriverName] = useState(leg.driver_name ?? '');
+  const [driverContact, setDriverContact] = useState(leg.driver_contact ?? '');
+  const [vehiclePlate, setVehiclePlate] = useState(leg.vehicle_plate ?? '');
+  const [vehicleTypeId, setVehicleTypeId] = useState(leg.vehicle_type_id ?? '');
+  const [equipmentType, setEquipmentType] = useState(leg.equipment_type ?? '');
+  const [equipmentNumber, setEquipmentNumber] = useState(leg.equipment_number ?? '');
   const [status, setStatus] = useState(leg.status ?? 'pending');
   const [notes, setNotes] = useState(leg.notes ?? '');
   const [saving, setSaving] = useState(false);
@@ -383,23 +345,17 @@ export function EditLegModal({
     setSaving(true);
     setError(null);
     try {
-      const payload: Partial<GroundTransportLeg> = {
-        origin_city_id: origin.city_id,
-        origin_haulage_area_id: origin.haulage_area_id,
-        origin_address_line: origin.address_line,
-        origin_lat: origin.lat,
-        origin_lng: origin.lng,
-        dest_city_id: destination.city_id,
-        dest_haulage_area_id: destination.haulage_area_id,
-        dest_address_line: destination.address_line,
-        dest_lat: destination.lat,
-        dest_lng: destination.lng,
-        scheduled_date: scheduledDate || null,
-        actual_date: actualDate || null,
+      const payload: Partial<OrderLeg> = {
+        driver_name: driverName || null,
+        driver_contact: driverContact || null,
+        vehicle_plate: vehiclePlate || null,
+        vehicle_type_id: vehicleTypeId || null,
+        equipment_type: equipmentType || null,
+        equipment_number: equipmentNumber || null,
         status,
         notes: notes || null,
       };
-      const result = await updateLegAction(transportOrderId, leg.leg_id!, payload);
+      const result = await updateLegAction(orderId, leg.leg_id, payload);
       if (!result) { setError('No response'); setSaving(false); return; }
       if (result.success) { onSaved(); onClose(); } else { setError(result.error); }
     } catch { setError('Failed to update leg'); }
@@ -410,20 +366,36 @@ export function EditLegModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
-          <h2 className="text-base font-semibold text-[var(--text)]">Edit Leg #{leg.leg_sequence}</h2>
+          <h2 className="text-base font-semibold text-[var(--text)]">Edit Leg #{leg.sequence}</h2>
           <button onClick={onClose} className="p-1 rounded hover:bg-[var(--surface)]"><X size={16} /></button>
         </div>
         <div className="px-5 py-4 space-y-4">
-          <AddressInput label="Origin" value={origin} onChange={setOrigin} haulageAreas={haulageAreas} cities={cities} />
-          <AddressInput label="Destination" value={destination} onChange={setDestination} haulageAreas={haulageAreas} cities={cities} />
+          <div>
+            <label className="text-xs text-[var(--text-muted)]">Driver Name</label>
+            <input type="text" value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className="text-xs text-[var(--text-muted)]">Driver Contact</label>
+            <input type="text" value={driverContact} onChange={(e) => setDriverContact(e.target.value)} className={inputCls} />
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-[var(--text-muted)]">Scheduled Date</label>
-              <input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} className={inputCls} />
+              <label className="text-xs text-[var(--text-muted)]">Vehicle Plate</label>
+              <input type="text" value={vehiclePlate} onChange={(e) => setVehiclePlate(e.target.value)} className={inputCls} />
             </div>
             <div>
-              <label className="text-xs text-[var(--text-muted)]">Actual Date</label>
-              <input type="date" value={actualDate} onChange={(e) => setActualDate(e.target.value)} className={inputCls} />
+              <label className="text-xs text-[var(--text-muted)]">Vehicle Type</label>
+              <input type="text" value={vehicleTypeId} onChange={(e) => setVehicleTypeId(e.target.value)} className={inputCls} placeholder="e.g. lorry_3t" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-[var(--text-muted)]">Equipment Type</label>
+              <input type="text" value={equipmentType} onChange={(e) => setEquipmentType(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="text-xs text-[var(--text-muted)]">Equipment Number</label>
+              <input type="text" value={equipmentNumber} onChange={(e) => setEquipmentNumber(e.target.value)} className={inputCls} />
             </div>
           </div>
           <div>
@@ -453,81 +425,121 @@ export function EditLegModal({
 }
 
 // ---------------------------------------------------------------------------
-// Legs Card
+// Stops & Legs Card
 // ---------------------------------------------------------------------------
 
 export function LegsCard({
   order,
-  onAddLeg,
+  onAddStop,
   onEditLeg,
 }: {
   order: GroundTransportOrder;
-  onAddLeg: () => void;
-  onEditLeg: (leg: GroundTransportLeg) => void;
+  onAddStop: () => void;
+  onEditLeg: (leg: OrderLeg) => void;
 }) {
-  const legs = (order.legs ?? []).sort((a, b) => a.leg_sequence - b.leg_sequence);
+  const stops = (order.stops ?? []).sort((a, b) => a.sequence - b.sequence);
+  const legs = (order.legs ?? []).sort((a, b) => a.sequence - b.sequence);
 
   return (
-    <GTSectionCard
-      title="Legs"
-      icon={<span className="text-sm">🛣</span>}
-      action={
-        <button
-          onClick={onAddLeg}
-          className="text-xs text-[var(--sky)] hover:underline font-medium"
-        >
-          + Add Leg
-        </button>
-      }
-    >
-      {legs.length === 0 ? (
-        <p className="text-sm text-[var(--text-muted)] italic">No legs</p>
-      ) : (
-        <div className="space-y-3">
-          {legs.map((leg) => (
-            <div
-              key={leg.leg_id}
-              className="border border-[var(--border)] rounded-lg p-3 space-y-1.5"
-            >
-              <div className="flex items-center justify-between">
+    <div className="space-y-5">
+      {/* Stops */}
+      <GTSectionCard
+        title="Stops"
+        icon={<span className="text-sm">&#x1F4CD;</span>}
+        action={
+          <button
+            onClick={onAddStop}
+            className="text-xs text-[var(--sky)] hover:underline font-medium"
+          >
+            + Add Stop
+          </button>
+        }
+      >
+        {stops.length === 0 ? (
+          <p className="text-sm text-[var(--text-muted)] italic">No stops</p>
+        ) : (
+          <div className="space-y-2">
+            {stops.map((stop) => (
+              <div
+                key={stop.stop_id}
+                className="border border-[var(--border)] rounded-lg p-3 space-y-1"
+              >
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-mono font-semibold text-[var(--text-muted)]">
-                    #{leg.leg_sequence}
+                    #{stop.sequence}
                   </span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${LEG_STATUS_STYLES[leg.status ?? 'pending'] ?? 'bg-gray-100 text-gray-700'}`}>
-                    {(leg.status ?? 'pending').replace(/_/g, ' ')}
-                  </span>
-                  <span className="text-xs text-[var(--text-mid)]">
-                    {LEG_TYPE_LABELS[leg.leg_type] ?? leg.leg_type}
+                  <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+                    {STOP_TYPE_LABELS[stop.stop_type] ?? stop.stop_type}
                   </span>
                 </div>
-                <button
-                  onClick={() => onEditLeg(leg)}
-                  className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
-                  title="Edit leg"
-                >
-                  <Pencil className="w-3 h-3" />
-                </button>
-              </div>
-              <div className="text-xs text-[var(--text-mid)]">
-                <span className="font-medium">Origin:</span>{' '}
-                {leg.origin_address_line ?? '—'}
-              </div>
-              <div className="text-xs text-[var(--text-mid)]">
-                <span className="font-medium">Dest:</span>{' '}
-                {leg.dest_address_line ?? '—'}
-              </div>
-              {(leg.scheduled_date || leg.actual_date) && (
-                <div className="text-xs text-[var(--text-muted)] flex gap-4">
-                  {leg.scheduled_date && <span>Scheduled: {leg.scheduled_date}</span>}
-                  {leg.actual_date && <span>Actual: {leg.actual_date}</span>}
+                <div className="text-xs text-[var(--text-mid)]">
+                  {stop.address_line ?? '—'}
                 </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </GTSectionCard>
+                {(stop.scheduled_arrival || stop.actual_arrival) && (
+                  <div className="text-xs text-[var(--text-muted)] flex gap-4">
+                    {stop.scheduled_arrival && <span>Scheduled: {stop.scheduled_arrival}</span>}
+                    {stop.actual_arrival && <span>Actual: {stop.actual_arrival}</span>}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </GTSectionCard>
+
+      {/* Legs */}
+      <GTSectionCard
+        title="Legs"
+        icon={<span className="text-sm">&#x1F6E3;</span>}
+      >
+        {legs.length === 0 ? (
+          <p className="text-sm text-[var(--text-muted)] italic">No legs</p>
+        ) : (
+          <div className="space-y-3">
+            {legs.map((leg) => (
+              <div
+                key={leg.leg_id}
+                className="border border-[var(--border)] rounded-lg p-3 space-y-1.5"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono font-semibold text-[var(--text-muted)]">
+                      #{leg.sequence}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${LEG_STATUS_STYLES[leg.status ?? 'pending'] ?? 'bg-gray-100 text-gray-700'}`}>
+                      {(leg.status ?? 'pending').replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase())}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => onEditLeg(leg)}
+                    className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
+                    title="Edit leg"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                </div>
+                {leg.driver_name && (
+                  <div className="text-xs text-[var(--text-mid)]">
+                    <span className="font-medium">Driver:</span> {leg.driver_name}
+                    {leg.driver_contact && <span className="text-[var(--text-muted)]"> ({leg.driver_contact})</span>}
+                  </div>
+                )}
+                {leg.vehicle_plate && (
+                  <div className="text-xs text-[var(--text-mid)]">
+                    <span className="font-medium">Vehicle:</span> <span className="font-mono">{leg.vehicle_plate}</span>
+                  </div>
+                )}
+                {(leg.equipment_type || leg.equipment_number) && (
+                  <div className="text-xs text-[var(--text-mid)]">
+                    <span className="font-medium">Equipment:</span> {leg.equipment_type} {leg.equipment_number && <span className="font-mono">({leg.equipment_number})</span>}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </GTSectionCard>
+    </div>
   );
 }
 

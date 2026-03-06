@@ -1,9 +1,9 @@
 /**
- * Geography data access — states, cities, haulage areas.
+ * Geography data access — states, cities, areas.
  * Follows the same fetch+auth pattern as lib/shipments.ts.
  */
 
-import type { State, City, HaulageArea } from './types';
+import type { State, City, Area } from './types';
 import type { Port } from './ports';
 
 const BASE = process.env.AF_SERVER_URL || '';
@@ -30,16 +30,16 @@ export async function fetchCities(token: string, stateCode?: string): Promise<Ci
   return geoFetch<City>(path, token);
 }
 
-export async function fetchHaulageAreas(
+export async function fetchAreas(
   token: string,
   filters?: { port_un_code?: string; state_code?: string }
-): Promise<HaulageArea[]> {
+): Promise<Area[]> {
   const params = new URLSearchParams();
   if (filters?.port_un_code) params.set('port_un_code', filters.port_un_code);
   if (filters?.state_code) params.set('state_code', filters.state_code);
   const qs = params.toString();
-  const path = qs ? `/api/v2/geography/haulage-areas?${qs}` : '/api/v2/geography/haulage-areas';
-  return geoFetch<HaulageArea>(path, token);
+  const path = qs ? `/api/v2/geography/areas?${qs}` : '/api/v2/geography/areas';
+  return geoFetch<Area>(path, token);
 }
 
 export async function fetchGeoPorts(token: string): Promise<Port[]> {

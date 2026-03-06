@@ -8,11 +8,11 @@ import {
   fetchVehicleTypesAction,
 } from '@/app/actions/ground-transport';
 import type { GroundTransportOrder, VehicleType } from '@/app/actions/ground-transport';
-import { fetchCitiesAction, fetchHaulageAreasAction } from '@/app/actions/geography';
+import { fetchCitiesAction, fetchAreasAction } from '@/app/actions/geography';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
 import { KpiCard } from '@/components/shared/KpiCard';
 import CreateGroundTransportModal from '@/components/ground-transport/CreateGroundTransportModal';
-import type { City, HaulageArea } from '@/lib/types';
+import type { City, Area } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
 // Status badge styles
@@ -63,9 +63,9 @@ const FILTER_TABS: { key: FilterTab; label: string }[] = [
   { key: 'cancelled',  label: 'Cancelled' },
 ];
 
-function buildFilters(tab: FilterTab): { transport_type?: string; status?: string } {
-  if (tab === 'haulage') return { transport_type: 'haulage' };
-  if (tab === 'trucking') return { transport_type: 'trucking' };
+function buildFilters(tab: FilterTab): { transport_mode?: string; status?: string } {
+  if (tab === 'haulage') return { transport_mode: 'haulage' };
+  if (tab === 'trucking') return { transport_mode: 'trucking' };
   if (tab === 'active') return { status: 'active' };
   if (tab === 'completed') return { status: 'completed' };
   if (tab === 'cancelled') return { status: 'cancelled' };
@@ -85,7 +85,7 @@ function GroundTransportPageInner() {
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [cities, setCities] = useState<City[]>([]);
-  const [haulageAreas, setHaulageAreas] = useState<HaulageArea[]>([]);
+  const [areas, setAreas] = useState<Area[]>([]);
   const [vehicleTypes, setVehicleTypes] = useState<VehicleType[]>([]);
 
   const fetchIdRef = useRef(0);
@@ -95,7 +95,7 @@ function GroundTransportPageInner() {
     Promise.all([
       getCurrentUserProfileAction(),
       fetchCitiesAction(),
-      fetchHaulageAreasAction(),
+      fetchAreasAction(),
       fetchVehicleTypesAction(),
     ]).then(([profile, citiesRes, areasRes, vtRes]) => {
       if (profile.account_type !== 'AFU') {
@@ -103,7 +103,7 @@ function GroundTransportPageInner() {
         return;
       }
       if (citiesRes.success) setCities(citiesRes.data);
-      if (areasRes.success) setHaulageAreas(areasRes.data);
+      if (areasRes.success) setAreas(areasRes.data);
       if (vtRes.success) setVehicleTypes(vtRes.data);
       setProfileLoaded(true);
     });
@@ -147,8 +147,8 @@ function GroundTransportPageInner() {
   const stats = {
     total: allOrders.length,
     active: allOrders.filter((o) => activeStatuses.has(o.status)).length,
-    haulage: allOrders.filter((o) => o.transport_type === 'haulage').length,
-    trucking: allOrders.filter((o) => o.transport_type === 'trucking').length,
+    haulage: allOrders.filter((o) => o.transport_mode === 'haulage').length,
+    trucking: allOrders.filter((o) => o.transport_mode === 'trucking').length,
   };
 
   return (
@@ -248,50 +248,51 @@ function GroundTransportPageInner() {
               </thead>
               <tbody>
                 {orders.map((order) => {
-                  const legs = order.legs ?? [];
-                  const firstLeg = legs[0];
-                  const lastLeg = legs[legs.length - 1];
-                  const originLabel = firstLeg?.origin_address_line ?? '—';
-                  const destLabel = (lastLeg ?? firstLeg)?.dest_address_line ?? '—';
+                  const stops = order.stops ?? [];
+                  const sortedStops = [...stops].sort((a, b) => a.sequence - b.sequence);
+                  const firstStop = sortedStops[0];
+                  const lastStop = sortedStops[sortedStops.length - 1];
+                  const originLabel = firstStop?.address_line ?? '—';
+                  const destLabel = (lastStop ?? firstStop)?.address_line ?? '—';
 
                   return (
                     <tr
-                      key={order.transport_order_id}
-                      onClick={() => window.open(`/ground-transport/${order.transport_order_id}`, '_blank')}
+                      key={order.order_id}
+                      onClick={() => window.open(`/ground-transport/${order.order_id}`, '_blank')}
                       className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface)] cursor-pointer transition-colors"
                     >
                       <td className="px-4 py-3 font-mono text-[var(--sky)] font-medium">
-                        {order.transport_order_id}
+                        {order.order_id}
                       </td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                          order.transport_type === 'haulage'
+                          order.transport_mode === 'haulage'
                             ? 'bg-amber-100 text-amber-800'
                             : 'bg-blue-100 text-blue-800'
                         }`}>
-                          {order.transport_type.toUpperCase()}
+                          {order.transport_mode.toUpperCase()}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-[var(--text-mid)]">
                         {LEG_TYPE_LABELS[order.leg_type] ?? order.leg_type}
                       </td>
                       <td className="px-4 py-3">
-                        {order.parent_shipment_id ? (
+                        {order.parent_order_id ? (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              window.open(`/shipments/${order.parent_shipment_id}`, '_blank');
+                              window.open(`/shipments/${order.parent_order_id}`, '_blank');
                             }}
                             className="font-mono text-xs text-[var(--sky)] hover:underline"
                           >
-                            {order.parent_shipment_id}
+                            {order.parent_order_id}
                           </button>
                         ) : (
                           <span className="text-[var(--text-muted)]">—</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-xs text-[var(--text-mid)] max-w-[200px] truncate">
-                        {firstLeg
+                        {firstStop
                           ? `${originLabel} → ${destLabel}`
                           : '—'}
                       </td>
@@ -321,7 +322,7 @@ function GroundTransportPageInner() {
           onClose={() => setShowCreateModal(false)}
           onCreated={() => load(activeTab)}
           cities={cities}
-          haulageAreas={haulageAreas}
+          areas={areas}
           vehicleTypes={vehicleTypes}
         />
       )}

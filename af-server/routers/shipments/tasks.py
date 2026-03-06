@@ -133,7 +133,7 @@ async def update_shipment_task(
 
     # --- Load shipment_workflows ---
     wf_row = conn.execute(text("""
-        SELECT workflow_tasks FROM shipment_workflows WHERE shipment_id = :id
+        SELECT workflow_tasks FROM shipment_workflows WHERE order_id = :id
     """), {"id": shipment_id}).fetchone()
 
     if not wf_row:
@@ -229,7 +229,7 @@ async def update_shipment_task(
     if body.status == COMPLETED and task.get("task_type") == FREIGHT_BOOKING:
         # Check shipment for booking_reference
         booking_row = conn.execute(text("""
-            SELECT booking FROM shipments WHERE id = :id
+            SELECT booking FROM shipment_details WHERE order_id = :id
         """), {"id": shipment_id}).fetchone()
         booking_ref = ""
         if booking_row:
@@ -251,7 +251,7 @@ async def update_shipment_task(
     conn.execute(text("""
         UPDATE shipment_workflows
         SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
-        WHERE shipment_id = :id
+        WHERE order_id = :id
     """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
 
     # --- Sync route node timings for TRACKED POL actual_start (ATA) ---
@@ -272,7 +272,12 @@ async def update_shipment_task(
         # Auto status progression — forward only
         if task_type == "POL" and body.actual_end is not None:
             cur = conn.execute(
-                text("SELECT status, status_history FROM shipments WHERE id = :id"),
+                text("""
+                    SELECT o.status, sd.status_history
+                    FROM orders o
+                    JOIN shipment_details sd ON sd.order_id = o.order_id
+                    WHERE o.order_id = :id
+                """),
                 {"id": shipment_id}
             ).fetchone()
             if cur and (cur[0] or 0) < constants.STATUS_DEPARTED:
@@ -286,15 +291,25 @@ async def update_shipment_task(
                     "note": "Auto-advanced from ATD (POL task)",
                 })
                 conn.execute(text("""
-                    UPDATE shipments
-                    SET status = :status, status_history = CAST(:history AS jsonb), updated_at = :now
-                    WHERE id = :id
-                """), {"status": new_status, "history": json.dumps(history), "now": now, "id": shipment_id})
+                    UPDATE orders
+                    SET status = :status, updated_at = :now
+                    WHERE order_id = :id
+                """), {"status": new_status, "now": now, "id": shipment_id})
+                conn.execute(text("""
+                    UPDATE shipment_details
+                    SET status_history = CAST(:history AS jsonb)
+                    WHERE order_id = :id
+                """), {"history": json.dumps(history), "id": shipment_id})
                 logger.info("[tasks] Auto-advanced %s to Departed (4001) from POL ATD", shipment_id)
 
         elif task_type == "POD" and body.actual_start is not None:
             cur = conn.execute(
-                text("SELECT status, status_history FROM shipments WHERE id = :id"),
+                text("""
+                    SELECT o.status, sd.status_history
+                    FROM orders o
+                    JOIN shipment_details sd ON sd.order_id = o.order_id
+                    WHERE o.order_id = :id
+                """),
                 {"id": shipment_id}
             ).fetchone()
             if cur and (cur[0] or 0) < constants.STATUS_ARRIVED:
@@ -308,10 +323,15 @@ async def update_shipment_task(
                     "note": "Auto-advanced from ATA (POD task)",
                 })
                 conn.execute(text("""
-                    UPDATE shipments
-                    SET status = :status, status_history = CAST(:history AS jsonb), updated_at = :now
-                    WHERE id = :id
-                """), {"status": new_status, "history": json.dumps(history), "now": now, "id": shipment_id})
+                    UPDATE orders
+                    SET status = :status, updated_at = :now
+                    WHERE order_id = :id
+                """), {"status": new_status, "now": now, "id": shipment_id})
+                conn.execute(text("""
+                    UPDATE shipment_details
+                    SET status_history = CAST(:history AS jsonb)
+                    WHERE order_id = :id
+                """), {"history": json.dumps(history), "id": shipment_id})
                 logger.info("[tasks] Auto-advanced %s to Arrived (4002) from POD ATA", shipment_id)
 
     logger.info("Task %s updated on %s by %s", task_id, shipment_id, claims.uid)

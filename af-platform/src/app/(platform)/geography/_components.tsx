@@ -3,14 +3,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Plus, Search, Loader2, MapPin, X, Pencil, Trash2, Sparkles } from 'lucide-react';
 import {
-  fetchStatesAction, fetchCitiesAction, fetchHaulageAreasAction,
+  fetchStatesAction, fetchCitiesAction, fetchAreasAction,
   fetchGeoPortsAction, createCityAction, updateCityAction,
-  createHaulageAreaAction, updateHaulageAreaAction, deleteHaulageAreaAction,
+  createAreaAction, updateAreaAction, deleteAreaAction,
   updatePortCoordinatesAction, resolvePortAction, confirmPortAction,
   fetchCountriesAction, updateCountryAction,
 } from '@/app/actions/geography';
 import type { Country } from '@/app/actions/geography';
-import type { State, City, HaulageArea } from '@/lib/types';
+import type { State, City, Area } from '@/lib/types';
 import type { Port } from '@/lib/ports';
 
 // ---------------------------------------------------------------------------
@@ -463,11 +463,11 @@ function CityFormModal({ city, states, onClose, onSaved }: {
 }
 
 // ---------------------------------------------------------------------------
-// Haulage Areas Tab
+// Areas Tab
 // ---------------------------------------------------------------------------
 
-export function HaulageAreasTab() {
-  const [areas, setAreas] = useState<HaulageArea[]>([]);
+export function AreasTab() {
+  const [areas, setAreas] = useState<Area[]>([]);
   const [states, setStates] = useState<State[]>([]);
   const [ports, setPorts] = useState<Port[]>([]);
   const [loading, setLoading] = useState(true);
@@ -475,7 +475,7 @@ export function HaulageAreasTab() {
   const [filterPort, setFilterPort] = useState('');
   const [filterState, setFilterState] = useState('');
   const [showAdd, setShowAdd] = useState(false);
-  const [editArea, setEditArea] = useState<HaulageArea | null>(null);
+  const [editArea, setEditArea] = useState<Area | null>(null);
 
   const seaPorts = ports.filter((p) => p.port_type === 'SEA');
 
@@ -486,7 +486,7 @@ export function HaulageAreasTab() {
     if (filterState) filters.state_code = filterState;
 
     const [areasRes, statesRes, portsRes] = await Promise.all([
-      fetchHaulageAreasAction(filters),
+      fetchAreasAction(filters),
       fetchStatesAction(),
       fetchGeoPortsAction(),
     ]);
@@ -521,9 +521,9 @@ export function HaulageAreasTab() {
 
   const stateOptions = states.map(s => ({ value: s.state_code, label: s.name }));
 
-  const handleDelete = async (area: HaulageArea) => {
+  const handleDelete = async (area: Area) => {
     if (!confirm(`Deactivate "${area.area_name}"?`)) return;
-    await deleteHaulageAreaAction(area.area_id);
+    await deleteAreaAction(area.area_id);
     load();
   };
 
@@ -568,7 +568,7 @@ export function HaulageAreasTab() {
           {loading ? (
             <tr><td colSpan={6} className="py-8 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-[var(--text-muted)]" /></td></tr>
           ) : areas.length === 0 ? (
-            <EmptyRow cols={6} message="No haulage areas found" />
+            <EmptyRow cols={6} message="No areas found" />
           ) : (
             areas.map((a) => (
               <tr key={a.area_id} className="hover:bg-[var(--surface)]/50">
@@ -594,14 +594,14 @@ export function HaulageAreasTab() {
       </TableShell>
 
       {showAdd && (
-        <HaulageAreaFormModal
+        <AreaFormModal
           states={states} ports={seaPorts}
           onClose={() => setShowAdd(false)}
           onSaved={() => { setShowAdd(false); load(); }}
         />
       )}
       {editArea && (
-        <HaulageAreaFormModal
+        <AreaFormModal
           area={editArea} states={states} ports={seaPorts}
           onClose={() => setEditArea(null)}
           onSaved={() => { setEditArea(null); load(); }}
@@ -611,8 +611,8 @@ export function HaulageAreasTab() {
   );
 }
 
-function HaulageAreaFormModal({ area, states, ports, onClose, onSaved }: {
-  area?: HaulageArea;
+function AreaFormModal({ area, states, ports, onClose, onSaved }: {
+  area?: Area;
   states: State[];
   ports: Port[];
   onClose: () => void;
@@ -640,12 +640,12 @@ function HaulageAreaFormModal({ area, states, ports, onClose, onSaved }: {
     const lngNum = lng ? parseFloat(lng) : null;
 
     const result = isEdit
-      ? await updateHaulageAreaAction(area!.area_id, {
+      ? await updateAreaAction(area!.area_id, {
           area_code: areaCode.trim(), area_name: areaName.trim(),
           port_un_code: portUnCode, state_code: stateCode || null,
           lat: latNum, lng: lngNum,
         })
-      : await createHaulageAreaAction({
+      : await createAreaAction({
           area_code: areaCode.trim(), area_name: areaName.trim(),
           port_un_code: portUnCode, state_code: stateCode || null,
           lat: latNum, lng: lngNum,
@@ -659,7 +659,7 @@ function HaulageAreaFormModal({ area, states, ports, onClose, onSaved }: {
   return (
     <ModalOverlay onClose={onClose}>
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-[var(--text)]">{isEdit ? 'Edit Haulage Area' : 'Add Haulage Area'}</h3>
+        <h3 className="text-lg font-semibold text-[var(--text)]">{isEdit ? 'Edit Area' : 'Add Area'}</h3>
         <button onClick={onClose}><X className="w-5 h-5 text-[var(--text-muted)]" /></button>
       </div>
       <div className="space-y-3">

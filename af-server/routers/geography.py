@@ -1,6 +1,6 @@
 """
 routers/geography.py — Geography endpoints (PostgreSQL).
-Port, state, city, and haulage area lookups + CRUD.
+Port, state, city, and area lookups + CRUD.
 """
 import json
 import logging
@@ -518,34 +518,34 @@ async def update_city(
 
 
 # ---------------------------------------------------------------------------
-# Haulage Areas
+# Areas (renamed from Haulage Areas)
 # ---------------------------------------------------------------------------
 
-@router.get("/haulage-areas")
-async def list_haulage_areas(
+@router.get("/areas")
+async def list_areas(
     port_un_code: str | None = Query(default=None),
     state_code: str | None = Query(default=None),
     claims: Claims = Depends(require_auth),
     conn=Depends(get_db),
 ):
-    where_clauses = ["ha.is_active = TRUE"]
+    where_clauses = ["a.is_active = TRUE"]
     params: dict = {}
     if port_un_code:
-        where_clauses.append("ha.port_un_code = :port")
+        where_clauses.append("a.port_un_code = :port")
         params["port"] = port_un_code
     if state_code:
-        where_clauses.append("ha.state_code = :sc")
+        where_clauses.append("a.state_code = :sc")
         params["sc"] = state_code
 
     where = " AND ".join(where_clauses)
     rows = conn.execute(text(f"""
-        SELECT ha.area_id, ha.area_code, ha.area_name, ha.port_un_code,
-               ha.state_code, ha.city_id, c.name AS city_name,
-               ha.lat, ha.lng, ha.is_active
-        FROM haulage_areas ha
-        LEFT JOIN cities c ON ha.city_id = c.city_id
+        SELECT a.area_id, a.area_code, a.area_name, a.port_un_code,
+               a.state_code, a.city_id, c.name AS city_name,
+               a.lat, a.lng, a.is_active
+        FROM areas a
+        LEFT JOIN cities c ON a.city_id = c.city_id
         WHERE {where}
-        ORDER BY ha.area_name
+        ORDER BY a.area_name
     """), params).fetchall()
 
     data = [
@@ -562,23 +562,23 @@ async def list_haulage_areas(
     return {"status": "OK", "data": data}
 
 
-@router.get("/haulage-areas/{area_id}")
-async def get_haulage_area(
+@router.get("/areas/{area_id}")
+async def get_area(
     area_id: int,
     claims: Claims = Depends(require_auth),
     conn=Depends(get_db),
 ):
     row = conn.execute(text("""
-        SELECT ha.area_id, ha.area_code, ha.area_name, ha.port_un_code,
-               ha.state_code, ha.city_id, c.name AS city_name,
-               ha.lat, ha.lng, ha.is_active
-        FROM haulage_areas ha
-        LEFT JOIN cities c ON ha.city_id = c.city_id
-        WHERE ha.area_id = :id
+        SELECT a.area_id, a.area_code, a.area_name, a.port_un_code,
+               a.state_code, a.city_id, c.name AS city_name,
+               a.lat, a.lng, a.is_active
+        FROM areas a
+        LEFT JOIN cities c ON a.city_id = c.city_id
+        WHERE a.area_id = :id
     """), {"id": area_id}).fetchone()
 
     if not row:
-        raise HTTPException(status_code=404, detail=f"Haulage area {area_id} not found")
+        raise HTTPException(status_code=404, detail=f"Area {area_id} not found")
 
     return {"status": "OK", "data": {
         "area_id": row[0], "area_code": row[1], "area_name": row[2],
@@ -590,7 +590,7 @@ async def get_haulage_area(
     }}
 
 
-class HaulageAreaCreate(BaseModel):
+class AreaCreate(BaseModel):
     area_code: str
     area_name: str
     port_un_code: str
@@ -600,7 +600,7 @@ class HaulageAreaCreate(BaseModel):
     lng: float | None = None
 
 
-class HaulageAreaUpdate(BaseModel):
+class AreaUpdate(BaseModel):
     area_code: str | None = None
     area_name: str | None = None
     port_un_code: str | None = None
@@ -610,16 +610,16 @@ class HaulageAreaUpdate(BaseModel):
     lng: float | None = None
 
 
-@router.post("/haulage-areas")
-async def create_haulage_area(
-    body: HaulageAreaCreate,
+@router.post("/areas")
+async def create_area(
+    body: AreaCreate,
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
 ):
     area_code = body.area_code.strip().upper()
 
     row = conn.execute(text("""
-        INSERT INTO haulage_areas (area_code, area_name, port_un_code, state_code, city_id, lat, lng)
+        INSERT INTO areas (area_code, area_name, port_un_code, state_code, city_id, lat, lng)
         VALUES (:code, :name, :port, :sc, :city, :lat, :lng)
         RETURNING area_id
     """), {
@@ -631,17 +631,17 @@ async def create_haulage_area(
     return {"status": "OK", "data": {"area_id": row[0], "area_code": area_code}}
 
 
-@router.patch("/haulage-areas/{area_id}")
-async def update_haulage_area(
+@router.patch("/areas/{area_id}")
+async def update_area(
     area_id: int,
-    body: HaulageAreaUpdate,
+    body: AreaUpdate,
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
 ):
-    existing = conn.execute(text("SELECT area_id FROM haulage_areas WHERE area_id = :id"),
+    existing = conn.execute(text("SELECT area_id FROM areas WHERE area_id = :id"),
                             {"id": area_id}).fetchone()
     if not existing:
-        raise HTTPException(status_code=404, detail=f"Haulage area {area_id} not found")
+        raise HTTPException(status_code=404, detail=f"Area {area_id} not found")
 
     updates = []
     params: dict = {"id": area_id}
@@ -657,23 +657,23 @@ async def update_haulage_area(
     if not updates:
         return {"status": "OK"}
 
-    conn.execute(text(f"UPDATE haulage_areas SET {', '.join(updates)} WHERE area_id = :id"), params)
+    conn.execute(text(f"UPDATE areas SET {', '.join(updates)} WHERE area_id = :id"), params)
     return {"status": "OK"}
 
 
-@router.delete("/haulage-areas/{area_id}")
-async def delete_haulage_area(
+@router.delete("/areas/{area_id}")
+async def delete_area(
     area_id: int,
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
 ):
     """Soft delete — set is_active = FALSE."""
-    existing = conn.execute(text("SELECT area_id FROM haulage_areas WHERE area_id = :id"),
+    existing = conn.execute(text("SELECT area_id FROM areas WHERE area_id = :id"),
                             {"id": area_id}).fetchone()
     if not existing:
-        raise HTTPException(status_code=404, detail=f"Haulage area {area_id} not found")
+        raise HTTPException(status_code=404, detail=f"Area {area_id} not found")
 
-    conn.execute(text("UPDATE haulage_areas SET is_active = FALSE WHERE area_id = :id"),
+    conn.execute(text("UPDATE areas SET is_active = FALSE WHERE area_id = :id"),
                  {"id": area_id})
     return {"status": "OK"}
 

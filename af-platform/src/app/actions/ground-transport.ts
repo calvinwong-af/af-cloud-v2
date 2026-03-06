@@ -6,27 +6,35 @@ import { verifySessionAndRole } from '@/lib/auth-server';
 // Types
 // ---------------------------------------------------------------------------
 
-export interface GroundTransportLeg {
-  leg_id?: number;
-  transport_order_id?: string;
-  leg_sequence: number;
-  leg_type: 'delivery' | 'pickup' | 'transfer' | 'return';
-  origin_city_id?: number | null;
-  origin_haulage_area_id?: number | null;
-  origin_address_line?: string | null;
-  origin_lat?: number | null;
-  origin_lng?: number | null;
-  dest_city_id?: number | null;
-  dest_haulage_area_id?: number | null;
-  dest_address_line?: string | null;
-  dest_lat?: number | null;
-  dest_lng?: number | null;
-  scheduled_date?: string | null;
-  actual_date?: string | null;
-  status?: string;
-  notes?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
+export interface OrderStop {
+  stop_id: number;
+  order_id: string;
+  sequence: number;
+  stop_type: 'pickup' | 'dropoff' | 'waypoint';
+  address_line: string | null;
+  area_id: number | null;
+  city_id: number | null;
+  lat: number | null;
+  lng: number | null;
+  scheduled_arrival: string | null;
+  actual_arrival: string | null;
+  notes: string | null;
+}
+
+export interface OrderLeg {
+  leg_id: number;
+  order_id: string;
+  from_stop_id: number;
+  to_stop_id: number;
+  sequence: number;
+  driver_name: string | null;
+  driver_contact: string | null;
+  vehicle_plate: string | null;
+  vehicle_type_id: string | null;
+  equipment_type: string | null;
+  equipment_number: string | null;
+  status: string;
+  notes: string | null;
 }
 
 export interface VehicleType {
@@ -37,30 +45,25 @@ export interface VehicleType {
 }
 
 export interface GroundTransportOrder {
-  transport_order_id: string;
-  transport_type: 'haulage' | 'trucking';
+  order_id: string;
+  transport_mode: 'haulage' | 'trucking';
   leg_type: 'first_mile' | 'last_mile' | 'standalone' | 'distribution';
-  parent_shipment_id: string | null;
+  parent_order_id: string | null;
   vendor_id: string | null;
   status: string;
+  sub_status: string | null;
   cargo_description: string | null;
   container_numbers: string[];
   weight_kg: number | null;
   volume_cbm: number | null;
-  driver_name: string | null;
-  driver_contact: string | null;
-  vehicle_plate: string | null;
-  equipment_type: string | null;
-  equipment_number: string | null;
   detention_mode: string | null;
   detention_free_days: number | null;
-  container_yard_id: number | null;
-  vehicle_type_id: string | null;
   notes: string | null;
   created_by: string | null;
   created_at: string | null;
   updated_at: string | null;
-  legs?: GroundTransportLeg[];
+  stops: OrderStop[];
+  legs: OrderLeg[];
 }
 
 export interface ScopeFlags {
@@ -107,25 +110,18 @@ async function getAuthHeaders(): Promise<{ token: string; serverUrl: string } | 
 // ---------------------------------------------------------------------------
 
 export interface GroundTransportCreatePayload {
-  transport_type: 'haulage' | 'trucking';
+  transport_mode: 'haulage' | 'trucking';
   leg_type: 'first_mile' | 'last_mile' | 'standalone' | 'distribution';
-  parent_shipment_id?: string | null;
+  parent_order_id?: string | null;
   vendor_id?: string | null;
   cargo_description?: string | null;
   container_numbers?: string[];
   weight_kg?: number | null;
   volume_cbm?: number | null;
-  driver_name?: string | null;
-  driver_contact?: string | null;
-  vehicle_plate?: string | null;
-  equipment_type?: string | null;
-  equipment_number?: string | null;
   detention_mode?: 'direct' | 'detained' | null;
   detention_free_days?: number | null;
-  container_yard_id?: number | null;
-  vehicle_type_id?: string | null;
   notes?: string | null;
-  legs?: GroundTransportLeg[];
+  stops?: Partial<OrderStop>[];
 }
 
 export async function createGroundTransportOrderAction(
@@ -163,7 +159,7 @@ export async function createGroundTransportOrderAction(
 // ---------------------------------------------------------------------------
 
 export async function listGroundTransportOrdersAction(
-  filters?: { transport_type?: string; status?: string; parent_shipment_id?: string },
+  filters?: { transport_mode?: string; status?: string; parent_order_id?: string },
 ): Promise<{ success: true; data: GroundTransportOrder[] } | { success: false; error: string }> {
   try {
     const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
@@ -173,9 +169,9 @@ export async function listGroundTransportOrdersAction(
     if (!auth) return { success: false, error: 'No session token or server URL' };
 
     const url = new URL('/api/v2/ground-transport', auth.serverUrl);
-    if (filters?.transport_type) url.searchParams.set('transport_type', filters.transport_type);
+    if (filters?.transport_mode) url.searchParams.set('transport_mode', filters.transport_mode);
     if (filters?.status) url.searchParams.set('status', filters.status);
-    if (filters?.parent_shipment_id) url.searchParams.set('parent_shipment_id', filters.parent_shipment_id);
+    if (filters?.parent_order_id) url.searchParams.set('parent_order_id', filters.parent_order_id);
 
     const res = await fetch(url.toString(), {
       headers: { Authorization: `Bearer ${auth.token}` },
@@ -233,7 +229,7 @@ export async function getGroundTransportOrderAction(
 
 export async function updateGroundTransportOrderAction(
   transportOrderId: string,
-  payload: Partial<Omit<GroundTransportOrder, 'transport_order_id' | 'created_at' | 'updated_at' | 'created_by' | 'legs'>>,
+  payload: Partial<Omit<GroundTransportOrder, 'order_id' | 'created_at' | 'updated_at' | 'created_by' | 'stops' | 'legs'>>,
 ): Promise<{ success: true; data: GroundTransportOrder } | { success: false; error: string }> {
   try {
     const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
@@ -298,13 +294,13 @@ export async function cancelGroundTransportOrderAction(
 }
 
 // ---------------------------------------------------------------------------
-// Add Leg
+// Add Stop
 // ---------------------------------------------------------------------------
 
-export async function addLegAction(
-  transportOrderId: string,
-  leg: GroundTransportLeg,
-): Promise<{ success: true; data: GroundTransportLeg[] } | { success: false; error: string }> {
+export async function addStopAction(
+  orderId: string,
+  stop: Partial<OrderStop>,
+): Promise<{ success: true; data: OrderStop[] } | { success: false; error: string }> {
   try {
     const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
     if (!session.valid) return { success: false, error: 'Unauthorised' };
@@ -313,11 +309,11 @@ export async function addLegAction(
     if (!auth) return { success: false, error: 'No session token or server URL' };
 
     const res = await fetch(
-      `${auth.serverUrl}/api/v2/ground-transport/${encodeURIComponent(transportOrderId)}/legs`,
+      `${auth.serverUrl}/api/v2/ground-transport/${encodeURIComponent(orderId)}/stops`,
       {
         method: 'POST',
         headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(leg),
+        body: JSON.stringify(stop),
         cache: 'no-store',
       },
     );
@@ -330,8 +326,8 @@ export async function addLegAction(
     const json = await res.json();
     return { success: true, data: json.data ?? [] };
   } catch (err) {
-    console.error('[addLegAction]', err instanceof Error ? err.message : err);
-    return { success: false, error: 'Failed to add leg' };
+    console.error('[addStopAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to add stop' };
   }
 }
 
@@ -340,10 +336,10 @@ export async function addLegAction(
 // ---------------------------------------------------------------------------
 
 export async function updateLegAction(
-  transportOrderId: string,
+  orderId: string,
   legId: number,
-  payload: Partial<GroundTransportLeg>,
-): Promise<{ success: true; data: GroundTransportLeg[] } | { success: false; error: string }> {
+  payload: Partial<OrderLeg>,
+): Promise<{ success: true; data: OrderLeg[] } | { success: false; error: string }> {
   try {
     const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
     if (!session.valid) return { success: false, error: 'Unauthorised' };
@@ -352,7 +348,7 @@ export async function updateLegAction(
     if (!auth) return { success: false, error: 'No session token or server URL' };
 
     const res = await fetch(
-      `${auth.serverUrl}/api/v2/ground-transport/${encodeURIComponent(transportOrderId)}/legs/${legId}`,
+      `${auth.serverUrl}/api/v2/ground-transport/${encodeURIComponent(orderId)}/legs/${legId}`,
       {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },

@@ -66,19 +66,19 @@ def _create_file_record(
 
     row = conn.execute(text("""
         INSERT INTO shipment_files (
-            shipment_id, company_id, file_name, file_location,
+            order_id, company_id, file_name, file_location,
             file_tags, file_description, file_size_kb, visibility,
             notification_sent, uploaded_by_uid, uploaded_by_email,
             trash, created_at, updated_at
         ) VALUES (
-            :shipment_id, :company_id, :file_name, :file_location,
+            :order_id, :company_id, :file_name, :file_location,
             :file_tags, NULL, :file_size_kb, :visibility,
             FALSE, :uploaded_by_uid, :uploaded_by_email,
             FALSE, :now, :now
         )
         RETURNING *
     """), {
-        "shipment_id": shipment_id,
+        "order_id": shipment_id,
         "company_id": company_id,
         "file_name": file_name,
         "file_location": gcs_path,

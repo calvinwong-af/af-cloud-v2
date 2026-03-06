@@ -394,46 +394,61 @@ async def create_from_bl(
     elif body.containers:
         type_details = {"containers": body.containers}
 
-    # Insert into shipments table
+    # Insert into orders table
     conn.execute(text("""
-        INSERT INTO shipments (
-            id, countid, company_id, order_type, transaction_type, incoterm_code,
-            status, issued_invoice, status_history,
-            origin_port, origin_terminal, dest_port, dest_terminal,
-            cargo, type_details, booking, parties, bl_document,
-            exception_data, route_nodes, trash,
-            cargo_ready_date, creator,
-            hawb_number, mawb_number, awb_type,
-            migrated_from_v1, created_at, updated_at
+        INSERT INTO orders (
+            order_id, order_type, countid, company_id,
+            status, sub_status, issued_invoice,
+            cargo, parties, scope,
+            trash, created_by, created_at, updated_at,
+            migrated_from_v1, completed
         ) VALUES (
-            :id, :countid, :company_id, :order_type, :transaction_type, :incoterm_code,
-            :status, FALSE, CAST(:status_history AS jsonb),
-            :origin_port, :origin_terminal, :dest_port, :dest_terminal,
-            CAST(:cargo AS jsonb), CAST(:type_details AS jsonb), CAST(:booking AS jsonb), CAST(:parties AS jsonb), NULL,
-            NULL, NULL, FALSE,
-            NULL, CAST(:creator AS jsonb),
-            :hawb_number, :mawb_number, :awb_type,
-            FALSE, :now, :now
+            :id, 'shipment', :countid, :company_id,
+            :status, NULL, FALSE,
+            CAST(:cargo AS jsonb), CAST(:parties AS jsonb), NULL,
+            FALSE, CAST(:creator AS jsonb), :now, :now,
+            FALSE, FALSE
         )
     """), {
         "id": shipment_id,
         "countid": new_countid,
         "company_id": body.company_id or "",
-        "order_type": body.order_type,
-        "transaction_type": body.transaction_type,
-        "incoterm_code": body.incoterm_code,
         "status": body.initial_status,
         "now": now,
-        "status_history": json.dumps(initial_history),
+        "cargo": json.dumps(cargo),
+        "parties": json.dumps(parties),
+        "creator": json.dumps(creator),
+    })
+
+    # Insert into shipment_details table
+    conn.execute(text("""
+        INSERT INTO shipment_details (
+            order_id, incoterm_code, transaction_type, order_type_detail,
+            origin_port, origin_terminal, dest_port, dest_terminal,
+            type_details, booking, bl_document,
+            exception_data, route_nodes, status_history,
+            hawb_number, mawb_number, awb_type,
+            cargo_ready_date
+        ) VALUES (
+            :id, :incoterm_code, :transaction_type, :order_type_detail,
+            :origin_port, :origin_terminal, :dest_port, :dest_terminal,
+            CAST(:type_details AS jsonb), CAST(:booking AS jsonb), NULL,
+            NULL, NULL, CAST(:status_history AS jsonb),
+            :hawb_number, :mawb_number, :awb_type,
+            NULL
+        )
+    """), {
+        "id": shipment_id,
+        "incoterm_code": body.incoterm_code,
+        "transaction_type": body.transaction_type,
+        "order_type_detail": body.order_type,
         "origin_port": body.origin_port_un_code or "",
         "origin_terminal": body.origin_terminal_id,
         "dest_port": body.destination_port_un_code or "",
         "dest_terminal": body.destination_terminal_id,
-        "cargo": json.dumps(cargo),
         "type_details": json.dumps(type_details) if type_details else None,
         "booking": json.dumps(booking),
-        "parties": json.dumps(parties),
-        "creator": json.dumps(creator),
+        "status_history": json.dumps(initial_history),
         "hawb_number": body.hawb_number,
         "mawb_number": body.mawb_number,
         "awb_type": body.awb_type,
@@ -498,14 +513,14 @@ async def create_from_bl(
     # Insert into shipment_workflows table
     conn.execute(text("""
         INSERT INTO shipment_workflows (
-            shipment_id, company_id, status_history, workflow_tasks,
+            order_id, company_id, status_history, workflow_tasks,
             completed, created_at, updated_at
         ) VALUES (
-            :shipment_id, :company_id, CAST(:status_history AS jsonb), CAST(:workflow_tasks AS jsonb),
+            :order_id, :company_id, CAST(:status_history AS jsonb), CAST(:workflow_tasks AS jsonb),
             FALSE, :now, :now
         )
     """), {
-        "shipment_id": shipment_id,
+        "order_id": shipment_id,
         "company_id": body.company_id or "",
         "status_history": json.dumps(wf_history),
         "workflow_tasks": json.dumps(tasks),
@@ -569,11 +584,13 @@ async def update_from_bl(
 
     now = datetime.now(timezone.utc).isoformat()
 
-    # Load shipment
+    # Load shipment (join orders + shipment_details)
     row = conn.execute(text("""
-        SELECT id, company_id, booking, parties, bl_document, type_details, trash,
-               incoterm_code, transaction_type, cargo
-        FROM shipments WHERE id = :id
+        SELECT o.order_id, o.company_id, sd.booking, o.parties, sd.bl_document, sd.type_details, o.trash,
+               sd.incoterm_code, sd.transaction_type, o.cargo
+        FROM orders o
+        JOIN shipment_details sd ON sd.order_id = o.order_id
+        WHERE o.order_id = :id
     """), {"id": shipment_id}).fetchone()
 
     if not row:
@@ -758,14 +775,16 @@ async def update_from_bl(
     if dest_terminal is not None:
         flat_updates["dest_terminal"] = dest_terminal or None
 
-    # Build UPDATE statement
-    set_clauses = [
-        "booking = CAST(:booking AS jsonb)",
+    # Build UPDATE statements — orders fields vs shipment_details fields
+    orders_clauses = [
         "parties = CAST(:parties AS jsonb)",
-        "bl_document = CAST(:bl_document AS jsonb)",
-        "type_details = CAST(:type_details AS jsonb)",
         "cargo = CAST(:cargo AS jsonb)",
         "updated_at = :now",
+    ]
+    sd_clauses = [
+        "booking = CAST(:booking AS jsonb)",
+        "bl_document = CAST(:bl_document AS jsonb)",
+        "type_details = CAST(:type_details AS jsonb)",
     ]
     params: dict = {
         "booking": json.dumps(booking),
@@ -778,26 +797,29 @@ async def update_from_bl(
     }
 
     if "origin_port" in flat_updates:
-        set_clauses.append("origin_port = :origin_port")
+        sd_clauses.append("origin_port = :origin_port")
         params["origin_port"] = flat_updates["origin_port"]
     if "dest_port" in flat_updates:
-        set_clauses.append("dest_port = :dest_port")
+        sd_clauses.append("dest_port = :dest_port")
         params["dest_port"] = flat_updates["dest_port"]
     if "origin_terminal" in flat_updates:
-        set_clauses.append("origin_terminal = :origin_terminal")
+        sd_clauses.append("origin_terminal = :origin_terminal")
         params["origin_terminal"] = flat_updates["origin_terminal"]
     if "dest_terminal" in flat_updates:
-        set_clauses.append("dest_terminal = :dest_terminal")
+        sd_clauses.append("dest_terminal = :dest_terminal")
         params["dest_terminal"] = flat_updates["dest_terminal"]
 
     # Unblock export clearance if waybill set
     if waybill_number:
         _maybe_unblock_export_clearance_pg(conn, shipment_id, claims.uid)
 
-    logger.info("[bl_update] Writing to shipments %s", shipment_id)
+    logger.info("[bl_update] Writing to orders + shipment_details %s", shipment_id)
     try:
         conn.execute(text(f"""
-            UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
+            UPDATE orders SET {', '.join(orders_clauses)} WHERE order_id = :id
+        """), params)
+        conn.execute(text(f"""
+            UPDATE shipment_details SET {', '.join(sd_clauses)} WHERE order_id = :id
         """), params)
     except Exception as e:
         logger.error("[bl_update] Failed to write shipment %s: %s", shipment_id, str(e))
@@ -807,7 +829,7 @@ async def update_from_bl(
     incoterm_code = row[7]   # incoterm_code
     txn_type = row[8]        # transaction_type
     new_status = _resolve_document_status(incoterm_code, txn_type, etd)
-    conn.execute(text("UPDATE shipments SET status = :status WHERE id = :id"),
+    conn.execute(text("UPDATE orders SET status = :status WHERE order_id = :id"),
                  {"status": new_status, "id": shipment_id})
     logger.info("[bl_update] Status auto-advanced to %s for %s", new_status, shipment_id)
     new_status = _check_atd_advancement_pg(
@@ -817,7 +839,7 @@ async def update_from_bl(
     # Sync ETD to TRACKED POL task (on_board_date on BL = vessel sailed → actual_end)
     if etd:
         wf_row = conn.execute(text("""
-            SELECT workflow_tasks FROM shipment_workflows WHERE shipment_id = :id
+            SELECT workflow_tasks FROM shipment_workflows WHERE order_id = :id
         """), {"id": shipment_id}).fetchone()
         if wf_row:
             wf_tasks = _parse_jsonb(wf_row[0]) or []
@@ -835,7 +857,7 @@ async def update_from_bl(
                 conn.execute(text("""
                     UPDATE shipment_workflows
                     SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
-                    WHERE shipment_id = :id
+                    WHERE order_id = :id
                 """), {"tasks": json.dumps(wf_tasks), "now": now, "id": shipment_id})
 
     # Sync route node timings — BL SOB date = actual departure (ATD)
@@ -918,7 +940,7 @@ async def update_parties(
     now = datetime.now(timezone.utc).isoformat()
 
     row = conn.execute(text("""
-        SELECT parties FROM shipments WHERE id = :id
+        SELECT parties FROM orders WHERE order_id = :id
     """), {"id": shipment_id}).fetchone()
 
     if not row:
@@ -972,7 +994,7 @@ async def update_parties(
             parties["notify_party"] = notify_party
 
     conn.execute(text("""
-        UPDATE shipments SET parties = CAST(:parties AS jsonb), updated_at = :now WHERE id = :id
+        UPDATE orders SET parties = CAST(:parties AS jsonb), updated_at = :now WHERE order_id = :id
     """), {"parties": json.dumps(parties), "now": now, "id": shipment_id})
 
     _log_system_action_pg(conn, "PARTIES_UPDATED", shipment_id, claims.uid, claims.email)
@@ -1006,7 +1028,7 @@ async def clear_parsed_diff(
         raise HTTPException(status_code=400, detail="party must be 'shipper', 'consignee', or 'all'")
 
     row = conn.execute(text("""
-        SELECT bl_document FROM shipments WHERE id = :id
+        SELECT bl_document FROM shipment_details WHERE order_id = :id
     """), {"id": shipment_id}).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Shipment not found")
@@ -1022,7 +1044,10 @@ async def clear_parsed_diff(
 
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(text("""
-        UPDATE shipments SET bl_document = CAST(:bl_document AS jsonb), updated_at = :now WHERE id = :id
-    """), {"bl_document": json.dumps(bl_doc) if bl_doc else None, "now": now, "id": shipment_id})
+        UPDATE shipment_details SET bl_document = CAST(:bl_document AS jsonb) WHERE order_id = :id
+    """), {"bl_document": json.dumps(bl_doc) if bl_doc else None, "id": shipment_id})
+    conn.execute(text("""
+        UPDATE orders SET updated_at = :now WHERE order_id = :id
+    """), {"now": now, "id": shipment_id})
 
     return {"status": "OK"}

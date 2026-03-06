@@ -6,15 +6,15 @@ import { createGroundTransportOrderAction } from '@/app/actions/ground-transport
 import type { GroundTransportCreatePayload, VehicleType } from '@/app/actions/ground-transport';
 import { AddressInput } from './AddressInput';
 import type { AddressValue } from './AddressInput';
-import type { City, HaulageArea } from '@/lib/types';
+import type { City, Area } from '@/lib/types';
 
 interface CreateGroundTransportModalProps {
   onClose: () => void;
   onCreated?: () => void;
   cities: City[];
-  haulageAreas: HaulageArea[];
+  areas: Area[];
   vehicleTypes: VehicleType[];
-  prefillParentShipmentId?: string;
+  prefillParentOrderId?: string;
   prefillLegType?: 'first_mile' | 'last_mile';
 }
 
@@ -27,7 +27,7 @@ type LegType = 'first_mile' | 'last_mile' | 'standalone' | 'distribution';
 const emptyAddress: AddressValue = {
   address_line: null,
   city_id: null,
-  haulage_area_id: null,
+  area_id: null,
   lat: null,
   lng: null,
 };
@@ -36,9 +36,9 @@ export default function CreateGroundTransportModal({
   onClose,
   onCreated,
   cities,
-  haulageAreas,
+  areas,
   vehicleTypes,
-  prefillParentShipmentId,
+  prefillParentOrderId,
   prefillLegType,
 }: CreateGroundTransportModalProps) {
   const [step, setStep] = useState(1);
@@ -49,7 +49,7 @@ export default function CreateGroundTransportModal({
   const [transportType, setTransportType] = useState<TransportType>('trucking');
   const [vehicleTypeId, setVehicleTypeId] = useState('');
   const [legType, setLegType] = useState<LegType>(prefillLegType ?? 'standalone');
-  const [parentShipmentId, setParentShipmentId] = useState(prefillParentShipmentId ?? '');
+  const [parentOrderId, setParentOrderId] = useState(prefillParentOrderId ?? '');
   const [detentionMode, setDetentionMode] = useState<'direct' | 'detained'>('direct');
 
   // Step 2
@@ -58,8 +58,7 @@ export default function CreateGroundTransportModal({
   const [containerNumbers, setContainerNumbers] = useState<string[]>([]);
   const [weightKg, setWeightKg] = useState('');
   const [volumeCbm, setVolumeCbm] = useState('');
-  const [equipmentType, setEquipmentType] = useState('');
-  const [equipmentNumber, setEquipmentNumber] = useState('');
+  // Equipment fields moved to legs — no longer on order level
 
   // Step 3
   const [origin, setOrigin] = useState<AddressValue>({ ...emptyAddress });
@@ -79,32 +78,33 @@ export default function CreateGroundTransportModal({
     setError(null);
 
     const payload: GroundTransportCreatePayload = {
-      transport_type: transportType,
+      transport_mode: transportType,
       leg_type: legType,
-      parent_shipment_id: (legType === 'first_mile' || legType === 'last_mile') && parentShipmentId ? parentShipmentId : null,
+      parent_order_id: (legType === 'first_mile' || legType === 'last_mile') && parentOrderId ? parentOrderId : null,
       cargo_description: cargoDescription || null,
       container_numbers: containerNumbers,
       weight_kg: weightKg ? parseFloat(weightKg) : null,
       volume_cbm: volumeCbm ? parseFloat(volumeCbm) : null,
-      equipment_type: transportType === 'haulage' && equipmentType ? equipmentType : null,
-      equipment_number: transportType === 'haulage' && equipmentNumber ? equipmentNumber : null,
-      vehicle_type_id: transportType === 'trucking' ? (vehicleTypeId || null) : null,
       detention_mode: transportType === 'haulage' ? detentionMode : null,
-      legs: [
+      stops: [
         {
-          leg_sequence: 1,
-          leg_type: 'delivery',
-          origin_city_id: origin.city_id,
-          origin_haulage_area_id: origin.haulage_area_id,
-          origin_address_line: origin.address_line,
-          origin_lat: origin.lat,
-          origin_lng: origin.lng,
-          dest_city_id: destination.city_id,
-          dest_haulage_area_id: destination.haulage_area_id,
-          dest_address_line: destination.address_line,
-          dest_lat: destination.lat,
-          dest_lng: destination.lng,
-          scheduled_date: scheduledDate || null,
+          sequence: 1,
+          stop_type: 'pickup',
+          address_line: origin.address_line,
+          area_id: origin.area_id,
+          city_id: origin.city_id,
+          lat: origin.lat,
+          lng: origin.lng,
+          scheduled_arrival: scheduledDate || null,
+        },
+        {
+          sequence: 2,
+          stop_type: 'dropoff',
+          address_line: destination.address_line,
+          area_id: destination.area_id,
+          city_id: destination.city_id,
+          lat: destination.lat,
+          lng: destination.lng,
         },
       ],
     };
@@ -117,7 +117,7 @@ export default function CreateGroundTransportModal({
         return;
       }
       if (result.success) {
-        window.open(`/ground-transport/${result.data.transport_order_id}`, '_blank');
+        window.open(`/ground-transport/${result.data.order_id}`, '_blank');
         onCreated?.();
         onClose();
       } else {
@@ -201,12 +201,12 @@ export default function CreateGroundTransportModal({
               {(legType === 'first_mile' || legType === 'last_mile') && (
                 <div>
                   <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">
-                    Parent Shipment ID
+                    Parent Order ID
                   </label>
                   <input
                     type="text"
-                    value={parentShipmentId}
-                    onChange={(e) => setParentShipmentId(e.target.value)}
+                    value={parentOrderId}
+                    onChange={(e) => setParentOrderId(e.target.value)}
                     placeholder="AF-XXXXXX"
                     className={`${inputCls} mt-1`}
                   />
@@ -334,34 +334,6 @@ export default function CreateGroundTransportModal({
                 </div>
               </div>
 
-              {transportType === 'haulage' && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">
-                      Equipment Type
-                    </label>
-                    <input
-                      type="text"
-                      value={equipmentType}
-                      onChange={(e) => setEquipmentType(e.target.value)}
-                      className={`${inputCls} mt-1`}
-                      placeholder="e.g. 20' GP container"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">
-                      Equipment Number
-                    </label>
-                    <input
-                      type="text"
-                      value={equipmentNumber}
-                      onChange={(e) => setEquipmentNumber(e.target.value)}
-                      className={`${inputCls} mt-1`}
-                      placeholder="Container/chassis #"
-                    />
-                  </div>
-                </div>
-              )}
             </>
           )}
 
@@ -372,14 +344,14 @@ export default function CreateGroundTransportModal({
                 label="Origin"
                 value={origin}
                 onChange={setOrigin}
-                haulageAreas={haulageAreas}
+                areas={areas}
                 cities={cities}
               />
               <AddressInput
                 label="Destination"
                 value={destination}
                 onChange={setDestination}
-                haulageAreas={haulageAreas}
+                areas={areas}
                 cities={cities}
               />
               <div>
@@ -428,10 +400,6 @@ export default function CreateGroundTransportModal({
                   if (step === 2) {
                     if (transportType === 'trucking' && !vehicleTypeId) {
                       setError('Please select a vehicle type.');
-                      return;
-                    }
-                    if (transportType === 'haulage' && !equipmentType.trim()) {
-                      setError('Please enter an equipment type.');
                       return;
                     }
                   }

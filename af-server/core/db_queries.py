@@ -2,6 +2,7 @@
 core/db_queries.py — Shared SQL query helpers.
 
 All queries use SQLAlchemy text() — no ORM.
+Unified orders architecture: queries JOIN orders + shipment_details.
 """
 
 import json
@@ -11,26 +12,26 @@ from core.constants import STATUS_LABELS
 
 def get_shipment_stats(conn, company_id: str | None = None) -> dict:
     """Single SQL aggregation query for dashboard KPI cards and tab badges."""
-    where = "WHERE s.trash = FALSE"
+    where = "WHERE o.trash = FALSE AND o.order_type = 'shipment'"
     params = {}
     if company_id:
-        where += " AND s.company_id = :company_id"
+        where += " AND o.company_id = :company_id"
         params["company_id"] = company_id
 
     row = conn.execute(text(f"""
         SELECT
             COUNT(*) FILTER (WHERE
-                s.status IN (2001, 3001, 3002, 4001, 4002) AND s.completed = FALSE
+                o.status IN ('confirmed', 'in_progress') AND o.completed = FALSE
             ) AS active,
             COUNT(*) FILTER (WHERE
-                s.completed = TRUE OR s.status = 5001
+                o.completed = TRUE OR o.status = 'completed'
             ) AS completed,
             COUNT(*) FILTER (WHERE
-                (s.completed = TRUE OR s.status = 5001) AND s.issued_invoice = FALSE
+                (o.completed = TRUE OR o.status = 'completed') AND o.issued_invoice = FALSE
             ) AS to_invoice,
-            COUNT(*) FILTER (WHERE s.status IN (1001, 1002)) AS draft,
-            COUNT(*) FILTER (WHERE s.status = -1) AS cancelled
-        FROM shipments s
+            COUNT(*) FILTER (WHERE o.status = 'draft') AS draft,
+            COUNT(*) FILTER (WHERE o.status = 'cancelled') AS cancelled
+        FROM orders o
         {where}
     """), params).fetchone()
 
@@ -53,15 +54,15 @@ def get_shipment_stats(conn, company_id: str | None = None) -> dict:
 def _tab_where(tab: str) -> str:
     """Return the WHERE clause fragment for a tab filter."""
     if tab == "active":
-        return "s.status IN (2001, 3001, 3002, 4001, 4002) AND s.completed = FALSE"
+        return "o.status IN ('confirmed', 'in_progress') AND o.completed = FALSE"
     if tab == "completed":
-        return "(s.completed = TRUE OR s.status = 5001)"
+        return "(o.completed = TRUE OR o.status = 'completed')"
     if tab == "to_invoice":
-        return "((s.completed = TRUE OR s.status = 5001) AND s.issued_invoice = FALSE)"
+        return "((o.completed = TRUE OR o.status = 'completed') AND o.issued_invoice = FALSE)"
     if tab == "draft":
-        return "s.status IN (1001, 1002)"
+        return "o.status = 'draft'"
     if tab == "cancelled":
-        return "s.status = -1"
+        return "o.status = 'cancelled'"
     return "TRUE"  # all
 
 
@@ -69,31 +70,33 @@ def list_shipments(conn, tab: str, company_id: str | None, limit: int, offset: i
     """Paginated shipment list with company name JOIN. Returns (rows, total_count)."""
     tab_filter = _tab_where(tab)
 
-    where = f"s.trash = FALSE AND {tab_filter}"
+    where = f"o.trash = FALSE AND o.order_type = 'shipment' AND {tab_filter}"
     params: dict = {"limit": limit, "offset": offset}
     if company_id:
-        where += " AND s.company_id = :company_id"
+        where += " AND o.company_id = :company_id"
         params["company_id"] = company_id
 
     # Total count
     total = conn.execute(text(f"""
-        SELECT COUNT(*) FROM shipments s WHERE {where}
+        SELECT COUNT(*) FROM orders o WHERE {where}
     """), params).scalar() or 0
 
     # Paginated rows
     rows = conn.execute(text(f"""
-        SELECT s.id AS shipment_id, 2 AS data_version, s.migrated_from_v1,
-               s.status, s.order_type, s.transaction_type, s.incoterm_code AS incoterm,
-               s.origin_port, s.dest_port AS destination_port,
-               s.company_id, c.name AS company_name,
-               s.cargo_ready_date::text, s.updated_at::text AS updated,
-               s.issued_invoice,
-               s.origin_terminal, s.dest_terminal,
-               (s.cargo->>'is_dg')::boolean AS cargo_is_dg
-        FROM shipments s
-        LEFT JOIN companies c ON c.id = s.company_id
+        SELECT o.order_id, 2 AS data_version, o.migrated_from_v1,
+               o.status, o.sub_status,
+               sd.order_type_detail, sd.transaction_type, sd.incoterm_code AS incoterm,
+               sd.origin_port, sd.dest_port AS destination_port,
+               o.company_id, c.name AS company_name,
+               sd.cargo_ready_date::text, o.updated_at::text AS updated,
+               o.issued_invoice,
+               sd.origin_terminal, sd.dest_terminal,
+               (o.cargo->>'is_dg')::boolean AS cargo_is_dg
+        FROM orders o
+        JOIN shipment_details sd ON sd.order_id = o.order_id
+        LEFT JOIN companies c ON c.id = o.company_id
         WHERE {where}
-        ORDER BY s.countid DESC
+        ORDER BY o.countid DESC
         LIMIT :limit OFFSET :offset
     """), params).fetchall()
 
@@ -104,45 +107,48 @@ def list_shipments(conn, tab: str, company_id: str | None, limit: int, offset: i
             "data_version": r[1],
             "migrated_from_v1": r[2] or False,
             "status": r[3],
-            "order_type": r[4] or "",
-            "transaction_type": r[5] or "",
-            "incoterm": r[6] or "",
-            "origin_port": r[7] or "",
-            "destination_port": r[8] or "",
-            "company_id": r[9] or "",
-            "company_name": r[10] or "",
-            "cargo_ready_date": (r[11] or "")[:10] if r[11] else "",
-            "updated": (r[12] or "")[:10] if r[12] else "",
-            "issued_invoice": r[13] or False,
-            "origin_terminal": r[14] or None,
-            "dest_terminal": r[15] or None,
-            "cargo_is_dg": r[16] or False,
+            "sub_status": r[4],
+            "order_type": r[5] or "",
+            "transaction_type": r[6] or "",
+            "incoterm": r[7] or "",
+            "origin_port": r[8] or "",
+            "destination_port": r[9] or "",
+            "company_id": r[10] or "",
+            "company_name": r[11] or "",
+            "cargo_ready_date": (r[12] or "")[:10] if r[12] else "",
+            "updated": (r[13] or "")[:10] if r[13] else "",
+            "issued_invoice": r[14] or False,
+            "origin_terminal": r[15] or None,
+            "dest_terminal": r[16] or None,
+            "cargo_is_dg": r[17] or False,
         })
 
     return items, total
 
 
 def search_shipments(conn, q: str, company_id: str | None, limit: int, offset: int = 0) -> list[dict]:
-    """ILIKE search on id, company name, origin_port, dest_port."""
+    """ILIKE search on order_id, company name, origin_port, dest_port."""
     params: dict = {"q": f"%{q}%", "limit": limit, "offset": offset}
-    where = "s.trash = FALSE"
+    where = "o.trash = FALSE AND o.order_type = 'shipment'"
     if company_id:
-        where += " AND s.company_id = :company_id"
+        where += " AND o.company_id = :company_id"
         params["company_id"] = company_id
 
     rows = conn.execute(text(f"""
-        SELECT s.id AS shipment_id, 2 AS data_version, s.migrated_from_v1,
-               s.status, s.order_type, s.transaction_type, s.incoterm_code AS incoterm,
-               s.company_id, c.name AS company_name,
-               s.origin_port, s.dest_port AS destination_port,
-               s.cargo_ready_date::text, s.updated_at::text AS updated,
-               s.issued_invoice,
-               s.origin_terminal, s.dest_terminal
-        FROM shipments s
-        LEFT JOIN companies c ON c.id = s.company_id
+        SELECT o.order_id, 2 AS data_version, o.migrated_from_v1,
+               o.status, o.sub_status,
+               sd.order_type_detail, sd.transaction_type, sd.incoterm_code AS incoterm,
+               o.company_id, c.name AS company_name,
+               sd.origin_port, sd.dest_port AS destination_port,
+               sd.cargo_ready_date::text, o.updated_at::text AS updated,
+               o.issued_invoice,
+               sd.origin_terminal, sd.dest_terminal
+        FROM orders o
+        JOIN shipment_details sd ON sd.order_id = o.order_id
+        LEFT JOIN companies c ON c.id = o.company_id
         WHERE {where}
-          AND (s.id ILIKE :q OR c.name ILIKE :q OR s.origin_port ILIKE :q OR s.dest_port ILIKE :q)
-        ORDER BY s.countid DESC
+          AND (o.order_id ILIKE :q OR c.name ILIKE :q OR sd.origin_port ILIKE :q OR sd.dest_port ILIKE :q)
+        ORDER BY o.countid DESC
         LIMIT :limit OFFSET :offset
     """), params).fetchall()
 
@@ -153,19 +159,20 @@ def search_shipments(conn, q: str, company_id: str | None, limit: int, offset: i
             "data_version": r[1],
             "migrated_from_v1": r[2] or False,
             "status": r[3],
-            "status_label": STATUS_LABELS.get(r[3], str(r[3])),
-            "order_type": r[4] or "",
-            "transaction_type": r[5] or "",
-            "incoterm": r[6] or "",
-            "company_id": r[7] or "",
-            "company_name": r[8] or "",
-            "origin_port": r[9] or "",
-            "destination_port": r[10] or "",
-            "cargo_ready_date": (r[11] or "")[:10] if r[11] else "",
-            "updated": (r[12] or "")[:10] if r[12] else "",
-            "issued_invoice": r[13] or False,
-            "origin_terminal": r[14] or None,
-            "dest_terminal": r[15] or None,
+            "sub_status": r[4],
+            "status_label": STATUS_LABELS.get(r[3], r[3] or ""),
+            "order_type": r[5] or "",
+            "transaction_type": r[6] or "",
+            "incoterm": r[7] or "",
+            "company_id": r[8] or "",
+            "company_name": r[9] or "",
+            "origin_port": r[10] or "",
+            "destination_port": r[11] or "",
+            "cargo_ready_date": (r[12] or "")[:10] if r[12] else "",
+            "updated": (r[13] or "")[:10] if r[13] else "",
+            "issued_invoice": r[14] or False,
+            "origin_terminal": r[15] or None,
+            "dest_terminal": r[16] or None,
         })
 
     return items
@@ -186,12 +193,13 @@ def _parse_jsonb(val):
 
 
 def get_shipment_by_id(conn, shipment_id: str) -> dict | None:
-    """Full shipment row with company_name JOIN."""
+    """Full shipment row from orders + shipment_details with company_name JOIN."""
     row = conn.execute(text("""
-        SELECT s.*, c.name AS company_name
-        FROM shipments s
-        LEFT JOIN companies c ON c.id = s.company_id
-        WHERE s.id = :id
+        SELECT o.*, sd.*, c.name AS company_name
+        FROM orders o
+        JOIN shipment_details sd ON sd.order_id = o.order_id
+        LEFT JOIN companies c ON c.id = o.company_id
+        WHERE o.order_id = :id AND o.trash = FALSE
     """), {"id": shipment_id}).fetchone()
 
     if not row:
@@ -203,14 +211,19 @@ def get_shipment_by_id(conn, shipment_id: str) -> dict | None:
 
     # Parse JSONB columns
     for key in ("cargo", "booking", "parties", "bl_document", "type_details",
-                "exception_data", "route_nodes", "status_history", "creator", "scope"):
+                "exception_data", "route_nodes", "status_history", "scope"):
         data[key] = _parse_jsonb(data.get(key))
 
     # Rename for API compat
     data["exception"] = data.pop("exception_data", None)
-    data["quotation_id"] = data["id"]
+    data["quotation_id"] = data["order_id"]
+    data["shipment_id"] = data["order_id"]
+    data["id"] = data["order_id"]
     data["created"] = str(data.get("created_at") or "")
     data["updated"] = str(data.get("updated_at") or "")
+
+    # Map order_type_detail to order_type for compat
+    data["order_type_shipment"] = data.get("order_type_detail") or ""
 
     # Compat fields expected by platform
     data["data_version"] = 2
@@ -238,16 +251,16 @@ def next_shipment_id(conn) -> tuple[str, int]:
 
 
 def generate_transport_order_id(conn) -> str:
-    """Generate next GT-XXXXXX transport order ID."""
+    """Generate next AFDO-XXXXXX transport order ID."""
     row = conn.execute(text(
-        "SELECT transport_order_id FROM ground_transport_orders ORDER BY transport_order_id DESC LIMIT 1"
+        "SELECT order_id FROM orders WHERE order_type = 'transport' ORDER BY created_at DESC LIMIT 1"
     )).fetchone()
     if row:
-        last_num = int(row[0].replace('GT-', ''))
-        next_num = last_num + 1
+        raw = row[0].replace('AFDO-', '').replace('GT-', '')
+        next_num = int(raw) + 1
     else:
-        next_num = 1
-    return f"GT-{next_num:06d}"
+        next_num = 731
+    return f"AFDO-{next_num:06d}"
 
 
 def get_company_name(conn, company_id: str) -> str:

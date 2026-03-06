@@ -117,7 +117,7 @@ export type TypeDetails =
   | TypeDetailsCrossBorder;
 
 // ---------------------------------------------------------------------------
-// Geography — States, Cities, Haulage Areas
+// Geography — States, Cities, Areas
 // ---------------------------------------------------------------------------
 
 export interface State {
@@ -137,7 +137,7 @@ export interface City {
   is_active: boolean;
 }
 
-export interface HaulageArea {
+export interface Area {
   area_id: number;
   area_code: string;
   area_name: string;

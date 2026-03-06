@@ -47,8 +47,8 @@ async def list_shipment_files(
     conn=Depends(get_db),
 ):
     """List files for a shipment. AFC regular users only see visible files."""
-    where = "shipment_id = :shipment_id AND trash = FALSE"
-    params: dict = {"shipment_id": shipment_id}
+    where = "order_id = :order_id AND trash = FALSE"
+    params: dict = {"order_id": shipment_id}
 
     # AFC regular users: only visible files
     if claims.is_afc() and claims.role not in (AFC_ADMIN, AFC_M):
@@ -92,7 +92,7 @@ async def upload_shipment_file(
 
     # Read the shipment to get company_id
     row = conn.execute(text("""
-        SELECT company_id FROM shipments WHERE id = :id
+        SELECT company_id FROM orders WHERE order_id = :id
     """), {"id": shipment_id}).fetchone()
 
     if not row:
@@ -161,7 +161,7 @@ async def update_shipment_file(
     now = datetime.now(timezone.utc).isoformat()
 
     row = conn.execute(text("""
-        SELECT id, shipment_id FROM shipment_files WHERE id = :id
+        SELECT id, order_id FROM shipment_files WHERE id = :id
     """), {"id": file_id}).fetchone()
 
     if not row:
@@ -208,7 +208,7 @@ async def delete_shipment_file(
     now = datetime.now(timezone.utc).isoformat()
 
     row = conn.execute(text("""
-        SELECT id, shipment_id FROM shipment_files WHERE id = :id
+        SELECT id, order_id FROM shipment_files WHERE id = :id
     """), {"id": file_id}).fetchone()
 
     if not row:
@@ -237,7 +237,7 @@ async def download_shipment_file(
 ):
     """Generate a signed GCS URL for file download."""
     row = conn.execute(text("""
-        SELECT id, shipment_id, visibility, file_location FROM shipment_files WHERE id = :id
+        SELECT id, order_id, visibility, file_location FROM shipment_files WHERE id = :id
     """), {"id": file_id}).fetchone()
 
     if not row:

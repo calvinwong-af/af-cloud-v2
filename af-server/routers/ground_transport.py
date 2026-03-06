@@ -1,5 +1,8 @@
 """
 routers/ground_transport.py — Ground Transport CRUD endpoints.
+
+Unified orders architecture: transport orders use orders + order_stops + order_legs.
+Stops are the source of truth; legs are auto-derived between consecutive stops.
 """
 
 import json
@@ -27,78 +30,72 @@ router = APIRouter()
 # Pydantic models
 # ---------------------------------------------------------------------------
 
-class LegCreate(BaseModel):
-    leg_sequence: int
-    leg_type: Literal["delivery", "pickup", "transfer", "return"]
-    origin_city_id: Optional[int] = None
-    origin_haulage_area_id: Optional[int] = None
-    origin_address_line: Optional[str] = None
-    origin_lat: Optional[float] = None
-    origin_lng: Optional[float] = None
-    dest_city_id: Optional[int] = None
-    dest_haulage_area_id: Optional[int] = None
-    dest_address_line: Optional[str] = None
-    dest_lat: Optional[float] = None
-    dest_lng: Optional[float] = None
-    scheduled_date: Optional[date] = None
+class StopCreate(BaseModel):
+    sequence: int
+    stop_type: Literal["pickup", "dropoff", "waypoint"]
+    address_line: Optional[str] = None
+    area_id: Optional[int] = None
+    city_id: Optional[int] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    scheduled_arrival: Optional[date] = None
+    notes: Optional[str] = None
+
+
+class StopUpdate(BaseModel):
+    stop_type: Optional[Literal["pickup", "dropoff", "waypoint"]] = None
+    address_line: Optional[str] = None
+    area_id: Optional[int] = None
+    city_id: Optional[int] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    scheduled_arrival: Optional[date] = None
+    actual_arrival: Optional[date] = None
     notes: Optional[str] = None
 
 
 class GroundTransportCreate(BaseModel):
-    transport_type: Literal["haulage", "trucking"]
+    transport_mode: Literal["haulage", "trucking"]
     leg_type: Literal["first_mile", "last_mile", "standalone", "distribution"]
-    parent_shipment_id: Optional[str] = None
+    parent_order_id: Optional[str] = None
     vendor_id: Optional[str] = None
     cargo_description: Optional[str] = None
     container_numbers: List[str] = []
     weight_kg: Optional[float] = None
     volume_cbm: Optional[float] = None
-    driver_name: Optional[str] = None
-    driver_contact: Optional[str] = None
-    vehicle_plate: Optional[str] = None
+    vehicle_type_id: Optional[str] = None
     equipment_type: Optional[str] = None
     equipment_number: Optional[str] = None
     detention_mode: Optional[Literal["direct", "detained"]] = None
     detention_free_days: Optional[int] = None
-    container_yard_id: Optional[int] = None
     notes: Optional[str] = None
-    vehicle_type_id: Optional[str] = None
-    legs: List[LegCreate] = []
+    stops: List[StopCreate] = []
 
 
 class GroundTransportUpdate(BaseModel):
     status: Optional[Literal["draft", "confirmed", "dispatched", "in_transit", "detained", "completed", "cancelled"]] = None
+    sub_status: Optional[str] = None
     vendor_id: Optional[str] = None
     cargo_description: Optional[str] = None
     container_numbers: Optional[List[str]] = None
     weight_kg: Optional[float] = None
     volume_cbm: Optional[float] = None
-    driver_name: Optional[str] = None
-    driver_contact: Optional[str] = None
-    vehicle_plate: Optional[str] = None
+    vehicle_type_id: Optional[str] = None
     equipment_type: Optional[str] = None
     equipment_number: Optional[str] = None
     detention_mode: Optional[Literal["direct", "detained"]] = None
     detention_free_days: Optional[int] = None
-    container_yard_id: Optional[int] = None
     notes: Optional[str] = None
-    vehicle_type_id: Optional[str] = None
 
 
 class LegUpdate(BaseModel):
-    scheduled_date: Optional[date] = None
-    actual_date: Optional[date] = None
+    driver_name: Optional[str] = None
+    driver_contact: Optional[str] = None
+    vehicle_plate: Optional[str] = None
+    vehicle_type_id: Optional[str] = None
+    equipment_type: Optional[str] = None
+    equipment_number: Optional[str] = None
     status: Optional[Literal["pending", "in_transit", "completed"]] = None
-    origin_city_id: Optional[int] = None
-    origin_haulage_area_id: Optional[int] = None
-    origin_address_line: Optional[str] = None
-    origin_lat: Optional[float] = None
-    origin_lng: Optional[float] = None
-    dest_city_id: Optional[int] = None
-    dest_haulage_area_id: Optional[int] = None
-    dest_address_line: Optional[str] = None
-    dest_lat: Optional[float] = None
-    dest_lng: Optional[float] = None
     notes: Optional[str] = None
 
 
@@ -116,87 +113,128 @@ class ScopeUpdate(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _parse_cargo(val) -> dict:
+    """Parse cargo JSONB into a flat cargo dict."""
+    if val is None:
+        return {}
+    if isinstance(val, dict):
+        return val
+    if isinstance(val, str):
+        try:
+            return json.loads(val)
+        except (ValueError, TypeError):
+            return {}
+    return {}
+
+
 def _order_row_to_dict(row) -> dict:
-    """Convert a ground_transport_orders row to dict."""
+    """Convert an orders row (transport) to API dict."""
+    cols = row._mapping
+    data = dict(cols)
+    cargo = _parse_cargo(data.get("cargo"))
     return {
-        "transport_order_id": row[0],
-        "transport_type": row[1],
-        "leg_type": row[2],
-        "parent_shipment_id": row[3],
-        "vendor_id": row[4],
-        "status": row[5],
-        "cargo_description": row[6],
-        "container_numbers": row[7] if isinstance(row[7], list) else json.loads(row[7]) if isinstance(row[7], str) else [],
-        "weight_kg": float(row[8]) if row[8] is not None else None,
-        "volume_cbm": float(row[9]) if row[9] is not None else None,
-        "driver_name": row[10],
-        "driver_contact": row[11],
-        "vehicle_plate": row[12],
-        "equipment_type": row[13],
-        "equipment_number": row[14],
-        "detention_mode": row[15],
-        "detention_free_days": row[16],
-        "container_yard_id": row[17],
-        "notes": row[18],
-        "created_by": row[19],
-        "created_at": str(row[20]) if row[20] else None,
-        "updated_at": str(row[21]) if row[21] else None,
-        "vehicle_type_id": row[22] if len(row) > 22 else None,
+        "order_id": data["order_id"],
+        "transport_mode": data.get("transport_mode"),
+        "leg_type": data.get("leg_type"),
+        "parent_order_id": data.get("parent_order_id"),
+        "vendor_id": data.get("vendor_id"),
+        "status": data.get("status"),
+        "sub_status": data.get("sub_status"),
+        "cargo_description": cargo.get("description"),
+        "container_numbers": cargo.get("container_numbers", []),
+        "weight_kg": float(cargo["weight_kg"]) if cargo.get("weight_kg") is not None else None,
+        "volume_cbm": float(cargo["volume_cbm"]) if cargo.get("volume_cbm") is not None else None,
+        "detention_mode": data.get("detention_mode"),
+        "detention_free_days": data.get("detention_free_days"),
+        "notes": data.get("notes"),
+        "created_by": data.get("created_by"),
+        "created_at": str(data["created_at"]) if data.get("created_at") else None,
+        "updated_at": str(data["updated_at"]) if data.get("updated_at") else None,
     }
 
 
 _ORDER_SELECT = """
-    SELECT transport_order_id, transport_type, leg_type, parent_shipment_id,
-           vendor_id, status, cargo_description, container_numbers,
-           weight_kg, volume_cbm, driver_name, driver_contact,
-           vehicle_plate, equipment_type, equipment_number,
-           detention_mode, detention_free_days, container_yard_id,
-           notes, created_by, created_at, updated_at,
-           vehicle_type_id
-    FROM ground_transport_orders
+    SELECT order_id, transport_mode, leg_type, parent_order_id,
+           vendor_id, status, sub_status, cargo,
+           detention_mode, detention_free_days,
+           notes, created_by, created_at, updated_at
+    FROM orders
 """
 
 
-def _leg_row_to_dict(row) -> dict:
-    """Convert a ground_transport_legs row to dict."""
+def _stop_row_to_dict(row) -> dict:
+    """Convert an order_stops row to dict."""
+    cols = row._mapping
+    data = dict(cols)
     return {
-        "leg_id": row[0],
-        "transport_order_id": row[1],
-        "leg_sequence": row[2],
-        "leg_type": row[3],
-        "origin_city_id": row[4],
-        "origin_haulage_area_id": row[5],
-        "origin_address_line": row[6],
-        "origin_lat": float(row[7]) if row[7] is not None else None,
-        "origin_lng": float(row[8]) if row[8] is not None else None,
-        "dest_city_id": row[9],
-        "dest_haulage_area_id": row[10],
-        "dest_address_line": row[11],
-        "dest_lat": float(row[12]) if row[12] is not None else None,
-        "dest_lng": float(row[13]) if row[13] is not None else None,
-        "scheduled_date": str(row[14]) if row[14] else None,
-        "actual_date": str(row[15]) if row[15] else None,
-        "status": row[16],
-        "notes": row[17],
-        "created_at": str(row[18]) if row[18] else None,
-        "updated_at": str(row[19]) if row[19] else None,
+        "stop_id": data["stop_id"],
+        "order_id": data["order_id"],
+        "sequence": data["sequence"],
+        "stop_type": data["stop_type"],
+        "address_line": data.get("address_line"),
+        "area_id": data.get("area_id"),
+        "city_id": data.get("city_id"),
+        "lat": float(data["lat"]) if data.get("lat") is not None else None,
+        "lng": float(data["lng"]) if data.get("lng") is not None else None,
+        "scheduled_arrival": str(data["scheduled_arrival"]) if data.get("scheduled_arrival") else None,
+        "actual_arrival": str(data["actual_arrival"]) if data.get("actual_arrival") else None,
+        "notes": data.get("notes"),
     }
 
 
-_LEG_SELECT = """
-    SELECT leg_id, transport_order_id, leg_sequence, leg_type,
-           origin_city_id, origin_haulage_area_id, origin_address_line, origin_lat, origin_lng,
-           dest_city_id, dest_haulage_area_id, dest_address_line, dest_lat, dest_lng,
-           scheduled_date, actual_date, status, notes, created_at, updated_at
-    FROM ground_transport_legs
-"""
+def _leg_row_to_dict(row) -> dict:
+    """Convert an order_legs row to dict."""
+    cols = row._mapping
+    data = dict(cols)
+    return {
+        "leg_id": data["leg_id"],
+        "order_id": data["order_id"],
+        "from_stop_id": data["from_stop_id"],
+        "to_stop_id": data["to_stop_id"],
+        "sequence": data["sequence"],
+        "driver_name": data.get("driver_name"),
+        "driver_contact": data.get("driver_contact"),
+        "vehicle_plate": data.get("vehicle_plate"),
+        "vehicle_type_id": data.get("vehicle_type_id"),
+        "equipment_type": data.get("equipment_type"),
+        "equipment_number": data.get("equipment_number"),
+        "status": data.get("status"),
+        "notes": data.get("notes"),
+    }
 
 
-def _get_legs(conn, transport_order_id: str) -> list[dict]:
-    rows = conn.execute(text(f"""
-        {_LEG_SELECT} WHERE transport_order_id = :id ORDER BY leg_sequence
-    """), {"id": transport_order_id}).fetchall()
+def _get_stops(conn, order_id: str) -> list[dict]:
+    rows = conn.execute(text("""
+        SELECT * FROM order_stops WHERE order_id = :id ORDER BY sequence
+    """), {"id": order_id}).fetchall()
+    return [_stop_row_to_dict(r) for r in rows]
+
+
+def _get_legs(conn, order_id: str) -> list[dict]:
+    rows = conn.execute(text("""
+        SELECT * FROM order_legs WHERE order_id = :id ORDER BY sequence
+    """), {"id": order_id}).fetchall()
     return [_leg_row_to_dict(r) for r in rows]
+
+
+def _derive_legs(conn, order_id: str):
+    """Re-derive all legs from current stops for an order.
+    Deletes existing legs and recreates from stop pairs."""
+    conn.execute(text("DELETE FROM order_legs WHERE order_id = :id"), {"id": order_id})
+    stops = conn.execute(text("""
+        SELECT stop_id, sequence FROM order_stops
+        WHERE order_id = :id ORDER BY sequence
+    """), {"id": order_id}).fetchall()
+    for i in range(len(stops) - 1):
+        conn.execute(text("""
+            INSERT INTO order_legs (order_id, from_stop_id, to_stop_id, sequence, status)
+            VALUES (:order_id, :from_stop, :to_stop, :seq, 'pending')
+        """), {
+            "order_id": order_id,
+            "from_stop": stops[i][0],
+            "to_stop": stops[i + 1][0],
+            "seq": i + 1,
+        })
 
 
 # ---------------------------------------------------------------------------
@@ -239,89 +277,82 @@ async def create_ground_transport_order(
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
 ):
-    """Create a new ground transport order with optional legs."""
+    """Create a new ground transport order with stops. Legs are auto-derived."""
     order_id = generate_transport_order_id(conn)
     now = datetime.now(timezone.utc).isoformat()
 
+    # Build cargo JSONB
+    cargo = {
+        "description": body.cargo_description,
+        "container_numbers": body.container_numbers,
+        "weight_kg": body.weight_kg,
+        "volume_cbm": body.volume_cbm,
+    }
+
     conn.execute(text("""
-        INSERT INTO ground_transport_orders (
-            transport_order_id, transport_type, leg_type, parent_shipment_id,
-            vendor_id, status, cargo_description, container_numbers,
-            weight_kg, volume_cbm, driver_name, driver_contact,
-            vehicle_plate, equipment_type, equipment_number,
-            detention_mode, detention_free_days, container_yard_id,
-            notes, created_by, created_at, updated_at, vehicle_type_id
+        INSERT INTO orders (
+            order_id, order_type, transport_mode, status,
+            leg_type, parent_order_id, vendor_id,
+            cargo, detention_mode, detention_free_days, notes,
+            created_by, created_at, updated_at, trash
         ) VALUES (
-            :id, :transport_type, :leg_type, :parent_shipment_id,
-            :vendor_id, 'draft', :cargo_description, CAST(:container_numbers AS jsonb),
-            :weight_kg, :volume_cbm, :driver_name, :driver_contact,
-            :vehicle_plate, :equipment_type, :equipment_number,
-            :detention_mode, :detention_free_days, :container_yard_id,
-            :notes, :created_by, :now, :now, :vehicle_type_id
+            :id, 'transport', :transport_mode, 'draft',
+            :leg_type, :parent_order_id, :vendor_id,
+            CAST(:cargo AS jsonb), :detention_mode, :detention_free_days, :notes,
+            :created_by, :now, :now, FALSE
         )
     """), {
         "id": order_id,
-        "transport_type": body.transport_type,
+        "transport_mode": body.transport_mode,
         "leg_type": body.leg_type,
-        "parent_shipment_id": body.parent_shipment_id,
+        "parent_order_id": body.parent_order_id,
         "vendor_id": body.vendor_id,
-        "cargo_description": body.cargo_description,
-        "container_numbers": json.dumps(body.container_numbers),
-        "weight_kg": body.weight_kg,
-        "volume_cbm": body.volume_cbm,
-        "driver_name": body.driver_name,
-        "driver_contact": body.driver_contact,
-        "vehicle_plate": body.vehicle_plate,
-        "equipment_type": body.equipment_type,
-        "equipment_number": body.equipment_number,
+        "cargo": json.dumps(cargo),
         "detention_mode": body.detention_mode,
         "detention_free_days": body.detention_free_days,
-        "container_yard_id": body.container_yard_id,
         "notes": body.notes,
         "created_by": claims.email,
         "now": now,
-        "vehicle_type_id": body.vehicle_type_id,
     })
 
-    # Insert legs
-    for leg in body.legs:
+    # Insert stops
+    for stop in body.stops:
         conn.execute(text("""
-            INSERT INTO ground_transport_legs (
-                transport_order_id, leg_sequence, leg_type,
-                origin_city_id, origin_haulage_area_id, origin_address_line, origin_lat, origin_lng,
-                dest_city_id, dest_haulage_area_id, dest_address_line, dest_lat, dest_lng,
-                scheduled_date, notes, created_at, updated_at
+            INSERT INTO order_stops (
+                order_id, sequence, stop_type,
+                address_line, area_id, city_id, lat, lng,
+                scheduled_arrival, notes, created_at, updated_at
             ) VALUES (
-                :order_id, :leg_sequence, :leg_type,
-                :origin_city_id, :origin_haulage_area_id, :origin_address_line, :origin_lat, :origin_lng,
-                :dest_city_id, :dest_haulage_area_id, :dest_address_line, :dest_lat, :dest_lng,
-                :scheduled_date, :notes, :now, :now
+                :order_id, :sequence, :stop_type,
+                :address_line, :area_id, :city_id, :lat, :lng,
+                :scheduled_arrival, :notes, :now, :now
             )
         """), {
             "order_id": order_id,
-            "leg_sequence": leg.leg_sequence,
-            "leg_type": leg.leg_type,
-            "origin_city_id": leg.origin_city_id,
-            "origin_haulage_area_id": leg.origin_haulage_area_id,
-            "origin_address_line": leg.origin_address_line,
-            "origin_lat": leg.origin_lat,
-            "origin_lng": leg.origin_lng,
-            "dest_city_id": leg.dest_city_id,
-            "dest_haulage_area_id": leg.dest_haulage_area_id,
-            "dest_address_line": leg.dest_address_line,
-            "dest_lat": leg.dest_lat,
-            "dest_lng": leg.dest_lng,
-            "scheduled_date": str(leg.scheduled_date) if leg.scheduled_date else None,
-            "notes": leg.notes,
+            "sequence": stop.sequence,
+            "stop_type": stop.stop_type,
+            "address_line": stop.address_line,
+            "area_id": stop.area_id,
+            "city_id": stop.city_id,
+            "lat": stop.lat,
+            "lng": stop.lng,
+            "scheduled_arrival": str(stop.scheduled_arrival) if stop.scheduled_arrival else None,
+            "notes": stop.notes,
             "now": now,
         })
 
+    # Auto-derive legs from stops
+    _derive_legs(conn, order_id)
+
     # Fetch the created record
-    row = conn.execute(text(f"{_ORDER_SELECT} WHERE transport_order_id = :id"), {"id": order_id}).fetchone()
+    row = conn.execute(text(f"""
+        {_ORDER_SELECT} WHERE order_id = :id AND order_type = 'transport'
+    """), {"id": order_id}).fetchone()
     order = _order_row_to_dict(row)
+    order["stops"] = _get_stops(conn, order_id)
     order["legs"] = _get_legs(conn, order_id)
 
-    logger.info("Ground transport order %s created by %s", order_id, claims.email)
+    logger.info("Transport order %s created by %s", order_id, claims.email)
     return {"status": "OK", "data": order}
 
 
@@ -331,25 +362,31 @@ async def create_ground_transport_order(
 
 @router.get("")
 async def list_ground_transport_orders(
-    transport_type: Optional[Literal["haulage", "trucking"]] = Query(None),
+    transport_type: Optional[Literal["haulage", "trucking"]] = Query(None, alias="transport_type"),
+    transport_mode: Optional[Literal["haulage", "trucking"]] = Query(None),
     status: Optional[Literal["draft", "confirmed", "dispatched", "in_transit", "detained", "completed", "cancelled"]] = Query(None),
-    parent_shipment_id: Optional[str] = Query(None),
+    parent_shipment_id: Optional[str] = Query(None, alias="parent_shipment_id"),
+    parent_order_id: Optional[str] = Query(None),
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
 ):
     """List ground transport orders with optional filters."""
-    where = "1=1"
+    where = "order_type = 'transport'"
     params: dict = {}
 
-    if transport_type:
-        where += " AND transport_type = :transport_type"
-        params["transport_type"] = transport_type
+    # Support both old (transport_type) and new (transport_mode) param names
+    mode = transport_mode or transport_type
+    if mode:
+        where += " AND transport_mode = :transport_mode"
+        params["transport_mode"] = mode
     if status:
         where += " AND status = :status"
         params["status"] = status
-    if parent_shipment_id:
-        where += " AND parent_shipment_id = :parent_shipment_id"
-        params["parent_shipment_id"] = parent_shipment_id
+    # Support both old (parent_shipment_id) and new (parent_order_id) param names
+    parent = parent_order_id or parent_shipment_id
+    if parent:
+        where += " AND parent_order_id = :parent_order_id"
+        params["parent_order_id"] = parent
 
     rows = conn.execute(text(f"""
         {_ORDER_SELECT} WHERE {where} ORDER BY created_at DESC
@@ -359,32 +396,35 @@ async def list_ground_transport_orders(
 
 
 # ---------------------------------------------------------------------------
-# GET /{transport_order_id} — Get single order with legs
+# GET /{order_id} — Get single order with stops and legs
 # ---------------------------------------------------------------------------
 
-@router.get("/{transport_order_id}")
+@router.get("/{order_id}")
 async def get_ground_transport_order(
-    transport_order_id: str,
+    order_id: str,
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
 ):
-    """Get a single ground transport order with all legs."""
-    row = conn.execute(text(f"{_ORDER_SELECT} WHERE transport_order_id = :id"), {"id": transport_order_id}).fetchone()
+    """Get a single ground transport order with all stops and legs."""
+    row = conn.execute(text(f"""
+        {_ORDER_SELECT} WHERE order_id = :id AND order_type = 'transport'
+    """), {"id": order_id}).fetchone()
     if not row:
-        raise NotFoundError(f"Transport order {transport_order_id} not found")
+        raise NotFoundError(f"Transport order {order_id} not found")
 
     order = _order_row_to_dict(row)
-    order["legs"] = _get_legs(conn, transport_order_id)
+    order["stops"] = _get_stops(conn, order_id)
+    order["legs"] = _get_legs(conn, order_id)
     return {"status": "OK", "data": order}
 
 
 # ---------------------------------------------------------------------------
-# PATCH /{transport_order_id} — Update order
+# PATCH /{order_id} — Update order
 # ---------------------------------------------------------------------------
 
-@router.patch("/{transport_order_id}")
+@router.patch("/{order_id}")
 async def update_ground_transport_order(
-    transport_order_id: str,
+    order_id: str,
     body: GroundTransportUpdate,
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
@@ -394,169 +434,183 @@ async def update_ground_transport_order(
     if not sent:
         raise HTTPException(status_code=400, detail="No fields provided for update")
 
-    row = conn.execute(text("SELECT transport_order_id FROM ground_transport_orders WHERE transport_order_id = :id"),
-                       {"id": transport_order_id}).fetchone()
+    row = conn.execute(text(
+        "SELECT order_id FROM orders WHERE order_id = :id AND order_type = 'transport'"
+    ), {"id": order_id}).fetchone()
     if not row:
-        raise NotFoundError(f"Transport order {transport_order_id} not found")
+        raise NotFoundError(f"Transport order {order_id} not found")
 
     set_clauses = ["updated_at = :now"]
-    params: dict = {"now": datetime.now(timezone.utc).isoformat(), "id": transport_order_id}
+    params: dict = {"now": datetime.now(timezone.utc).isoformat(), "id": order_id}
 
-    field_col_map = {
+    # Direct column updates on orders table
+    direct_fields = {
         "status": "status",
+        "sub_status": "sub_status",
         "vendor_id": "vendor_id",
-        "cargo_description": "cargo_description",
-        "weight_kg": "weight_kg",
-        "volume_cbm": "volume_cbm",
-        "driver_name": "driver_name",
-        "driver_contact": "driver_contact",
-        "vehicle_plate": "vehicle_plate",
-        "equipment_type": "equipment_type",
-        "equipment_number": "equipment_number",
         "detention_mode": "detention_mode",
         "detention_free_days": "detention_free_days",
-        "container_yard_id": "container_yard_id",
         "notes": "notes",
-        "vehicle_type_id": "vehicle_type_id",
     }
-
-    for field, col in field_col_map.items():
+    for field, col in direct_fields.items():
         if field in sent:
             set_clauses.append(f"{col} = :{field}")
             params[field] = getattr(body, field)
 
-    if "container_numbers" in sent:
-        set_clauses.append("container_numbers = CAST(:container_numbers AS jsonb)")
-        params["container_numbers"] = json.dumps(body.container_numbers or [])
+    # Cargo JSONB — merge changes
+    cargo_fields = {"cargo_description", "container_numbers", "weight_kg", "volume_cbm",
+                    "vehicle_type_id", "equipment_type", "equipment_number"}
+    if sent & cargo_fields:
+        cargo_row = conn.execute(text(
+            "SELECT cargo FROM orders WHERE order_id = :id"
+        ), {"id": order_id}).fetchone()
+        cargo = _parse_cargo(cargo_row[0]) if cargo_row else {}
+
+        if "cargo_description" in sent:
+            cargo["description"] = body.cargo_description
+        if "container_numbers" in sent:
+            cargo["container_numbers"] = body.container_numbers or []
+        if "weight_kg" in sent:
+            cargo["weight_kg"] = body.weight_kg
+        if "volume_cbm" in sent:
+            cargo["volume_cbm"] = body.volume_cbm
+        if "vehicle_type_id" in sent:
+            cargo["vehicle_type_id"] = body.vehicle_type_id
+        if "equipment_type" in sent:
+            cargo["equipment_type"] = body.equipment_type
+        if "equipment_number" in sent:
+            cargo["equipment_number"] = body.equipment_number
+
+        set_clauses.append("cargo = CAST(:cargo AS jsonb)")
+        params["cargo"] = json.dumps(cargo)
 
     conn.execute(text(f"""
-        UPDATE ground_transport_orders SET {', '.join(set_clauses)} WHERE transport_order_id = :id
+        UPDATE orders SET {', '.join(set_clauses)} WHERE order_id = :id
     """), params)
 
-    updated = conn.execute(text(f"{_ORDER_SELECT} WHERE transport_order_id = :id"), {"id": transport_order_id}).fetchone()
+    updated = conn.execute(text(f"""
+        {_ORDER_SELECT} WHERE order_id = :id AND order_type = 'transport'
+    """), {"id": order_id}).fetchone()
     order = _order_row_to_dict(updated)
-    order["legs"] = _get_legs(conn, transport_order_id)
+    order["stops"] = _get_stops(conn, order_id)
+    order["legs"] = _get_legs(conn, order_id)
 
     return {"status": "OK", "data": order}
 
 
 # ---------------------------------------------------------------------------
-# DELETE /{transport_order_id} — Soft cancel
+# DELETE /{order_id} — Soft cancel
 # ---------------------------------------------------------------------------
 
-@router.delete("/{transport_order_id}")
+@router.delete("/{order_id}")
 async def cancel_ground_transport_order(
-    transport_order_id: str,
+    order_id: str,
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
 ):
     """Soft cancel a ground transport order (sets status to cancelled)."""
-    row = conn.execute(text("SELECT transport_order_id FROM ground_transport_orders WHERE transport_order_id = :id"),
-                       {"id": transport_order_id}).fetchone()
+    row = conn.execute(text(
+        "SELECT order_id FROM orders WHERE order_id = :id AND order_type = 'transport'"
+    ), {"id": order_id}).fetchone()
     if not row:
-        raise NotFoundError(f"Transport order {transport_order_id} not found")
+        raise NotFoundError(f"Transport order {order_id} not found")
 
     conn.execute(text("""
-        UPDATE ground_transport_orders SET status = 'cancelled', updated_at = :now WHERE transport_order_id = :id
-    """), {"now": datetime.now(timezone.utc).isoformat(), "id": transport_order_id})
+        UPDATE orders SET status = 'cancelled', updated_at = :now WHERE order_id = :id
+    """), {"now": datetime.now(timezone.utc).isoformat(), "id": order_id})
 
-    updated = conn.execute(text(f"{_ORDER_SELECT} WHERE transport_order_id = :id"), {"id": transport_order_id}).fetchone()
+    updated = conn.execute(text(f"""
+        {_ORDER_SELECT} WHERE order_id = :id AND order_type = 'transport'
+    """), {"id": order_id}).fetchone()
     return {"status": "OK", "data": _order_row_to_dict(updated)}
 
 
 # ---------------------------------------------------------------------------
-# POST /{transport_order_id}/legs — Add a leg
+# POST /{order_id}/stops — Add a stop (and re-derive legs)
 # ---------------------------------------------------------------------------
 
-@router.post("/{transport_order_id}/legs")
-async def add_leg(
-    transport_order_id: str,
-    body: LegCreate,
+@router.post("/{order_id}/stops")
+async def add_stop(
+    order_id: str,
+    body: StopCreate,
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
 ):
-    """Add a leg to an existing ground transport order."""
-    row = conn.execute(text("SELECT transport_order_id FROM ground_transport_orders WHERE transport_order_id = :id"),
-                       {"id": transport_order_id}).fetchone()
+    """Add a stop to an existing transport order. Legs are auto-re-derived."""
+    row = conn.execute(text(
+        "SELECT order_id FROM orders WHERE order_id = :id AND order_type = 'transport'"
+    ), {"id": order_id}).fetchone()
     if not row:
-        raise NotFoundError(f"Transport order {transport_order_id} not found")
+        raise NotFoundError(f"Transport order {order_id} not found")
 
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(text("""
-        INSERT INTO ground_transport_legs (
-            transport_order_id, leg_sequence, leg_type,
-            origin_city_id, origin_haulage_area_id, origin_address_line, origin_lat, origin_lng,
-            dest_city_id, dest_haulage_area_id, dest_address_line, dest_lat, dest_lng,
-            scheduled_date, notes, created_at, updated_at
+        INSERT INTO order_stops (
+            order_id, sequence, stop_type,
+            address_line, area_id, city_id, lat, lng,
+            scheduled_arrival, notes, created_at, updated_at
         ) VALUES (
-            :order_id, :leg_sequence, :leg_type,
-            :origin_city_id, :origin_haulage_area_id, :origin_address_line, :origin_lat, :origin_lng,
-            :dest_city_id, :dest_haulage_area_id, :dest_address_line, :dest_lat, :dest_lng,
-            :scheduled_date, :notes, :now, :now
+            :order_id, :sequence, :stop_type,
+            :address_line, :area_id, :city_id, :lat, :lng,
+            :scheduled_arrival, :notes, :now, :now
         )
     """), {
-        "order_id": transport_order_id,
-        "leg_sequence": body.leg_sequence,
-        "leg_type": body.leg_type,
-        "origin_city_id": body.origin_city_id,
-        "origin_haulage_area_id": body.origin_haulage_area_id,
-        "origin_address_line": body.origin_address_line,
-        "origin_lat": body.origin_lat,
-        "origin_lng": body.origin_lng,
-        "dest_city_id": body.dest_city_id,
-        "dest_haulage_area_id": body.dest_haulage_area_id,
-        "dest_address_line": body.dest_address_line,
-        "dest_lat": body.dest_lat,
-        "dest_lng": body.dest_lng,
-        "scheduled_date": str(body.scheduled_date) if body.scheduled_date else None,
+        "order_id": order_id,
+        "sequence": body.sequence,
+        "stop_type": body.stop_type,
+        "address_line": body.address_line,
+        "area_id": body.area_id,
+        "city_id": body.city_id,
+        "lat": body.lat,
+        "lng": body.lng,
+        "scheduled_arrival": str(body.scheduled_arrival) if body.scheduled_arrival else None,
         "notes": body.notes,
         "now": now,
     })
 
-    legs = _get_legs(conn, transport_order_id)
-    return {"status": "OK", "data": legs}
+    # Re-derive legs
+    _derive_legs(conn, order_id)
+
+    stops = _get_stops(conn, order_id)
+    legs = _get_legs(conn, order_id)
+    return {"status": "OK", "data": {"stops": stops, "legs": legs}}
 
 
 # ---------------------------------------------------------------------------
-# PATCH /{transport_order_id}/legs/{leg_id} — Update a leg
+# PATCH /{order_id}/stops/{stop_id} — Update a stop
 # ---------------------------------------------------------------------------
 
-@router.patch("/{transport_order_id}/legs/{leg_id}")
-async def update_leg(
-    transport_order_id: str,
-    leg_id: int,
-    body: LegUpdate,
+@router.patch("/{order_id}/stops/{stop_id}")
+async def update_stop(
+    order_id: str,
+    stop_id: int,
+    body: StopUpdate,
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
 ):
-    """Partial update on a single leg."""
+    """Partial update on a single stop."""
     sent = body.__fields_set__
     if not sent:
         raise HTTPException(status_code=400, detail="No fields provided for update")
 
     row = conn.execute(text("""
-        SELECT leg_id FROM ground_transport_legs WHERE leg_id = :leg_id AND transport_order_id = :order_id
-    """), {"leg_id": leg_id, "order_id": transport_order_id}).fetchone()
+        SELECT stop_id FROM order_stops WHERE stop_id = :stop_id AND order_id = :order_id
+    """), {"stop_id": stop_id, "order_id": order_id}).fetchone()
     if not row:
-        raise NotFoundError(f"Leg {leg_id} not found on order {transport_order_id}")
+        raise NotFoundError(f"Stop {stop_id} not found on order {order_id}")
 
     set_clauses = ["updated_at = :now"]
-    params: dict = {"now": datetime.now(timezone.utc).isoformat(), "leg_id": leg_id}
+    params: dict = {"now": datetime.now(timezone.utc).isoformat(), "stop_id": stop_id}
 
     field_col_map = {
-        "scheduled_date": "scheduled_date",
-        "actual_date": "actual_date",
-        "status": "status",
-        "origin_city_id": "origin_city_id",
-        "origin_haulage_area_id": "origin_haulage_area_id",
-        "origin_address_line": "origin_address_line",
-        "origin_lat": "origin_lat",
-        "origin_lng": "origin_lng",
-        "dest_city_id": "dest_city_id",
-        "dest_haulage_area_id": "dest_haulage_area_id",
-        "dest_address_line": "dest_address_line",
-        "dest_lat": "dest_lat",
-        "dest_lng": "dest_lng",
+        "stop_type": "stop_type",
+        "address_line": "address_line",
+        "area_id": "area_id",
+        "city_id": "city_id",
+        "lat": "lat",
+        "lng": "lng",
+        "scheduled_arrival": "scheduled_arrival",
+        "actual_arrival": "actual_arrival",
         "notes": "notes",
     }
 
@@ -569,10 +623,61 @@ async def update_leg(
             params[field] = val
 
     conn.execute(text(f"""
-        UPDATE ground_transport_legs SET {', '.join(set_clauses)} WHERE leg_id = :leg_id
+        UPDATE order_stops SET {', '.join(set_clauses)} WHERE stop_id = :stop_id
     """), params)
 
-    legs = _get_legs(conn, transport_order_id)
+    stops = _get_stops(conn, order_id)
+    legs = _get_legs(conn, order_id)
+    return {"status": "OK", "data": {"stops": stops, "legs": legs}}
+
+
+# ---------------------------------------------------------------------------
+# PATCH /{order_id}/legs/{leg_id} — Update a leg
+# ---------------------------------------------------------------------------
+
+@router.patch("/{order_id}/legs/{leg_id}")
+async def update_leg(
+    order_id: str,
+    leg_id: int,
+    body: LegUpdate,
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    """Partial update on a single leg (driver, vehicle, status)."""
+    sent = body.__fields_set__
+    if not sent:
+        raise HTTPException(status_code=400, detail="No fields provided for update")
+
+    row = conn.execute(text("""
+        SELECT leg_id FROM order_legs WHERE leg_id = :leg_id AND order_id = :order_id
+    """), {"leg_id": leg_id, "order_id": order_id}).fetchone()
+    if not row:
+        raise NotFoundError(f"Leg {leg_id} not found on order {order_id}")
+
+    set_clauses = ["updated_at = :now"]
+    params: dict = {"now": datetime.now(timezone.utc).isoformat(), "leg_id": leg_id}
+
+    field_col_map = {
+        "driver_name": "driver_name",
+        "driver_contact": "driver_contact",
+        "vehicle_plate": "vehicle_plate",
+        "vehicle_type_id": "vehicle_type_id",
+        "equipment_type": "equipment_type",
+        "equipment_number": "equipment_number",
+        "status": "status",
+        "notes": "notes",
+    }
+
+    for field, col in field_col_map.items():
+        if field in sent:
+            set_clauses.append(f"{col} = :{field}")
+            params[field] = getattr(body, field)
+
+    conn.execute(text(f"""
+        UPDATE order_legs SET {', '.join(set_clauses)} WHERE leg_id = :leg_id
+    """), params)
+
+    legs = _get_legs(conn, order_id)
     return {"status": "OK", "data": legs}
 
 
@@ -580,7 +685,6 @@ async def update_leg(
 # GET /shipment/{shipment_id}/reconcile — Reconcile GT against shipment scope
 # ---------------------------------------------------------------------------
 
-# Mapping from scope flag key to leg_type value on ground_transport_orders
 _SCOPE_TO_LEG_TYPE = {
     "first_mile_haulage": "first_mile",
     "first_mile_trucking": "first_mile",
@@ -588,8 +692,7 @@ _SCOPE_TO_LEG_TYPE = {
     "last_mile_trucking": "last_mile",
 }
 
-# Mapping from scope flag key to transport_type
-_SCOPE_TO_TRANSPORT_TYPE = {
+_SCOPE_TO_TRANSPORT_MODE = {
     "first_mile_haulage": "haulage",
     "first_mile_trucking": "trucking",
     "last_mile_haulage": "haulage",
@@ -604,35 +707,39 @@ async def reconcile_shipment_ground_transport(
     conn=Depends(get_db),
 ):
     """Reconcile ground transport orders against a shipment's scope flags."""
-    row = conn.execute(text("SELECT scope FROM shipments WHERE id = :id AND trash = FALSE"),
-                       {"id": shipment_id}).fetchone()
+    row = conn.execute(text(
+        "SELECT scope FROM orders WHERE order_id = :id AND trash = FALSE"
+    ), {"id": shipment_id}).fetchone()
     if not row:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
     scope = row[0] if isinstance(row[0], dict) else json.loads(row[0]) if isinstance(row[0], str) else {}
 
-    # Fetch linked GT orders
+    # Fetch linked transport orders
     order_rows = conn.execute(text(f"""
-        {_ORDER_SELECT} WHERE parent_shipment_id = :id AND status != 'cancelled' ORDER BY created_at
+        {_ORDER_SELECT}
+        WHERE parent_order_id = :id AND order_type = 'transport' AND status != 'cancelled'
+        ORDER BY created_at
     """), {"id": shipment_id}).fetchall()
 
     orders = []
     for r in order_rows:
         o = _order_row_to_dict(r)
-        o["legs"] = _get_legs(conn, o["transport_order_id"])
+        o["stops"] = _get_stops(conn, o["order_id"])
+        o["legs"] = _get_legs(conn, o["order_id"])
         orders.append(o)
 
-    # Compute gaps: scope flags that are true but have no matching linked order
+    # Compute gaps
     gaps = []
     for flag_key, is_in_scope in scope.items():
         if not is_in_scope:
             continue
         expected_leg_type = _SCOPE_TO_LEG_TYPE.get(flag_key)
-        expected_transport_type = _SCOPE_TO_TRANSPORT_TYPE.get(flag_key)
+        expected_transport_mode = _SCOPE_TO_TRANSPORT_MODE.get(flag_key)
         if expected_leg_type is None:
             continue
         has_match = any(
-            o["leg_type"] == expected_leg_type and o["transport_type"] == expected_transport_type
+            o["leg_type"] == expected_leg_type and o["transport_mode"] == expected_transport_mode
             for o in orders
         )
         if not has_match:
@@ -657,8 +764,9 @@ async def update_shipment_scope(
     if not sent:
         raise HTTPException(status_code=400, detail="No fields provided for update")
 
-    row = conn.execute(text("SELECT scope FROM shipments WHERE id = :id AND trash = FALSE"),
-                       {"id": shipment_id}).fetchone()
+    row = conn.execute(text(
+        "SELECT scope FROM orders WHERE order_id = :id AND trash = FALSE"
+    ), {"id": shipment_id}).fetchone()
     if not row:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
@@ -668,7 +776,7 @@ async def update_shipment_scope(
         scope[field] = getattr(body, field)
 
     conn.execute(text("""
-        UPDATE shipments SET scope = CAST(:scope AS jsonb), updated_at = :now WHERE id = :id
+        UPDATE orders SET scope = CAST(:scope AS jsonb), updated_at = :now WHERE order_id = :id
     """), {"scope": json.dumps(scope), "now": datetime.now(timezone.utc).isoformat(), "id": shipment_id})
 
     return {"status": "OK", "data": scope}
@@ -818,7 +926,6 @@ async def geocode_address(
         result = data["results"][0]
         location = result.get("geometry", {}).get("location", {})
 
-        # Extract city, state, country from address components
         city = None
         state = None
         country = None

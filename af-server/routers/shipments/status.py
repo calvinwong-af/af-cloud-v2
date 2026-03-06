@@ -64,9 +64,10 @@ async def update_shipment_status(
 
     # --- a. Read shipment ---
     row = conn.execute(text("""
-        SELECT status, incoterm_code, transaction_type, status_history
-        FROM shipments
-        WHERE id = :id
+        SELECT o.status, sd.incoterm_code, sd.transaction_type, sd.status_history
+        FROM orders o
+        JOIN shipment_details sd ON sd.order_id = o.order_id
+        WHERE o.order_id = :id
     """), {"id": shipment_id}).fetchone()
 
     if not row:
@@ -139,23 +140,29 @@ async def update_shipment_status(
 
     new_q_history = list(q_history) + [q_history_entry]
 
-    # --- g. Write shipment ---
+    # --- g. Write status to orders + status_history to shipment_details ---
     conn.execute(text("""
-        UPDATE shipments
+        UPDATE orders
         SET status = :new_status,
-            updated_at = :now,
-            status_history = CAST(:history AS jsonb)
-        WHERE id = :id
+            updated_at = :now
+        WHERE order_id = :id
     """), {
         "new_status": new_status,
         "now": now,
+        "id": shipment_id,
+    })
+    conn.execute(text("""
+        UPDATE shipment_details
+        SET status_history = CAST(:history AS jsonb)
+        WHERE order_id = :id
+    """), {
         "history": json.dumps(new_q_history),
         "id": shipment_id,
     })
 
     # --- h. Append to shipment_workflows.status_history ---
     wf_row = conn.execute(text("""
-        SELECT status_history FROM shipment_workflows WHERE shipment_id = :id
+        SELECT status_history FROM shipment_workflows WHERE order_id = :id
     """), {"id": shipment_id}).fetchone()
 
     if wf_row:
@@ -175,7 +182,7 @@ async def update_shipment_status(
         conn.execute(text("""
             UPDATE shipment_workflows
             SET status_history = CAST(:history AS jsonb), updated_at = :now
-            WHERE shipment_id = :id
+            WHERE order_id = :id
         """), {"history": json.dumps(new_wf_history), "now": now, "id": shipment_id})
 
     logger.info(
@@ -214,7 +221,10 @@ async def update_completed_flag(
     now = datetime.now(timezone.utc).isoformat()
 
     row = conn.execute(text("""
-        SELECT status, status_history FROM shipments WHERE id = :id
+        SELECT o.status, sd.status_history
+        FROM orders o
+        JOIN shipment_details sd ON sd.order_id = o.order_id
+        WHERE o.order_id = :id
     """), {"id": shipment_id}).fetchone()
 
     if not row:
@@ -240,25 +250,28 @@ async def update_completed_flag(
     }
     new_q_history = list(q_history) + [history_entry]
 
-    # Write completed flag + history
+    # Write completed flag to orders, status_history to shipment_details
     if body.completed:
         conn.execute(text("""
-            UPDATE shipments
+            UPDATE orders
             SET completed = TRUE,
                 completed_at = :now,
-                status_history = CAST(:history AS jsonb),
                 updated_at = :now
-            WHERE id = :id
-        """), {"now": now, "history": json.dumps(new_q_history), "id": shipment_id})
+            WHERE order_id = :id
+        """), {"now": now, "id": shipment_id})
     else:
         conn.execute(text("""
-            UPDATE shipments
+            UPDATE orders
             SET completed = FALSE,
                 completed_at = NULL,
-                status_history = CAST(:history AS jsonb),
                 updated_at = :now
-            WHERE id = :id
-        """), {"now": now, "history": json.dumps(new_q_history), "id": shipment_id})
+            WHERE order_id = :id
+        """), {"now": now, "id": shipment_id})
+    conn.execute(text("""
+        UPDATE shipment_details
+        SET status_history = CAST(:history AS jsonb)
+        WHERE order_id = :id
+    """), {"history": json.dumps(new_q_history), "id": shipment_id})
 
     logger.info(
         "Completed flag %s on %s by %s",
@@ -293,7 +306,7 @@ async def update_invoiced_status(
     now = datetime.now(timezone.utc).isoformat()
 
     row = conn.execute(text("""
-        SELECT completed FROM shipments WHERE id = :id
+        SELECT completed FROM orders WHERE order_id = :id
     """), {"id": shipment_id}).fetchone()
 
     if not row:
@@ -303,7 +316,7 @@ async def update_invoiced_status(
         return {"status": "ERROR", "msg": "Invoiced flag can only be set on completed shipments"}
 
     conn.execute(text("""
-        UPDATE shipments SET issued_invoice = :issued_invoice, updated_at = :now WHERE id = :id
+        UPDATE orders SET issued_invoice = :issued_invoice, updated_at = :now WHERE order_id = :id
     """), {"issued_invoice": body.issued_invoice, "now": now, "id": shipment_id})
 
     logger.info("Invoiced %s on %s by %s", body.issued_invoice, shipment_id, claims.uid)
@@ -342,7 +355,9 @@ async def update_exception_flag(
 
     # Read the shipment record
     row = conn.execute(text("""
-        SELECT id, company_id FROM shipments WHERE id = :id
+        SELECT o.order_id, o.company_id
+        FROM orders o
+        WHERE o.order_id = :id
     """), {"id": shipment_id}).fetchone()
 
     if not row:
@@ -369,10 +384,13 @@ async def update_exception_flag(
         }
 
     conn.execute(text("""
-        UPDATE shipments
-        SET exception_data = CAST(:exception AS jsonb), updated_at = :now
-        WHERE id = :id
-    """), {"exception": json.dumps(exception_data), "now": now, "id": shipment_id})
+        UPDATE shipment_details
+        SET exception_data = CAST(:exception AS jsonb)
+        WHERE order_id = :id
+    """), {"exception": json.dumps(exception_data), "id": shipment_id})
+    conn.execute(text("""
+        UPDATE orders SET updated_at = :now WHERE order_id = :id
+    """), {"now": now, "id": shipment_id})
 
     logger.info(
         "Exception %s on %s by %s: %s",
@@ -419,14 +437,14 @@ async def assign_company(
 
     # Verify shipment exists
     shipment_row = conn.execute(text("""
-        SELECT id FROM shipments WHERE id = :id
+        SELECT order_id FROM orders WHERE order_id = :id
     """), {"id": shipment_id}).fetchone()
 
     if not shipment_row:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
     conn.execute(text("""
-        UPDATE shipments SET company_id = :company_id, updated_at = :now WHERE id = :id
+        UPDATE orders SET company_id = :company_id, updated_at = :now WHERE order_id = :id
     """), {"company_id": body.company_id, "now": now, "id": shipment_id})
 
     logger.info("Reassigned %s to company %s by %s", shipment_id, body.company_id, claims.uid)

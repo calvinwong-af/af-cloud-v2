@@ -70,29 +70,31 @@ async def apply_booking_confirmation(
 ):
     # Read current shipment (4a: include incoterm_code, transaction_type)
     row = conn.execute(text("""
-        SELECT id, booking, type_details, bl_document,
-               incoterm_code, transaction_type
-        FROM shipments WHERE id = :id
+        SELECT o.order_id, sd.booking, sd.type_details, sd.bl_document,
+               sd.incoterm_code, sd.transaction_type
+        FROM orders o
+        JOIN shipment_details sd ON sd.order_id = o.order_id
+        WHERE o.order_id = :id
     """), {"id": shipment_id}).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Shipment not found")
 
     now = datetime.now(timezone.utc).isoformat()
 
-    # Build SET clauses (status computed separately after UPDATE)
-    set_clauses = ["updated_at = :now"]
+    # Build SET clauses — shipment_details fields
+    sd_clauses: list[str] = []
     params: dict = {"id": shipment_id, "now": now}
 
     if body.booking_reference is not None:
-        set_clauses.append("booking_reference = :booking_reference")
+        sd_clauses.append("booking_reference = :booking_reference")
         params["booking_reference"] = body.booking_reference
 
     if body.pol_code:
-        set_clauses.append("origin_port = :origin_port")
+        sd_clauses.append("origin_port = :origin_port")
         params["origin_port"] = body.pol_code
 
     if body.pod_code:
-        set_clauses.append("dest_port = :dest_port")
+        sd_clauses.append("dest_port = :dest_port")
         params["dest_port"] = body.pod_code
 
     # Merge into booking JSONB
@@ -104,7 +106,7 @@ async def apply_booking_confirmation(
         booking["voyage_number"] = body.voyage_number
     if body.carrier is not None:
         booking["carrier"] = body.carrier
-    set_clauses.append("booking = CAST(:booking AS jsonb)")
+    sd_clauses.append("booking = CAST(:booking AS jsonb)")
     params["booking"] = json.dumps(booking)
 
     # Merge containers into type_details
@@ -116,7 +118,7 @@ async def apply_booking_confirmation(
             {"container_size": c.get("size") or c.get("container_size"), "quantity": c.get("quantity", 1)}
             for c in body.containers
         ] if body.containers else []
-        set_clauses.append("type_details = CAST(:type_details AS jsonb)")
+        sd_clauses.append("type_details = CAST(:type_details AS jsonb)")
         params["type_details"] = json.dumps(type_details)
 
     # Write parsed shipper to bl_document if present (BC may have shipper/booking_party)
@@ -127,16 +129,20 @@ async def apply_booking_confirmation(
             "name": body.shipper_name,
             "address": None,
         }
-        set_clauses.append("bl_document = CAST(:bl_document AS jsonb)")
+        sd_clauses.append("bl_document = CAST(:bl_document AS jsonb)")
         params["bl_document"] = json.dumps(bl_doc)
 
-    conn.execute(text(f"""
-        UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
+    if sd_clauses:
+        conn.execute(text(f"""
+            UPDATE shipment_details SET {', '.join(sd_clauses)} WHERE order_id = :id
+        """), params)
+    conn.execute(text("""
+        UPDATE orders SET updated_at = :now WHERE order_id = :id
     """), params)
 
     # Sync ETD/ETA to TRACKED POL/POD workflow tasks (fill-blanks only)
     wf_row = conn.execute(text("""
-        SELECT workflow_tasks FROM shipment_workflows WHERE shipment_id = :id
+        SELECT workflow_tasks FROM shipment_workflows WHERE order_id = :id
     """), {"id": shipment_id}).fetchone()
     if wf_row:
         tasks = _parse_jsonb(wf_row[0]) or []
@@ -167,7 +173,7 @@ async def apply_booking_confirmation(
             conn.execute(text("""
                 UPDATE shipment_workflows
                 SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
-                WHERE shipment_id = :id
+                WHERE order_id = :id
             """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
 
     # Sync route node timings — BC provides ETD POL, ETA POD, ETA POL (fallback)
@@ -180,7 +186,7 @@ async def apply_booking_confirmation(
 
     # 4b: Compute status from incoterm logic (not hard-coded)
     new_status = _resolve_document_status(row[4], row[5], body.etd)
-    conn.execute(text("UPDATE shipments SET status = :status WHERE id = :id"),
+    conn.execute(text("UPDATE orders SET status = :status WHERE order_id = :id"),
                  {"status": new_status, "id": shipment_id})
     # No ATD check for BC — vessel has not departed by definition
 
@@ -221,36 +227,39 @@ async def apply_awb(
 ):
     # Read current shipment
     row = conn.execute(text("""
-        SELECT id, booking, parties, type_details, cargo,
-               incoterm_code, transaction_type, bl_document
-        FROM shipments WHERE id = :id
+        SELECT o.order_id, sd.booking, o.parties, sd.type_details, o.cargo,
+               sd.incoterm_code, sd.transaction_type, sd.bl_document
+        FROM orders o
+        JOIN shipment_details sd ON sd.order_id = o.order_id
+        WHERE o.order_id = :id
     """), {"id": shipment_id}).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Shipment not found")
 
     now = datetime.now(timezone.utc).isoformat()
 
-    set_clauses = ["updated_at = :now"]
+    sd_clauses: list[str] = []
+    orders_clauses = ["updated_at = :now"]
     params: dict = {"id": shipment_id, "now": now}
 
     if body.origin_iata:
-        set_clauses.append("origin_port = :origin_port")
+        sd_clauses.append("origin_port = :origin_port")
         params["origin_port"] = body.origin_iata
 
     if body.dest_iata:
-        set_clauses.append("dest_port = :dest_port")
+        sd_clauses.append("dest_port = :dest_port")
         params["dest_port"] = body.dest_iata
 
     if body.hawb_number is not None:
-        set_clauses.append("hawb_number = :hawb_number")
+        sd_clauses.append("hawb_number = :hawb_number")
         params["hawb_number"] = body.hawb_number
 
     if body.mawb_number is not None:
-        set_clauses.append("mawb_number = :mawb_number")
+        sd_clauses.append("mawb_number = :mawb_number")
         params["mawb_number"] = body.mawb_number
 
     if body.awb_type is not None:
-        set_clauses.append("awb_type = :awb_type")
+        sd_clauses.append("awb_type = :awb_type")
         params["awb_type"] = body.awb_type
 
     # Merge flight info into booking JSONB
@@ -260,10 +269,10 @@ async def apply_awb(
         booking["flight_number"] = body.flight_number
     if body.flight_date is not None:
         booking["flight_date"] = body.flight_date
-    set_clauses.append("booking = CAST(:booking AS jsonb)")
+    sd_clauses.append("booking = CAST(:booking AS jsonb)")
     params["booking"] = json.dumps(booking)
 
-    # Merge parties
+    # Merge parties (on orders)
     parties = _parse_jsonb(row[2]) or {}
     if not isinstance(parties, dict): parties = {}
     if body.shipper_name is not None or body.shipper_address is not None:
@@ -284,7 +293,7 @@ async def apply_awb(
         notify = parties.get("notify_party") or {}
         notify["name"] = body.notify_party
         parties["notify_party"] = notify
-    set_clauses.append("parties = CAST(:parties AS jsonb)")
+    orders_clauses.append("parties = CAST(:parties AS jsonb)")
     params["parties"] = json.dumps(parties)
 
     # Merge cargo fields (pieces, weight, description, hs_code) into type_details + cargo JSONB
@@ -302,7 +311,7 @@ async def apply_awb(
             "gross_weight_kg": body.gross_weight_kg,
             "volume_cbm": None,
         }]
-    set_clauses.append("type_details = CAST(:type_details AS jsonb)")
+    sd_clauses.append("type_details = CAST(:type_details AS jsonb)")
     params["type_details"] = json.dumps(type_details)
 
     cargo = _parse_jsonb(row[4]) or {}
@@ -313,7 +322,7 @@ async def apply_awb(
         cargo["description"] = body.cargo_description
     if body.hs_code is not None:
         cargo["hs_code"] = body.hs_code
-    set_clauses.append("cargo = CAST(:cargo AS jsonb)")
+    orders_clauses.append("cargo = CAST(:cargo AS jsonb)")
     params["cargo"] = json.dumps(cargo)
 
     # Write parsed parties to bl_document (audit record of what the document contained)
@@ -329,18 +338,22 @@ async def apply_awb(
             "name": body.consignee_name,
             "address": body.consignee_address,
         }
-    set_clauses.append("bl_document = CAST(:bl_document AS jsonb)")
+    sd_clauses.append("bl_document = CAST(:bl_document AS jsonb)")
     params["bl_document"] = json.dumps(bl_doc) if bl_doc else None
 
     conn.execute(text(f"""
-        UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
+        UPDATE orders SET {', '.join(orders_clauses)} WHERE order_id = :id
     """), params)
+    if sd_clauses:
+        conn.execute(text(f"""
+            UPDATE shipment_details SET {', '.join(sd_clauses)} WHERE order_id = :id
+        """), params)
 
     # Sync flight_date to TRACKED POL task actual_end (AWB = already-flown document)
     # Also seed scheduled_end if blank
     if body.flight_date:
         wf_row = conn.execute(text("""
-            SELECT workflow_tasks FROM shipment_workflows WHERE shipment_id = :id
+            SELECT workflow_tasks FROM shipment_workflows WHERE order_id = :id
         """), {"id": shipment_id}).fetchone()
         if wf_row:
             tasks = _parse_jsonb(wf_row[0]) or []
@@ -356,7 +369,7 @@ async def apply_awb(
                 conn.execute(text("""
                     UPDATE shipment_workflows
                     SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
-                    WHERE shipment_id = :id
+                    WHERE order_id = :id
                 """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
 
     # Sync route node timings — AWB is post-flight, actual only
@@ -371,7 +384,7 @@ async def apply_awb(
     incoterm_code = row[5]   # incoterm_code
     txn_type = row[6]        # transaction_type
     new_status = _resolve_document_status(incoterm_code, txn_type, body.flight_date)
-    conn.execute(text("UPDATE shipments SET status = :status WHERE id = :id"),
+    conn.execute(text("UPDATE orders SET status = :status WHERE order_id = :id"),
                  {"status": new_status, "id": shipment_id})
     new_status = _check_atd_advancement_pg(
         conn, shipment_id, new_status, claims.email, "Auto-advanced from ATD (AWB apply)"
@@ -417,7 +430,7 @@ async def save_document_file(
 
     # Read company_id
     row = conn.execute(
-        text("SELECT company_id FROM shipments WHERE id = :id"),
+        text("SELECT company_id FROM orders WHERE order_id = :id"),
         {"id": shipment_id},
     ).fetchone()
     if not row:

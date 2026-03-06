@@ -100,22 +100,23 @@ async def search_shipments(
     else:
         # ID-only search
         params: dict = {"q": f"%{q}%", "limit": limit, "offset": offset}
-        where = "s.trash = FALSE"
+        where = "o.trash = FALSE"
         if effective_company_id:
-            where += " AND s.company_id = :company_id"
+            where += " AND o.company_id = :company_id"
             params["company_id"] = effective_company_id
 
         rows = conn.execute(text(f"""
-            SELECT s.id AS shipment_id, 2 AS data_version, s.migrated_from_v1,
-                   s.status, s.order_type, s.transaction_type, s.incoterm_code AS incoterm,
-                   s.origin_port, s.dest_port AS destination_port,
-                   s.company_id, c.name AS company_name,
-                   s.cargo_ready_date::text, s.updated_at::text AS updated
-            FROM shipments s
-            LEFT JOIN companies c ON c.id = s.company_id
+            SELECT o.order_id AS shipment_id, 2 AS data_version, o.migrated_from_v1,
+                   o.status, sd.order_type_detail, sd.transaction_type, sd.incoterm_code AS incoterm,
+                   sd.origin_port, sd.dest_port AS destination_port,
+                   o.company_id, c.name AS company_name,
+                   sd.cargo_ready_date::text, o.updated_at::text AS updated
+            FROM orders o
+            JOIN shipment_details sd ON sd.order_id = o.order_id
+            LEFT JOIN companies c ON c.id = o.company_id
             WHERE {where}
-              AND s.id ILIKE :q
-            ORDER BY s.updated_at DESC
+              AND o.order_id ILIKE :q
+            ORDER BY o.updated_at DESC
             LIMIT :limit OFFSET :offset
         """), params).fetchall()
 
@@ -242,7 +243,7 @@ async def get_status_history(
     row = conn.execute(text("""
         SELECT sw.status_history, sw.company_id
         FROM shipment_workflows sw
-        WHERE sw.shipment_id = :id
+        WHERE sw.order_id = :id
     """), {"id": shipment_id}).fetchone()
 
     if not row:
@@ -275,7 +276,7 @@ def _lazy_init_tasks_pg(conn, shipment_id: str, shipment_data: dict) -> list[dic
     row = conn.execute(text("""
         SELECT workflow_tasks
         FROM shipment_workflows
-        WHERE shipment_id = :id
+        WHERE order_id = :id
     """), {"id": shipment_id}).fetchone()
 
     if not row:
@@ -319,7 +320,7 @@ def _lazy_init_tasks_pg(conn, shipment_id: str, shipment_data: dict) -> list[dic
         conn.execute(text("""
             UPDATE shipment_workflows
             SET workflow_tasks = cast(:tasks as jsonb), updated_at = :now
-            WHERE shipment_id = :id
+            WHERE order_id = :id
         """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
 
     return tasks
@@ -513,43 +514,56 @@ async def create_shipment_manual(
     # 10. Creator
     creator = {"uid": claims.uid, "email": claims.email}
 
-    # 11. INSERT into shipments
+    # 11a. INSERT into orders
     conn.execute(text("""
-        INSERT INTO shipments (
-            id, countid, company_id, order_type, transaction_type, incoterm_code,
-            status, issued_invoice, status_history,
-            origin_port, origin_terminal, dest_port, dest_terminal,
-            cargo, type_details, parties, bl_document,
-            exception_data, route_nodes, trash,
-            cargo_ready_date, creator,
-            migrated_from_v1, created_at, updated_at
+        INSERT INTO orders (
+            order_id, order_type, countid, company_id,
+            status, sub_status, issued_invoice,
+            cargo, parties, scope,
+            trash, created_by, created_at, updated_at,
+            migrated_from_v1, completed
         ) VALUES (
-            :id, :countid, :company_id, :order_type, :transaction_type, :incoterm_code,
-            :status, FALSE, CAST(:status_history AS jsonb),
-            :origin_port, :origin_terminal, :dest_port, :dest_terminal,
-            CAST(:cargo AS jsonb), CAST(:type_details AS jsonb), CAST(:parties AS jsonb), NULL,
-            NULL, NULL, FALSE,
-            :cargo_ready_date, CAST(:creator AS jsonb),
-            FALSE, :now, :now
+            :id, 'shipment', :countid, :company_id,
+            :status, NULL, FALSE,
+            CAST(:cargo AS jsonb), CAST(:parties AS jsonb), NULL,
+            FALSE, CAST(:creator AS jsonb), :now, :now,
+            FALSE, FALSE
         )
     """), {
         "id": shipment_id,
         "countid": new_countid,
         "company_id": body.company_id,
-        "order_type": body.order_type,
-        "transaction_type": body.transaction_type,
-        "incoterm_code": body.incoterm_code,
         "status": status,
         "now": now,
-        "status_history": json.dumps(initial_history),
+        "cargo": json.dumps(cargo),
+        "parties": json.dumps(parties),
+        "creator": json.dumps(creator),
+    })
+
+    # 11b. INSERT into shipment_details
+    conn.execute(text("""
+        INSERT INTO shipment_details (
+            order_id, incoterm_code, transaction_type, order_type_detail,
+            origin_port, origin_terminal, dest_port, dest_terminal,
+            type_details, bl_document, exception_data, route_nodes,
+            status_history, cargo_ready_date
+        ) VALUES (
+            :id, :incoterm_code, :transaction_type, :order_type_detail,
+            :origin_port, :origin_terminal, :dest_port, :dest_terminal,
+            CAST(:type_details AS jsonb), NULL, NULL, NULL,
+            CAST(:status_history AS jsonb), :cargo_ready_date
+        )
+    """), {
+        "id": shipment_id,
+        "incoterm_code": body.incoterm_code,
+        "transaction_type": body.transaction_type,
+        "order_type_detail": body.order_type,
         "origin_port": body.origin_port_un_code,
         "origin_terminal": body.origin_terminal_id,
         "dest_port": body.destination_port_un_code,
         "dest_terminal": body.destination_terminal_id,
-        "cargo": json.dumps(cargo),
         "type_details": json.dumps(type_details),
-        "parties": json.dumps(parties),
-        "creator": json.dumps(creator),
+        "status_history": json.dumps(initial_history),
         "cargo_ready_date": body.cargo_ready_date,
     })
 
@@ -588,14 +602,14 @@ async def create_shipment_manual(
     # 14. INSERT into shipment_workflows
     conn.execute(text("""
         INSERT INTO shipment_workflows (
-            shipment_id, company_id, status_history, workflow_tasks,
+            order_id, company_id, status_history, workflow_tasks,
             completed, created_at, updated_at
         ) VALUES (
-            :shipment_id, :company_id, CAST(:status_history AS jsonb), CAST(:workflow_tasks AS jsonb),
+            :order_id, :company_id, CAST(:status_history AS jsonb), CAST(:workflow_tasks AS jsonb),
             FALSE, :now, :now
         )
     """), {
-        "shipment_id": shipment_id,
+        "order_id": shipment_id,
         "company_id": body.company_id,
         "status_history": json.dumps(wf_history),
         "workflow_tasks": json.dumps(tasks),
@@ -633,7 +647,7 @@ async def update_shipment_cargo(
 ):
     """Update is_dg and dg_description on the shipment cargo JSON."""
     row = conn.execute(
-        text("SELECT cargo FROM shipments WHERE id = :id AND trash = FALSE"),
+        text("SELECT cargo FROM orders WHERE order_id = :id AND trash = FALSE"),
         {"id": shipment_id},
     ).fetchone()
     if not row:
@@ -647,7 +661,7 @@ async def update_shipment_cargo(
         cargo.pop("dg_description", None)
 
     conn.execute(
-        text("UPDATE shipments SET cargo = :cargo, updated_at = NOW() WHERE id = :id"),
+        text("UPDATE orders SET cargo = :cargo, updated_at = NOW() WHERE order_id = :id"),
         {"cargo": json.dumps(cargo), "id": shipment_id},
     )
     conn.commit()
@@ -686,7 +700,12 @@ async def update_shipment_port(
     port_code = body.port_un_code.strip().upper()
 
     row = conn.execute(
-        text("SELECT id, route_nodes FROM shipments WHERE id = :id AND trash = FALSE"),
+        text("""
+            SELECT o.order_id, sd.route_nodes
+            FROM orders o
+            JOIN shipment_details sd ON sd.order_id = o.order_id
+            WHERE o.order_id = :id AND o.trash = FALSE
+        """),
         {"id": shipment_id},
     ).fetchone()
     if not row:
@@ -700,8 +719,12 @@ async def update_shipment_port(
     terminal_val = body.terminal_id.strip() if body.terminal_id else None
 
     conn.execute(
-        text(f"UPDATE shipments SET {col} = :port, {terminal_col} = :terminal, updated_at = :now WHERE id = :id"),
-        {"port": port_code, "terminal": terminal_val, "now": now, "id": shipment_id},
+        text(f"UPDATE shipment_details SET {col} = :port, {terminal_col} = :terminal WHERE order_id = :id"),
+        {"port": port_code, "terminal": terminal_val, "id": shipment_id},
+    )
+    conn.execute(
+        text("UPDATE orders SET updated_at = :now WHERE order_id = :id"),
+        {"now": now, "id": shipment_id},
     )
 
     # Also update the corresponding route node if present
@@ -715,7 +738,7 @@ async def update_shipment_port(
                 changed = True
         if changed:
             conn.execute(
-                text("UPDATE shipments SET route_nodes = CAST(:rn AS jsonb) WHERE id = :id"),
+                text("UPDATE shipment_details SET route_nodes = CAST(:rn AS jsonb) WHERE order_id = :id"),
                 {"rn": json.dumps(nodes), "id": shipment_id},
             )
 
@@ -740,20 +763,23 @@ async def update_incoterm(
 ):
     """Update incoterm on a shipment. AFU only."""
     row = conn.execute(text("""
-        SELECT id FROM shipments WHERE id = :id
+        SELECT order_id FROM orders WHERE order_id = :id
     """), {"id": shipment_id}).fetchone()
 
     if not row:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
+    now = datetime.now(timezone.utc).isoformat()
     conn.execute(text("""
-        UPDATE shipments SET incoterm_code = :incoterm_code, updated_at = :now
-        WHERE id = :id
+        UPDATE shipment_details SET incoterm_code = :incoterm_code
+        WHERE order_id = :id
     """), {
         "incoterm_code": body.incoterm_code,
-        "now": datetime.now(timezone.utc).isoformat(),
         "id": shipment_id,
     })
+    conn.execute(text("""
+        UPDATE orders SET updated_at = :now WHERE order_id = :id
+    """), {"now": now, "id": shipment_id})
 
     _log_system_action_pg(conn, "INCOTERM_UPDATED", shipment_id, claims.uid, claims.email)
     return {"status": "OK", "msg": "Incoterm updated"}
@@ -792,7 +818,9 @@ async def update_booking(
     """Update booking / transport fields on a shipment. AFU only."""
     # 1. Fetch shipment
     row = conn.execute(text("""
-        SELECT id, booking FROM shipments WHERE id = :id AND trash = FALSE
+        SELECT sd.order_id, sd.booking FROM shipment_details sd
+        JOIN orders o ON o.order_id = sd.order_id
+        WHERE sd.order_id = :id AND o.trash = FALSE
     """), {"id": shipment_id}).fetchone()
     if not row:
         raise NotFoundError(f"Shipment {shipment_id} not found")
@@ -823,11 +851,11 @@ async def update_booking(
             else:
                 booking[key] = val
         conn.execute(text("""
-            UPDATE shipments SET booking = CAST(:booking AS jsonb), updated_at = :now
-            WHERE id = :id
-        """), {"booking": json.dumps(booking), "now": now, "id": shipment_id})
+            UPDATE shipment_details SET booking = CAST(:booking AS jsonb)
+            WHERE order_id = :id
+        """), {"booking": json.dumps(booking), "id": shipment_id})
 
-    # 3. Update air flat columns
+    # 3. Update air flat columns (on shipment_details)
     flat_col_map = {
         "mawb_number": "mawb_number",
         "hawb_number": "hawb_number",
@@ -841,11 +869,15 @@ async def update_booking(
 
     if flat_updates:
         set_clauses = [f"{col} = :{col}" for col in flat_updates]
-        set_clauses.append("updated_at = :now")
-        params = {**flat_updates, "now": now, "id": shipment_id}
+        params = {**flat_updates, "id": shipment_id}
         conn.execute(text(f"""
-            UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
+            UPDATE shipment_details SET {', '.join(set_clauses)} WHERE order_id = :id
         """), params)
+
+    # Update orders.updated_at
+    conn.execute(text("""
+        UPDATE orders SET updated_at = :now WHERE order_id = :id
+    """), {"now": now, "id": shipment_id})
 
     # 4. Log + commit
     _log_system_action_pg(conn, "BOOKING_UPDATED", shipment_id, claims.uid, claims.email)
@@ -870,7 +902,7 @@ async def delete_shipment(
     # Hard delete is permanent — restricted to AFU-Admin via endpoint auth above
 
     # Verify shipment exists
-    row = conn.execute(text("SELECT id, trash FROM shipments WHERE id = :id"), {"id": shipment_id}).fetchone()
+    row = conn.execute(text("SELECT order_id, trash FROM orders WHERE order_id = :id"), {"id": shipment_id}).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail=f"Shipment {shipment_id} not found")
 
@@ -879,9 +911,10 @@ async def delete_shipment(
     if hard:
         # Hard delete — log BEFORE deletion
         _log_system_action_pg(conn, "SHIPMENT_HARD_DELETED", shipment_id, claims.uid, claims.email)
-        conn.execute(text("DELETE FROM shipment_files WHERE shipment_id = :id"), {"id": shipment_id})
-        conn.execute(text("DELETE FROM shipment_workflows WHERE shipment_id = :id"), {"id": shipment_id})
-        conn.execute(text("DELETE FROM shipments WHERE id = :id"), {"id": shipment_id})
+        conn.execute(text("DELETE FROM shipment_files WHERE order_id = :id"), {"id": shipment_id})
+        conn.execute(text("DELETE FROM shipment_workflows WHERE order_id = :id"), {"id": shipment_id})
+        conn.execute(text("DELETE FROM shipment_details WHERE order_id = :id"), {"id": shipment_id})
+        conn.execute(text("DELETE FROM orders WHERE order_id = :id"), {"id": shipment_id})
         logger.info("Shipment %s hard-deleted by %s", shipment_id, claims.uid)
         return {"deleted": True, "shipment_id": shipment_id, "mode": "hard"}
     else:
@@ -890,7 +923,7 @@ async def delete_shipment(
             raise HTTPException(status_code=400, detail="Shipment already deleted")
 
         conn.execute(text("""
-            UPDATE shipments SET trash = TRUE, updated_at = :now WHERE id = :id
+            UPDATE orders SET trash = TRUE, updated_at = :now WHERE order_id = :id
         """), {"id": shipment_id, "now": now})
 
         _log_system_action_pg(conn, "SHIPMENT_SOFT_DELETED", shipment_id, claims.uid, claims.email)

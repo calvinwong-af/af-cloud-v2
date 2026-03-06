@@ -121,6 +121,75 @@ STATUS_LABELS = {
 }
 
 # ---------------------------------------------------------------------------
+# String status labels (unified orders architecture)
+# ---------------------------------------------------------------------------
+# The unified orders table uses string status + sub_status instead of numeric codes.
+# STATUS_LABELS_STR maps (status, sub_status) display labels.
+
+STATUS_LABELS_STR = {
+    "draft": "Draft",
+    "confirmed": "Confirmed",
+    "in_progress": "In Progress",
+    "completed": "Completed",
+    "cancelled": "Cancelled",
+}
+
+SUB_STATUS_LABELS = {
+    "confirmed": "Confirmed",
+    "booking_pending": "Booking Pending",
+    "booking_confirmed": "Booking Confirmed",
+    "in_transit": "In Transit",
+    "arrived": "Arrived",
+    "dispatched": "Dispatched",
+    "detained": "Detained",
+}
+
+# Numeric → string status mapping (for V1 compat and migration)
+NUMERIC_TO_STRING_STATUS = {
+    1001: ("draft", None),
+    1002: ("draft", None),
+    2001: ("confirmed", "confirmed"),
+    3001: ("in_progress", "booking_pending"),
+    3002: ("in_progress", "booking_confirmed"),
+    4001: ("in_progress", "in_transit"),
+    4002: ("in_progress", "arrived"),
+    5001: ("completed", None),
+    -1:   ("cancelled", None),
+}
+
+# String → display label (for search results etc.)
+def get_status_display(status: str, sub_status: str | None = None) -> str:
+    """Get the display label for a string status + sub_status."""
+    if sub_status and sub_status in SUB_STATUS_LABELS:
+        return SUB_STATUS_LABELS[sub_status]
+    return STATUS_LABELS_STR.get(status, status or "")
+
+# ---------------------------------------------------------------------------
+# String-based status paths (unified orders)
+# ---------------------------------------------------------------------------
+# Each step is (status, sub_status)
+STR_STATUS_PATH_A = [
+    ("draft", None),
+    ("confirmed", "confirmed"),
+    ("in_progress", "booking_pending"),
+    ("in_progress", "booking_confirmed"),
+    ("in_progress", "in_transit"),
+    ("in_progress", "arrived"),
+]
+
+STR_STATUS_PATH_B = [
+    ("draft", None),
+    ("confirmed", "confirmed"),
+    ("in_progress", "in_transit"),
+    ("in_progress", "arrived"),
+]
+
+
+def get_str_status_path_list(incoterm: str, transaction_type: str) -> list[tuple[str, str | None]]:
+    """Returns the ordered list of (status, sub_status) tuples for the shipment's path."""
+    return STR_STATUS_PATH_A if get_status_path(incoterm, transaction_type) == "A" else STR_STATUS_PATH_B
+
+# ---------------------------------------------------------------------------
 # Old → New status code mapping (for migration of existing records)
 # ---------------------------------------------------------------------------
 OLD_TO_NEW_STATUS = {

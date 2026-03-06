@@ -3,12 +3,12 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Loader2, X as XIcon } from 'lucide-react';
 import { fetchPlaceAutocompleteAction, fetchPlaceDetailsAction } from '@/app/actions/ground-transport';
-import type { City, HaulageArea } from '@/lib/types';
+import type { City, Area } from '@/lib/types';
 
 export interface AddressValue {
   address_line: string | null;
   city_id: number | null;
-  haulage_area_id: number | null;
+  area_id: number | null;
   lat: number | null;
   lng: number | null;
 }
@@ -17,7 +17,7 @@ interface AddressInputProps {
   label: string;
   value: AddressValue;
   onChange: (value: AddressValue) => void;
-  haulageAreas: HaulageArea[];
+  areas: Area[];
   cities: City[];
 }
 
@@ -32,7 +32,7 @@ const COUNTRY_NAMES: Record<string, string> = {
   IN: 'India', AE: 'UAE', BN: 'Brunei', CA: 'Canada',
 };
 
-export function AddressInput({ label, value, onChange, haulageAreas, cities }: AddressInputProps) {
+export function AddressInput({ label, value, onChange, areas, cities }: AddressInputProps) {
   const [mode, setMode] = useState<'address' | 'zone'>('address');
 
   // Address autocomplete state
@@ -59,27 +59,27 @@ export function AddressInput({ label, value, onChange, haulageAreas, cities }: A
   const uniqueCountryCodes = useMemo(() =>
     Array.from(
       new Set(
-        haulageAreas
+        areas
           .map(a => a.state_code?.split('-')[0])
           .filter(Boolean) as string[]
       )
     ).sort(),
-    [haulageAreas],
+    [areas],
   );
 
   // Filtered areas for zone combobox
   const filteredAreas = useMemo(() => {
     const countryFiltered = selectedCountry === 'ALL'
-      ? haulageAreas
-      : haulageAreas.filter(a => a.state_code?.startsWith(selectedCountry + '-') || a.state_code === selectedCountry);
+      ? areas
+      : areas.filter(a => a.state_code?.startsWith(selectedCountry + '-') || a.state_code === selectedCountry);
     return zoneQuery.trim()
       ? countryFiltered.filter(a => a.area_name.toLowerCase().includes(zoneQuery.toLowerCase()))
       : countryFiltered;
-  }, [haulageAreas, selectedCountry, zoneQuery]);
+  }, [areas, selectedCountry, zoneQuery]);
 
   // Group filtered areas
   const filteredByGroup = useMemo(() => {
-    const groups: Record<string, HaulageArea[]> = {};
+    const groups: Record<string, Area[]> = {};
     for (const a of filteredAreas) {
       let groupKey = 'Other';
       if (a.state_code) {
@@ -104,10 +104,10 @@ export function AddressInput({ label, value, onChange, haulageAreas, cities }: A
 
   // Selected area name for display
   const selectedAreaName = useMemo(() => {
-    if (!value.haulage_area_id) return '';
-    const area = haulageAreas.find(a => a.area_id === value.haulage_area_id);
+    if (!value.area_id) return '';
+    const area = areas.find(a => a.area_id === value.area_id);
     return area?.area_name ?? '';
-  }, [value.haulage_area_id, haulageAreas]);
+  }, [value.area_id, areas]);
 
   function handleAddressInput(text: string) {
     onChange({ ...value, address_line: text });
@@ -184,10 +184,10 @@ export function AddressInput({ label, value, onChange, haulageAreas, cities }: A
   }, []);
 
   function handleZoneChange(areaId: number) {
-    const area = haulageAreas.find((a) => a.area_id === areaId);
+    const area = areas.find((a) => a.area_id === areaId);
     onChange({
       ...value,
-      haulage_area_id: areaId,
+      area_id: areaId,
       city_id: area?.city_id ?? value.city_id,
       lat: area?.lat ?? value.lat,
       lng: area?.lng ?? value.lng,
@@ -448,11 +448,11 @@ export function AddressInput({ label, value, onChange, haulageAreas, cities }: A
               placeholder="Select area..."
               className={inputCls}
             />
-            {value.haulage_area_id && !zoneOpen && (
+            {value.area_id && !zoneOpen && (
               <button
                 type="button"
                 onClick={() => {
-                  onChange({ ...value, haulage_area_id: null, lat: null, lng: null });
+                  onChange({ ...value, area_id: null, lat: null, lng: null });
                   setZoneQuery('');
                   setZoneOpen(true);
                   setTimeout(() => zoneInputRef.current?.focus(), 0);

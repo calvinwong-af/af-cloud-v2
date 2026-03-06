@@ -1,7 +1,7 @@
 # AcceleFreight — AF Server V2 API Contract
 **Base URL:** `https://af-server-667020632236.asia-northeast1.run.app/api/v2` (prod) · `http://localhost:8000/api/v2` (local)  
 **Auth:** Firebase ID token — `Authorization: Bearer <token>` on all protected routes  
-**Version:** Contract v1.5 — 05 March 2026  
+**Version:** Contract v1.7 — 05 March 2026  
 **Status:** Living document — update when endpoints change
 
 ---
@@ -122,7 +122,7 @@ Query params:
 
 AFC users are auto-scoped. AFU sees all.
 
-**Response:** (no envelope)
+**Response:**
 ```json
 {
   "results": [
@@ -142,7 +142,9 @@ AFC users are auto-scoped. AFU sees all.
       "cargo_ready_date": "2026-02-15",
       "updated": "2026-03-01"
     }
-  ]
+  ],
+  "total": 12,
+  "next_cursor": null
 }
 ```
 
@@ -546,7 +548,37 @@ Auth: `require_afu`
 
 ---
 
-### 2.12 Update Incoterm
+### 2.12 Update Booking / Transport Fields
+
+#### `PATCH /shipments/{shipment_id}/booking`
+Auth: `require_afu`
+
+Partial update of booking and transport fields. Merges into the `booking` JSONB on `shipment_details` and optionally updates flat AWB columns. All fields optional — only explicitly provided fields are written.
+
+**Request body:**
+```json
+{
+  "booking_reference": "COSCO-BK-001",
+  "carrier_agent": "COSCO Shipping Lines",
+  "vessel_name": "CSCL GLOBE",
+  "voyage_number": "V0123",
+  "mawb_number": null,
+  "hawb_number": null,
+  "awb_type": null,
+  "flight_number": null,
+  "flight_date": null
+}
+```
+
+Sea/booking fields (`booking_reference`, `carrier_agent`, `vessel_name`, `voyage_number`, `flight_number`, `flight_date`) are stored in the `booking` JSONB on `shipment_details`.  
+Air fields (`mawb_number`, `hawb_number`, `awb_type`) are flat columns on `shipment_details`.  
+Empty string (`""`) clears a field.
+
+**Response:** `{ "status": "OK", "msg": "Booking updated" }`
+
+---
+
+### 2.13 Update Incoterm
 
 #### `PATCH /shipments/{shipment_id}/incoterm`
 Auth: `require_afu`
@@ -564,7 +596,7 @@ Auth: `require_afu`
 
 ---
 
-### 2.13 Update Port
+### 2.14 Update Port
 
 #### `PATCH /shipments/{shipment_id}/port`
 Auth: `require_afu`
@@ -586,7 +618,7 @@ Updates origin or destination port on an existing shipment. Also updates the cor
 
 ---
 
-### 2.14 Update Cargo (DG Flag)
+### 2.15 Update Cargo (DG Flag)
 
 #### `PATCH /shipments/{shipment_id}/cargo`
 Auth: `require_afu_admin`
@@ -604,7 +636,7 @@ Updates the `is_dg` (dangerous goods) flag and optional `dg_description` on the 
 
 ---
 
-### 2.15 Bill of Lading (BL) & Document Parsing
+### 2.16 Bill of Lading (BL) & Document Parsing
 
 #### `POST /shipments/parse-bl`
 Auth: `require_afu`  
@@ -883,7 +915,7 @@ Saves an uploaded document to GCS and creates a `shipment_files` record.
 
 ---
 
-### 2.16 Shipment Files
+### 2.17 Shipment Files
 
 #### `GET /shipments/{shipment_id}/files`
 Auth: `require_auth`  
@@ -945,7 +977,7 @@ Soft delete only — sets `trash=TRUE`.
 
 ---
 
-### 2.17 Workflow Tasks
+### 2.18 Workflow Tasks
 
 #### `GET /shipments/{shipment_id}/tasks`
 Auth: `require_auth`  
@@ -991,7 +1023,7 @@ Permissions: AFU — all fields. AFC Admin/Manager — all except `visibility`. 
 
 ---
 
-### 2.18 Route Nodes
+### 2.19 Route Nodes
 
 #### `GET /shipments/{shipment_id}/route-nodes`
 Auth: `require_auth`
@@ -1049,7 +1081,7 @@ Auth: `require_auth` (AFC Admin/Manager or AFU)
 
 ---
 
-### 2.19 File Tags
+### 2.20 File Tags
 
 #### `GET /shipments/file-tags`
 Auth: `require_auth`
@@ -1374,9 +1406,11 @@ Updatable: `name`, `is_active`, `lat`, `lng`.
 
 ---
 
-### 5.6 Haulage Areas
+### 5.6 Areas
 
-#### `GET /geography/haulage-areas`
+⚠️ **Renamed from `haulage-areas`** — all endpoints now use `/geography/areas`. Callers on the old `/geography/haulage-areas/*` path must update.
+
+#### `GET /geography/areas`
 Auth: `require_auth` · No cache  
 Query params: `port_un_code` (optional), `state_code` (optional)
 
@@ -1396,10 +1430,10 @@ Query params: `port_un_code` (optional), `state_code` (optional)
 }
 ```
 
-#### `GET /geography/haulage-areas/{area_id}`
+#### `GET /geography/areas/{area_id}`
 Auth: `require_auth`
 
-#### `POST /geography/haulage-areas`
+#### `POST /geography/areas`
 Auth: `require_afu`
 
 **Request body:**
@@ -1415,23 +1449,21 @@ Auth: `require_afu`
 }
 ```
 
-`state_code`, `city_id`, `lat`, `lng` optional. `area_code` stored uppercase. `(area_code, port_un_code)` must be unique — `400` if duplicate.
+`state_code`, `city_id`, `lat`, `lng` optional. `area_code` stored uppercase.
 
 **Response:** `{ "status": "OK", "data": { "area_id": 1, "area_code": "KL035" } }`
 
-#### `PATCH /geography/haulage-areas/{area_id}`
+#### `PATCH /geography/areas/{area_id}`
 Auth: `require_afu`  
-All fields optional.
+Updatable: `area_code`, `area_name`, `port_un_code`, `state_code`, `city_id`, `lat`, `lng`. All optional.
 
 **Response:** `{ "status": "OK" }`
 
-#### `DELETE /geography/haulage-areas/{area_id}`
+#### `DELETE /geography/areas/{area_id}`
 Auth: `require_afu`  
-Soft delete — sets `is_active = false`.
+Soft delete — sets `is_active = FALSE`.
 
 **Response:** `{ "status": "OK" }`
-
-⚠️ Response shape changed from v1.4 — no longer returns `data` object. Check `status: "OK"` only.
 
 ---
 
@@ -1735,7 +1767,356 @@ Port codes (`pol_code`, `pod_code`) are resolved from the `ports` table where po
 
 ---
 
-## 10. Open Items / Known Gaps
+## 10. Ground Transport
+
+Base path: `/api/v2/ground-transport`
+
+Unified transport order architecture. Each order has a list of **stops** (source of truth) and **legs** that are auto-derived between consecutive stops. Orders live in the shared `orders` table with `order_type = 'transport'`.
+
+### 10.1 Vehicle Types
+
+#### `GET /ground-transport/vehicle-types`
+Auth: `require_afu`
+
+Returns all active vehicle types ordered by `sort_order`.
+
+**Response:**
+```json
+{
+  "status": "OK",
+  "data": [
+    { "vehicle_type_id": "TRUCK_3TON", "label": "3-Ton Truck", "category": "TRUCK", "sort_order": 1 }
+  ]
+}
+```
+
+---
+
+### 10.2 Create Order
+
+#### `POST /ground-transport`
+Auth: `require_afu`
+
+Creates a ground transport order with stops inline. Legs are auto-derived.
+
+**Request body:**
+```json
+{
+  "transport_mode": "haulage",
+  "leg_type": "last_mile",
+  "parent_order_id": "AF-003873",
+  "vendor_id": null,
+  "cargo_description": "Electronic Components",
+  "container_numbers": ["COSCU1234567"],
+  "weight_kg": 5000.0,
+  "volume_cbm": null,
+  "vehicle_type_id": "TRUCK_3TON",
+  "equipment_type": null,
+  "equipment_number": null,
+  "detention_mode": "direct",
+  "detention_free_days": 5,
+  "notes": null,
+  "stops": [
+    {
+      "sequence": 1,
+      "stop_type": "pickup",
+      "address_line": "Westports Gate 3, Pulau Indah",
+      "area_id": null,
+      "city_id": 1,
+      "lat": 2.9996,
+      "lng": 101.3851,
+      "scheduled_arrival": "2026-03-25",
+      "notes": null
+    },
+    {
+      "sequence": 2,
+      "stop_type": "dropoff",
+      "address_line": "Shah Alam Warehouse",
+      "area_id": 1,
+      "city_id": 1,
+      "lat": 3.073050,
+      "lng": 101.518200,
+      "scheduled_arrival": "2026-03-25",
+      "notes": null
+    }
+  ]
+}
+```
+
+`transport_mode` values: `haulage` | `trucking`  
+`leg_type` values: `first_mile` | `last_mile` | `standalone` | `distribution`  
+`stop_type` values: `pickup` | `dropoff` | `waypoint`  
+`detention_mode` values: `direct` | `detained`  
+`parent_order_id` links to a shipment (`AF-XXXXXX`) or another order.
+
+**Response:** `{ "status": "OK", "data": <OrderDetail> }`
+
+---
+
+### 10.3 List Orders
+
+#### `GET /ground-transport`
+Auth: `require_afu`  
+Query params:
+- `transport_mode` — `haulage` | `trucking` (also accepts legacy alias `transport_type`)
+- `status` — filter by order status
+- `parent_order_id` — filter by linked shipment/order (also accepts legacy alias `parent_shipment_id`)
+
+**Response:** `{ "status": "OK", "data": [ <OrderSummary>, ... ] }`
+
+---
+
+### 10.4 Get Order
+
+#### `GET /ground-transport/{order_id}`
+Auth: `require_afu`
+
+Returns order with full stops and legs.
+
+**Response:** `{ "status": "OK", "data": <OrderDetail> }`
+
+---
+
+### 10.5 Update Order
+
+#### `PATCH /ground-transport/{order_id}`
+Auth: `require_afu`
+
+Partial update. At least one field required.
+
+**Request body:** (all optional)
+```json
+{
+  "status": "confirmed",
+  "sub_status": null,
+  "vendor_id": null,
+  "cargo_description": "Electronic Components",
+  "container_numbers": ["COSCU1234567"],
+  "weight_kg": 5000.0,
+  "volume_cbm": null,
+  "vehicle_type_id": "TRUCK_3TON",
+  "equipment_type": null,
+  "equipment_number": null,
+  "detention_mode": "direct",
+  "detention_free_days": 5,
+  "notes": null
+}
+```
+
+`status` values: `draft` | `confirmed` | `dispatched` | `in_transit` | `detained` | `completed` | `cancelled`
+
+**Response:** `{ "status": "OK", "data": <OrderDetail> }`
+
+---
+
+### 10.6 Cancel Order
+
+#### `DELETE /ground-transport/{order_id}`
+Auth: `require_afu`  
+Soft cancel — sets `status = 'cancelled'`.
+
+**Response:** `{ "status": "OK", "data": <OrderSummary> }`
+
+---
+
+### 10.7 Stops
+
+#### `POST /ground-transport/{order_id}/stops`
+Auth: `require_afu`  
+Add a stop to an existing order. Legs are auto-re-derived from all stops.
+
+**Request body:** Single stop object (same shape as stops array item in create request).
+
+**Response:** `{ "status": "OK", "data": { "stops": [ ... ], "legs": [ ... ] } }`
+
+#### `PATCH /ground-transport/{order_id}/stops/{stop_id}`
+Auth: `require_afu`  
+Partial update on a single stop. Legs are NOT re-derived on stop update (only on add).
+
+**Request body:** (all optional)
+```json
+{
+  "stop_type": "dropoff",
+  "address_line": "New Warehouse Address",
+  "area_id": null,
+  "city_id": 1,
+  "lat": 3.073050,
+  "lng": 101.518200,
+  "scheduled_arrival": "2026-03-25",
+  "actual_arrival": "2026-03-25",
+  "notes": "Arrived on time"
+}
+```
+
+**Response:** `{ "status": "OK", "data": { "stops": [ ... ], "legs": [ ... ] } }`
+
+---
+
+### 10.8 Legs
+
+Legs are auto-derived from stops (one leg per consecutive stop pair). Never created or deleted manually.
+
+#### `PATCH /ground-transport/{order_id}/legs/{leg_id}`
+Auth: `require_afu`
+
+**Request body:** (all optional)
+```json
+{
+  "driver_name": "Ahmad bin Ali",
+  "driver_contact": "+60 12 345 6789",
+  "vehicle_plate": "BCD 1234",
+  "vehicle_type_id": "TRUCK_3TON",
+  "equipment_type": null,
+  "equipment_number": null,
+  "status": "in_transit",
+  "notes": null
+}
+```
+
+`leg status` values: `pending` | `in_transit` | `completed`
+
+**Response:** `{ "status": "OK", "data": [ <LegObject>, ... ] }` — returns all legs for the order.
+
+---
+
+### 10.9 Shipment Scope
+
+#### `GET /ground-transport/shipment/{shipment_id}/reconcile`
+Auth: `require_afu`
+
+Reconciles existing transport orders against a shipment's scope flags. Returns covered items and any gaps (flagged scope items with no matching order).
+
+**Response:**
+```json
+{
+  "status": "OK",
+  "data": {
+    "scope": { "last_mile_haulage": true, "last_mile_trucking": false },
+    "orders": [ <OrderDetail>, ... ],
+    "gaps": ["last_mile_haulage"]
+  }
+}
+```
+
+#### `PATCH /ground-transport/shipment/{shipment_id}/scope`
+Auth: `require_afu`  
+Partial merge of scope flags on a shipment. At least one field required.
+
+**Request body:** (all optional)
+```json
+{
+  "first_mile_haulage": false,
+  "first_mile_trucking": false,
+  "export_clearance": false,
+  "sea_freight": true,
+  "import_clearance": false,
+  "last_mile_haulage": true,
+  "last_mile_trucking": false
+}
+```
+
+**Response:** `{ "status": "OK", "data": { ...merged scope... } }`
+
+---
+
+### 10.10 Geocoding
+
+All geocode endpoints require `require_afu` and proxy to Google APIs. They return `{ "status": "OK", "data": { ... } }` with null values on failure (non-fatal).
+
+#### `GET /ground-transport/geocode/autocomplete`
+Query params: `input` (min 3 chars, required), `sessiontoken` (optional)
+
+Up to 5 place suggestions from Google Places API (New).
+
+**Response:** `{ "status": "OK", "data": [ { "place_id": "ChIJ...", "description": "Shah Alam, Selangor, Malaysia" } ] }`
+
+#### `GET /ground-transport/geocode/place`
+Query params: `place_id` (required), `sessiontoken` (optional)
+
+Resolves a `place_id` to coordinates and address components.
+
+**Response:**
+```json
+{
+  "status": "OK",
+  "data": { "lat": 3.073050, "lng": 101.518200, "formatted_address": "Shah Alam, Selangor, Malaysia", "city": "Shah Alam", "state": "Selangor", "country": "MY" }
+}
+```
+
+#### `GET /ground-transport/geocode`
+Query params: `address` (min 3 chars, required)
+
+Geocodes a free-text address string via Google Maps Geocoding API. Same response shape as `/geocode/place`.
+
+---
+
+### 10.11 Data Objects — Ground Transport
+
+**OrderDetail shape:**
+```json
+{
+  "order_id": "TR-000001",
+  "transport_mode": "haulage",
+  "leg_type": "last_mile",
+  "parent_order_id": "AF-003873",
+  "vendor_id": null,
+  "status": "draft",
+  "sub_status": null,
+  "cargo_description": "Electronic Components",
+  "container_numbers": ["COSCU1234567"],
+  "weight_kg": 5000.0,
+  "volume_cbm": null,
+  "detention_mode": "direct",
+  "detention_free_days": 5,
+  "notes": null,
+  "created_by": "calvin@accelefreight.com",
+  "created_at": "2026-03-05T10:00:00+00:00",
+  "updated_at": "2026-03-05T10:00:00+00:00",
+  "stops": [ <StopObject>, ... ],
+  "legs": [ <LegObject>, ... ]
+}
+```
+
+**StopObject shape:**
+```json
+{
+  "stop_id": 1,
+  "order_id": "TR-000001",
+  "sequence": 1,
+  "stop_type": "pickup",
+  "address_line": "Westports Gate 3, Pulau Indah",
+  "area_id": null,
+  "city_id": 1,
+  "lat": 2.9996,
+  "lng": 101.3851,
+  "scheduled_arrival": "2026-03-25",
+  "actual_arrival": null,
+  "notes": null
+}
+```
+
+**LegObject shape:**
+```json
+{
+  "leg_id": 1,
+  "order_id": "TR-000001",
+  "from_stop_id": 1,
+  "to_stop_id": 2,
+  "sequence": 1,
+  "driver_name": null,
+  "driver_contact": null,
+  "vehicle_plate": null,
+  "vehicle_type_id": null,
+  "equipment_type": null,
+  "equipment_number": null,
+  "status": "pending",
+  "notes": null
+}
+```
+
+---
+
+## 11. Open Items / Known Gaps
 
 | Item | Detail | Target |
 |---|---|---|
@@ -1752,7 +2133,7 @@ Port codes (`pol_code`, `pod_code`) are resolved from the `ports` table where po
 
 ---
 
-## 11. Auth Dependency Map
+## 12. Auth Dependency Map
 
 | Endpoint | Auth |
 |---|---|
@@ -1768,11 +2149,11 @@ Port codes (`pol_code`, `pod_code`) are resolved from the `ports` table where po
 | `GET /geography/cities/{city_id}` | `require_auth` |
 | `POST /geography/cities` | `require_afu` |
 | `PATCH /geography/cities/{city_id}` | `require_afu` |
-| `GET /geography/haulage-areas` | `require_auth` |
-| `GET /geography/haulage-areas/{area_id}` | `require_auth` |
-| `POST /geography/haulage-areas` | `require_afu` |
-| `PATCH /geography/haulage-areas/{area_id}` | `require_afu` |
-| `DELETE /geography/haulage-areas/{area_id}` | `require_afu` |
+| `GET /geography/areas` | `require_auth` |
+| `GET /geography/areas/{area_id}` | `require_auth` |
+| `POST /geography/areas` | `require_afu` |
+| `PATCH /geography/areas/{area_id}` | `require_afu` |
+| `DELETE /geography/areas/{area_id}` | `require_afu` |
 | `POST /geography/ports/resolve` | `require_afu` |
 | `POST /geography/ports/confirm` | `require_afu` |
 | `GET /geography/countries` | `require_auth` |
@@ -1797,6 +2178,7 @@ Port codes (`pol_code`, `pod_code`) are resolved from the `ports` table where po
 | `PATCH /shipments/{id}/incoterm` | `require_afu` |
 | `PATCH /shipments/{id}/port` | `require_afu` |
 | `PATCH /shipments/{id}/company` | `require_afu` |
+| `PATCH /shipments/{id}/booking` | `require_afu` |
 | `PATCH /shipments/{id}/bl` | `require_afu` |
 | `PATCH /shipments/{id}/parties` | `require_afu` |
 | `PATCH /shipments/{id}/clear-parsed-diff` | `require_afu` |
@@ -1826,10 +2208,36 @@ Port codes (`pol_code`, `pod_code`) are resolved from the `ports` table where po
 | `POST /users/{uid}/send-reset-email` | `require_afu_admin` |
 | `PATCH /users/{uid}/promote-to-staff` | `require_afu_admin` |
 | `POST /ai/parse-document` | `require_auth` |
+| `GET /ground-transport/vehicle-types` | `require_afu` |
+| `POST /ground-transport` | `require_afu` |
+| `GET /ground-transport` | `require_afu` |
+| `GET /ground-transport/{order_id}` | `require_afu` |
+| `PATCH /ground-transport/{order_id}` | `require_afu` |
+| `DELETE /ground-transport/{order_id}` | `require_afu` |
+| `POST /ground-transport/{order_id}/stops` | `require_afu` |
+| `PATCH /ground-transport/{order_id}/stops/{stop_id}` | `require_afu` |
+| `PATCH /ground-transport/{order_id}/legs/{leg_id}` | `require_afu` |
+| `GET /ground-transport/shipment/{shipment_id}/reconcile` | `require_afu` |
+| `PATCH /ground-transport/shipment/{shipment_id}/scope` | `require_afu` |
+| `GET /ground-transport/geocode/autocomplete` | `require_afu` |
+| `GET /ground-transport/geocode/place` | `require_afu` |
+| `GET /ground-transport/geocode` | `require_afu` |
 
 ---
 
-*Last updated: 05 March 2026 — Contract v1.5*
+*Last updated: 05 March 2026 — Contract v1.7*
+
+**v1.7 changes:**
+- Section 2.2: Search response documented with `total` and `next_cursor` fields; envelope note removed (response is not envelope-wrapped)
+- Section 2.12: `PATCH /booking` request body corrected — removed `vehicle_type_id`, `equipment_type`, `equipment_number` (not valid fields on shipment booking; those belong to transport orders only); field descriptions clarified
+
+**v1.6 changes:**
+- Section 2.12: New `PATCH /shipments/{id}/booking` endpoint documented
+- Sections 2.13–2.20: Renumbered to accommodate new booking section
+- Section 5.6: `haulage-areas` → `areas` — all endpoints renamed (`/geography/haulage-areas/*` → `/geography/areas/*`)
+- Section 10: New Ground Transport section — orders, stops, legs, vehicle types, scope flags, reconciliation, geocoding
+- Section 11: Open Items (renumbered from 10)
+- Section 12: Auth Dependency Map (renumbered from 11)
 
 **v1.5 changes:**
 - Section 0.3: AFU roles updated to `AFU-ADMIN`, `AFU-STAFF`, `AFU-OPS` (reflecting actual codebase)

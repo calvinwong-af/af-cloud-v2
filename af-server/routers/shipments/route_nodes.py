@@ -144,7 +144,7 @@ async def get_route_nodes(
     # This ensures route node display is always consistent with task data,
     # even if a write-time sync was missed.
     wf_row = conn.execute(text("""
-        SELECT workflow_tasks FROM shipment_workflows WHERE shipment_id = :id
+        SELECT workflow_tasks FROM shipment_workflows WHERE order_id = :id
     """), {"id": shipment_id}).fetchone()
     if wf_row:
         wf_tasks = _parse_jsonb(wf_row[0]) or []
@@ -203,7 +203,7 @@ async def save_route_nodes(
 
     # Verify shipment exists
     row = conn.execute(text("""
-        SELECT id FROM shipments WHERE id = :id
+        SELECT order_id FROM orders WHERE order_id = :id
     """), {"id": shipment_id}).fetchone()
 
     if not row:
@@ -234,18 +234,21 @@ async def save_route_nodes(
 
     now = datetime.now(timezone.utc).isoformat()
 
-    set_clauses = ["route_nodes = CAST(:route_nodes AS jsonb)", "updated_at = :now"]
+    sd_clauses = ["route_nodes = CAST(:route_nodes AS jsonb)"]
     params: dict = {"route_nodes": json.dumps(node_dicts), "now": now, "id": shipment_id}
 
     if flat_etd is not None:
-        set_clauses.append("etd = :etd")
+        sd_clauses.append("etd = :etd")
         params["etd"] = flat_etd
     if flat_eta is not None:
-        set_clauses.append("eta = :eta")
+        sd_clauses.append("eta = :eta")
         params["eta"] = flat_eta
 
     conn.execute(text(f"""
-        UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
+        UPDATE shipment_details SET {', '.join(sd_clauses)} WHERE order_id = :id
+    """), params)
+    conn.execute(text("""
+        UPDATE orders SET updated_at = :now WHERE order_id = :id
     """), params)
 
     # Enrich for response
@@ -286,7 +289,7 @@ async def update_route_node_timing(
             raise HTTPException(status_code=403, detail="Only admin/manager can update route nodes")
 
     row = conn.execute(text("""
-        SELECT route_nodes FROM shipments WHERE id = :id
+        SELECT route_nodes FROM shipment_details WHERE order_id = :id
     """), {"id": shipment_id}).fetchone()
 
     if not row:
@@ -317,19 +320,22 @@ async def update_route_node_timing(
         target["actual_etd"] = body.actual_etd
 
     # Build update
-    set_clauses = ["route_nodes = CAST(:route_nodes AS jsonb)", "updated_at = :now"]
+    sd_clauses = ["route_nodes = CAST(:route_nodes AS jsonb)"]
     params: dict = {"route_nodes": json.dumps(nodes), "now": datetime.now(timezone.utc).isoformat(), "id": shipment_id}
 
     # Sync flat fields if ORIGIN or DESTINATION
     if target.get("role") == "ORIGIN" and body.scheduled_etd is not None:
-        set_clauses.append("etd = :etd")
+        sd_clauses.append("etd = :etd")
         params["etd"] = body.scheduled_etd
     if target.get("role") == "DESTINATION" and body.scheduled_eta is not None:
-        set_clauses.append("eta = :eta")
+        sd_clauses.append("eta = :eta")
         params["eta"] = body.scheduled_eta
 
     conn.execute(text(f"""
-        UPDATE shipments SET {', '.join(set_clauses)} WHERE id = :id
+        UPDATE shipment_details SET {', '.join(sd_clauses)} WHERE order_id = :id
+    """), params)
+    conn.execute(text("""
+        UPDATE orders SET updated_at = :now WHERE order_id = :id
     """), params)
 
     # --- Auto status progression (forward only) ---
@@ -339,7 +345,12 @@ async def update_route_node_timing(
     if body.actual_etd is not None and target.get("role") == "ORIGIN":
         # ATD set on ORIGIN → auto-advance to Departed (4001)
         cur = conn.execute(
-            text("SELECT status, status_history FROM shipments WHERE id = :id"),
+            text("""
+                SELECT o.status, sd.status_history
+                FROM orders o
+                JOIN shipment_details sd ON sd.order_id = o.order_id
+                WHERE o.order_id = :id
+            """),
             {"id": shipment_id},
         ).fetchone()
         if cur and (cur[0] or 0) < constants.STATUS_DEPARTED:
@@ -352,11 +363,17 @@ async def update_route_node_timing(
                 "changed_by": claims.email,
                 "note": "Auto-advanced from ATD",
             })
+            _now = datetime.now(timezone.utc).isoformat()
             conn.execute(text("""
-                UPDATE shipments
-                SET status = :status, status_history = CAST(:history AS jsonb), updated_at = :now
-                WHERE id = :id
-            """), {"status": new_status, "history": json.dumps(history), "now": datetime.now(timezone.utc).isoformat(), "id": shipment_id})
+                UPDATE orders
+                SET status = :status, updated_at = :now
+                WHERE order_id = :id
+            """), {"status": new_status, "now": _now, "id": shipment_id})
+            conn.execute(text("""
+                UPDATE shipment_details
+                SET status_history = CAST(:history AS jsonb)
+                WHERE order_id = :id
+            """), {"history": json.dumps(history), "id": shipment_id})
             _log_system_action_pg(conn, "AUTO_STATUS_DEPARTED", shipment_id, claims.uid, claims.email)
             auto_status_changed = True
             logger.info("[route-nodes] Auto-advanced %s to Departed (4001)", shipment_id)
@@ -364,7 +381,12 @@ async def update_route_node_timing(
     elif body.actual_eta is not None and target.get("role") == "DESTINATION":
         # ATA set on DESTINATION → auto-advance to Arrived (4002)
         cur = conn.execute(
-            text("SELECT status, status_history FROM shipments WHERE id = :id"),
+            text("""
+                SELECT o.status, sd.status_history
+                FROM orders o
+                JOIN shipment_details sd ON sd.order_id = o.order_id
+                WHERE o.order_id = :id
+            """),
             {"id": shipment_id},
         ).fetchone()
         if cur and (cur[0] or 0) < constants.STATUS_ARRIVED:
@@ -377,11 +399,17 @@ async def update_route_node_timing(
                 "changed_by": claims.email,
                 "note": "Auto-advanced from ATA",
             })
+            _now = datetime.now(timezone.utc).isoformat()
             conn.execute(text("""
-                UPDATE shipments
-                SET status = :status, status_history = CAST(:history AS jsonb), updated_at = :now
-                WHERE id = :id
-            """), {"status": new_status, "history": json.dumps(history), "now": datetime.now(timezone.utc).isoformat(), "id": shipment_id})
+                UPDATE orders
+                SET status = :status, updated_at = :now
+                WHERE order_id = :id
+            """), {"status": new_status, "now": _now, "id": shipment_id})
+            conn.execute(text("""
+                UPDATE shipment_details
+                SET status_history = CAST(:history AS jsonb)
+                WHERE order_id = :id
+            """), {"history": json.dumps(history), "id": shipment_id})
             _log_system_action_pg(conn, "AUTO_STATUS_ARRIVED", shipment_id, claims.uid, claims.email)
             auto_status_changed = True
             logger.info("[route-nodes] Auto-advanced %s to Arrived (4002)", shipment_id)
