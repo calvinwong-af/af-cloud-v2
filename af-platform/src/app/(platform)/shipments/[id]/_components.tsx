@@ -2088,20 +2088,20 @@ export function GroundTransportReconcileCard({
         <div className="space-y-2">
           {data.orders.map((order: GroundTransportOrder) => (
             <div
-              key={order.transport_order_id}
+              key={order.order_id}
               className="flex items-center justify-between py-1.5 border-b border-[var(--border)] last:border-0"
             >
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => window.open(`/ground-transport/${order.transport_order_id}`, '_blank')}
+                  onClick={() => window.open(`/ground-transport/${order.order_id}`, '_blank')}
                   className="text-xs font-mono text-[var(--sky)] hover:underline"
                 >
-                  {order.transport_order_id}
+                  {order.order_id}
                 </button>
                 <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
-                  order.transport_type === 'haulage' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
+                  order.transport_mode === 'haulage' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
                 }`}>
-                  {order.transport_type.toUpperCase()}
+                  {order.transport_mode?.toUpperCase()}
                 </span>
               </div>
               <div className="flex items-center gap-2">
