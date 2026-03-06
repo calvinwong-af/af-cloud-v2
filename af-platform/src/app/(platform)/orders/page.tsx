@@ -574,7 +574,9 @@ function OrdersPageInner() {
                           {order.order_id}
                         </span>
                         {order.parent_order_id && (
-                          <LinkIcon className="w-3 h-3 text-[var(--text-muted)]" title={`Child of ${order.parent_order_id}`} />
+                          <span title={`Child of ${order.parent_order_id}`}>
+                            <LinkIcon className="w-3 h-3 text-[var(--text-muted)]" />
+                          </span>
                         )}
                         {order.is_test && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 leading-none">TEST</span>
