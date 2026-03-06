@@ -107,13 +107,13 @@ function formatBadge(n: number): string {
 function OrderTypeIcon({ order }: { order: OrderListItem }) {
   const cls = 'w-4 h-4';
   if (order.order_type === 'shipment') {
-    if (order.order_type_detail === 'AIR')     return <Plane     className={cls} title="Air Freight" />;
-    if (order.order_type_detail === 'SEA_FCL') return <Container className={cls} title="Sea FCL" />;
-    if (order.order_type_detail === 'SEA_LCL') return <Package   className={cls} title="Sea LCL" />;
-    return <Ship className={cls} title="Freight Shipment" />;
+    if (order.order_type_detail === 'AIR')     return <Plane     className={cls} />;
+    if (order.order_type_detail === 'SEA_FCL') return <Container className={cls} />;
+    if (order.order_type_detail === 'SEA_LCL') return <Package   className={cls} />;
+    return <Ship className={cls} />;
   }
-  if (order.transport_mode === 'trucking') return <Truck     className={cls} title="Delivery" />;
-  if (order.transport_mode === 'haulage')  return <Container className={cls} title="Haulage" />;
+  if (order.transport_mode === 'trucking') return <Truck     className={cls} />;
+  if (order.transport_mode === 'haulage')  return <Container className={cls} />;
   return <Package className={cls} />;
 }
 
