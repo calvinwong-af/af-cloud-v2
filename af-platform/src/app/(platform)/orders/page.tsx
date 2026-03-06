@@ -19,16 +19,7 @@ import { KpiCard } from '@/components/shared/KpiCard';
 // Status styles + labels
 // ---------------------------------------------------------------------------
 
-const ORDER_STATUS_STYLES: Record<string, string> = {
-  draft:        'bg-gray-100 text-gray-700',
-  confirmed:    'bg-blue-100 text-blue-800',
-  in_progress:  'bg-sky-100 text-sky-800',
-  dispatched:   'bg-sky-100 text-sky-800',
-  in_transit:   'bg-amber-100 text-amber-800',
-  detained:     'bg-orange-100 text-orange-800',
-  completed:    'bg-emerald-100 text-emerald-800',
-  cancelled:    'bg-red-100 text-red-700',
-};
+
 
 const STATUS_DISPLAY: Record<string, string> = {
   draft:             'Draft',
@@ -566,7 +557,6 @@ function OrdersPageInner() {
             </thead>
             <tbody className="divide-y divide-[var(--border)]">
               {orders.map((order) => {
-                const statusKey  = order.sub_status || order.status;
                 const detailHref = order.order_type === 'transport'
                   ? `/ground-transport/${order.order_id}`
                   : `/shipments/${order.order_id}`;
