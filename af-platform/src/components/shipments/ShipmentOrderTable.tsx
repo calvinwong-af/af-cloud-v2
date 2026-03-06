@@ -622,6 +622,10 @@ function ShipmentRow({
               V1
             </span>
           )}
+          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+          {(order as any).is_test === true && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 leading-none">TEST</span>
+          )}
         </div>
       </td>
 

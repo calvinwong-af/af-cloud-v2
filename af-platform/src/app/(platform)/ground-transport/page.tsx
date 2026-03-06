@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { Package, Container, Truck, CheckCircle2, RefreshCw, Plus } from 'lucide-react';
 import {
@@ -91,13 +92,14 @@ function GroundTransportPageInner() {
   const [vehicleTypes, setVehicleTypes] = useState<VehicleType[]>([]);
   const [accountType, setAccountType] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
 
   const fetchIdRef = useRef(0);
 
   // Close action menu on outside click
   useEffect(() => {
     if (!openMenuId) return;
-    const handler = () => setOpenMenuId(null);
+    const handler = () => { setOpenMenuId(null); setMenuPos(null); };
     document.addEventListener('click', handler);
     return () => document.removeEventListener('click', handler);
   }, [openMenuId]);
@@ -244,7 +246,7 @@ function GroundTransportPageInner() {
       )}
 
       {!loading && orders.length > 0 && (
-        <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
+        <div className="bg-white border border-[var(--border)] rounded-xl">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -329,18 +331,25 @@ function GroundTransportPageInner() {
                         {timeAgo(order.created_at)}
                       </td>
                       {accountType === 'AFU' && (
-                        <td className="px-4 py-3 relative">
+                        <td className="px-4 py-3">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setOpenMenuId(openMenuId === order.order_id ? null : order.order_id);
+                              if (openMenuId === order.order_id) {
+                                setOpenMenuId(null);
+                                setMenuPos(null);
+                              } else {
+                                const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                                setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                                setOpenMenuId(order.order_id);
+                              }
                             }}
                             className="p-1 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--text)]"
                           >
                             <MoreHorizontal className="w-4 h-4" />
                           </button>
-                          {openMenuId === order.order_id && (
-                            <div className="absolute right-4 top-10 z-20 bg-white border border-[var(--border)] rounded-lg shadow-lg py-1 min-w-[180px]">
+                          {openMenuId === order.order_id && menuPos && typeof document !== 'undefined' && createPortal(
+                            <div className="fixed z-[9999] bg-white border border-[var(--border)] rounded-lg shadow-lg py-1 min-w-[180px]" style={{ top: menuPos.top, right: menuPos.right }}>
                               {!order.trash && (
                                 <button
                                   onClick={async (e) => {
@@ -374,7 +383,8 @@ function GroundTransportPageInner() {
                                   Delete Permanently
                                 </button>
                               )}
-                            </div>
+                            </div>,
+                            document.body
                           )}
                         </td>
                       )}

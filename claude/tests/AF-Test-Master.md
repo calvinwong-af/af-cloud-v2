@@ -1,6 +1,6 @@
 # AF Platform — Test Master
-**Version:** 2.59
-**Last Updated:** 05 March 2026
+**Version:** 2.60
+**Last Updated:** 06 March 2026
 
 > Individual series detail lives in `claude/tests/series/`. Retired series (MI, V2C, OF, SR, IN, SU) are in `AF-Test-Archive.md`.
 
@@ -35,7 +35,8 @@
 | MC | Manual Shipment Create | 6 | 6 | 0 | 0 | 0 | ✅ Complete | series/MC-manual-create.md |
 | SD | Shipment Delete | 3 | 3 | 0 | 0 | 0 | ✅ Complete | series/SD-shipment-delete.md |
 | LO | Loading State UI | 5 | 5 | 0 | 0 | 0 | ✅ Complete | series/LO-loading-state.md |
-| **TOTAL** | | **286** | **272** | **8** | **12** | **9** | | |
+| GT | Ground Transport | 13 | 7 | 6 | 0 | 0 | 🔵 Active | series/GT-ground-transport.md |
+| **TOTAL** | | **299** | **279** | **14** | **12** | **9** | | |
 
 ---
 
@@ -67,6 +68,7 @@
 | 2.62 | 04 Mar 2026 | Session 19 — VD + PP complete; VD-06, PP-06 YES; 270/284 passing |
 | 2.61 | 04 Mar 2026 | Session 19 — DP complete (79 YES, 2 NA); VD-03/07 YES; 268/284 passing |
 | 2.60 | 04 Mar 2026 | Session 19 — DT series complete (10 YES, 5 NA); DateTimeInput 00:00 default fix; 266/284 passing |
+| 2.60 | 06 Mar 2026 | Session 36 — GT series added (13 tests, 7 YES, 6 PENDING); GT delete + menu portal fix confirmed; 279/299 passing |
 | 2.59 | 04 Mar 2026 | Session 19 — DT-01–05 NA (BLUpdateModal deleted v3.15); UI-05/09/13/14/16 closed; 257/286 passing |
 | 2.58 | 04 Mar 2026 | Session 18 — DP updated: 82 total, 78 YES, 1 PENDING; overall 257/286 passing |
 | 2.66 | 03 Mar 2026 | Session 17 — DP-55, DP-60 YES (inferred); total 235 passing |

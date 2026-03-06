@@ -1,6 +1,25 @@
 # Prompt Completion Log — v5.00–v5.10
 
-### [2026-03-06 12:00 UTC] — v5.01: GT Delete Controls + is_test Flag
+### [2026-03-06 14:30 UTC] — v5.02: Orders Page + DG/TEST Badge Fixes
+- **Status:** Completed
+- **Tasks:**
+  - A/B: Verified pre-existing edits — `is_test` in db_queries.py list_shipments, `ShipmentListItem`, `toShipmentOrder()` spread, TEST badge in ShipmentOrderTable.tsx — all present
+  - C1: Created `af-server/routers/orders.py` — `GET /api/v2/orders` with tab filtering (all/active/closed/cancelled), pagination, AFC company scoping; `GET /api/v2/orders/stats` for tab badge counts. Registered in main.py
+  - C2: Created `af-platform/src/app/actions/orders.ts` — `listOrdersAction` + `fetchOrderStatsAction`
+  - C3: Created `af-platform/src/app/(platform)/orders/page.tsx` — unified orders list with All/Active/Closed/Cancelled tabs, count badges (All/Active/Cancelled only), type icons (Plane/Container/Package/Ship/Truck), TEST badge, parent link icon, Load More pagination, KPI cards
+  - C4: Updated Sidebar — added Orders nav item (LayoutList icon) to OPERATIONS section above Shipments
+- **Files Modified:**
+  - `af-server/routers/orders.py` (new)
+  - `af-server/main.py`
+  - `af-platform/src/app/actions/orders.ts` (new)
+  - `af-platform/src/app/(platform)/orders/page.tsx` (new)
+  - `af-platform/src/components/shell/Sidebar.tsx`
+- **Notes:** No DB migration needed. Stats endpoint inlined in orders.py (not in db_queries.py — self-contained). Existing /shipments and /ground-transport routes preserved.
+
+---
+
+
+### [2026-03-06 Session 35] — v5.01: GT Delete Controls + is_test Flag
 - **Status:** Completed
 - **Tasks:**
   - A1: Created migration `012_orders_is_test.sql` (ALTER TABLE orders ADD COLUMN is_test)

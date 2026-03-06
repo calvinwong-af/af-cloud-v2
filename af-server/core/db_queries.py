@@ -91,7 +91,8 @@ def list_shipments(conn, tab: str, company_id: str | None, limit: int, offset: i
                sd.cargo_ready_date::text, o.updated_at::text AS updated,
                o.issued_invoice,
                sd.origin_terminal, sd.dest_terminal,
-               (o.cargo->>'is_dg')::boolean AS cargo_is_dg
+               (o.cargo->>'is_dg')::boolean AS cargo_is_dg,
+               o.is_test
         FROM orders o
         JOIN shipment_details sd ON sd.order_id = o.order_id
         LEFT JOIN companies c ON c.id = o.company_id
@@ -121,6 +122,7 @@ def list_shipments(conn, tab: str, company_id: str | None, limit: int, offset: i
             "origin_terminal": r[15] or None,
             "dest_terminal": r[16] or None,
             "cargo_is_dg": r[17] or False,
+            "is_test": r[18] or False,
         })
 
     return items, total

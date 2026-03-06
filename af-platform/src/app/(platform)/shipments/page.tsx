@@ -58,6 +58,10 @@ function toShipmentOrder(item: ShipmentListItem): ShipmentOrder {
     incoterm_code: item.incoterm || null,
     status: item.status as ShipmentOrder['status'],
     issued_invoice: item.issued_invoice ?? false,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...(item.cargo_is_dg != null ? { cargo_is_dg: item.cargo_is_dg } as any : {}),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...(item.is_test != null ? { is_test: item.is_test } as any : {}),
     completed: false,
     completed_at: null,
     last_status_updated: null,

@@ -11,6 +11,8 @@ import {
   Users,
   Building2,
   Container,
+  LayoutList,
+  Ship,
   Grid3X3,
   Globe,
   ScrollText,
@@ -49,6 +51,7 @@ interface NavSection {
 
 function getNavSections(accountType: string | null): NavSection[] {
   const isAfu = accountType === 'AFU';
+
   const sections: NavSection[] = [
     {
       title: 'OVERVIEW',
@@ -57,8 +60,10 @@ function getNavSections(accountType: string | null): NavSection[] {
     {
       title: 'OPERATIONS',
       items: [
-        { label: 'Shipments', icon: Truck, href: '/shipments' },
-        ...(isAfu ? [{ label: 'Ground Transport', icon: Container, href: '/ground-transport' }] : []),
+        { label: 'All Orders',        icon: LayoutList, href: '/orders' },
+        { label: 'Freight Shipments', icon: Ship,       href: '/orders/shipments' },
+        { label: 'Deliveries',        icon: Truck,      href: '/orders/deliveries' },
+        { label: 'Haulage',           icon: Container,  href: '/orders/haulage' },
       ],
     },
   ];
@@ -67,21 +72,20 @@ function getNavSections(accountType: string | null): NavSection[] {
     sections.push({
       title: 'ADMINISTRATION',
       items: [
-        { label: 'Users', icon: Users, href: '/users' },
+        { label: 'Users',     icon: Users,     href: '/users' },
         { label: 'Companies', icon: Building2, href: '/companies' },
       ],
     });
     sections.push({
       title: 'SYSTEM',
       items: [
-        { label: 'Pricing Tables', icon: Grid3X3, href: '/pricing' },
-        { label: 'Geography', icon: Globe, href: '/geography' },
-        { label: 'System Logs', icon: ScrollText, href: '/logs' },
+        { label: 'Pricing Tables', icon: Grid3X3,    href: '/pricing' },
+        { label: 'Geography',      icon: Globe,      href: '/geography' },
+        { label: 'System Logs',    icon: ScrollText, href: '/logs' },
       ],
     });
   }
 
-  // Profile — shown to all users
   sections.push({
     title: 'ACCOUNT',
     items: [{ label: 'Profile', icon: UserCircle, href: '/profile' }],
@@ -112,13 +116,11 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
   const [roleLabel, setRoleLabel] = useState("Staff");
   const [accountType, setAccountType] = useState<string | null>(null);
 
-  // Hydrate collapse state from localStorage
   useEffect(() => {
     const stored = localStorage.getItem("af-nav-collapsed");
     if (stored === "true") setCollapsed(true);
   }, []);
 
-  // Fetch current user's role + account type for sidebar display + nav gating
   useEffect(() => {
     getCurrentUserProfileAction().then(({ role, account_type }) => {
       setRoleLabel(resolveRoleLabel(account_type, role));
@@ -134,13 +136,10 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
     });
   }
 
-  // On mobile drawer, always expanded
   const isCollapsed = isMobileDrawer ? false : collapsed;
 
   function handleNavClick() {
-    if (isMobileDrawer && onMobileClose) {
-      onMobileClose();
-    }
+    if (isMobileDrawer && onMobileClose) onMobileClose();
   }
 
   return (
@@ -153,7 +152,6 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
         transition: "width 0.25s cubic-bezier(0.4,0,0.2,1)",
       }}
     >
-      {/* Grid texture overlay */}
       <div className="grid-texture pointer-events-none absolute inset-0" />
 
       {/* ── Header ── */}
@@ -164,22 +162,17 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
           </div>
           <span
             className="font-display text-[0.95rem] font-bold leading-none tracking-tight whitespace-nowrap"
-            style={{
-              opacity: isCollapsed ? 0 : 1,
-              transition: "opacity 0.2s",
-            }}
+            style={{ opacity: isCollapsed ? 0 : 1, transition: "opacity 0.2s" }}
           >
             <span className="text-white">Accele</span>
             <span style={{ color: "var(--sky-light)" }}>Freight</span>
           </span>
         </div>
 
-        {/* Desktop: collapse toggle; Mobile: close button */}
         {isMobileDrawer ? (
           <button
             onClick={onMobileClose}
             className="relative z-10 shrink-0 flex items-center justify-center w-7 h-7 rounded-md transition-colors hover:bg-white/10"
-            aria-label="Close menu"
           >
             <X size={16} className="text-white/50" />
           </button>
@@ -192,14 +185,11 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
               pointerEvents: isCollapsed ? "none" : "auto",
               transition: "opacity 0.2s",
             }}
-            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             <ChevronLeft
               size={16}
               className="text-white/50 transition-transform"
-              style={{
-                transform: isCollapsed ? "rotate(180deg)" : "rotate(0deg)",
-              }}
+              style={{ transform: isCollapsed ? "rotate(180deg)" : "rotate(0deg)" }}
             />
           </button>
         )}
@@ -224,12 +214,13 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
               {section.title}
             </div>
 
-            {/* Items */}
             <div className="space-y-0.5">
               {section.items.map((item) => {
-                const active = pathname.startsWith(item.href);
+                // Exact match for /orders to avoid highlighting when on sub-routes
+                const active = item.href === '/orders'
+                  ? pathname === '/orders'
+                  : pathname.startsWith(item.href);
                 const Icon = item.icon;
-
                 return (
                   <Link
                     key={item.href}
@@ -239,45 +230,24 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
                     className={cn(
                       "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
                       isCollapsed && "justify-center px-0",
-                      active
-                        ? "text-white"
-                        : "text-white/50 hover:bg-white/[0.055]"
+                      active ? "text-white" : "text-white/50 hover:bg-white/[0.055]"
                     )}
-                    style={
-                      active
-                        ? { background: "rgba(59,158,255,0.11)" }
-                        : undefined
-                    }
+                    style={active ? { background: "rgba(59,158,255,0.11)" } : undefined}
                   >
-                    {/* Active indicator */}
                     {active && (
                       <div
                         className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full"
-                        style={{
-                          height: "60%",
-                          background: "var(--sky)",
-                        }}
+                        style={{ height: "60%", background: "var(--sky)" }}
                       />
                     )}
-
-                    <Icon
-                      size={18}
-                      className={cn(
-                        "shrink-0",
-                        active ? "text-[var(--sky)]" : ""
-                      )}
-                    />
-
+                    <Icon size={18} className={cn("shrink-0", active ? "text-[var(--sky)]" : "")} />
                     {!isCollapsed && (
                       <>
                         <span className="flex-1 truncate">{item.label}</span>
                         {item.badge && (
                           <span
                             className="text-[0.6rem] font-medium px-1.5 py-0.5 rounded-full"
-                            style={{
-                              background: "rgba(59,158,255,0.15)",
-                              color: "var(--sky)",
-                            }}
+                            style={{ background: "rgba(59,158,255,0.15)", color: "var(--sky)" }}
                           >
                             {item.badge}
                           </span>
@@ -297,51 +267,29 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
         className="relative z-10 shrink-0 border-t px-3 py-3"
         style={{ borderColor: "rgba(255,255,255,0.05)" }}
       >
-        {/* Expand button when collapsed (desktop only) */}
         {isCollapsed && !isMobileDrawer && (
           <button
             onClick={toggleCollapsed}
             className="flex items-center justify-center w-full h-8 rounded-md transition-colors hover:bg-white/10 mb-2"
-            aria-label="Expand sidebar"
           >
-            <ChevronLeft
-              size={16}
-              className="text-white/50"
-              style={{ transform: "rotate(180deg)" }}
-            />
+            <ChevronLeft size={16} className="text-white/50" style={{ transform: "rotate(180deg)" }} />
           </button>
         )}
 
         <div className="flex items-center gap-2.5 overflow-hidden">
-          {/* Avatar */}
           <div
             className="shrink-0 flex items-center justify-center rounded-lg text-white text-xs font-semibold"
-            style={{
-              width: 32,
-              height: 32,
-              background: "linear-gradient(135deg, var(--sky), var(--sky-light))",
-            }}
+            style={{ width: 32, height: 32, background: "linear-gradient(135deg, var(--sky), var(--sky-light))" }}
           >
             {getInitials(currentUser.displayName)}
           </div>
-
-          {/* Name + role */}
           <div
             className="flex-1 min-w-0 overflow-hidden"
-            style={{
-              opacity: isCollapsed ? 0 : 1,
-              transition: "opacity 0.2s",
-            }}
+            style={{ opacity: isCollapsed ? 0 : 1, transition: "opacity 0.2s" }}
           >
-            <p className="text-xs font-medium text-white truncate">
-              {currentUser.displayName || "User"}
-            </p>
-            <p className="text-[0.6rem] truncate" style={{ color: "var(--text-muted)" }}>
-              {roleLabel}
-            </p>
+            <p className="text-xs font-medium text-white truncate">{currentUser.displayName || "User"}</p>
+            <p className="text-[0.6rem] truncate" style={{ color: "var(--text-muted)" }}>{roleLabel}</p>
           </div>
-
-          {/* Sign out */}
           <button
             onClick={() => signOut()}
             title="Sign out"
