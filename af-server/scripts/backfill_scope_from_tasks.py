@@ -19,7 +19,10 @@ import json
 import sys
 import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from dotenv import load_dotenv
+load_dotenv(".env.local")
 
 from core.db import get_engine
 from sqlalchemy import text
@@ -58,10 +61,10 @@ def main():
 
     with engine.connect() as conn:
         rows = conn.execute(text("""
-            SELECT sd.order_id, sd.scope, sw.workflow_tasks
-            FROM shipment_details sd
-            JOIN shipment_workflows sw ON sw.order_id = sd.order_id
-            JOIN orders o ON o.order_id = sd.order_id
+            SELECT o.order_id, o.scope, sw.workflow_tasks
+            FROM orders o
+            JOIN shipment_details sd ON sd.order_id = o.order_id
+            JOIN shipment_workflows sw ON sw.order_id = o.order_id
             WHERE o.order_type = 'shipment' AND o.trash = FALSE
         """)).fetchall()
 
@@ -109,7 +112,7 @@ def main():
             else:
                 try:
                     conn.execute(text("""
-                        UPDATE shipment_details SET scope = CAST(:scope AS jsonb)
+                        UPDATE orders SET scope = CAST(:scope AS jsonb)
                         WHERE order_id = :id
                     """), {"scope": json.dumps(scope), "id": order_id})
                     updated += 1

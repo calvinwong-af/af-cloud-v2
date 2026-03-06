@@ -179,3 +179,23 @@
   - `af-platform/src/components/ground-transport/AddressInput.tsx`
   - `af-platform/src/components/ground-transport/CreateGroundTransportModal.tsx`
 - **Notes:** Legacy tables preserved as _legacy_shipments, _legacy_ground_transport_orders, _legacy_ground_transport_legs. Migration script verifies row counts. DO NOT run migration on production until Calvin has verified locally. shipment_workflows and shipment_files FK columns renamed to order_id.
+
+---
+
+## v5.07 — Order Scope + Task Mode Redesign
+- **Date:** 2026-03-07
+- **Session:** 39
+- **Status:** ✅ Executed
+- **Summary:** Redesigned Order Scope system. Scope flags now derived from incoterm rules, drive task mode (ASSIGNED/TRACKED/IGNORED), controlled from a dialog in the Tasks tab.
+- **Backend files:**
+  - `af-server/logic/incoterm_tasks.py` — added `derive_scope_from_incoterm()`, `apply_scope_to_tasks()`, `TASK_TYPE_TO_SCOPE_KEY`; updated `generate_tasks()`
+  - `af-server/routers/shipments/scope.py` — new GET + PATCH `/shipments/{id}/scope` endpoints
+  - `af-server/routers/shipments/__init__.py` — registered scope router
+  - `af-server/routers/shipments/core.py` — updated `_lazy_init_tasks_pg` to derive/apply scope on first task generation
+  - `af-server/scripts/backfill_scope_from_tasks.py` — new backfill script (run on local + prod: 33 updated, 2006 skipped no tasks)
+- **Frontend files:**
+  - `af-platform/src/components/shipments/ScopeConfigDialog.tsx` — new Configure Scope dialog
+  - `af-platform/src/app/actions/ground-transport.ts` — updated `ScopeFlags` type, updated scope action URL, added `fetchShipmentScopeAction`
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — added Configure Scope button in Tasks tab, removed ScopeFlagsCard + GroundTransportReconcileCard from Overview
+- **Schema change:** `orders.scope` JSONB now uses `{ first_mile, export_clearance, import_clearance, last_mile }` each with value `ASSIGNED | TRACKED | IGNORED`. Old boolean schema treated as null.
+- **Backfill:** `backfill_scope_from_tasks.py` run on local DB. Must also run on prod after deploy.
