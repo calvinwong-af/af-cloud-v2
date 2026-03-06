@@ -7,7 +7,7 @@ Unified orders architecture: queries JOIN orders + shipment_details.
 
 import json
 from sqlalchemy import text
-from core.constants import STATUS_LABELS
+from core.constants import get_status_display, STRING_STATUS_TO_NUMERIC, SUB_STATUS_TO_NUMERIC
 
 
 def get_shipment_stats(conn, company_id: str | None = None) -> dict:
@@ -103,12 +103,21 @@ def list_shipments(conn, tab: str, company_id: str | None, limit: int, offset: i
 
     items = []
     for r in rows:
+        raw_status = r[3] or "draft"
+        raw_sub = r[4]
+        if raw_sub and raw_sub in SUB_STATUS_TO_NUMERIC:
+            numeric_status = SUB_STATUS_TO_NUMERIC[raw_sub]
+        elif isinstance(raw_status, str) and not raw_status.lstrip('-').isdigit():
+            numeric_status = STRING_STATUS_TO_NUMERIC.get(raw_status, 1001)
+        else:
+            numeric_status = int(raw_status) if raw_status else 1001
+
         items.append({
             "shipment_id": r[0],
             "data_version": r[1],
             "migrated_from_v1": r[2] or False,
-            "status": r[3],
-            "sub_status": r[4],
+            "status": numeric_status,
+            "sub_status": raw_sub,
             "order_type": r[5] or "",
             "transaction_type": r[6] or "",
             "incoterm": r[7] or "",
@@ -156,13 +165,22 @@ def search_shipments(conn, q: str, company_id: str | None, limit: int, offset: i
 
     items = []
     for r in rows:
+        raw_status = r[3] or "draft"
+        raw_sub = r[4]
+        if raw_sub and raw_sub in SUB_STATUS_TO_NUMERIC:
+            numeric_status = SUB_STATUS_TO_NUMERIC[raw_sub]
+        elif isinstance(raw_status, str) and not raw_status.lstrip('-').isdigit():
+            numeric_status = STRING_STATUS_TO_NUMERIC.get(raw_status, 1001)
+        else:
+            numeric_status = int(raw_status) if raw_status else 1001
+
         items.append({
             "shipment_id": r[0],
             "data_version": r[1],
             "migrated_from_v1": r[2] or False,
-            "status": r[3],
-            "sub_status": r[4],
-            "status_label": STATUS_LABELS.get(r[3], r[3] or ""),
+            "status": numeric_status,
+            "sub_status": raw_sub,
+            "status_label": get_status_display(raw_status if isinstance(raw_status, str) else "", raw_sub),
             "order_type": r[5] or "",
             "transaction_type": r[6] or "",
             "incoterm": r[7] or "",
@@ -237,6 +255,16 @@ def get_shipment_by_id(conn, shipment_id: str) -> dict | None:
     # Normalize completed fields
     data["completed"] = data.get("completed") or False
     data["completed_at"] = str(data["completed_at"]) if data.get("completed_at") else None
+
+    # Convert string status → numeric for frontend compat
+    raw_status = data.get("status", "draft")
+    raw_sub = data.get("sub_status")
+    if isinstance(raw_status, str) and not raw_status.lstrip('-').isdigit():
+        if raw_sub and raw_sub in SUB_STATUS_TO_NUMERIC:
+            data["status"] = SUB_STATUS_TO_NUMERIC[raw_sub]
+        else:
+            data["status"] = STRING_STATUS_TO_NUMERIC.get(raw_status, 1001)
+    data["sub_status"] = raw_sub
 
     # Timestamps to string
     for key in ("created_at", "updated_at", "cargo_ready_date"):

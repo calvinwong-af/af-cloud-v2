@@ -31,6 +31,7 @@ from core.constants import (
     STATUS_DRAFT_REVIEW,
     PREFIX_V2_SHIPMENT,
     PREFIX_V1_SHIPMENT,
+    get_status_display,
 )
 from logic.incoterm_tasks import generate_tasks as generate_incoterm_tasks
 
@@ -107,7 +108,7 @@ async def search_shipments(
 
         rows = conn.execute(text(f"""
             SELECT o.order_id AS shipment_id, 2 AS data_version, o.migrated_from_v1,
-                   o.status, sd.order_type_detail, sd.transaction_type, sd.incoterm_code AS incoterm,
+                   o.status, o.sub_status, sd.order_type_detail, sd.transaction_type, sd.incoterm_code AS incoterm,
                    sd.origin_port, sd.dest_port AS destination_port,
                    o.company_id, c.name AS company_name,
                    sd.cargo_ready_date::text, o.updated_at::text AS updated
@@ -127,22 +128,23 @@ async def search_shipments(
                 "data_version": r[1],
                 "migrated_from_v1": r[2] or False,
                 "status": r[3],
-                "status_label": STATUS_LABELS.get(r[3], str(r[3])),
-                "order_type": r[4] or "",
-                "transaction_type": r[5] or "",
-                "incoterm": r[6] or "",
-                "origin_port": r[7] or "",
-                "destination_port": r[8] or "",
-                "company_id": r[9] or "",
-                "company_name": r[10] or "",
-                "cargo_ready_date": (r[11] or "")[:10] if r[11] else "",
-                "updated": (r[12] or "")[:10] if r[12] else "",
+                "sub_status": r[4],
+                "status_label": get_status_display(r[3] or "", r[4]),
+                "order_type": r[5] or "",
+                "transaction_type": r[6] or "",
+                "incoterm": r[7] or "",
+                "origin_port": r[8] or "",
+                "destination_port": r[9] or "",
+                "company_id": r[10] or "",
+                "company_name": r[11] or "",
+                "cargo_ready_date": (r[12] or "")[:10] if r[12] else "",
+                "updated": (r[13] or "")[:10] if r[13] else "",
             })
 
     # Add status_label to each result (may already be set by search_shipments)
     for s in items:
         if "status_label" not in s:
-            s["status_label"] = STATUS_LABELS.get(s.get("status", 0), str(s.get("status", 0)))
+            s["status_label"] = get_status_display(str(s.get("status", "")), s.get("sub_status"))
 
     # Approximate total: if we got a full page, there may be more
     total = offset + len(items)

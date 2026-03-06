@@ -270,6 +270,29 @@ export function getStatusPathList(incoterm: string | null, transactionType: stri
   return getStatusPath(incoterm, transactionType) === 'A' ? STATUS_PATH_A : STATUS_PATH_B;
 }
 
+/**
+ * Normalize a status value (may be numeric, numeric string, or string label)
+ * to the canonical numeric status code used throughout the UI.
+ */
+export function normalizeStatusToNumeric(status: unknown, subStatus?: string | null): number {
+  if (typeof status === 'number') return status;
+  const s = String(status ?? '').toLowerCase().trim();
+  const ss = (subStatus ?? '').toLowerCase().trim();
+  if (s === 'draft') return 1001;
+  if (s === 'confirmed') return 2001;
+  if (s === 'in_progress') {
+    if (ss === 'booking_pending') return 3001;
+    if (ss === 'booking_confirmed') return 3002;
+    if (ss === 'in_transit') return 4001;
+    if (ss === 'arrived') return 4002;
+    return 3001;
+  }
+  if (s === 'completed') return 5001;
+  if (s === 'cancelled') return -1;
+  const n = parseInt(s, 10);
+  return isNaN(n) ? 1001 : n;
+}
+
 export const ORDER_TYPE_LABELS: Record<OrderType, string> = {
   SEA_FCL: 'Sea FCL',
   SEA_LCL: 'Sea LCL',

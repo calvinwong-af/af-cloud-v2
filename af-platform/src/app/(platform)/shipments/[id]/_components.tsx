@@ -14,7 +14,7 @@ import { updateShipmentScopeAction, reconcileShipmentGroundTransportAction } fro
 import type { ScopeFlags, ReconcileResult, GroundTransportOrder } from '@/app/actions/ground-transport';
 import { formatDate } from '@/lib/utils';
 import type { ShipmentOrder, ShipmentOrderStatus, TypeDetailsFCL, TypeDetailsLCL } from '@/lib/types';
-import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, getStatusPathList } from '@/lib/types';
+import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, getStatusPathList, normalizeStatusToNumeric } from '@/lib/types';
 import PortPair from '@/components/shared/PortPair';
 import { getPortLabel, type Port } from '@/lib/ports';
 
@@ -787,7 +787,8 @@ export function PartiesCard({ order, onOpenDiff, accountType, onEdit }: {
   const shipperDiff = hasPartyDiff(bl?.shipper, parties?.shipper);
   const consigneeDiff = hasPartyDiff(bl?.consignee, parties?.consignee);
 
-  const canEditParties = accountType === 'AFU' && order.status !== 5001 && order.status !== -1;
+  const numericStatus = normalizeStatusToNumeric(order.status, (order as unknown as Record<string, unknown>).sub_status as string | null);
+  const canEditParties = accountType === 'AFU' && numericStatus !== 5001 && numericStatus !== -1;
 
   return (
     <SectionCard
@@ -1118,7 +1119,8 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
   const [exceptionNotes, setExceptionNotes] = useState('');
   const [showExceptionModal, setShowExceptionModal] = useState(false);
 
-  const currentStatus = order.status;
+  const rawSubStatus = (order as unknown as Record<string, unknown>).sub_status as string | null | undefined;
+  const currentStatus = normalizeStatusToNumeric(order.status, rawSubStatus) as ShipmentOrderStatus;
   const isTerminal = currentStatus === -1;
   const isAfu = accountType === 'AFU';
   const [completedLoading, setCompletedLoading] = useState(false);
@@ -1612,7 +1614,6 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
                     className="w-4 h-4 accent-[var(--sky)]"
                   />
                   <span className="text-sm text-[var(--text)]">{s.label}</span>
-                  <span className="text-xs text-[var(--text-muted)]">({s.status})</span>
                 </label>
               ))}
             </div>

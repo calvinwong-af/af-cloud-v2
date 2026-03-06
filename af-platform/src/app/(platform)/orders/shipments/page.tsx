@@ -15,6 +15,7 @@ import { getShipmentListAction, fetchShipmentOrderStatsAction, fetchCompaniesFor
 import type { ShipmentListItem } from '@/app/actions/shipments';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
 import type { ShipmentOrder, OrderType } from '@/lib/types';
+import { normalizeStatusToNumeric } from '@/lib/types';
 import { ShipmentOrderTable } from '@/components/shipments/ShipmentOrderTable';
 import { KpiCard } from '@/components/shared/KpiCard';
 import NewShipmentButton from '@/components/shipments/NewShipmentButton';
@@ -356,10 +357,14 @@ function ShipmentsPageInner() {
           </div>
           {!searching && searchResults.length > 0 && (() => {
             const ACTIVE_STATUSES = new Set([3001, 3002, 4001, 4002]);
-            const NATIVE_ACTIVE = (r: ShipmentOrder) =>
-              r.status === 2001 && !r.migrated_from_v1;
-            const activeCount = searchResults.filter(r => ACTIVE_STATUSES.has(r.status as number) || NATIVE_ACTIVE(r)).length;
-            const completedCount = searchResults.filter(r => r.status === 5001 || (r.status === 2001 && r.migrated_from_v1)).length;
+            const activeCount = searchResults.filter(r => {
+              const ns = normalizeStatusToNumeric(r.status, (r as unknown as Record<string, unknown>).sub_status as string | null);
+              return ACTIVE_STATUSES.has(ns) || (ns === 2001 && !r.migrated_from_v1);
+            }).length;
+            const completedCount = searchResults.filter(r => {
+              const ns = normalizeStatusToNumeric(r.status, (r as unknown as Record<string, unknown>).sub_status as string | null);
+              return ns === 5001 || (ns === 2001 && !!r.migrated_from_v1);
+            }).length;
             const otherCount = searchResults.length - activeCount - completedCount;
             return (
               <div className="flex flex-wrap gap-2">

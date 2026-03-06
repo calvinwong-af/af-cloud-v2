@@ -29,7 +29,7 @@ import {
 import { formatDate } from '@/lib/utils';
 import { deleteShipmentOrderAction } from '@/app/actions/shipments-write';
 import type { ShipmentOrder } from '@/lib/types';
-import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS } from '@/lib/types';
+import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS, normalizeStatusToNumeric } from '@/lib/types';
 
 interface ShipmentOrderTableProps {
   orders: ShipmentOrder[];
@@ -43,7 +43,11 @@ interface ShipmentOrderTableProps {
 // ---------------------------------------------------------------------------
 
 function StatusIcon({ order }: { order: ShipmentOrder }) {
-  const label = SHIPMENT_STATUS_LABELS[order.status] ?? `${order.status}`;
+  const numericStatus = normalizeStatusToNumeric(
+    order.status,
+    (order as unknown as Record<string, unknown>).sub_status as string | null
+  );
+  const label = SHIPMENT_STATUS_LABELS[numericStatus] ?? `${order.status}`;
 
   const iconMap: Record<number, { icon: React.ReactNode; color: string }> = {
     1001: { icon: <FileText className="w-4 h-4" />,      color: 'var(--text-muted)' },
@@ -61,12 +65,12 @@ function StatusIcon({ order }: { order: ShipmentOrder }) {
     [-1]: { icon: <Ban className="w-4 h-4" />,           color: '#6b7280' },
   };
 
-  const entry = iconMap[order.status] ?? iconMap[1001];
+  const entry = iconMap[numericStatus] ?? iconMap[1001];
 
   return (
     <div className="flex items-center gap-2">
       <span title={label} style={{ color: entry.color }}>{entry.icon}</span>
-      {order.status === 5001 && (
+      {numericStatus === 5001 && (
         order.issued_invoice
           ? <span title="Invoiced" style={{ color: '#16a34a' }}><ReceiptText className="w-4 h-4" /></span>
           : <span title="Awaiting Invoice" style={{ color: '#ca8a04' }}><Receipt className="w-4 h-4" /></span>
@@ -387,9 +391,10 @@ const STATUS_BADGE_COLORS: Record<string, { bg: string; text: string }> = {
   green:  { bg: '#dcfce7', text: '#16a34a' },
 };
 
-function StatusBadge({ status }: { status: number }) {
-  const label = SHIPMENT_STATUS_LABELS[status] ?? `${status}`;
-  const colorKey = SHIPMENT_STATUS_COLOR[status] ?? 'gray';
+function StatusBadge({ status }: { status: number | string }) {
+  const numStatus = typeof status === 'number' ? status : normalizeStatusToNumeric(status);
+  const label = SHIPMENT_STATUS_LABELS[numStatus] ?? `${status}`;
+  const colorKey = SHIPMENT_STATUS_COLOR[numStatus] ?? 'gray';
   const colors = STATUS_BADGE_COLORS[colorKey] ?? STATUS_BADGE_COLORS.gray;
   return (
     <span

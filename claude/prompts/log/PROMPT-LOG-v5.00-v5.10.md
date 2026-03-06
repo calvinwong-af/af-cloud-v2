@@ -1,5 +1,27 @@
 # Prompt Completion Log — v5.00–v5.10
 
+### [2026-03-06 UTC] — v5.06: Status Consistency Sweep (Backend + Frontend)
+- **Status:** Completed
+- **Tasks:**
+  - Fixed `status_label` lookups in `core.py` search endpoint — replaced `STATUS_LABELS.get()` (numeric-keyed) with `get_status_display()` (string-aware); added `o.sub_status` to ID-only search SELECT
+  - Fixed `status_label` in `db_queries.py` `search_shipments` — uses `get_status_display()`
+  - Added numeric status conversion in `db_queries.py` `list_shipments` and `get_shipment_by_id` at API boundary — DB stores strings, API returns numeric codes for frontend compat
+  - Added `normalizeStatusToNumeric()` utility to `types.ts` — shared helper for defensive frontend normalization
+  - Fixed `StatusCard` and `PartiesCard` in `_components.tsx` — normalize status before stepper/edit-guard logic
+  - Removed numeric code display `({s.status})` from sub-step dialog radio options
+  - Fixed `StatusIcon` and `StatusBadge` in `ShipmentOrderTable.tsx` — normalize status before icon/label lookup
+  - Fixed search summary badges in `orders/shipments/page.tsx` — normalize status in filter callbacks
+- **Files Modified:**
+  - `af-server/routers/shipments/core.py`
+  - `af-server/core/db_queries.py`
+  - `af-platform/src/lib/types.ts`
+  - `af-platform/src/app/(platform)/shipments/[id]/_components.tsx`
+  - `af-platform/src/components/shipments/ShipmentOrderTable.tsx`
+  - `af-platform/src/app/(platform)/orders/shipments/page.tsx`
+- **Notes:** Build passes cleanly. TypeScript `as Record<string, unknown>` casts required `as unknown as` double-cast due to strict type overlap check.
+
+---
+
 ### [2026-03-06 UTC] — v5.05: "Create as Confirmed" Option on New Shipment Modal
 - **Status:** Completed
 - **Tasks:**
