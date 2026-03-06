@@ -1,0 +1,462 @@
+/**
+ * /orders/shipments — Freight Shipment Orders list
+ *
+ * Shows all shipment orders (parent orders only — no ground children).
+ * Unified V1+V2 view via the assembly layer.
+ * Supports status filter tabs, search, and pagination.
+ */
+
+'use client';
+
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Package, Truck, CheckCircle2, AlertCircle, RefreshCw, Search, X } from 'lucide-react';
+import { getShipmentListAction, fetchShipmentOrderStatsAction, fetchCompaniesForShipmentAction, fetchPortsAction, searchShipmentsAction } from '@/app/actions/shipments';
+import type { ShipmentListItem } from '@/app/actions/shipments';
+import { getCurrentUserProfileAction } from '@/app/actions/users';
+import type { ShipmentOrder, OrderType } from '@/lib/types';
+import { ShipmentOrderTable } from '@/components/shipments/ShipmentOrderTable';
+import { KpiCard } from '@/components/shared/KpiCard';
+import NewShipmentButton from '@/components/shipments/NewShipmentButton';
+
+// ---------------------------------------------------------------------------
+// Status filter tabs
+// ---------------------------------------------------------------------------
+
+type FilterTab = 'all' | 'active' | 'draft' | 'completed' | 'to_invoice' | 'cancelled';
+
+const FILTER_TABS: { key: FilterTab; label: string }[] = [
+  { key: 'all',        label: 'All' },
+  { key: 'active',     label: 'Active' },
+  { key: 'draft',      label: 'Draft' },
+  { key: 'completed',  label: 'Completed' },
+  { key: 'to_invoice', label: 'To Invoice' },
+  { key: 'cancelled',  label: 'Cancelled' },
+];
+
+// Map V1 short type codes from af-server to V2 OrderType for the table icons
+const ORDER_TYPE_MAP: Record<string, OrderType> = {
+  FCL: 'SEA_FCL',
+  LCL: 'SEA_LCL',
+  AIR: 'AIR',
+  SEA_FCL: 'SEA_FCL',
+  SEA_LCL: 'SEA_LCL',
+  CROSS_BORDER: 'CROSS_BORDER',
+  GROUND: 'GROUND',
+};
+
+/** Map a ShipmentListItem from af-server into the ShipmentOrder shape the table expects. */
+function toShipmentOrder(item: ShipmentListItem): ShipmentOrder {
+  return {
+    quotation_id: item.shipment_id,
+    countid: 0,
+    data_version: item.data_version,
+    migrated_from_v1: item.migrated_from_v1,
+    company_id: item.company_id,
+    order_type: ORDER_TYPE_MAP[item.order_type] ?? 'SEA_FCL',
+    transaction_type: (item.transaction_type as ShipmentOrder['transaction_type']) || 'IMPORT',
+    incoterm_code: item.incoterm || null,
+    status: item.status as ShipmentOrder['status'],
+    issued_invoice: item.issued_invoice ?? false,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...(item.cargo_is_dg != null ? { cargo_is_dg: item.cargo_is_dg } as any : {}),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...(item.is_test != null ? { is_test: item.is_test } as any : {}),
+    completed: false,
+    completed_at: null,
+    last_status_updated: null,
+    status_history: [],
+    parent_id: null,
+    related_orders: [],
+    commercial_quotation_ids: [],
+    origin: item.origin_port
+      ? { type: 'PORT', port_un_code: item.origin_port, terminal_id: null, city_id: null, address: null, country_code: null, label: item.origin_port }
+      : null,
+    destination: item.destination_port
+      ? { type: 'PORT', port_un_code: item.destination_port, terminal_id: null, city_id: null, address: null, country_code: null, label: item.destination_port }
+      : null,
+    cargo: null,
+    type_details: null,
+    booking: null,
+    parties: null,
+    customs_clearance: [],
+    bl_document: null,
+    exception: null,
+    booking_reference: null,
+    hawb_number: null,
+    mawb_number: null,
+    awb_type: null,
+    tracking_id: null,
+    files: [],
+    trash: false,
+    cargo_ready_date: item.cargo_ready_date,
+    creator: null,
+    user: '',
+    created: '',
+    updated: item.updated,
+    _company_name: item.company_name || undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
+
+function ShipmentsPageInner() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const tabParam = searchParams.get('tab') as FilterTab | null;
+  const validTabs: FilterTab[] = ['all', 'active', 'draft', 'completed', 'to_invoice', 'cancelled'];
+  const initialTab: FilterTab = tabParam && validTabs.includes(tabParam) ? tabParam : 'active';
+
+  const [orders, setOrders] = useState<ShipmentOrder[]>([]);
+  const [stats, setStats] = useState<{
+    total: number; active: number; draft: number; completed: number; to_invoice: number; cancelled: number;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<FilterTab>(initialTab);
+  const [nextCursor, setNextCursor] = useState<number | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [companies, setCompanies] = useState<{ company_id: string; name: string }[]>([]);
+  const [ports, setPorts] = useState<{ un_code: string; name: string; country: string; port_type: string; has_terminals: boolean; terminals: Array<{ terminal_id: string; name: string; is_default: boolean }> }[]>([]);
+  const [accountType, setAccountType] = useState<string | null>(null);
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<ShipmentOrder[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchNextCursor, setSearchNextCursor] = useState<string | null>(null);
+  const [searchTotal, setSearchTotal] = useState<number>(0);
+  const [loadingMoreSearch, setLoadingMoreSearch] = useState(false);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  const fetchIdRef = useRef(0);
+
+  useEffect(() => {
+    Promise.all([
+      fetchCompaniesForShipmentAction(),
+      fetchPortsAction(),
+      getCurrentUserProfileAction(),
+    ]).then(([c, p, profile]) => {
+      setCompanies(c);
+      setPorts(p);
+      setAccountType(profile.account_type);
+      setProfileLoaded(true);
+    });
+  }, []);
+
+  const load = useCallback(async (tab: FilterTab, offset?: number) => {
+    const fetchId = ++fetchIdRef.current;
+
+    if (!offset) setLoading(true);
+    else setLoadingMore(true);
+    setError(null);
+
+    try {
+      const [listResult, statsResult] = await Promise.all([
+        getShipmentListAction(tab, offset ?? 0, 25),
+        !offset ? fetchShipmentOrderStatsAction() : Promise.resolve(null),
+      ]);
+
+      if (fetchId !== fetchIdRef.current) return;
+
+      const fetchedOrders = listResult.shipments.map(toShipmentOrder);
+
+      if (offset) {
+        setOrders((prev) => [...prev, ...fetchedOrders]);
+      } else {
+        setOrders(fetchedOrders);
+      }
+      setNextCursor(listResult.next_cursor ? parseInt(listResult.next_cursor, 10) : null);
+
+      if (statsResult && statsResult.success) setStats(statsResult.data);
+    } catch (err) {
+      if (fetchId !== fetchIdRef.current) return;
+      setError(err instanceof Error ? err.message : 'Failed to load orders');
+    } finally {
+      if (fetchId === fetchIdRef.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    load(activeTab);
+  }, [activeTab, load]);
+
+  function handleTabChange(tab: FilterTab) {
+    setActiveTab(tab);
+    setOrders([]);
+    setNextCursor(null);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', tab);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }
+
+  function handleSearchChange(value: string) {
+    setSearchQuery(value);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+
+    if (value.trim().length < 3) {
+      setSearchResults([]);
+      setSearchNextCursor(null);
+      setSearchTotal(0);
+      setSearching(false);
+      return;
+    }
+
+    setSearching(true);
+    searchDebounceRef.current = setTimeout(async () => {
+      const { results, nextCursor, total } = await searchShipmentsAction(value.trim(), 'all', 25, 0);
+      setSearchResults(results.map((r) => toShipmentOrder({
+        shipment_id: r.shipment_id,
+        data_version: r.data_version,
+        migrated_from_v1: r.migrated_from_v1 ?? false,
+        status: r.status,
+        order_type: r.order_type,
+        transaction_type: r.transaction_type ?? '',
+        incoterm: r.incoterm ?? '',
+        origin_port: r.origin_port,
+        destination_port: r.destination_port,
+        company_id: r.company_id,
+        company_name: r.company_name,
+        cargo_ready_date: r.cargo_ready_date ?? '',
+        updated: r.updated,
+        issued_invoice: r.issued_invoice ?? false,
+      })));
+      setSearchNextCursor(nextCursor);
+      setSearchTotal(total);
+      setSearching(false);
+    }, 300);
+  }
+
+  function clearSearch() {
+    setSearchQuery('');
+    setSearchResults([]);
+    setSearchNextCursor(null);
+    setSearchTotal(0);
+    setSearching(false);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+  }
+
+  async function loadMoreSearch() {
+    if (!searchNextCursor || loadingMoreSearch) return;
+    setLoadingMoreSearch(true);
+    const offset = parseInt(searchNextCursor, 10);
+    const { results, nextCursor } = await searchShipmentsAction(searchQuery.trim(), 'all', 25, offset);
+    setSearchResults(prev => [...prev, ...results.map((r) => toShipmentOrder({
+      shipment_id: r.shipment_id,
+      data_version: r.data_version,
+      migrated_from_v1: r.migrated_from_v1 ?? false,
+      status: r.status,
+      order_type: r.order_type,
+      transaction_type: r.transaction_type ?? '',
+      incoterm: r.incoterm ?? '',
+      origin_port: r.origin_port,
+      destination_port: r.destination_port,
+      company_id: r.company_id,
+      company_name: r.company_name,
+      cargo_ready_date: r.cargo_ready_date ?? '',
+      updated: r.updated,
+      issued_invoice: r.issued_invoice ?? false,
+    }))]);
+    setSearchNextCursor(nextCursor);
+    setLoadingMoreSearch(false);
+  }
+
+  const isSearchActive = searchQuery.trim().length >= 3;
+
+  return (
+    <div className="p-4 sm:p-6 space-y-5 sm:space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-semibold text-[var(--text)]">Shipment Orders</h1>
+          <p className="text-sm text-[var(--text-muted)] mt-0.5">
+            All active and historical shipments
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => load(activeTab)}
+            className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-[var(--border)] text-[var(--text-mid)] hover:bg-[var(--surface)] transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+          <NewShipmentButton companies={companies} ports={ports} accountType={accountType} />
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="hidden sm:grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard
+          icon={<Package className="w-5 h-5" />}
+          label="Total Orders"
+          value={stats?.total ?? '—'}
+          loading={stats == null}
+        />
+        <KpiCard
+          icon={<Truck className="w-5 h-5" />}
+          label="Active"
+          value={stats?.active ?? '—'}
+          loading={stats == null}
+          color="sky"
+        />
+        <KpiCard
+          icon={<CheckCircle2 className="w-5 h-5" />}
+          label="Completed"
+          value={stats?.completed ?? '—'}
+          loading={stats == null}
+          color="green"
+        />
+        <KpiCard
+          icon={<AlertCircle className="w-5 h-5" />}
+          label="Draft"
+          value={stats?.draft ?? '—'}
+          loading={stats == null}
+          color="amber"
+        />
+      </div>
+
+      {/* Search bar */}
+      <div className="relative">
+        <div className="flex items-center gap-2 rounded-lg px-3 py-2 border border-[var(--border)] bg-white">
+          <Search size={16} style={{ color: 'var(--text-muted)' }} />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            placeholder="Search shipments by ID, company name, or port code…"
+            className="flex-1 text-sm bg-transparent outline-none"
+            style={{ color: 'var(--text)' }}
+          />
+          {searchQuery && (
+            <button onClick={clearSearch} className="p-0.5 rounded hover:bg-[var(--surface)] transition-colors">
+              <X size={14} style={{ color: 'var(--text-muted)' }} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Search active indicator or filter tabs */}
+      {isSearchActive ? (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+            <span>Searching across all shipments</span>
+            {!searching && (
+              <span className="font-medium" style={{ color: 'var(--text)' }}>
+                {searchTotal > searchResults.length
+                  ? `· showing ${searchResults.length} of ${searchTotal}`
+                  : `· ${searchResults.length} result${searchResults.length !== 1 ? 's' : ''}`}
+              </span>
+            )}
+            {searching && <span className="italic">…</span>}
+          </div>
+          {!searching && searchResults.length > 0 && (() => {
+            const ACTIVE_STATUSES = new Set([3001, 3002, 4001, 4002]);
+            const NATIVE_ACTIVE = (r: ShipmentOrder) =>
+              r.status === 2001 && !r.migrated_from_v1;
+            const activeCount = searchResults.filter(r => ACTIVE_STATUSES.has(r.status as number) || NATIVE_ACTIVE(r)).length;
+            const completedCount = searchResults.filter(r => r.status === 5001 || (r.status === 2001 && r.migrated_from_v1)).length;
+            const otherCount = searchResults.length - activeCount - completedCount;
+            return (
+              <div className="flex flex-wrap gap-2">
+                {activeCount > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-sky-50 text-sky-700 border border-sky-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-sky-500 inline-block" />
+                    Active · {activeCount}
+                  </span>
+                )}
+                {completedCount > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                    Completed · {completedCount}
+                  </span>
+                )}
+                {otherCount > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-50 text-gray-600 border border-gray-200">
+                    Other · {otherCount}
+                  </span>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      ) : (
+        <div className="border-b border-[var(--border)]">
+          <nav className="flex gap-1 overflow-x-auto pb-px -mb-px" style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+            {FILTER_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => handleTabChange(tab.key)}
+                className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap
+                  ${activeTab === tab.key
+                    ? 'border-[var(--sky)] text-[var(--sky)]'
+                    : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text)]'
+                  }`}
+              >
+                {tab.label}
+                {stats && tab.key !== 'all' && (
+                  <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full
+                    ${activeTab === tab.key ? 'bg-sky-100 text-sky-700' : 'bg-gray-100 text-gray-500'}`}>
+                    {(() => { const n = tab.key === 'to_invoice' ? stats.to_invoice : (stats[tab.key as keyof typeof stats] ?? 0) as number; return n >= 1000 ? `${(n / 1000).toFixed(1)}K` : n; })()}
+                  </span>
+                )}
+              </button>
+            ))}
+          </nav>
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && (
+        <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm flex items-center gap-3">
+          <span className="font-medium">Error:</span> {error}
+          <button onClick={() => load(activeTab)} className="ml-auto underline">Retry</button>
+        </div>
+      )}
+
+      {/* Table */}
+      <ShipmentOrderTable
+        orders={isSearchActive ? searchResults : orders}
+        loading={isSearchActive ? searching : (loading || !profileLoaded)}
+        accountType={accountType}
+        onRefresh={() => load(activeTab)}
+      />
+
+      {/* Load more — tab list */}
+      {!isSearchActive && nextCursor && !loading && (
+        <div className="flex justify-center">
+          <button
+            onClick={() => load(activeTab, nextCursor ?? undefined)}
+            disabled={loadingMore}
+            className="px-6 py-2 text-sm rounded-lg border border-[var(--border)] text-[var(--text-mid)]
+                       hover:bg-[var(--surface)] transition-colors disabled:opacity-50"
+          >
+            {loadingMore ? 'Loading…' : 'Load more'}
+          </button>
+        </div>
+      )}
+
+      {/* Load more — search results */}
+      {isSearchActive && searchNextCursor && (
+        <div className="flex justify-center">
+          <button
+            onClick={loadMoreSearch}
+            disabled={loadingMoreSearch}
+            className="px-6 py-2 text-sm rounded-lg border border-[var(--border)] text-[var(--text-mid)]
+                       hover:bg-[var(--surface)] transition-colors disabled:opacity-50"
+          >
+            {loadingMoreSearch ? 'Loading…' : 'Load more results'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function ShipmentsPage() {
+  return <Suspense><ShipmentsPageInner /></Suspense>;
+}

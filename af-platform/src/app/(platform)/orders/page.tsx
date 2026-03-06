@@ -566,10 +566,8 @@ function OrdersPageInner() {
             </thead>
             <tbody className="divide-y divide-[var(--border)]">
               {orders.map((order) => {
-                const statusKey   = order.sub_status || order.status;
-                const statusLabel = STATUS_DISPLAY[statusKey] ?? statusKey.replace(/_/g, ' ');
-                const badgeStyle  = ORDER_STATUS_STYLES[order.status] ?? 'bg-gray-100 text-gray-700';
-                const detailHref  = order.order_type === 'transport'
+                const statusKey  = order.sub_status || order.status;
+                const detailHref = order.order_type === 'transport'
                   ? `/ground-transport/${order.order_id}`
                   : `/shipments/${order.order_id}`;
 
