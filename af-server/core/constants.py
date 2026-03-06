@@ -157,6 +157,24 @@ NUMERIC_TO_STRING_STATUS = {
     -1:   ("cancelled", None),
 }
 
+# String status → numeric code (reverse mapping, lowest numeric per string status)
+STRING_STATUS_TO_NUMERIC = {
+    "draft": 1001,
+    "confirmed": 2001,
+    "in_progress": 3001,
+    "completed": 5001,
+    "cancelled": -1,
+}
+
+# Sub-status → numeric code (for precise reverse mapping when status is 'in_progress')
+SUB_STATUS_TO_NUMERIC = {
+    "confirmed": 2001,
+    "booking_pending": 3001,
+    "booking_confirmed": 3002,
+    "in_transit": 4001,
+    "arrived": 4002,
+}
+
 # String → display label (for search results etc.)
 def get_status_display(status: str, sub_status: str | None = None) -> str:
     """Get the display label for a string status + sub_status."""

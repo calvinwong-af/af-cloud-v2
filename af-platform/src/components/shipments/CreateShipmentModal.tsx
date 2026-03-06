@@ -29,7 +29,7 @@ function getAirports(ports: Port[]): Port[] {
 
 // ─── Shared UI ────────────────────────────────────────────────────────────────
 
-function StepIndicator({ currentStep }: { currentStep: number }) {
+function StepIndicator({ currentStep, step4Label }: { currentStep: number; step4Label: string }) {
   return (
     <div className="flex items-center gap-1 mb-6">
       {BASE_STEPS.map((step, i) => (
@@ -42,7 +42,7 @@ function StepIndicator({ currentStep }: { currentStep: number }) {
             {step.id < currentStep ? '✓' : step.id}
           </div>
           <span className={`text-xs hidden sm:inline ${step.id === currentStep ? 'text-[var(--text)] font-medium' : 'text-[var(--text-muted)]'}`}>
-            {step.label}
+            {step.id === 4 ? step4Label : step.label}
           </span>
           {i < BASE_STEPS.length - 1 && <div className="w-4 h-px bg-[var(--border)] mx-1" />}
         </div>
@@ -173,6 +173,7 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isTest, setIsTest] = useState(false);
+  const [createAsConfirmed, setCreateAsConfirmed] = useState(false);
 
   // Step 1: Order
   const [orderType, setOrderType] = useState<OrderType>('SEA_FCL');
@@ -320,6 +321,7 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
       etd: null,
       eta: null,
       is_test: isTest,
+      initial_status: createAsConfirmed ? 'confirmed' : 'draft',
     };
 
     const result = await createShipmentOrderAction(payload);
@@ -431,6 +433,8 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
             ports={ports}
             isTest={isTest}
             onIsTestChange={setIsTest}
+            createAsConfirmed={createAsConfirmed}
+            onCreateAsConfirmedChange={setCreateAsConfirmed}
             accountType={accountType}
           />
         );
@@ -474,8 +478,8 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {activeTab === 'manual' ? (
             <>
-              <p className="text-xs text-[var(--text-muted)] mb-3">Step {step} of {BASE_STEPS.length} — {step === 4 ? (orderType === 'SEA_FCL' ? 'Containers' : 'Packages') : BASE_STEPS[step - 1]?.label}</p>
-              <StepIndicator currentStep={step} />
+              <p className="text-xs text-[var(--text-muted)] mb-3">Step {step} of {BASE_STEPS.length} — {step === 4 ? (orderType === 'SEA_FCL' ? 'Containers' : 'Package') : BASE_STEPS[step - 1]?.label}</p>
+              <StepIndicator currentStep={step} step4Label={orderType === 'SEA_FCL' ? 'Containers' : 'Package'} />
               {renderStep()}
               {error && (
                 <div className="mt-4 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600">

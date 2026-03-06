@@ -23,6 +23,9 @@ from core.constants import (
     STATUS_CANCELLED,
     STATUS_BOOKING_PENDING,
     STATUS_BOOKING_CONFIRMED,
+    NUMERIC_TO_STRING_STATUS,
+    STRING_STATUS_TO_NUMERIC,
+    SUB_STATUS_TO_NUMERIC,
     get_status_path,
     get_status_path_list,
 )
@@ -32,6 +35,21 @@ from ._helpers import _parse_jsonb
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _normalize_status_to_numeric(raw_status, raw_sub_status=None) -> int:
+    """Convert stored status (may be int, numeric string, or string label) to numeric code."""
+    if raw_status is None:
+        return 1001
+    if isinstance(raw_status, int):
+        return raw_status
+    s = str(raw_status).strip()
+    if s.lstrip('-').isdigit():
+        return int(s)
+    # String status — use sub_status for precise mapping when in_progress
+    if raw_sub_status and raw_sub_status in SUB_STATUS_TO_NUMERIC:
+        return SUB_STATUS_TO_NUMERIC[raw_sub_status]
+    return STRING_STATUS_TO_NUMERIC.get(s, 1001)
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +82,7 @@ async def update_shipment_status(
 
     # --- a. Read shipment ---
     row = conn.execute(text("""
-        SELECT o.status, sd.incoterm_code, sd.transaction_type, sd.status_history
+        SELECT o.status, sd.incoterm_code, sd.transaction_type, sd.status_history, o.sub_status
         FROM orders o
         JOIN shipment_details sd ON sd.order_id = o.order_id
         WHERE o.order_id = :id
@@ -73,8 +91,8 @@ async def update_shipment_status(
     if not row:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
-    # --- b. Current status ---
-    current_status = row[0] or 0
+    # --- b. Current status (normalize to numeric for validation) ---
+    current_status = _normalize_status_to_numeric(row[0], row[4])
     incoterm = row[1] or ""
     txn_type = row[2] or ""
     q_history = _parse_jsonb(row[3]) or []
@@ -140,14 +158,17 @@ async def update_shipment_status(
 
     new_q_history = list(q_history) + [q_history_entry]
 
-    # --- g. Write status to orders + status_history to shipment_details ---
+    # --- g. Write status to orders (as string) + status_history to shipment_details ---
+    str_status, str_sub_status = NUMERIC_TO_STRING_STATUS.get(new_status, ("draft", None))
     conn.execute(text("""
         UPDATE orders
-        SET status = :new_status,
+        SET status = :str_status,
+            sub_status = :str_sub_status,
             updated_at = :now
         WHERE order_id = :id
     """), {
-        "new_status": new_status,
+        "str_status": str_status,
+        "str_sub_status": str_sub_status,
         "now": now,
         "id": shipment_id,
     })
@@ -221,7 +242,7 @@ async def update_completed_flag(
     now = datetime.now(timezone.utc).isoformat()
 
     row = conn.execute(text("""
-        SELECT o.status, sd.status_history
+        SELECT o.status, sd.status_history, o.sub_status
         FROM orders o
         JOIN shipment_details sd ON sd.order_id = o.order_id
         WHERE o.order_id = :id
@@ -230,7 +251,7 @@ async def update_completed_flag(
     if not row:
         raise NotFoundError(f"Shipment {shipment_id} not found")
 
-    current_status = row[0] or 0
+    current_status = _normalize_status_to_numeric(row[0], row[2])
 
     # Minimum status to allow completion
     if body.completed and current_status < STATUS_BOOKING_CONFIRMED:

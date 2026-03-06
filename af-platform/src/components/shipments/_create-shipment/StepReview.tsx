@@ -24,6 +24,8 @@ interface StepReviewProps {
   ports: Port[];
   isTest?: boolean;
   onIsTestChange?: (v: boolean) => void;
+  createAsConfirmed?: boolean;
+  onCreateAsConfirmedChange?: (v: boolean) => void;
   accountType?: string | null;
 }
 
@@ -59,6 +61,8 @@ export function StepReview({
   ports,
   isTest,
   onIsTestChange,
+  createAsConfirmed,
+  onCreateAsConfirmedChange,
   accountType,
 }: StepReviewProps) {
   const activePorts = orderType === 'AIR'
@@ -111,19 +115,39 @@ export function StepReview({
           ))}
         </div>
       )}
-      {accountType === 'AFU' && onIsTestChange && (
-        <label className="flex items-center gap-2 text-sm cursor-pointer">
-          <input
-            type="checkbox"
-            checked={isTest ?? false}
-            onChange={e => onIsTestChange(e.target.checked)}
-            className="rounded border-[var(--border)]"
-          />
-          <span className="text-[var(--text-muted)]">Mark as test order</span>
-        </label>
+      {accountType === 'AFU' && (
+        <div className="space-y-2">
+          {onCreateAsConfirmedChange && (
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={createAsConfirmed ?? false}
+                onChange={e => onCreateAsConfirmedChange(e.target.checked)}
+                className="rounded border-[var(--border)]"
+              />
+              <span className="text-[var(--text-muted)]">Create as Confirmed</span>
+            </label>
+          )}
+          {onIsTestChange && (
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isTest ?? false}
+                onChange={e => onIsTestChange(e.target.checked)}
+                className="rounded border-[var(--border)]"
+              />
+              <span className="text-[var(--text-muted)]">Test order</span>
+            </label>
+          )}
+        </div>
       )}
-      <div className="bg-[var(--sky-pale)] border border-[var(--sky)] rounded-lg px-3 py-2 text-xs text-[var(--sky)]">
-        The shipment will be created with status <strong>Draft</strong>.
+      <div className={`border rounded-lg px-3 py-2 text-xs ${
+        createAsConfirmed
+          ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+          : 'bg-[var(--sky-pale)] border-[var(--sky)] text-[var(--sky)]'
+      }`}>
+        The shipment will be created with status{' '}
+        <strong>{createAsConfirmed ? 'Confirmed' : 'Draft'}</strong>.
       </div>
     </div>
   );

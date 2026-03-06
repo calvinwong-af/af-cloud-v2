@@ -66,6 +66,7 @@ export interface CreateShipmentOrderPayload {
   etd: string | null;
   eta: string | null;
   is_test?: boolean;
+  initial_status?: string;
 }
 
 export async function createShipmentOrderAction(
@@ -138,6 +139,7 @@ export async function createShipmentOrderAction(
         etd: payload.etd,
         eta: payload.eta,
         is_test: payload.is_test ?? false,
+        initial_status: payload.initial_status ?? 'draft',
       }),
       cache: 'no-store',
     });

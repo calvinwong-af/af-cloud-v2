@@ -421,6 +421,7 @@ class CreateManualShipmentRequest(BaseModel):
     etd: str | None = None
     eta: str | None = None
     is_test: bool = False
+    initial_status: str | None = None  # 'draft' | 'confirmed' — AFU only, defaults to 'draft'
 
 
 async def create_shipment_manual(
@@ -500,13 +501,25 @@ async def create_shipment_manual(
     if body.notify_party:
         parties["notify_party"] = body.notify_party
 
-    # 8. Initial status = 1002 (Draft Review)
-    status = STATUS_CONFIRMED
+    # 8. Initial status
+    allowed_create_statuses = {'draft', 'confirmed'}
+    requested = (body.initial_status or 'draft').lower()
+    if requested not in allowed_create_statuses:
+        requested = 'draft'
+
+    if requested == 'confirmed':
+        str_status = 'confirmed'
+        str_sub_status = 'confirmed'
+        status_label = 'Confirmed'
+    else:
+        str_status = 'draft'
+        str_sub_status = None
+        status_label = 'Draft'
 
     # 9. Status history
     initial_history = [{
-        "status": status,
-        "label": STATUS_LABELS.get(status, str(status)),
+        "status": str_status,
+        "label": status_label,
         "timestamp": now,
         "changed_by": claims.email,
         "note": "Manually created",
@@ -525,7 +538,7 @@ async def create_shipment_manual(
             migrated_from_v1, completed, is_test
         ) VALUES (
             :id, 'shipment', :countid, :company_id,
-            :status, NULL, FALSE,
+            :status, :sub_status, FALSE,
             CAST(:cargo AS jsonb), CAST(:parties AS jsonb), NULL,
             FALSE, CAST(:creator AS jsonb), :now, :now,
             FALSE, FALSE, :is_test
@@ -534,7 +547,8 @@ async def create_shipment_manual(
         "id": shipment_id,
         "countid": new_countid,
         "company_id": body.company_id,
-        "status": status,
+        "status": str_status,
+        "sub_status": str_sub_status,
         "now": now,
         "cargo": json.dumps(cargo),
         "parties": json.dumps(parties),
@@ -595,8 +609,8 @@ async def create_shipment_manual(
 
     # 13. Workflow history
     wf_history = [{
-        "status": status,
-        "status_label": STATUS_LABELS.get(status, str(status)),
+        "status": str_status,
+        "status_label": status_label,
         "timestamp": now,
         "changed_by": claims.uid,
     }]

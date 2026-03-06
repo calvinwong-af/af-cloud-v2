@@ -1,5 +1,40 @@
 # Prompt Completion Log — v5.00–v5.10
 
+### [2026-03-06 UTC] — v5.05: "Create as Confirmed" Option on New Shipment Modal
+- **Status:** Completed
+- **Tasks:**
+  - Added `createAsConfirmed`/`onCreateAsConfirmedChange` props to StepReview, with reactive green/blue status banner
+  - Reordered AFU checkboxes: "Create as Confirmed" first, "Test order" second
+  - Added `createAsConfirmed` state in CreateShipmentModal, passed to StepReview and payload as `initial_status`
+  - Added `initial_status?: string` to `CreateShipmentOrderPayload` in shipments-write.ts, passed in fetch body
+  - Added `initial_status` field to `CreateManualShipmentRequest` in core.py with validated status assignment (`draft`/`confirmed`)
+  - Updated INSERT to write `sub_status` column; updated workflow history to use string status label
+- **Files Modified:**
+  - `af-platform/src/components/shipments/_create-shipment/StepReview.tsx`
+  - `af-platform/src/components/shipments/CreateShipmentModal.tsx`
+  - `af-platform/src/app/actions/shipments-write.ts`
+  - `af-server/routers/shipments/core.py`
+- **Notes:** BL upload path unchanged (still uses numeric initial_status). Build passes cleanly.
+
+---
+
+### [2026-03-06 UTC] — v5.04: Fix Numeric/String Status Mismatch in status.py
+- **Status:** Completed
+- **Tasks:**
+  - Added `STRING_STATUS_TO_NUMERIC` and `SUB_STATUS_TO_NUMERIC` reverse mappings to `constants.py`
+  - Added `_normalize_status_to_numeric()` helper in `status.py` — handles int, numeric string, and string label status values
+  - Updated `update_shipment_status` SELECT to fetch `o.sub_status`, normalize `current_status` to numeric for validation, write string `status`/`sub_status` to orders table via `NUMERIC_TO_STRING_STATUS`
+  - Updated `update_completed_flag` SELECT to fetch `o.sub_status`, normalize `current_status` to numeric
+  - Status history entries still record numeric codes for backwards compatibility
+  - Created `scripts/backfill_numeric_status.py` — one-time script to fix orders with numeric string status values
+- **Files Modified:**
+  - `af-server/core/constants.py`
+  - `af-server/routers/shipments/status.py`
+  - `af-server/scripts/backfill_numeric_status.py` (new)
+- **Notes:** Frontend unchanged — still sends numeric status codes. Backfill script must be run manually after deployment. History format preserved.
+
+---
+
 ### [2026-03-06 UTC] — v5.03: Fix Build Errors in orders/page.tsx
 - **Status:** Completed
 - **Tasks:**
