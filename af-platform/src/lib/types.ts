@@ -279,6 +279,7 @@ export function normalizeStatusToNumeric(status: unknown, subStatus?: string | n
   const s = String(status ?? '').toLowerCase().trim();
   const ss = (subStatus ?? '').toLowerCase().trim();
   if (s === 'draft') return 1001;
+  if (s === 'pending_review') return 1002;
   if (s === 'confirmed') return 2001;
   if (s === 'in_progress') {
     if (ss === 'booking_pending') return 3001;

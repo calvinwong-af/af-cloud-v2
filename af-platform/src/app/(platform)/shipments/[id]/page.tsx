@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import {
   Package, Calendar, Upload,
   FileText, AlertTriangle, Loader2, Hash,
-  ClipboardList, Pencil,
+  ClipboardList, Pencil, SlidersHorizontal,
 } from 'lucide-react';
 import { fetchShipmentOrderDetailAction, fetchPortsAction } from '@/app/actions/shipments';
 import { patchShipmentCargoAction, fetchShipmentTasksAction } from '@/app/actions/shipments-write';
@@ -19,7 +19,7 @@ import ShipmentFilesTab from '@/components/shipments/ShipmentFilesTab';
 import BLPartyDiffModal from '@/components/shipments/BLPartyDiffModal';
 import DocumentParseModal from '@/components/shipments/DocumentParseModal';
 import RouteNodeTimeline from '@/components/shipments/RouteNodeTimeline';
-import type { ScopeFlags } from '@/app/actions/ground-transport';
+import ScopeConfigDialog from '@/components/shipments/ScopeConfigDialog';
 import {
   STATUS_STYLES,
   SectionCard,
@@ -33,8 +33,6 @@ import {
   CompanyReassignModal,
   TransportCard,
   TransportEditModal,
-  ScopeFlagsCard,
-  GroundTransportReconcileCard,
 } from './_components';
 import { createDocResultHandler } from './_doc-handler';
 import ShipmentRouteMapCard from '@/components/maps/ShipmentRouteMapCard';
@@ -71,6 +69,7 @@ export default function ShipmentOrderDetailPage() {
   const [routePolAtd, setRoutePolAtd] = useState<string | null>(null);
   const [routePodEta, setRoutePodEta] = useState<string | null>(null);
   const [routePodAta, setRoutePodAta] = useState<string | null>(null);
+  const [showScopeConfig, setShowScopeConfig] = useState(false);
 
   const loadOrder = useCallback(async () => {
     const result = await fetchShipmentOrderDetailAction(quotationId);
@@ -237,8 +236,8 @@ export default function ShipmentOrderDetailPage() {
       {/* Route Map */}
       <ShipmentRouteMapCard order={order} ports={ports as Port[]} />
 
-      {/* Upload Document button — AFU, status >= 2001 (Confirmed+) */}
-      {accountType === 'AFU' && order.status >= 2001 && (
+      {/* Upload Document button — AFU, any non-cancelled status */}
+      {accountType === 'AFU' && order.status !== -1 && (
         <div className="flex justify-end">
           <button
             onClick={() => setShowDocParseModal(true)}
@@ -315,6 +314,17 @@ export default function ShipmentOrderDetailPage() {
 
       {activeTab === 'tasks' ? (
         <div className="space-y-4">
+          {accountType === 'AFU' && (
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowScopeConfig(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--text-mid)] border border-[var(--border)] rounded-lg hover:bg-[var(--surface)] transition-colors"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                Configure Scope
+              </button>
+            </div>
+          )}
           <RouteNodeTimeline
             shipmentId={order.quotation_id}
             accountType={accountType}
@@ -504,16 +514,6 @@ export default function ShipmentOrderDetailPage() {
           )}
         </SectionCard>
 
-        {/* Order Scope */}
-        <ScopeFlagsCard
-          shipmentId={order.quotation_id}
-          scope={((order as unknown as Record<string, unknown>).scope as ScopeFlags | null) ?? null}
-          accountType={accountType}
-        />
-
-        {/* Ground Transport Reconciliation */}
-        <GroundTransportReconcileCard shipmentId={order.quotation_id} />
-
       </div>
 
       )}
@@ -587,6 +587,21 @@ export default function ShipmentOrderDetailPage() {
           shipmentId={order.quotation_id}
           onSaved={() => { setShowTransportEdit(false); loadOrder(); }}
           onClose={() => setShowTransportEdit(false)}
+        />
+      )}
+
+      {/* Scope config dialog */}
+      {showScopeConfig && (
+        <ScopeConfigDialog
+          shipmentId={order.quotation_id}
+          orderType={order.order_type}
+          incoterm={order.incoterm_code ?? ''}
+          transactionType={order.transaction_type}
+          onClose={() => setShowScopeConfig(false)}
+          onSaved={() => {
+            setShowScopeConfig(false);
+            setRouteTimelineRefreshKey(k => k + 1);
+          }}
         />
       )}
 

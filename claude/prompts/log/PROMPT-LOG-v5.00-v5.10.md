@@ -1,5 +1,32 @@
 # Prompt Completion Log — v5.00–v5.10
 
+### [2026-03-07 UTC] — v5.07: Order Scope + Task Mode Redesign
+- **Status:** Completed
+- **Tasks:**
+  - Added `derive_scope_from_incoterm()`, `apply_scope_to_tasks()`, `get_eligible_scope_keys()`, `TASK_TYPE_TO_SCOPE_KEY` to `incoterm_tasks.py`; updated `generate_tasks()` to accept optional `scope` param
+  - Created `routers/shipments/scope.py` with GET/PATCH `/api/v2/shipments/{id}/scope` endpoints (AFU only for PATCH)
+  - Registered scope router in `routers/shipments/__init__.py`
+  - Updated `_lazy_init_tasks_pg` in `core.py` to derive/apply scope on first task generation
+  - Created `scripts/backfill_scope_from_tasks.py` — idempotent backfill with `--dry-run` flag
+  - Created `ScopeConfigDialog.tsx` — 3-way toggle per eligible scope leg (Assigned/Tracked/Not in Scope)
+  - Updated `ScopeFlags` type to string modes, added `fetchShipmentScopeAction`, updated `updateShipmentScopeAction` URL
+  - Added "Configure Scope" button (AFU only) in Tasks tab of shipment detail page
+  - Removed `ScopeFlagsCard` and `GroundTransportReconcileCard` from Overview tab rendering
+  - Updated `_components.tsx` scope components to new schema keys
+- **Files Modified:**
+  - `af-server/logic/incoterm_tasks.py`
+  - `af-server/routers/shipments/scope.py` (new)
+  - `af-server/routers/shipments/__init__.py`
+  - `af-server/routers/shipments/core.py`
+  - `af-server/scripts/backfill_scope_from_tasks.py` (new)
+  - `af-platform/src/components/shipments/ScopeConfigDialog.tsx` (new)
+  - `af-platform/src/app/actions/ground-transport.ts`
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx`
+  - `af-platform/src/app/(platform)/shipments/[id]/_components.tsx`
+- **Notes:** Build passes. Backfill script must be run manually after deployment.
+
+---
+
 ### [2026-03-06 UTC] — v5.06: Status Consistency Sweep (Backend + Frontend)
 - **Status:** Completed
 - **Tasks:**

@@ -147,7 +147,7 @@ SUB_STATUS_LABELS = {
 # Numeric → string status mapping (for V1 compat and migration)
 NUMERIC_TO_STRING_STATUS = {
     1001: ("draft", None),
-    1002: ("draft", None),
+    1002: ("pending_review", None),
     2001: ("confirmed", "confirmed"),
     3001: ("in_progress", "booking_pending"),
     3002: ("in_progress", "booking_confirmed"),
@@ -160,6 +160,7 @@ NUMERIC_TO_STRING_STATUS = {
 # String status → numeric code (reverse mapping, lowest numeric per string status)
 STRING_STATUS_TO_NUMERIC = {
     "draft": 1001,
+    "pending_review": 1002,
     "confirmed": 2001,
     "in_progress": 3001,
     "completed": 5001,

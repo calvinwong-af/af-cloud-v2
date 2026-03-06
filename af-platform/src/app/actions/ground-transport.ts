@@ -69,13 +69,10 @@ export interface GroundTransportOrder {
 }
 
 export interface ScopeFlags {
-  first_mile_haulage: boolean;
-  first_mile_trucking: boolean;
-  export_clearance: boolean;
-  sea_freight: boolean;
-  import_clearance: boolean;
-  last_mile_haulage: boolean;
-  last_mile_trucking: boolean;
+  first_mile:        'ASSIGNED' | 'TRACKED' | 'IGNORED';
+  export_clearance:  'ASSIGNED' | 'TRACKED' | 'IGNORED';
+  import_clearance:  'ASSIGNED' | 'TRACKED' | 'IGNORED';
+  last_mile:         'ASSIGNED' | 'TRACKED' | 'IGNORED';
 }
 
 export interface ReconcileResult {
@@ -443,6 +440,34 @@ export async function reconcileShipmentGroundTransportAction(
 // Update Shipment Scope
 // ---------------------------------------------------------------------------
 
+export async function fetchShipmentScopeAction(
+  shipmentId: string,
+): Promise<{ success: true; data: ScopeFlags } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const auth = await getAuthHeaders();
+    if (!auth) return { success: false, error: 'No session token or server URL' };
+
+    const res = await fetch(
+      `${auth.serverUrl}/api/v2/shipments/${encodeURIComponent(shipmentId)}/scope`,
+      { headers: { Authorization: `Bearer ${auth.token}` }, cache: 'no-store' },
+    );
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: json?.detail ?? `Server responded ${res.status}` };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data };
+  } catch (err) {
+    console.error('[fetchShipmentScopeAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to fetch shipment scope' };
+  }
+}
+
 export async function updateShipmentScopeAction(
   shipmentId: string,
   scope: Partial<ScopeFlags>,
@@ -455,7 +480,7 @@ export async function updateShipmentScopeAction(
     if (!auth) return { success: false, error: 'No session token or server URL' };
 
     const res = await fetch(
-      `${auth.serverUrl}/api/v2/ground-transport/shipment/${encodeURIComponent(shipmentId)}/scope`,
+      `${auth.serverUrl}/api/v2/shipments/${encodeURIComponent(shipmentId)}/scope`,
       {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },

@@ -41,6 +41,8 @@ _PORT_ALIASES: dict[str, str] = {
     "HONG KONG":       "HKHKG",
     "DUBAI":           "AEDXB",
     "JEBEL ALI":       "AEJEA",
+    "CHITTAGONG":       "BDCGP",
+    "CHATTOGRAM":       "BDCGP",
     "COLOMBO":         "LKCMB",
     "CHENNAI":         "INMAA",
     "MUNDRA":          "INMUN",
@@ -61,9 +63,14 @@ def _match_port_un_code(conn, port_text: str) -> str | None:
     if not port_text:
         return None
     port_text_upper = port_text.upper().strip()
-    # Check alias dictionary first
+    # Check alias dictionary first — exact match
     if port_text_upper in _PORT_ALIASES:
         return _PORT_ALIASES[port_text_upper]
+    # Try stripping country suffix (e.g. "CHITTAGONG, BANGLADESH" → "CHITTAGONG")
+    if "," in port_text_upper:
+        city_part = port_text_upper.split(",")[0].strip()
+        if city_part in _PORT_ALIASES:
+            return _PORT_ALIASES[city_part]
 
     # Quick check: if it looks like a UN code already (5 uppercase letters)
     if len(port_text_upper) == 5 and port_text_upper.isalpha():

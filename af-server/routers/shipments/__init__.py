@@ -24,6 +24,7 @@ from .files import router as files_router
 from .tasks import router as tasks_router
 from .route_nodes import router as route_nodes_router
 from .doc_apply import router as doc_apply_router
+from .scope import router as scope_router
 
 router = APIRouter()
 
@@ -42,3 +43,4 @@ router.include_router(files_router)
 router.include_router(tasks_router)
 router.include_router(route_nodes_router)
 router.include_router(doc_apply_router)
+router.include_router(scope_router)

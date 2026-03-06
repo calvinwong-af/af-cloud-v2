@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect } from 'react';
+
 interface TerminalSelectorProps {
   terminals: Array<{ terminal_id: string; name: string; is_default: boolean }>;
   value: string;
@@ -8,6 +10,14 @@ interface TerminalSelectorProps {
 }
 
 export default function TerminalSelector({ terminals, value, onChange, label = 'Terminal' }: TerminalSelectorProps) {
+  // Auto-select the default terminal when terminals list changes and nothing is selected
+  useEffect(() => {
+    if (!value && terminals.length > 0) {
+      const defaultTerminal = terminals.find(t => t.is_default) ?? terminals[0];
+      onChange(defaultTerminal.terminal_id);
+    }
+  }, [terminals]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="mt-2">
       <label className="block text-xs font-medium text-[var(--text-mid)] mb-1">{label}</label>

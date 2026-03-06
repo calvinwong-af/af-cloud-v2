@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -120,6 +120,18 @@ export function BCReview({
     setFormState({ ...formState, [key]: value });
   };
 
+  // Auto-populate default terminal on initial render if pol_code is pre-matched but pol_terminal is empty
+  useEffect(() => {
+    const polCode = str(formState.pol_code);
+    const polTerminal = str(formState.pol_terminal);
+    if (polCode && !polTerminal) {
+      const port = ports.find(p => p.un_code === polCode);
+      const defaultTerminal = port?.terminals?.find(t => t.is_default)?.terminal_id ?? port?.terminals?.[0]?.terminal_id;
+      if (defaultTerminal) setFormState({ ...formState, pol_terminal: defaultTerminal });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const seaPorts = ports.filter(p => !p.port_type?.toLowerCase().includes('air'));
   const seaPortOptions = seaPorts.map(p => ({ value: p.un_code, label: `${p.un_code} — ${p.name || p.un_code}` }));
 
@@ -181,7 +193,9 @@ export function BCReview({
             <PortCombobox
               value={str(formState.pol_code)}
               onChange={code => {
-                setFormState({ ...formState, pol_code: code, pol_terminal: '' });
+                const port = seaPorts.find(p => p.un_code === code);
+                const defaultTerminal = port?.terminals?.find(t => t.is_default)?.terminal_id ?? port?.terminals?.[0]?.terminal_id ?? '';
+                setFormState({ ...formState, pol_code: code, pol_terminal: defaultTerminal });
               }}
               options={seaPortOptions}
               placeholder="Search port..."

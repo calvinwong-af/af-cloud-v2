@@ -205,6 +205,78 @@ def _calculate_due_date(
 # Task generation
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Scope mapping — task_type → scope key
+# ---------------------------------------------------------------------------
+TASK_TYPE_TO_SCOPE_KEY: dict[str, str] = {
+    ORIGIN_HAULAGE:      "first_mile",
+    EXPORT_CLEARANCE:    "export_clearance",
+    IMPORT_CLEARANCE:    "import_clearance",
+    DESTINATION_HAULAGE: "last_mile",
+}
+
+SCOPE_KEY_TO_TASK_TYPE: dict[str, str] = {v: k for k, v in TASK_TYPE_TO_SCOPE_KEY.items()}
+
+_SCOPE_KEYS = ["first_mile", "export_clearance", "import_clearance", "last_mile"]
+
+
+def derive_scope_from_incoterm(incoterm: str, transaction_type: str) -> dict:
+    """
+    Returns a scope dict with keys: first_mile, export_clearance, import_clearance, last_mile.
+    Task types present in the incoterm rules → "ASSIGNED".
+    Task types absent → "IGNORED".
+    POL, POD, FREIGHT_BOOKING are excluded (not scope-configurable).
+    """
+    incoterm_upper = incoterm.upper().strip()
+    txn_upper = transaction_type.upper().strip()
+
+    rules = _INCOTERM_RULES.get(incoterm_upper)
+    task_types: list[str] = []
+    if rules:
+        task_types = rules.get(txn_upper, [])
+
+    scope: dict[str, str] = {}
+    for scope_key in _SCOPE_KEYS:
+        task_type = SCOPE_KEY_TO_TASK_TYPE[scope_key]
+        scope[scope_key] = ASSIGNED if task_type in task_types else IGNORED
+
+    return scope
+
+
+def get_eligible_scope_keys(incoterm: str, transaction_type: str) -> list[str]:
+    """Return scope keys that are eligible (present in incoterm rules) for this combo."""
+    incoterm_upper = incoterm.upper().strip()
+    txn_upper = transaction_type.upper().strip()
+    rules = _INCOTERM_RULES.get(incoterm_upper)
+    task_types: list[str] = rules.get(txn_upper, []) if rules else []
+    return [sk for sk in _SCOPE_KEYS if SCOPE_KEY_TO_TASK_TYPE[sk] in task_types]
+
+
+def apply_scope_to_tasks(tasks: list[dict], scope: dict) -> list[dict]:
+    """
+    Applies scope flags to task mode. Only affects tasks whose type maps
+    to a scope key. POL, POD, FREIGHT_BOOKING tasks are untouched.
+    """
+    for task in tasks:
+        task_type = task.get("task_type", "")
+        scope_key = TASK_TYPE_TO_SCOPE_KEY.get(task_type)
+        if not scope_key:
+            continue
+        mode_value = scope.get(scope_key, ASSIGNED)
+        if mode_value == IGNORED:
+            task["mode"] = IGNORED
+            task["visibility"] = "HIDDEN"
+        elif mode_value == TRACKED:
+            task["mode"] = TRACKED
+            if task.get("visibility") == "HIDDEN":
+                task["visibility"] = "VISIBLE"
+        else:
+            task["mode"] = ASSIGNED
+            if task.get("visibility") == "HIDDEN":
+                task["visibility"] = "VISIBLE"
+    return tasks
+
+
 def generate_tasks(
     incoterm: str,
     transaction_type: str,
@@ -212,10 +284,12 @@ def generate_tasks(
     eta: date | None = None,
     cargo_ready_date: date | None = None,
     updated_by: str = "system",
+    scope: dict | None = None,
 ) -> list[dict]:
     """
     Returns a list of task dicts ready to be stored as workflow_tasks
     on the ShipmentWorkFlow Kind. Each dict matches the task data model.
+    If scope is provided, applies scope modes to generated tasks.
     """
     incoterm_upper = incoterm.upper().strip()
     txn_upper = transaction_type.upper().strip()
@@ -266,6 +340,11 @@ def generate_tasks(
 
     # Sort by leg level for display order
     tasks.sort(key=lambda t: t["leg_level"])
+
+    # Apply scope if provided
+    if scope:
+        apply_scope_to_tasks(tasks, scope)
+
     return tasks
 
 

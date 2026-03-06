@@ -33,7 +33,7 @@ from core.constants import (
     PREFIX_V1_SHIPMENT,
     get_status_display,
 )
-from logic.incoterm_tasks import generate_tasks as generate_incoterm_tasks
+from logic.incoterm_tasks import generate_tasks as generate_incoterm_tasks, derive_scope_from_incoterm, apply_scope_to_tasks
 
 from ._helpers import _parse_jsonb
 from ._status_helpers import _log_system_action_pg
@@ -308,6 +308,18 @@ def _lazy_init_tasks_pg(conn, shipment_id: str, shipment_data: dict) -> list[dic
 
     cargo_ready_date = _parse_date(shipment_data.get("cargo_ready_date"))
 
+    # Resolve scope — use existing if new schema, otherwise derive from incoterm
+    existing_scope = _parse_jsonb(shipment_data.get("scope"))
+    _valid_modes = {"ASSIGNED", "TRACKED", "IGNORED"}
+    if existing_scope and any(v in _valid_modes for v in existing_scope.values()):
+        scope = existing_scope
+    else:
+        scope = derive_scope_from_incoterm(incoterm, txn_type)
+        # Persist derived scope to shipment_details
+        conn.execute(text("""
+            UPDATE shipment_details SET scope = CAST(:scope AS jsonb) WHERE order_id = :id
+        """), {"scope": json.dumps(scope), "id": shipment_id})
+
     tasks = generate_incoterm_tasks(
         incoterm=incoterm,
         transaction_type=txn_type,
@@ -315,6 +327,7 @@ def _lazy_init_tasks_pg(conn, shipment_id: str, shipment_data: dict) -> list[dic
         eta=None,
         cargo_ready_date=cargo_ready_date,
         updated_by="system",
+        scope=scope,
     )
 
     if tasks:

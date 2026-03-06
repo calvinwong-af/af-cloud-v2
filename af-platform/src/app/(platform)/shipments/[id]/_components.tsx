@@ -10,7 +10,7 @@ import { fetchStatusHistoryAction, fetchCompaniesForShipmentAction, reassignShip
 import type { StatusHistoryEntry } from '@/app/actions/shipments';
 import { updateShipmentStatusAction, updateInvoicedStatusAction, updateCompletedFlagAction, updatePartiesAction, updateShipmentPortAction, updateIncotermAction, updateBookingAction } from '@/app/actions/shipments-write';
 import type { UpdateBookingPayload } from '@/app/actions/shipments-write';
-import { updateShipmentScopeAction, reconcileShipmentGroundTransportAction } from '@/app/actions/ground-transport';
+import { reconcileShipmentGroundTransportAction } from '@/app/actions/ground-transport';
 import type { ScopeFlags, ReconcileResult, GroundTransportOrder } from '@/app/actions/ground-transport';
 import { formatDate } from '@/lib/utils';
 import type { ShipmentOrder, ShipmentOrderStatus, TypeDetailsFCL, TypeDetailsLCL } from '@/lib/types';
@@ -1451,17 +1451,21 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
           <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${statusStyle}`}>
             {statusLabel}
           </span>
-          {order.completed && (
+          {order.completed && currentStatus !== 5001 && (
             <span className="ml-2 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 inline-flex items-center gap-1">
               <CheckCircle className="w-3 h-3" /> Completed
             </span>
           )}
         </div>
-        {order.last_status_updated && (
+        {order.completed && order.completed_at && currentStatus === 5001 ? (
+          <span className="text-xs text-[var(--text-muted)]">
+            Completed {formatDate(order.completed_at)}
+          </span>
+        ) : order.last_status_updated ? (
           <span className="text-xs text-[var(--text-muted)]">
             Last updated {formatDate(order.last_status_updated)}
           </span>
-        )}
+        ) : null}
       </div>
 
       {/* Action Buttons — AFU only */}
@@ -1873,146 +1877,45 @@ export function CompanyReassignModal({ shipmentId, currentCompanyId, onClose, on
 // ─── Scope Flags Card ────────────────────────────────────────────────────────
 
 const SCOPE_LABELS: Record<string, string> = {
-  first_mile_haulage:  'First Mile Haulage',
-  first_mile_trucking: 'First Mile Trucking',
-  export_clearance:    'Export Clearance',
-  sea_freight:         'Sea / Air Freight',
-  import_clearance:    'Import Clearance',
-  last_mile_haulage:   'Last Mile Haulage',
-  last_mile_trucking:  'Last Mile Trucking',
+  first_mile:        'First Mile',
+  export_clearance:  'Export Clearance',
+  import_clearance:  'Import Clearance',
+  last_mile:         'Last Mile',
 };
 
 const SCOPE_KEYS: (keyof ScopeFlags)[] = [
-  'first_mile_haulage', 'first_mile_trucking', 'export_clearance',
-  'sea_freight', 'import_clearance', 'last_mile_haulage', 'last_mile_trucking',
+  'first_mile', 'export_clearance', 'import_clearance', 'last_mile',
 ];
 
-function ScopeEditModal({
-  shipmentId,
-  scope,
-  onSaved,
-  onClose,
-}: {
-  shipmentId: string;
-  scope: ScopeFlags;
-  onSaved: (updated: ScopeFlags) => void;
-  onClose: () => void;
-}) {
-  const [values, setValues] = useState<ScopeFlags>({ ...scope });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  function toggle(key: keyof ScopeFlags) {
-    setValues((prev) => ({ ...prev, [key]: !prev[key] }));
-  }
-
-  async function handleSave() {
-    setSaving(true);
-    setError(null);
-    const changed: Partial<ScopeFlags> = {};
-    for (const key of SCOPE_KEYS) {
-      if (values[key] !== scope[key]) {
-        changed[key] = values[key];
-      }
-    }
-    if (Object.keys(changed).length === 0) {
-      onClose();
-      return;
-    }
-    try {
-      const result = await updateShipmentScopeAction(shipmentId, changed);
-      if (!result) { setError('No response'); setSaving(false); return; }
-      if (result.success) { onSaved(result.data); onClose(); }
-      else { setError(result.error); }
-    } catch { setError('Failed to update scope'); }
-    setSaving(false);
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
-          <h2 className="text-base font-semibold text-[var(--text)]">Edit Scope</h2>
-          <button onClick={onClose} className="p-1 rounded hover:bg-[var(--surface)]"><X size={16} /></button>
-        </div>
-        <div className="px-5 py-4 space-y-2">
-          {SCOPE_KEYS.map((key) => (
-            <label key={key} className="flex items-center gap-3 cursor-pointer py-1.5">
-              <input
-                type="checkbox"
-                checked={values[key]}
-                onChange={() => toggle(key)}
-                className="rounded border-[var(--border)]"
-              />
-              <span className="text-sm text-[var(--text)]">{SCOPE_LABELS[key]}</span>
-            </label>
-          ))}
-          {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
-        </div>
-        <div className="flex justify-end gap-2 px-5 py-4 border-t border-[var(--border)]">
-          <button onClick={onClose} className="px-4 py-2 text-sm border border-[var(--border)] rounded-lg text-[var(--text-mid)]">Cancel</button>
-          <button onClick={handleSave} disabled={saving} className="px-4 py-2 text-sm bg-[var(--sky)] text-white rounded-lg disabled:opacity-50 flex items-center gap-2">
-            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function ScopeFlagsCard({
-  shipmentId,
   scope: initialScope,
-  accountType,
 }: {
   shipmentId: string;
   scope: ScopeFlags | null;
   accountType: string | null;
 }) {
-  const [scope, setScope] = useState<ScopeFlags | null>(initialScope);
-  const [showEdit, setShowEdit] = useState(false);
-
-  useEffect(() => { setScope(initialScope); }, [initialScope]);
-
-  if (!scope) return null;
+  if (!initialScope) return null;
 
   return (
-    <>
-      <SectionCard
-        title="Order Scope"
-        icon={<Activity className="w-4 h-4" />}
-        action={
-          accountType === 'AFU' ? (
-            <button
-              onClick={() => setShowEdit(true)}
-              className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
-              title="Edit scope"
-            >
-              <Pencil className="w-3 h-3" />
-            </button>
-          ) : undefined
-        }
-      >
-        <div className="space-y-1">
-          {SCOPE_KEYS.map((key) => (
-            <div key={key} className="flex items-center justify-between py-1">
-              <span className="text-xs text-[var(--text-mid)]">{SCOPE_LABELS[key]}</span>
-              <span className={`w-2 h-2 rounded-full ${scope[key] ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-            </div>
-          ))}
-        </div>
-      </SectionCard>
-
-      {showEdit && (
-        <ScopeEditModal
-          shipmentId={shipmentId}
-          scope={scope}
-          onSaved={(updated) => setScope(updated)}
-          onClose={() => setShowEdit(false)}
-        />
-      )}
-    </>
+    <SectionCard
+      title="Order Scope"
+      icon={<Activity className="w-4 h-4" />}
+    >
+      <div className="space-y-1">
+        {SCOPE_KEYS.map((key) => (
+          <div key={key} className="flex items-center justify-between py-1">
+            <span className="text-xs text-[var(--text-mid)]">{SCOPE_LABELS[key]}</span>
+            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+              initialScope[key] === 'ASSIGNED' ? 'bg-emerald-100 text-emerald-700'
+              : initialScope[key] === 'TRACKED' ? 'bg-amber-100 text-amber-700'
+              : 'bg-gray-100 text-gray-500'
+            }`}>
+              {initialScope[key]}
+            </span>
+          </div>
+        ))}
+      </div>
+    </SectionCard>
   );
 }
 

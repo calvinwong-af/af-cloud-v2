@@ -85,10 +85,6 @@ async def apply_booking_confirmation(
     sd_clauses: list[str] = []
     params: dict = {"id": shipment_id, "now": now}
 
-    if body.booking_reference is not None:
-        sd_clauses.append("booking_reference = :booking_reference")
-        params["booking_reference"] = body.booking_reference
-
     if body.pol_code:
         sd_clauses.append("origin_port = :origin_port")
         params["origin_port"] = body.pol_code
@@ -100,6 +96,8 @@ async def apply_booking_confirmation(
     # Merge into booking JSONB
     booking = _parse_jsonb(row[1]) or {}
     if not isinstance(booking, dict): booking = {}
+    if body.booking_reference is not None:
+        booking["booking_reference"] = body.booking_reference
     if body.vessel_name is not None:
         booking["vessel_name"] = body.vessel_name
     if body.voyage_number is not None:

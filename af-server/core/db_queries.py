@@ -242,8 +242,10 @@ def get_shipment_by_id(conn, shipment_id: str) -> dict | None:
     data["created"] = str(data.get("created_at") or "")
     data["updated"] = str(data.get("updated_at") or "")
 
-    # Map order_type_detail to order_type for compat
-    data["order_type_shipment"] = data.get("order_type_detail") or ""
+    # Override order_type with the shipment's mode (SEA_FCL, SEA_LCL, AIR etc.)
+    # orders.order_type is the system type ('shipment') — the frontend needs the mode from shipment_details
+    data["order_type"] = data.get("order_type_detail") or ""
+    data["order_type_shipment"] = data["order_type"]  # keep for any legacy references
 
     # Compat fields expected by platform
     data["data_version"] = 2
