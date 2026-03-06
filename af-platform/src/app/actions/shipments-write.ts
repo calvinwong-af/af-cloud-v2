@@ -65,6 +65,7 @@ export interface CreateShipmentOrderPayload {
   cargo_ready_date: string | null;
   etd: string | null;
   eta: string | null;
+  is_test?: boolean;
 }
 
 export async function createShipmentOrderAction(
@@ -136,6 +137,7 @@ export async function createShipmentOrderAction(
         cargo_ready_date: payload.cargo_ready_date,
         etd: payload.etd,
         eta: payload.eta,
+        is_test: payload.is_test ?? false,
       }),
       cache: 'no-store',
     });

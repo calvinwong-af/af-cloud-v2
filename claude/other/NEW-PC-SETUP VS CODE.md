@@ -19,17 +19,50 @@ cd af-cloud-v2
 
 Install these before anything else:
 
-| Tool | Install |
-|---|---|
-| Node.js 20+ | https://nodejs.org |
-| Python 3.11 | https://python.org (NOT 3.14 — see CLAUDE.md) |
-| Git | https://git-scm.com |
-| Google Cloud CLI | https://cloud.google.com/sdk/docs/install |
-| Claude Code | `npm install -g @anthropic-ai/claude-code` |
+| Tool | Version | Install |
+|---|---|---|
+| Node.js | 20+ | [nodejs.org](https://nodejs.org) |
+| Python | 3.11 (NOT 3.14 — see CLAUDE.md) | [python.org](https://python.org) |
+| Git | Latest | [git-scm.com](https://git-scm.com) |
+| Google Cloud CLI | Latest | [cloud.google.com/sdk](https://cloud.google.com/sdk/docs/install) |
+| PostgreSQL Client | 18 | [postgresql.org/download](https://www.postgresql.org/download/windows/) |
+| Claude Code | Latest | `npm install -g @anthropic-ai/claude-code` |
 
 ---
 
-## 3. Environment files (not in git — copy from old machine or secrets)
+## 3. Windows PATH Configuration
+
+After installing the tools above, add these to your Windows PATH so they resolve from any terminal without full paths.
+
+**How to open PATH editor:**
+`Win + R` → `sysdm.cpl` → Advanced → Environment Variables → under **System variables**, select `Path` → Edit
+
+Add the following entries:
+
+| Tool | Path to add |
+|---|---|
+| PostgreSQL | `C:\Program Files\PostgreSQL\18\bin` |
+| Google Cloud CLI | Added automatically by installer |
+| Node.js | Added automatically by installer |
+| Python 3.11 | Added automatically by installer (check during setup) |
+
+**Verify PATH is working** (open a new terminal after saving):
+```powershell
+psql --version
+gcloud --version
+node --version
+python --version
+```
+
+**psql command for running migrations** (requires proxy running via `tools\start-proxy.bat`):
+```powershell
+psql -h localhost -p 5432 -U af_server -d accelefreight -f "C:\dev\af-cloud-v2\af-server\migrations\<migration_file>.sql"
+```
+Password: `Afserver_2019`
+
+---
+
+## 4. Environment files (not in git — copy from old machine or secrets)
 
 **af-server/.env.local:**
 ```
@@ -54,7 +87,7 @@ FIREBASE_API_KEY=<same as NEXT_PUBLIC>
 
 ---
 
-## 4. Install dependencies
+## 5. Install dependencies
 
 ```bash
 # af-platform
@@ -70,7 +103,7 @@ pip install -r requirements.txt
 
 ---
 
-## 5. Cloud SQL Auth Proxy (for local PostgreSQL access)
+## 6. Cloud SQL Auth Proxy (for local PostgreSQL access)
 
 ```bash
 cd C:\dev\af-cloud-v2
@@ -81,7 +114,7 @@ This connects to Cloud SQL via `cloud-accele-freight:asia-northeast1:af-db`.
 
 ---
 
-## 6. Claude Code settings
+## 7. Claude Code settings
 
 ### Global settings
 Create `C:\Users\<username>\.claude\settings.json`:
@@ -174,7 +207,7 @@ Create `C:\Users\<username>\.claude\projects\C--dev-af-cloud-v2\memory\MEMORY.md
 
 ---
 
-## 7. Run local dev
+## 8. Run local dev
 
 **Terminal 1 — Cloud SQL Auth Proxy:**
 ```
@@ -199,7 +232,7 @@ Test at: http://localhost:3000/shipments
 
 ---
 
-## 8. Start Claude Code
+## 9. Start Claude Code
 
 ```bash
 cd C:\dev\af-cloud-v2
@@ -210,7 +243,7 @@ Claude Code will automatically read `CLAUDE.md` and `.claude/settings.local.json
 
 ---
 
-## 9. Claude Code Skills (`/prompt` and `/prompt-push`)
+## 10. Claude Code Skills (`/prompt` and `/prompt-push`)
 
 The repo includes two custom slash-command skills in `.claude/commands/`:
 
@@ -241,7 +274,7 @@ ls .claude/commands/
 
 ---
 
-## 10. Verify everything works
+## 11. Verify everything works
 
 ```bash
 # Server compiles

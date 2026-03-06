@@ -62,6 +62,8 @@ export interface GroundTransportOrder {
   created_by: string | null;
   created_at: string | null;
   updated_at: string | null;
+  is_test?: boolean;
+  trash?: boolean;
   stops: OrderStop[];
   legs: OrderLeg[];
 }
@@ -122,6 +124,7 @@ export interface GroundTransportCreatePayload {
   detention_free_days?: number | null;
   notes?: string | null;
   stops?: Partial<OrderStop>[];
+  is_test?: boolean;
 }
 
 export async function createGroundTransportOrderAction(
@@ -290,6 +293,40 @@ export async function cancelGroundTransportOrderAction(
   } catch (err) {
     console.error('[cancelGroundTransportOrderAction]', err instanceof Error ? err.message : err);
     return { success: false, error: 'Failed to cancel ground transport order' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Delete Ground Transport Order (soft/hard)
+// ---------------------------------------------------------------------------
+
+export async function deleteGroundTransportOrderAction(
+  orderId: string,
+  hard: boolean = false,
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const auth = await getAuthHeaders();
+    if (!auth) return { success: false, error: 'No session token or server URL' };
+
+    const url = `${auth.serverUrl}/api/v2/ground-transport/${encodeURIComponent(orderId)}/delete?hard=${hard}`;
+    const res = await fetch(url, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${auth.token}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return { success: false, error: data.detail || `Delete failed: ${res.status}` };
+    }
+
+    return { success: true };
+  } catch (e) {
+    console.error('[deleteGroundTransportOrderAction]', e instanceof Error ? e.message : e);
+    return { success: false, error: 'Delete failed' };
   }
 }
 

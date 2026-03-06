@@ -70,6 +70,7 @@ class GroundTransportCreate(BaseModel):
     detention_free_days: Optional[int] = None
     notes: Optional[str] = None
     stops: List[StopCreate] = []
+    is_test: bool = False
 
 
 class GroundTransportUpdate(BaseModel):
@@ -150,6 +151,8 @@ def _order_row_to_dict(row) -> dict:
         "created_by": data.get("created_by"),
         "created_at": str(data["created_at"]) if data.get("created_at") else None,
         "updated_at": str(data["updated_at"]) if data.get("updated_at") else None,
+        "is_test": data.get("is_test") or False,
+        "trash": data.get("trash") or False,
     }
 
 
@@ -157,7 +160,7 @@ _ORDER_SELECT = """
     SELECT order_id, transport_mode, leg_type, parent_order_id,
            vendor_id, status, sub_status, cargo,
            detention_mode, detention_free_days,
-           notes, created_by, created_at, updated_at
+           notes, created_by, created_at, updated_at, is_test, trash
     FROM orders
 """
 
@@ -294,12 +297,12 @@ async def create_ground_transport_order(
             order_id, order_type, transport_mode, status,
             leg_type, parent_order_id, vendor_id,
             cargo, detention_mode, detention_free_days, notes,
-            created_by, created_at, updated_at, trash
+            created_by, created_at, updated_at, trash, is_test
         ) VALUES (
             :id, 'transport', :transport_mode, 'draft',
             :leg_type, :parent_order_id, :vendor_id,
             CAST(:cargo AS jsonb), :detention_mode, :detention_free_days, :notes,
-            :created_by, :now, :now, FALSE
+            :created_by, :now, :now, FALSE, :is_test
         )
     """), {
         "id": order_id,
@@ -313,6 +316,7 @@ async def create_ground_transport_order(
         "notes": body.notes,
         "created_by": claims.email,
         "now": now,
+        "is_test": body.is_test,
     })
 
     # Insert stops
@@ -371,7 +375,7 @@ async def list_ground_transport_orders(
     conn=Depends(get_db),
 ):
     """List ground transport orders with optional filters."""
-    where = "order_type = 'transport'"
+    where = "order_type = 'transport' AND trash = FALSE"
     params: dict = {}
 
     # Support both old (transport_type) and new (transport_mode) param names
@@ -523,6 +527,56 @@ async def cancel_ground_transport_order(
         {_ORDER_SELECT} WHERE order_id = :id AND order_type = 'transport'
     """), {"id": order_id}).fetchone()
     return {"status": "OK", "data": _order_row_to_dict(updated)}
+
+
+# ---------------------------------------------------------------------------
+# DELETE /{order_id}/delete — Soft/hard delete
+# ---------------------------------------------------------------------------
+
+@router.delete("/{order_id}/delete")
+async def delete_ground_transport_order(
+    order_id: str,
+    hard: bool = Query(False),
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    """
+    Soft delete (trash=TRUE) or hard delete a ground transport order.
+    Hard delete is only permitted for orders with status 'draft' or 'cancelled'.
+    AFU only.
+    """
+    row = conn.execute(text(
+        "SELECT order_id, status, trash FROM orders WHERE order_id = :id AND order_type = 'transport'"
+    ), {"id": order_id}).fetchone()
+    if not row:
+        raise NotFoundError(f"Transport order {order_id} not found")
+
+    order_status = row[1]
+    is_trashed = row[2]
+    now = datetime.now(timezone.utc).isoformat()
+
+    if hard:
+        # Hard delete only permitted for draft or cancelled orders
+        if order_status not in ("draft", "cancelled"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Hard delete only permitted for draft or cancelled orders. Current status: {order_status}"
+            )
+        # Delete child records first
+        conn.execute(text("DELETE FROM order_legs WHERE order_id = :id"), {"id": order_id})
+        conn.execute(text("DELETE FROM order_stops WHERE order_id = :id"), {"id": order_id})
+        conn.execute(text("DELETE FROM orders WHERE order_id = :id"), {"id": order_id})
+        logger.info("Transport order %s hard-deleted by %s", order_id, claims.email)
+        return {"deleted": True, "order_id": order_id, "mode": "hard"}
+    else:
+        # Soft delete
+        if is_trashed:
+            raise HTTPException(status_code=400, detail="Order already in trash")
+        conn.execute(text("""
+            UPDATE orders SET trash = TRUE, updated_at = :now WHERE order_id = :id
+        """), {"id": order_id, "now": now})
+        logger.info("Transport order %s soft-deleted by %s", order_id, claims.email)
+        return {"deleted": True, "order_id": order_id, "mode": "soft"}
 
 
 # ---------------------------------------------------------------------------

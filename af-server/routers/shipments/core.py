@@ -420,6 +420,7 @@ class CreateManualShipmentRequest(BaseModel):
     cargo_ready_date: str | None = None
     etd: str | None = None
     eta: str | None = None
+    is_test: bool = False
 
 
 async def create_shipment_manual(
@@ -521,13 +522,13 @@ async def create_shipment_manual(
             status, sub_status, issued_invoice,
             cargo, parties, scope,
             trash, created_by, created_at, updated_at,
-            migrated_from_v1, completed
+            migrated_from_v1, completed, is_test
         ) VALUES (
             :id, 'shipment', :countid, :company_id,
             :status, NULL, FALSE,
             CAST(:cargo AS jsonb), CAST(:parties AS jsonb), NULL,
             FALSE, CAST(:creator AS jsonb), :now, :now,
-            FALSE, FALSE
+            FALSE, FALSE, :is_test
         )
     """), {
         "id": shipment_id,
@@ -538,6 +539,7 @@ async def create_shipment_manual(
         "cargo": json.dumps(cargo),
         "parties": json.dumps(parties),
         "creator": json.dumps(creator),
+        "is_test": body.is_test,
     })
 
     # 11b. INSERT into shipment_details

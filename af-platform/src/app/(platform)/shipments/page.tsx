@@ -293,7 +293,7 @@ function ShipmentsPageInner() {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
-          <NewShipmentButton companies={companies} ports={ports} />
+          <NewShipmentButton companies={companies} ports={ports} accountType={accountType} />
         </div>
       </div>
 

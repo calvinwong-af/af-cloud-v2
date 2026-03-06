@@ -16,6 +16,7 @@ interface CreateGroundTransportModalProps {
   vehicleTypes: VehicleType[];
   prefillParentOrderId?: string;
   prefillLegType?: 'first_mile' | 'last_mile';
+  accountType?: string | null;
 }
 
 const inputCls =
@@ -40,10 +41,13 @@ export default function CreateGroundTransportModal({
   vehicleTypes,
   prefillParentOrderId,
   prefillLegType,
+  accountType,
 }: CreateGroundTransportModalProps) {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [isTest, setIsTest] = useState(false);
 
   // Step 1
   const [transportType, setTransportType] = useState<TransportType>('trucking');
@@ -86,6 +90,7 @@ export default function CreateGroundTransportModal({
       weight_kg: weightKg ? parseFloat(weightKg) : null,
       volume_cbm: volumeCbm ? parseFloat(volumeCbm) : null,
       detention_mode: transportType === 'haulage' ? detentionMode : null,
+      is_test: isTest,
       stops: [
         {
           sequence: 1,
@@ -366,6 +371,18 @@ export default function CreateGroundTransportModal({
                 />
               </div>
             </>
+          )}
+
+          {accountType === 'AFU' && (
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isTest}
+                onChange={e => setIsTest(e.target.checked)}
+                className="rounded border-[var(--border)]"
+              />
+              <span className="text-[var(--text-muted)]">Mark as test order</span>
+            </label>
           )}
 
           {error && (

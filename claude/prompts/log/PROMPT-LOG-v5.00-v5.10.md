@@ -1,5 +1,30 @@
 # Prompt Completion Log — v5.00–v5.10
 
+### [2026-03-06 12:00 UTC] — v5.01: GT Delete Controls + is_test Flag
+- **Status:** Completed
+- **Tasks:**
+  - A1: Created migration `012_orders_is_test.sql` (ALTER TABLE orders ADD COLUMN is_test)
+  - A2: Updated `ground_transport.py` — added `trash = FALSE` filter to list query, added `is_test`/`trash` to `_ORDER_SELECT` and `_order_row_to_dict`, added `is_test` to `GroundTransportCreate` model and INSERT, added new `DELETE /{order_id}/delete` endpoint (soft/hard delete, AFU only)
+  - A3: Updated `shipments/core.py` — added `is_test` to `CreateManualShipmentRequest` and INSERT into orders
+  - B1: Added `deleteGroundTransportOrderAction` to `actions/ground-transport.ts`, added `is_test`/`trash` to `GroundTransportOrder` type, added `is_test` to `GroundTransportCreatePayload`
+  - B2: Updated GT list page — added `accountType` state, row actions menu (⋯) with Move to Trash / Delete Permanently (AFU only), TEST badge on `is_test` rows, click-outside menu close
+  - B3: Updated `CreateGroundTransportModal` — added `accountType` prop, `is_test` checkbox (AFU only), passed `is_test` in payload
+  - B4: Updated `StepReview` — added `isTest`/`onIsTestChange`/`accountType` props, AFU-only checkbox; updated `CreateShipmentModal` — added `isTest` state, `accountType` prop, passed through; updated `NewShipmentButton` — threaded `accountType` prop; updated shipments page to pass `accountType`
+  - B4b: Added `is_test?: boolean` to `CreateShipmentOrderPayload` in `shipments-write.ts`, passed through in fetch body
+- **Files Modified:**
+  - `af-server/migrations/012_orders_is_test.sql` (new)
+  - `af-server/routers/ground_transport.py`
+  - `af-server/routers/shipments/core.py`
+  - `af-platform/src/app/actions/ground-transport.ts`
+  - `af-platform/src/app/actions/shipments-write.ts`
+  - `af-platform/src/app/(platform)/ground-transport/page.tsx`
+  - `af-platform/src/app/(platform)/shipments/page.tsx`
+  - `af-platform/src/components/ground-transport/CreateGroundTransportModal.tsx`
+  - `af-platform/src/components/shipments/CreateShipmentModal.tsx`
+  - `af-platform/src/components/shipments/NewShipmentButton.tsx`
+  - `af-platform/src/components/shipments/_create-shipment/StepReview.tsx`
+- **Notes:** Migration file must be applied manually via psql before code deployment. Existing `DELETE /{order_id}` cancel endpoint preserved unchanged.
+
 ### [2026-03-05 16:00 UTC] — v5.00: Unified Orders Architecture
 - **Status:** Completed
 - **Tasks:**

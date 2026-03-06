@@ -6,8 +6,10 @@ import { Package, Container, Truck, CheckCircle2, RefreshCw, Plus } from 'lucide
 import {
   listGroundTransportOrdersAction,
   fetchVehicleTypesAction,
+  deleteGroundTransportOrderAction,
 } from '@/app/actions/ground-transport';
 import type { GroundTransportOrder, VehicleType } from '@/app/actions/ground-transport';
+import { MoreHorizontal } from 'lucide-react';
 import { fetchCitiesAction, fetchAreasAction } from '@/app/actions/geography';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
 import { KpiCard } from '@/components/shared/KpiCard';
@@ -87,8 +89,18 @@ function GroundTransportPageInner() {
   const [cities, setCities] = useState<City[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
   const [vehicleTypes, setVehicleTypes] = useState<VehicleType[]>([]);
+  const [accountType, setAccountType] = useState<string | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const fetchIdRef = useRef(0);
+
+  // Close action menu on outside click
+  useEffect(() => {
+    if (!openMenuId) return;
+    const handler = () => setOpenMenuId(null);
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, [openMenuId]);
 
   // Load profile + reference data on mount
   useEffect(() => {
@@ -102,6 +114,7 @@ function GroundTransportPageInner() {
         router.replace('/dashboard');
         return;
       }
+      setAccountType(profile.account_type);
       if (citiesRes.success) setCities(citiesRes.data);
       if (areasRes.success) setAreas(areasRes.data);
       if (vtRes.success) setVehicleTypes(vtRes.data);
@@ -244,6 +257,9 @@ function GroundTransportPageInner() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Status</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Vendor</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Created</th>
+                  {accountType === 'AFU' && (
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide w-10"></th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -262,7 +278,12 @@ function GroundTransportPageInner() {
                       className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface)] cursor-pointer transition-colors"
                     >
                       <td className="px-4 py-3 font-mono text-[var(--sky)] font-medium">
-                        {order.order_id}
+                        <span className="inline-flex items-center gap-1.5">
+                          {order.order_id}
+                          {order.is_test && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 leading-none">TEST</span>
+                          )}
+                        </span>
                       </td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
@@ -307,6 +328,56 @@ function GroundTransportPageInner() {
                       <td className="px-4 py-3 text-xs text-[var(--text-muted)]">
                         {timeAgo(order.created_at)}
                       </td>
+                      {accountType === 'AFU' && (
+                        <td className="px-4 py-3 relative">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenMenuId(openMenuId === order.order_id ? null : order.order_id);
+                            }}
+                            className="p-1 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--text)]"
+                          >
+                            <MoreHorizontal className="w-4 h-4" />
+                          </button>
+                          {openMenuId === order.order_id && (
+                            <div className="absolute right-4 top-10 z-20 bg-white border border-[var(--border)] rounded-lg shadow-lg py-1 min-w-[180px]">
+                              {!order.trash && (
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    setOpenMenuId(null);
+                                    const result = await deleteGroundTransportOrderAction(order.order_id, false);
+                                    if (!result || !result.success) {
+                                      setError('error' in result ? result.error : 'Failed to move to trash');
+                                    }
+                                    load(activeTab);
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-sm text-[var(--text)] hover:bg-[var(--surface)] transition-colors"
+                                >
+                                  Move to Trash
+                                </button>
+                              )}
+                              {(order.status === 'draft' || order.status === 'cancelled') && (
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    setOpenMenuId(null);
+                                    if (!window.confirm('Permanently delete this order? This cannot be undone.')) return;
+                                    const result = await deleteGroundTransportOrderAction(order.order_id, true);
+                                    if (!result || !result.success) {
+                                      setError('error' in result ? result.error : 'Failed to delete');
+                                    }
+                                    load(activeTab);
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                                >
+                                  Delete Permanently
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -324,6 +395,7 @@ function GroundTransportPageInner() {
           cities={cities}
           areas={areas}
           vehicleTypes={vehicleTypes}
+          accountType={accountType}
         />
       )}
     </div>

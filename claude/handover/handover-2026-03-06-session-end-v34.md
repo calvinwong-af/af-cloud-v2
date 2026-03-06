@@ -1,7 +1,7 @@
 # Handover — 2026-03-06 Session End v34
 
 ## Session Header
-AF Dev — Session 34 | AcceleFreight v2 | v5.00 Live (deploying) | No Prompt Ready | Tests v2.58 (270/284)
+AF Dev — Session 34 | AcceleFreight v2 | v5.00 Live | No Prompt Ready | Tests v2.58 (270/284)
 
 ---
 
@@ -24,7 +24,8 @@ v5.00 unified orders architecture migration executed against Cloud SQL productio
   - shipment_details: 3,862 ✅
   - order_stops: 2 ✅
   - order_legs: 1 ✅
-- Pushed to main — Cloud Run deployment in progress at session end
+- Pushed to main — Cloud Run deployment successful ✅
+- Post-deploy build fix: `_components.tsx` had leftover `transport_order_id` and `transport_type` refs — updated to `order_id` and `transport_mode` via MCP edit, second build passed ✅
 
 ### psql PATH Issue (resolved workaround)
 - PostgreSQL 18 installed to `C:\Program Files\PostgreSQL\18\bin`
@@ -77,3 +78,7 @@ v5.00 unified orders architecture migration executed against Cloud SQL productio
 
 ## Next Session Header
 AF Dev — Session 35 | AcceleFreight v2 | v5.00 Live | No Prompt Ready | Tests v2.58 (270/284)
+
+## Key Watch Items for Session 35
+- Smoke test all three flows on production before doing anything else
+- Check if any other `transport_order_id` / `transport_type` refs remain in the codebase

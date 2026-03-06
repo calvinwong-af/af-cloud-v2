@@ -58,11 +58,12 @@ interface Props {
   ports: Port[];
   onClose: () => void;
   onCreated: (shipmentOrderId: string) => void;
+  accountType?: string | null;
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function CreateShipmentModal({ companies, ports, onClose, onCreated }: Props) {
+export default function CreateShipmentModal({ companies, ports, onClose, onCreated, accountType }: Props) {
   const [activeTab, setActiveTab] = useState<'manual' | 'bl'>('manual');
 
   // ── BL Upload state ──
@@ -171,6 +172,7 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isTest, setIsTest] = useState(false);
 
   // Step 1: Order
   const [orderType, setOrderType] = useState<OrderType>('SEA_FCL');
@@ -317,6 +319,7 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
       cargo_ready_date: cargoReadyDate || null,
       etd: null,
       eta: null,
+      is_test: isTest,
     };
 
     const result = await createShipmentOrderAction(payload);
@@ -426,6 +429,9 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
             companyId={companyId}
             selectedCompany={selectedCompany}
             ports={ports}
+            isTest={isTest}
+            onIsTestChange={setIsTest}
+            accountType={accountType}
           />
         );
     }

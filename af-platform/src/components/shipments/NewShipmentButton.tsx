@@ -13,9 +13,10 @@ interface Props {
     has_terminals: boolean;
     terminals: Array<{ terminal_id: string; name: string; is_default: boolean }>;
   }[];
+  accountType?: string | null;
 }
 
-export default function NewShipmentButton({ companies, ports }: Props) {
+export default function NewShipmentButton({ companies, ports, accountType }: Props) {
   const [open, setOpen] = useState(false);
 
   function handleCreated(shipmentOrderId: string) {
@@ -38,6 +39,7 @@ export default function NewShipmentButton({ companies, ports }: Props) {
           ports={ports}
           onClose={() => setOpen(false)}
           onCreated={handleCreated}
+          accountType={accountType}
         />
       )}
     </>

@@ -22,6 +22,9 @@ interface StepReviewProps {
   companyId: string;
   selectedCompany: Company | null;
   ports: Port[];
+  isTest?: boolean;
+  onIsTestChange?: (v: boolean) => void;
+  accountType?: string | null;
 }
 
 // ─── Shared UI ────────────────────────────────────────────────────────────────
@@ -54,6 +57,9 @@ export function StepReview({
   companyId,
   selectedCompany,
   ports,
+  isTest,
+  onIsTestChange,
+  accountType,
 }: StepReviewProps) {
   const activePorts = orderType === 'AIR'
     ? ports.filter(p => p.port_type?.toLowerCase().includes('air') ?? false)
@@ -104,6 +110,17 @@ export function StepReview({
             <ReviewRow key={i} label={`Package ${i + 1}`} value={`${p.quantity} × ${PACKAGING_TYPES.find(pt => pt.value === p.packaging_type)?.label ?? p.packaging_type}${p.gross_weight_kg ? ` · ${p.gross_weight_kg} kg` : ''}${p.volume_cbm ? ` · ${p.volume_cbm} CBM` : ''}`} />
           ))}
         </div>
+      )}
+      {accountType === 'AFU' && onIsTestChange && (
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={isTest ?? false}
+            onChange={e => onIsTestChange(e.target.checked)}
+            className="rounded border-[var(--border)]"
+          />
+          <span className="text-[var(--text-muted)]">Mark as test order</span>
+        </label>
       )}
       <div className="bg-[var(--sky-pale)] border border-[var(--sky)] rounded-lg px-3 py-2 text-xs text-[var(--sky)]">
         The shipment will be created with status <strong>Draft</strong>.
