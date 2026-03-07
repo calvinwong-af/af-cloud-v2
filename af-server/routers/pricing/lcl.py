@@ -142,27 +142,40 @@ async def list_lcl_rate_cards(
     origin_port_code: Optional[str] = Query(default=None),
     destination_port_code: Optional[str] = Query(default=None),
     dg_class_code: Optional[str] = Query(default=None),
+    country_code: Optional[str] = Query(default=None),
     is_active: bool = Query(default=True),
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
 ):
-    where = ["is_active = :active"]
+    where = ["rc.is_active = :active"]
     params: dict = {"active": is_active}
+    joins = ""
+
+    if country_code:
+        joins = """
+            JOIN ports AS op ON op.un_code = rc.origin_port_code
+            JOIN ports AS dp ON dp.un_code = rc.destination_port_code
+        """
+        where.append("(op.country_code = :country OR dp.country_code = :country)")
+        params["country"] = country_code
 
     if origin_port_code:
-        where.append("origin_port_code = :origin")
+        where.append("rc.origin_port_code = :origin")
         params["origin"] = origin_port_code
     if destination_port_code:
-        where.append("destination_port_code = :dest")
+        where.append("rc.destination_port_code = :dest")
         params["dest"] = destination_port_code
     if dg_class_code:
-        where.append("dg_class_code = :dg")
+        where.append("rc.dg_class_code = :dg")
         params["dg"] = dg_class_code
 
     rows = conn.execute(text(f"""
-        {_RATE_CARD_SELECT}
+        SELECT rc.id, rc.rate_card_key, rc.origin_port_code, rc.destination_port_code,
+               rc.dg_class_code, rc.code, rc.description, rc.is_active, rc.created_at, rc.updated_at, rc.terminal_id
+        FROM lcl_rate_cards rc
+        {joins}
         WHERE {' AND '.join(where)}
-        ORDER BY origin_port_code, destination_port_code
+        ORDER BY rc.origin_port_code, rc.destination_port_code
     """), params).fetchall()
 
     cards = [_row_to_rate_card(r) for r in rows]

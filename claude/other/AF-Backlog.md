@@ -6,12 +6,12 @@ Items identified during development/testing that are not urgent but should be ad
 
 ## ACTIVE TODOS
 
+_No open items._
+
+## CLOSED
+
 | # | Item | Context | Notes |
 |---|---|---|---|
-| UI-01 | Keyboard arrow navigation on all combobox/dropdown selects | Session 9 | Sweeping revision — all searchable list components (PortEditModal, CompanyReassignModal, port dropdowns in DocumentParseModal, etc.) should support up/down arrow keys to navigate rows and Enter to select. Consistent UX across the platform. |
-| UI-02 | Port list filtered by freight type in PortEditModal | Session 9 | Air shipments should only see airports; sea shipments should only see sea ports. Filter at modal level based on order.order_type (AIR vs SEA_FCL/SEA_LCL). Same underlying issue as UI-04. |
-| UI-03 | Port edit pencil icon position on RouteCard | Session 9 | Current absolute-positioned pencil icons not well-placed visually. Revisit placement — consider inline next to port code/name text rather than floating over the PortPair component. |
-| UI-04 | Port edit modal — no freight type filtering | Session 9 | PortEditModal shows all ports regardless of shipment type. Filter by order.order_type before passing ports to modal. Same underlying issue as UI-02. |
 | UI-05 | No ability to edit order details on shipment detail page | Session 9 | CLOSED — Incoterm is editable via pencil icon on RouteCard (IncotermEditModal). order_type and transaction_type scoped as read-only by design decision Session 19. |
 | TODO-UI-01 | Incoterm edit control with pencil icon | Session 31 | CLOSED — IncotermEditModal with pencil icon implemented on RouteCard. |
 | TODO-UI-02 | Incoterm badge styling consistency | Session 31 | CLOSED — resolved as part of incoterm edit implementation. |
@@ -24,6 +24,10 @@ Items identified during development/testing that are not urgent but should be ad
 | UI-13 | Port combobox — switching from terminal port breaks | Session 17 | DP-69: if a port with terminals is currently selected, changing to a different port fails. Terminal state not being cleared on port change. Affects BLReview and BCReview. CLOSED — fixed v3.12 (BLReview) + v3.15 (BCReview). |
 | UI-14 | BLUpdateModal (legacy) — port fields not resolving | Session 17 | Old BLUpdateModal port fields show empty / not matched. CLOSED — BLUpdateModal deleted in v3.15. |
 | UI-16 | Dead state cleanup after v3.15 | Session 19 | After BLUpdateModal removal, verify no orphaned state/imports remain in page.tsx, _doc-handler.ts, or elsewhere. Run tsc --noEmit to confirm clean build. CLOSED — handled as part of v3.15. |
+| UI-01 | Keyboard arrow navigation on all combobox/dropdown selects | Session 9 | CLOSED — confirmed fixed Session 47. |
+| UI-02 | Port list filtered by freight type in PortEditModal | Session 9 | CLOSED — confirmed fixed Session 47. |
+| UI-03 | Port edit pencil icon position on RouteCard | Session 9 | CLOSED — confirmed fixed Session 47. |
+| UI-04 | Port edit modal — no freight type filtering | Session 9 | CLOSED — confirmed fixed Session 47. |
 
 ---
 

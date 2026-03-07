@@ -1,7 +1,7 @@
 # AcceleFreight — AF Server V2 API Contract
 **Base URL:** `https://af-server-667020632236.asia-northeast1.run.app/api/v2` (prod) · `http://localhost:8000/api/v2` (local)  
 **Auth:** Firebase ID token — `Authorization: Bearer <token>` on all protected routes  
-**Version:** Contract v1.7 — 05 March 2026  
+**Version:** Contract v1.8 — 07 March 2026  
 **Status:** Living document — update when endpoints change
 
 ---
@@ -1467,7 +1467,57 @@ Soft delete — sets `is_active = FALSE`.
 
 ---
 
-### 5.7 Port Resolution (AI-Assisted)
+### 5.7 Port Terminals
+
+#### `GET /geography/port-terminals`
+Auth: `require_auth` · 10-minute cache  
+Returns all active port terminals across all ports.
+
+**Response:**
+```json
+{
+  "status": "OK",
+  "data": [
+    {
+      "terminal_id": "MYPKG_W",
+      "name": "Westports",
+      "label": "Westports",
+      "port_un_code": "MYPKG"
+    },
+    {
+      "terminal_id": "MYPKG_N",
+      "name": "Northport",
+      "label": "Northport",
+      "port_un_code": "MYPKG"
+    }
+  ]
+}
+```
+
+#### `GET /geography/port-terminals/{terminal_id}`
+Auth: `require_auth`  
+Returns a single terminal by `terminal_id`.
+
+**Response:**
+```json
+{
+  "status": "OK",
+  "data": {
+    "terminal_id": "MYPKG_W",
+    "name": "Westports",
+    "label": "Westports",
+    "port_un_code": "MYPKG"
+  }
+}
+```
+
+**Errors:** `404` — terminal not found.
+
+⚠️ Terminal admin CRUD (create/update/delete) is not yet exposed via API. Terminals are currently managed directly in the database or via migration scripts.
+
+---
+
+### 5.8 Port Resolution (AI-Assisted)
 
 #### `POST /geography/ports/resolve`
 Auth: `require_afu`
@@ -1507,7 +1557,7 @@ Inserts resolved port into `ports` table and invalidates cache.
 
 ---
 
-### 5.8 Countries
+### 5.9 Countries
 
 #### `GET /geography/countries`
 Auth: `require_auth` · 10-minute cache  
@@ -2116,6 +2166,329 @@ Geocodes a free-text address string via Google Maps Geocoding API. Same response
 
 ---
 
+## 13. Pricing
+
+Base path: `/api/v2/pricing`
+
+Pricing is split into two sub-routers: `/pricing/fcl` for FCL rate cards and rates, and `/pricing/lcl` for LCL. Both follow the same structural pattern.
+
+**Key concepts:**
+- A **rate card** defines a lane (origin/destination port pair), DG class, container size/type (FCL) or just lane + DG (LCL), and an optional terminal. It is the container for all rate history on that lane.
+- A **rate** is a point-in-time price entry on a rate card, identified by `effective_from` date and optional `supplier_id`. `supplier_id = null` is the price-reference rate (what AcceleFreight charges customers). Non-null `supplier_id` entries are cost rates from specific carriers/suppliers.
+- Rate history is append-only — rates are never overwritten, only added. Deleting a rate is permitted (e.g. data entry errors).
+- `rate_status` values: `PUBLISHED` | `ON_REQUEST`
+
+---
+
+### 13.1 FCL Rate Cards
+
+Base path: `/api/v2/pricing/fcl`
+
+**FCL Rate Card Key format:** `ORIGIN:DEST:DG:SIZE:TYPE`  
+Example: `VNSGN:MYPKG:GEN:40HC:DRY`
+
+#### `GET /pricing/fcl/rate-cards`
+Auth: `require_afu`  
+Query params (all optional): `origin_port_code`, `destination_port_code`, `dg_class_code`, `container_size`, `container_type`, `is_active` (default `true`)
+
+Returns matching rate cards. Each card includes `latest_price_ref` — the most recent price-reference rate (where `supplier_id IS NULL`) attached inline.
+
+**Response:**
+```json
+{
+  "status": "OK",
+  "data": [
+    {
+      "id": 1,
+      "rate_card_key": "VNSGN:MYPKG:GEN:40HC:DRY",
+      "origin_port_code": "VNSGN",
+      "destination_port_code": "MYPKG",
+      "dg_class_code": "GEN",
+      "container_size": "40HC",
+      "container_type": "DRY",
+      "code": "VN-MY-40HC",
+      "description": "Vietnam to Port Klang 40HC Dry",
+      "terminal_id": "MYPKG_W",
+      "is_active": true,
+      "created_at": "2024-01-01 00:00:00",
+      "updated_at": null,
+      "latest_price_ref": {
+        "list_price": 850.0,
+        "currency": "USD",
+        "effective_from": "2026-03-01"
+      }
+    }
+  ]
+}
+```
+
+`latest_price_ref` is `null` if no price-reference rate exists for the card.
+
+#### `GET /pricing/fcl/rate-cards/{card_id}`
+Auth: `require_afu`  
+Returns full rate card detail including all rates grouped by supplier.
+
+**Response:**
+```json
+{
+  "status": "OK",
+  "data": {
+    "id": 1,
+    "rate_card_key": "VNSGN:MYPKG:GEN:40HC:DRY",
+    "origin_port_code": "VNSGN",
+    "destination_port_code": "MYPKG",
+    "dg_class_code": "GEN",
+    "container_size": "40HC",
+    "container_type": "DRY",
+    "code": "VN-MY-40HC",
+    "description": "Vietnam to Port Klang 40HC Dry",
+    "terminal_id": "MYPKG_W",
+    "is_active": true,
+    "created_at": "2024-01-01 00:00:00",
+    "updated_at": null,
+    "rates_by_supplier": {
+      "null": [
+        {
+          "id": 10,
+          "rate_card_id": 1,
+          "supplier_id": null,
+          "effective_from": "2026-03-01",
+          "rate_status": "PUBLISHED",
+          "currency": "USD",
+          "uom": "CONTAINER",
+          "list_price": 850.0,
+          "min_list_price": null,
+          "cost": 700.0,
+          "min_cost": null,
+          "roundup_qty": 0,
+          "lss": 0.0,
+          "baf": 0.0,
+          "ecrs": 0.0,
+          "psc": 0.0,
+          "created_at": "2026-03-01 00:00:00",
+          "updated_at": null
+        }
+      ],
+      "COSCO": [ ... ]
+    }
+  }
+}
+```
+
+`rates_by_supplier` keys are `supplier_id` strings (or `"null"` for the price-reference). Each key maps to an array of rates ordered `effective_from DESC`.
+
+#### `POST /pricing/fcl/rate-cards`
+Auth: `require_afu_admin`
+
+**Request body:**
+```json
+{
+  "origin_port_code": "VNSGN",
+  "destination_port_code": "MYPKG",
+  "dg_class_code": "GEN",
+  "container_size": "40HC",
+  "container_type": "DRY",
+  "code": "VN-MY-40HC",
+  "description": "Vietnam to Port Klang 40HC Dry",
+  "terminal_id": "MYPKG_W"
+}
+```
+
+`terminal_id` is optional. If provided, it must belong to the destination port (validated server-side).
+
+**Response:** `{ "status": "OK", "data": { "id": 1, "rate_card_key": "VNSGN:MYPKG:GEN:40HC:DRY", ... } }`
+
+**Errors:** `409` — rate card key already exists. `400` — origin equals destination, or `terminal_id` belongs to wrong port.
+
+#### `PATCH /pricing/fcl/rate-cards/{card_id}`
+Auth: `require_afu_admin`  
+All fields optional.
+
+**Request body:**
+```json
+{
+  "code": "VN-MY-40HC-V2",
+  "description": "Updated description",
+  "is_active": false,
+  "terminal_id": "MYPKG_N"
+}
+```
+
+⚠️ There is no `DELETE /pricing/fcl/rate-cards/{id}` endpoint. Deactivate by setting `is_active: false`.
+
+**Response:** `{ "status": "OK", "msg": "Rate card updated" }`
+
+---
+
+### 13.2 FCL Rates
+
+#### `GET /pricing/fcl/rate-cards/{card_id}/rates`
+Auth: `require_afu`  
+Query params: `supplier_id` (optional) — pass empty string `""` to get only price-reference rates (`supplier_id IS NULL`)
+
+**Response:** `{ "status": "OK", "data": [ <FCLRateObject>, ... ] }`
+
+Rates ordered `effective_from DESC`.
+
+#### `POST /pricing/fcl/rate-cards/{card_id}/rates`
+Auth: `require_afu_admin`
+
+**Request body:**
+```json
+{
+  "supplier_id": null,
+  "effective_from": "2026-04-01",
+  "rate_status": "PUBLISHED",
+  "currency": "USD",
+  "uom": "CONTAINER",
+  "list_price": 900.0,
+  "min_list_price": null,
+  "cost": 720.0,
+  "min_cost": null,
+  "roundup_qty": 0,
+  "lss": 0,
+  "baf": 0,
+  "ecrs": 0,
+  "psc": 0
+}
+```
+
+`supplier_id` is optional (null = price-reference rate). `uom` default is `CONTAINER`. `rate_status` default is `PUBLISHED`.
+
+**Response:** `{ "status": "OK", "data": { "id": 11, "rate_card_id": 1, "created_at": "..." } }`
+
+#### `PATCH /pricing/fcl/rates/{rate_id}`
+Auth: `require_afu_admin`  
+All fields optional.
+
+**Request body:** (same shape as POST, all optional)
+
+**Response:** `{ "status": "OK", "msg": "Rate updated" }`
+
+#### `DELETE /pricing/fcl/rates/{rate_id}`
+Auth: `require_afu_admin`  
+Hard delete. Intended for correcting data entry errors only.
+
+**Response:** `{ "status": "OK", "msg": "Rate deleted" }`
+
+---
+
+### 13.3 LCL Rate Cards
+
+Base path: `/api/v2/pricing/lcl`
+
+**LCL Rate Card Key format:** `ORIGIN:DEST:DG`  
+Example: `VNSGN:MYPKG:GEN`
+
+LCL rate cards follow the same pattern as FCL but without `container_size` and `container_type`.
+
+#### `GET /pricing/lcl/rate-cards`
+Auth: `require_afu`  
+Query params (all optional): `origin_port_code`, `destination_port_code`, `dg_class_code`, `is_active` (default `true`)
+
+**Response shape:** Same as FCL rate card list, without `container_size` and `container_type` fields.
+
+#### `GET /pricing/lcl/rate-cards/{card_id}`
+Auth: `require_afu`  
+Same as FCL — returns card with `rates_by_supplier`.
+
+#### `POST /pricing/lcl/rate-cards`
+Auth: `require_afu_admin`
+
+**Request body:**
+```json
+{
+  "origin_port_code": "VNSGN",
+  "destination_port_code": "MYPKG",
+  "dg_class_code": "GEN",
+  "code": "VN-MY-LCL",
+  "description": "Vietnam to Port Klang LCL",
+  "terminal_id": "MYPKG_W"
+}
+```
+
+**Errors:** `409` — rate card key already exists.
+
+#### `PATCH /pricing/lcl/rate-cards/{card_id}`
+Auth: `require_afu_admin`  
+Same updatable fields as FCL: `code`, `description`, `is_active`, `terminal_id`.
+
+---
+
+### 13.4 LCL Rates
+
+Identical structure to FCL rates. Default `uom` is `W/M` instead of `CONTAINER`.
+
+#### `GET /pricing/lcl/rate-cards/{card_id}/rates`
+Auth: `require_afu`
+
+#### `POST /pricing/lcl/rate-cards/{card_id}/rates`
+Auth: `require_afu_admin`  
+Same body as FCL rate POST with `uom` defaulting to `W/M`.
+
+#### `PATCH /pricing/lcl/rates/{rate_id}`
+Auth: `require_afu_admin`
+
+#### `DELETE /pricing/lcl/rates/{rate_id}`
+Auth: `require_afu_admin`
+
+---
+
+### 13.5 Data Objects — Pricing
+
+**FCLRateCard shape:**
+```json
+{
+  "id": 1,
+  "rate_card_key": "VNSGN:MYPKG:GEN:40HC:DRY",
+  "origin_port_code": "VNSGN",
+  "destination_port_code": "MYPKG",
+  "dg_class_code": "GEN",
+  "container_size": "40HC",
+  "container_type": "DRY",
+  "code": "VN-MY-40HC",
+  "description": "Vietnam to Port Klang 40HC Dry",
+  "terminal_id": "MYPKG_W",
+  "is_active": true,
+  "created_at": "2024-01-01 00:00:00",
+  "updated_at": null
+}
+```
+
+**LCLRateCard shape:** Same as above, without `container_size` and `container_type`.
+
+**Rate shape (FCL and LCL):**
+```json
+{
+  "id": 10,
+  "rate_card_id": 1,
+  "supplier_id": null,
+  "effective_from": "2026-03-01",
+  "rate_status": "PUBLISHED",
+  "currency": "USD",
+  "uom": "CONTAINER",
+  "list_price": 850.0,
+  "min_list_price": null,
+  "cost": 700.0,
+  "min_cost": null,
+  "roundup_qty": 0,
+  "lss": 0.0,
+  "baf": 0.0,
+  "ecrs": 0.0,
+  "psc": 0.0,
+  "created_at": "2026-03-01 00:00:00",
+  "updated_at": null
+}
+```
+
+`supplier_id = null` — price-reference rate (what AcceleFreight charges customers).  
+`supplier_id = "COSCO"` — cost rate from a specific carrier/supplier.  
+`lss`, `baf`, `ecrs`, `psc` — surcharge fields; default `0`.  
+`roundup_qty` — container rounding unit; default `0`.  
+`uom` for LCL defaults to `W/M` (weight/measurement). FCL defaults to `CONTAINER`.
+
+---
+
 ## 11. Open Items / Known Gaps
 
 | Item | Detail | Target |
@@ -2130,6 +2503,10 @@ Geocodes a free-text address string via Google Maps Geocoding API. Same response
 | DG cargo legacy | V1 migrated `dg_classification` object vs V2 `is_dg` boolean — normalise on read | Ongoing |
 | Countries — create/delete | `PATCH` only — no POST or DELETE on countries | Future |
 | Geography — admin UI | No admin console yet for managing ports, cities, haulage areas via UI | Future |
+| Port terminal CRUD | `port_terminals` table is read-only via API — no create/update/delete endpoints | Future |
+| Pricing — rate card delete | No DELETE on rate cards; deactivate only via `is_active: false` — by design | By design |
+| Pricing — quotation engine | Pricing data exists but no quotation/calculation endpoints yet | Future |
+| Pricing — AFC access | All pricing endpoints are `require_afu` only — no customer-facing pricing API yet | Future |
 
 ---
 
@@ -2208,6 +2585,24 @@ Geocodes a free-text address string via Google Maps Geocoding API. Same response
 | `POST /users/{uid}/send-reset-email` | `require_afu_admin` |
 | `PATCH /users/{uid}/promote-to-staff` | `require_afu_admin` |
 | `POST /ai/parse-document` | `require_auth` |
+| `GET /geography/port-terminals` | `require_auth` |
+| `GET /geography/port-terminals/{terminal_id}` | `require_auth` |
+| `GET /pricing/fcl/rate-cards` | `require_afu` |
+| `GET /pricing/fcl/rate-cards/{card_id}` | `require_afu` |
+| `POST /pricing/fcl/rate-cards` | `require_afu_admin` |
+| `PATCH /pricing/fcl/rate-cards/{card_id}` | `require_afu_admin` |
+| `GET /pricing/fcl/rate-cards/{card_id}/rates` | `require_afu` |
+| `POST /pricing/fcl/rate-cards/{card_id}/rates` | `require_afu_admin` |
+| `PATCH /pricing/fcl/rates/{rate_id}` | `require_afu_admin` |
+| `DELETE /pricing/fcl/rates/{rate_id}` | `require_afu_admin` |
+| `GET /pricing/lcl/rate-cards` | `require_afu` |
+| `GET /pricing/lcl/rate-cards/{card_id}` | `require_afu` |
+| `POST /pricing/lcl/rate-cards` | `require_afu_admin` |
+| `PATCH /pricing/lcl/rate-cards/{card_id}` | `require_afu_admin` |
+| `GET /pricing/lcl/rate-cards/{card_id}/rates` | `require_afu` |
+| `POST /pricing/lcl/rate-cards/{card_id}/rates` | `require_afu_admin` |
+| `PATCH /pricing/lcl/rates/{rate_id}` | `require_afu_admin` |
+| `DELETE /pricing/lcl/rates/{rate_id}` | `require_afu_admin` |
 | `GET /ground-transport/vehicle-types` | `require_afu` |
 | `POST /ground-transport` | `require_afu` |
 | `GET /ground-transport` | `require_afu` |
@@ -2225,7 +2620,13 @@ Geocodes a free-text address string via Google Maps Geocoding API. Same response
 
 ---
 
-*Last updated: 05 March 2026 — Contract v1.7*
+*Last updated: 07 March 2026 — Contract v1.8*
+
+**v1.8 changes:**
+- Section 5.9: New — Port Terminals endpoints (`GET /geography/port-terminals`, `GET /geography/port-terminals/{terminal_id}`)
+- Section 13: New — Pricing module fully documented (FCL and LCL rate cards + rates, data objects, key format, supplier vs price-reference rate concept)
+- Section 11: Open Items updated — port terminal CRUD, pricing rate card delete (by design), quotation engine, AFC access noted as gaps
+- Section 12: Auth Dependency Map updated with port-terminal and all pricing endpoints (18 new rows)
 
 **v1.7 changes:**
 - Section 2.2: Search response documented with `total` and `next_cursor` fields; envelope note removed (response is not envelope-wrapped)

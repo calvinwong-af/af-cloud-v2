@@ -17,9 +17,17 @@ import {
   Globe,
   ScrollText,
   ChevronLeft,
+  ChevronDown,
+  ChevronRight,
   LogOut,
   X,
   UserCircle,
+  Package,
+  Plane,
+  MapPin,
+  FileCheck,
+  Car,
+  Lock,
 } from "lucide-react";
 import { LogoMark } from "@/components/shared/Logo";
 import { signOut } from "@/lib/auth";
@@ -49,6 +57,24 @@ interface NavSection {
   items: NavItem[];
 }
 
+interface PricingSubItem {
+  label: string;
+  icon: LucideIcon;
+  href: string;
+  locked: boolean;
+}
+
+const PRICING_SUB_ITEMS: PricingSubItem[] = [
+  { label: 'Dashboard',      icon: Grid3X3,   href: '/pricing',              locked: false },
+  { label: 'FCL Ocean',      icon: Ship,      href: '/pricing/fcl',          locked: false },
+  { label: 'LCL Ocean',      icon: Package,   href: '/pricing/lcl',          locked: false },
+  { label: 'Air Freight',    icon: Plane,     href: '/pricing/air',          locked: true  },
+  { label: 'Local Charges',  icon: MapPin,    href: '/pricing/local-charges', locked: true  },
+  { label: 'Customs',        icon: FileCheck, href: '/pricing/customs',      locked: true  },
+  { label: 'Haulage',        icon: Truck,     href: '/pricing/haulage',      locked: true  },
+  { label: 'Transportation', icon: Car,       href: '/pricing/transportation', locked: true },
+];
+
 function getNavSections(accountType: string | null): NavSection[] {
   const isAfu = accountType === 'AFU';
 
@@ -76,10 +102,10 @@ function getNavSections(accountType: string | null): NavSection[] {
         { label: 'Companies', icon: Building2, href: '/companies' },
       ],
     });
+    // SYSTEM section — pricing handled separately in render
     sections.push({
       title: 'SYSTEM',
       items: [
-        { label: 'Pricing Tables', icon: Grid3X3,    href: '/pricing' },
         { label: 'Geography',      icon: Globe,      href: '/geography' },
         { label: 'System Logs',    icon: ScrollText, href: '/logs' },
       ],
@@ -115,10 +141,13 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
   const [collapsed, setCollapsed] = useState(false);
   const [roleLabel, setRoleLabel] = useState("Staff");
   const [accountType, setAccountType] = useState<string | null>(null);
+  const [pricingExpanded, setPricingExpanded] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem("af-nav-collapsed");
     if (stored === "true") setCollapsed(true);
+    const pricingStored = localStorage.getItem("af-nav-pricing-expanded");
+    if (pricingStored === "true") setPricingExpanded(true);
   }, []);
 
   useEffect(() => {
@@ -137,6 +166,16 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
   }
 
   const isCollapsed = isMobileDrawer ? false : collapsed;
+  const isPricingRoute = pathname.startsWith('/pricing');
+  const showPricingSub = isPricingRoute || pricingExpanded;
+
+  function togglePricingExpanded() {
+    setPricingExpanded((prev) => {
+      const next = !prev;
+      localStorage.setItem("af-nav-pricing-expanded", String(next));
+      return next;
+    });
+  }
 
   function handleNavClick() {
     if (isMobileDrawer && onMobileClose) onMobileClose();
@@ -215,6 +254,77 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
             </div>
 
             <div className="space-y-0.5">
+              {/* Pricing sub-nav group — rendered before other SYSTEM items */}
+              {section.title === 'SYSTEM' && (
+                <>
+                  {/* Pricing group header */}
+                  <button
+                    onClick={togglePricingExpanded}
+                    title={isCollapsed ? "Pricing Tables" : undefined}
+                    className={cn(
+                      "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors w-full text-left",
+                      isCollapsed && "justify-center px-0",
+                      isPricingRoute ? "text-white" : "text-white/50 hover:bg-white/[0.055]"
+                    )}
+                    style={isPricingRoute ? { background: "rgba(59,158,255,0.11)" } : undefined}
+                  >
+                    {isPricingRoute && (
+                      <div
+                        className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full"
+                        style={{ height: "60%", background: "var(--sky)" }}
+                      />
+                    )}
+                    <Grid3X3 size={18} className={cn("shrink-0", isPricingRoute ? "text-[var(--sky)]" : "")} />
+                    {!isCollapsed && (
+                      <>
+                        <span className="flex-1 truncate">Pricing Tables</span>
+                        {showPricingSub
+                          ? <ChevronDown size={14} className="shrink-0 text-white/30" />
+                          : <ChevronRight size={14} className="shrink-0 text-white/30" />}
+                      </>
+                    )}
+                  </button>
+
+                  {/* Pricing sub-items */}
+                  {showPricingSub && !isCollapsed && (
+                    <div className="ml-4 pl-3 border-l border-white/10 space-y-0.5">
+                      {PRICING_SUB_ITEMS.map((sub) => {
+                        if (sub.locked) {
+                          return (
+                            <div
+                              key={sub.href}
+                              className="relative flex items-center gap-3 rounded-md px-3 py-1.5 text-xs opacity-40 cursor-not-allowed"
+                            >
+                              <sub.icon size={14} className="shrink-0" />
+                              <span className="flex-1 truncate text-white/50">{sub.label}</span>
+                              <Lock size={10} className="shrink-0 text-white/30" />
+                            </div>
+                          );
+                        }
+                        const subActive = sub.href === '/pricing'
+                          ? pathname === '/pricing'
+                          : pathname.startsWith(sub.href);
+                        return (
+                          <Link
+                            key={sub.href}
+                            href={sub.href}
+                            onClick={handleNavClick}
+                            className={cn(
+                              "relative flex items-center gap-3 rounded-md px-3 py-1.5 text-xs transition-colors",
+                              subActive ? "text-white" : "text-white/50 hover:bg-white/[0.055]"
+                            )}
+                            style={subActive ? { background: "rgba(59,158,255,0.11)" } : undefined}
+                          >
+                            <sub.icon size={14} className={cn("shrink-0", subActive ? "text-[var(--sky)]" : "")} />
+                            <span className="flex-1 truncate">{sub.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+
               {section.items.map((item) => {
                 // Exact match for /orders to avoid highlighting when on sub-routes
                 const active = item.href === '/orders'

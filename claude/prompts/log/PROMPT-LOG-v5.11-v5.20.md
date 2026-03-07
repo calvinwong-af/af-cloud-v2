@@ -1,5 +1,29 @@
 # Prompt Completion Log — v5.11–v5.20
 
+### [2026-03-07 UTC] — v5.12: Pricing Module — Backend Country Filter + Dashboard + Navigation
+- **Status:** Completed
+- **Tasks:**
+  - Part 1a: Added `country_code` query param to `list_fcl_rate_cards` with JOIN to ports table
+  - Part 1b: Added `country_code` query param to `list_lcl_rate_cards` with same JOIN pattern
+  - Part 1c: Added `GET /pricing/dashboard-summary` (total_cards, last_updated, expiring_soon per mode) and `GET /pricing/countries` endpoints in `__init__.py`
+  - Part 2: Refactored Sidebar SYSTEM section — pricing now has collapsible sub-nav with 8 items (3 active, 5 locked), auto-expands on `/pricing/*`, localStorage persistence
+  - Part 3: Created `app/actions/pricing.ts` — 6 server actions (countries, dashboard summary, FCL/LCL rate cards list + detail)
+  - Part 4: Created pricing dashboard page with country filter, card grid (7 components, 2 active + 5 locked), stats from dashboard-summary endpoint
+  - Part 5: Created FCL rate cards page with country/origin/dest/container/active filters, expandable rate history rows
+  - Part 6: Created LCL rate cards page with same pattern (no container filter)
+- **Files Modified:**
+  - `af-server/routers/pricing/__init__.py`
+  - `af-server/routers/pricing/fcl.py`
+  - `af-server/routers/pricing/lcl.py`
+  - `af-platform/src/components/shell/Sidebar.tsx`
+  - `af-platform/src/app/actions/pricing.ts` (new)
+  - `af-platform/src/app/(platform)/pricing/page.tsx` (new)
+  - `af-platform/src/app/(platform)/pricing/_components.tsx` (new)
+  - `af-platform/src/app/(platform)/pricing/fcl/page.tsx` (new)
+  - `af-platform/src/app/(platform)/pricing/lcl/page.tsx` (new)
+
+---
+
 ### [2026-03-07 UTC] — v5.11: Port Terminals Table + Pricing Terminal Awareness
 - **Status:** Completed
 - **Tasks:**
