@@ -40,6 +40,49 @@ _MONTH_MAP = {
 
 BATCH_SIZE = 500
 
+# Legacy port code normalisation — maps non-standard Datastore codes to canonical UN/LOCODE
+# MYPKG_N (Port Klang North Port) → MYPKG (Port Klang, default terminal WP)
+# Add further mappings here as discovered via diagnose_pricing_warnings.py
+_PORT_CODE_MAP: dict[str, str] = {
+    "MYPKG_N": "MYPKG",
+}
+
+# Maps legacy port code suffixes to canonical terminal_id
+# where the legacy code implies a specific terminal
+_PORT_TERMINAL_MAP: dict[str, str] = {
+    "MYPKG_N": "MYPKG_N",  # Northport terminal
+}
+
+
+def _normalise_port_code(code: str) -> str:
+    """Map legacy port code variants to canonical UN/LOCODE. Pass-through if not mapped."""
+    return _PORT_CODE_MAP.get(code, code)
+
+
+def _get_terminal_id(original_code: str) -> str | None:
+    """Return terminal_id if the original code implies a specific terminal."""
+    return _PORT_TERMINAL_MAP.get(original_code)
+
+
+# Malaysian port code prefix — used to detect domestic MY-MY lanes
+_MY_PREFIX = "MY"
+
+
+def _default_currency(pt_id: str) -> str:
+    """Derive default currency from rate card key (pt_id).
+
+    Format: 'ORIGIN:DEST:...' e.g. 'CNSHA:MYPKG:NON-DG'
+    Rule: if both origin and destination start with 'MY' → MYR, else USD.
+    Applies only when the Datastore record has no currency set.
+    """
+    parts = pt_id.split(":")
+    if len(parts) >= 2:
+        origin = _normalise_port_code(parts[0])
+        dest = _normalise_port_code(parts[1])
+        if origin.startswith(_MY_PREFIX) and dest.startswith(_MY_PREFIX):
+            return "MYR"
+    return "USD"
+
 
 def _parse_month_year(month_year: str) -> date | None:
     """Convert 'JAN-2024' to date(2024, 1, 1)."""
@@ -94,22 +137,26 @@ def migrate_fcl_rate_cards(ds_client, conn, dry_run: bool) -> dict[str, int]:
             card_map[rate_card_key] = -1
             continue
 
+        original_dest = e.get("port_destination_un_code", "")
+        terminal_id = _get_terminal_id(original_dest)
+
         row = conn.execute(text("""
             INSERT INTO fcl_rate_cards
                 (rate_card_key, origin_port_code, destination_port_code,
-                 dg_class_code, container_size, container_type, code, description)
-            VALUES (:key, :origin, :dest, :dg, :size, :type, :code, :desc)
+                 dg_class_code, container_size, container_type, code, description, terminal_id)
+            VALUES (:key, :origin, :dest, :dg, :size, :type, :code, :desc, :terminal_id)
             ON CONFLICT (rate_card_key) DO NOTHING
             RETURNING id
         """), {
             "key": rate_card_key,
-            "origin": e.get("port_origin_un_code", ""),
-            "dest": e.get("port_destination_un_code", ""),
+            "origin": _normalise_port_code(e.get("port_origin_un_code", "")),
+            "dest": _normalise_port_code(original_dest),
             "dg": e.get("dg_class_code", "NON-DG"),
             "size": e.get("container_size", ""),
             "type": e.get("container_type", ""),
             "code": e.get("code", ""),
             "desc": e.get("description", ""),
+            "terminal_id": terminal_id,
         }).fetchone()
 
         if row:
@@ -152,20 +199,24 @@ def migrate_lcl_rate_cards(ds_client, conn, dry_run: bool) -> dict[str, int]:
             card_map[rate_card_key] = -1
             continue
 
+        original_dest = e.get("port_destination_un_code", "")
+        terminal_id = _get_terminal_id(original_dest)
+
         row = conn.execute(text("""
             INSERT INTO lcl_rate_cards
                 (rate_card_key, origin_port_code, destination_port_code,
-                 dg_class_code, code, description)
-            VALUES (:key, :origin, :dest, :dg, :code, :desc)
+                 dg_class_code, code, description, terminal_id)
+            VALUES (:key, :origin, :dest, :dg, :code, :desc, :terminal_id)
             ON CONFLICT (rate_card_key) DO NOTHING
             RETURNING id
         """), {
             "key": rate_card_key,
-            "origin": e.get("port_origin_un_code", ""),
-            "dest": e.get("port_destination_un_code", ""),
+            "origin": _normalise_port_code(e.get("port_origin_un_code", "")),
+            "dest": _normalise_port_code(original_dest),
             "dg": e.get("dg_class_code", "NON-DG"),
             "code": e.get("code", ""),
             "desc": e.get("description", ""),
+            "terminal_id": terminal_id,
         }).fetchone()
 
         if row:
@@ -229,9 +280,9 @@ def migrate_rates(ds_client, conn, fcl_map: dict[str, int], lcl_map: dict[str, i
                 skipped_no_card += 1
                 continue
             if not currency:
-                currency = "USD"
+                currency = _default_currency(pt_id)
                 warnings += 1
-                logger.warning(f"  WARN: FCL rate {pt_id}/{month_year} missing currency, defaulting USD")
+                logger.warning(f"  WARN: FCL rate {pt_id}/{month_year} missing currency, defaulting {currency}")
             if not uom:
                 uom = "CONTAINER"
                 warnings += 1
@@ -264,9 +315,9 @@ def migrate_rates(ds_client, conn, fcl_map: dict[str, int], lcl_map: dict[str, i
                 skipped_no_card += 1
                 continue
             if not currency:
-                currency = "USD"
+                currency = _default_currency(pt_id)
                 warnings += 1
-                logger.warning(f"  WARN: LCL rate {pt_id}/{month_year} missing currency, defaulting USD")
+                logger.warning(f"  WARN: LCL rate {pt_id}/{month_year} missing currency, defaulting {currency}")
             if not uom:
                 uom = "W/M"
                 warnings += 1
@@ -340,7 +391,9 @@ def main():
     args = parser.parse_args()
 
     ds_client = datastore.Client()
+    get_engine.cache_clear()  # Clear lru_cache — ensures no stale engine from pre-migration state
     engine = get_engine()
+    engine.dispose()  # Force fresh connections — ensures post-migration schema is visible
 
     with engine.connect() as conn:
         fcl_map = migrate_fcl_rate_cards(ds_client, conn, args.dry_run)

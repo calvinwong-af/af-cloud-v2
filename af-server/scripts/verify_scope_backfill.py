@@ -52,7 +52,7 @@ def main():
 
     with engine.connect() as conn:
         rows = conn.execute(text("""
-            SELECT o.order_id, o.scope, sw.workflow_tasks
+            SELECT o.order_id, sd.scope, sw.workflow_tasks
             FROM orders o
             JOIN shipment_details sd ON sd.order_id = o.order_id
             JOIN shipment_workflows sw ON sw.order_id = o.order_id

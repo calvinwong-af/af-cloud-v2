@@ -30,12 +30,14 @@ class FCLRateCardCreate(BaseModel):
     container_type: str
     code: str
     description: str
+    terminal_id: Optional[str] = None
 
 
 class FCLRateCardUpdate(BaseModel):
     code: Optional[str] = None
     description: Optional[str] = None
     is_active: Optional[bool] = None
+    terminal_id: Optional[str] = None
 
 
 class FCLRateCreate(BaseModel):
@@ -90,6 +92,7 @@ def _row_to_rate_card(r) -> dict:
         "is_active": r[9],
         "created_at": str(r[10]) if r[10] else None,
         "updated_at": str(r[11]) if r[11] else None,
+        "terminal_id": r[12],
     }
 
 
@@ -119,7 +122,7 @@ def _row_to_rate(r) -> dict:
 _RATE_CARD_SELECT = """
     SELECT id, rate_card_key, origin_port_code, destination_port_code,
            dg_class_code, container_size, container_type,
-           code, description, is_active, created_at, updated_at
+           code, description, is_active, created_at, updated_at, terminal_id
     FROM fcl_rate_cards
 """
 
@@ -259,16 +262,28 @@ async def create_fcl_rate_card(
     if existing:
         raise HTTPException(status_code=409, detail=f"Rate card {rate_card_key} already exists")
 
+    # Validate terminal_id belongs to destination port
+    if body.terminal_id:
+        terminal = conn.execute(text(
+            "SELECT port_un_code FROM port_terminals WHERE terminal_id = :tid"
+        ), {"tid": body.terminal_id}).fetchone()
+        if not terminal:
+            raise HTTPException(status_code=400, detail=f"Terminal {body.terminal_id} not found")
+        if terminal[0] != dest:
+            raise HTTPException(status_code=400,
+                                detail=f"Terminal {body.terminal_id} belongs to port {terminal[0]}, not {dest}")
+
     row = conn.execute(text("""
         INSERT INTO fcl_rate_cards
             (rate_card_key, origin_port_code, destination_port_code,
-             dg_class_code, container_size, container_type, code, description)
-        VALUES (:key, :origin, :dest, :dg, :size, :type, :code, :desc)
+             dg_class_code, container_size, container_type, code, description, terminal_id)
+        VALUES (:key, :origin, :dest, :dg, :size, :type, :code, :desc, :terminal_id)
         RETURNING id, created_at
     """), {
         "key": rate_card_key, "origin": origin, "dest": dest,
         "dg": dg, "size": size, "type": ctype,
         "code": body.code, "desc": body.description,
+        "terminal_id": body.terminal_id,
     }).fetchone()
 
     return {"status": "OK", "data": {
@@ -276,6 +291,7 @@ async def create_fcl_rate_card(
         "origin_port_code": origin, "destination_port_code": dest,
         "dg_class_code": dg, "container_size": size, "container_type": ctype,
         "code": body.code, "description": body.description,
+        "terminal_id": body.terminal_id,
         "is_active": True, "created_at": str(row[1]),
     }}
 
@@ -304,6 +320,9 @@ async def update_fcl_rate_card(
     if body.is_active is not None:
         updates.append("is_active = :active")
         params["active"] = body.is_active
+    if body.terminal_id is not None:
+        updates.append("terminal_id = :terminal_id")
+        params["terminal_id"] = body.terminal_id
 
     if not updates:
         return {"status": "OK", "msg": "No changes"}

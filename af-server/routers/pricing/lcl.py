@@ -28,12 +28,14 @@ class LCLRateCardCreate(BaseModel):
     dg_class_code: str
     code: str
     description: str
+    terminal_id: Optional[str] = None
 
 
 class LCLRateCardUpdate(BaseModel):
     code: Optional[str] = None
     description: Optional[str] = None
     is_active: Optional[bool] = None
+    terminal_id: Optional[str] = None
 
 
 class LCLRateCreate(BaseModel):
@@ -86,6 +88,7 @@ def _row_to_rate_card(r) -> dict:
         "is_active": r[7],
         "created_at": str(r[8]) if r[8] else None,
         "updated_at": str(r[9]) if r[9] else None,
+        "terminal_id": r[10],
     }
 
 
@@ -114,7 +117,7 @@ def _row_to_rate(r) -> dict:
 
 _RATE_CARD_SELECT = """
     SELECT id, rate_card_key, origin_port_code, destination_port_code,
-           dg_class_code, code, description, is_active, created_at, updated_at
+           dg_class_code, code, description, is_active, created_at, updated_at, terminal_id
     FROM lcl_rate_cards
 """
 
@@ -243,15 +246,27 @@ async def create_lcl_rate_card(
     if existing:
         raise HTTPException(status_code=409, detail=f"Rate card {rate_card_key} already exists")
 
+    # Validate terminal_id belongs to destination port
+    if body.terminal_id:
+        terminal = conn.execute(text(
+            "SELECT port_un_code FROM port_terminals WHERE terminal_id = :tid"
+        ), {"tid": body.terminal_id}).fetchone()
+        if not terminal:
+            raise HTTPException(status_code=400, detail=f"Terminal {body.terminal_id} not found")
+        if terminal[0] != dest:
+            raise HTTPException(status_code=400,
+                                detail=f"Terminal {body.terminal_id} belongs to port {terminal[0]}, not {dest}")
+
     row = conn.execute(text("""
         INSERT INTO lcl_rate_cards
             (rate_card_key, origin_port_code, destination_port_code,
-             dg_class_code, code, description)
-        VALUES (:key, :origin, :dest, :dg, :code, :desc)
+             dg_class_code, code, description, terminal_id)
+        VALUES (:key, :origin, :dest, :dg, :code, :desc, :terminal_id)
         RETURNING id, created_at
     """), {
         "key": rate_card_key, "origin": origin, "dest": dest,
         "dg": dg, "code": body.code, "desc": body.description,
+        "terminal_id": body.terminal_id,
     }).fetchone()
 
     return {"status": "OK", "data": {
@@ -259,6 +274,7 @@ async def create_lcl_rate_card(
         "origin_port_code": origin, "destination_port_code": dest,
         "dg_class_code": dg,
         "code": body.code, "description": body.description,
+        "terminal_id": body.terminal_id,
         "is_active": True, "created_at": str(row[1]),
     }}
 
@@ -287,6 +303,9 @@ async def update_lcl_rate_card(
     if body.is_active is not None:
         updates.append("is_active = :active")
         params["active"] = body.is_active
+    if body.terminal_id is not None:
+        updates.append("terminal_id = :terminal_id")
+        params["terminal_id"] = body.terminal_id
 
     if not updates:
         return {"status": "OK", "msg": "No changes"}

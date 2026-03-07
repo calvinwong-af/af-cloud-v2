@@ -35,10 +35,16 @@ _cities_cache: list[dict] = []
 _cities_cache_ts: float = 0
 
 
+_terminals_cache: list[dict] = []
+_terminals_cache_ts: float = 0
+
+
 def _invalidate_port_cache():
-    global _port_cache, _port_cache_ts
+    global _port_cache, _port_cache_ts, _terminals_cache, _terminals_cache_ts
     _port_cache = []
     _port_cache_ts = 0
+    _terminals_cache = []
+    _terminals_cache_ts = 0
 
 
 def _invalidate_states_cache():
@@ -130,6 +136,74 @@ async def get_port(
     }
 
     return {"status": "OK", "data": data}
+
+
+# ---------------------------------------------------------------------------
+# Port Terminals
+# ---------------------------------------------------------------------------
+
+@router.get("/port-terminals")
+async def list_port_terminals(
+    port_un_code: str | None = Query(default=None),
+    claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
+):
+    global _terminals_cache, _terminals_cache_ts
+
+    if port_un_code:
+        rows = conn.execute(text("""
+            SELECT terminal_id, port_un_code, name, is_default, is_active
+            FROM port_terminals
+            WHERE is_active = TRUE AND port_un_code = :port
+            ORDER BY terminal_id
+        """), {"port": port_un_code}).fetchall()
+        data = [
+            {"terminal_id": r[0], "port_un_code": r[1], "name": r[2],
+             "is_default": r[3], "is_active": r[4]}
+            for r in rows
+        ]
+        return {"status": "OK", "data": data}
+
+    now = time.monotonic()
+    if _terminals_cache and (now - _terminals_cache_ts) < _PORT_CACHE_TTL:
+        return {"status": "OK", "data": _terminals_cache}
+
+    rows = conn.execute(text("""
+        SELECT terminal_id, port_un_code, name, is_default, is_active
+        FROM port_terminals
+        WHERE is_active = TRUE
+        ORDER BY port_un_code, terminal_id
+    """)).fetchall()
+
+    _terminals_cache = [
+        {"terminal_id": r[0], "port_un_code": r[1], "name": r[2],
+         "is_default": r[3], "is_active": r[4]}
+        for r in rows
+    ]
+    _terminals_cache_ts = now
+    logger.info(f"[geography] Terminals cache refreshed — {len(_terminals_cache)} terminals loaded")
+
+    return {"status": "OK", "data": _terminals_cache}
+
+
+@router.get("/port-terminals/{terminal_id}")
+async def get_port_terminal(
+    terminal_id: str,
+    claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
+):
+    row = conn.execute(text("""
+        SELECT terminal_id, port_un_code, name, is_default, is_active
+        FROM port_terminals WHERE terminal_id = :tid
+    """), {"tid": terminal_id}).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Terminal {terminal_id} not found")
+
+    return {"status": "OK", "data": {
+        "terminal_id": row[0], "port_un_code": row[1], "name": row[2],
+        "is_default": row[3], "is_active": row[4],
+    }}
 
 
 class PortCoordinateUpdate(BaseModel):
