@@ -22,7 +22,7 @@ export default function FCLPage({
         </p>
       </div>
 
-      <FCLRateCardsTab countryCode={searchParams.country} />
+      <FCLRateCardsTab countryCode={searchParams.country ?? 'MY'} />
     </div>
   );
 }

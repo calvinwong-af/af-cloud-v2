@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import TerminalSelector from '@/components/shared/TerminalSelector';
+import { useEffect } from 'react';
+import { PortCombobox } from '@/components/shared/PortCombobox';
 import type { Port, OrderType } from './_types';
 import { INCOTERMS } from './_constants';
 
@@ -30,155 +30,6 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
     <label className="block text-xs font-medium text-[var(--text-mid)] mb-1">
       {children}{required && <span className="text-red-500 ml-0.5">*</span>}
     </label>
-  );
-}
-
-// ─── Searchable Combobox ──────────────────────────────────────────────────────
-
-function Combobox({ value, onChange, options, placeholder }: {
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string; sublabel?: string }[];
-  placeholder?: string;
-}) {
-  const [query, setQuery] = useState('');
-  const [open, setOpen] = useState(false);
-  const [highlighted, setHighlighted] = useState<number>(-1);
-  const listRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!value) setQuery('');
-  }, [value]);
-
-  // Scroll highlighted item into view
-  useEffect(() => {
-    if (highlighted >= 0 && listRef.current) {
-      const item = listRef.current.children[highlighted] as HTMLElement;
-      item?.scrollIntoView({ block: 'nearest' });
-    }
-  }, [highlighted]);
-
-  const filtered = query.trim().length === 0
-    ? options.slice(0, 80)
-    : options.filter(o =>
-        o.label.toLowerCase().includes(query.toLowerCase()) ||
-        o.value.toLowerCase().includes(query.toLowerCase()) ||
-        (o.sublabel ?? '').toLowerCase().includes(query.toLowerCase())
-      ).slice(0, 80);
-
-  const selectedLabel = options.find(o => o.value === value)?.label ?? '';
-  const inputValue = open ? query : selectedLabel;
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (!open) {
-      if (e.key === 'ArrowDown' || e.key === 'Enter') {
-        setQuery('');
-        setOpen(true);
-        setHighlighted(0);
-        e.preventDefault();
-      }
-      return;
-    }
-
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault();
-        setHighlighted(h => Math.min(h + 1, filtered.length - 1));
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        setHighlighted(h => Math.max(h - 1, 0));
-        break;
-      case 'Enter':
-        e.preventDefault();
-        if (highlighted >= 0 && filtered[highlighted]) {
-          const chosen = filtered[highlighted];
-          onChange(chosen.value);
-          setQuery(chosen.label);
-          setOpen(false);
-          setHighlighted(-1);
-        }
-        break;
-      case 'Escape':
-        setOpen(false);
-        setHighlighted(-1);
-        {
-          const selected = options.find(o => o.value === value);
-          setQuery(selected?.label ?? '');
-        }
-        break;
-      case 'Tab':
-        setOpen(false);
-        setHighlighted(-1);
-        break;
-    }
-  }
-
-  return (
-    <div className="relative">
-      <input
-        type="text"
-        value={inputValue}
-        onChange={e => {
-          setQuery(e.target.value);
-          setOpen(true);
-          setHighlighted(0);
-          if (e.target.value === '') onChange('');
-        }}
-        onFocus={() => {
-          setQuery('');
-          setOpen(true);
-          setHighlighted(-1);
-        }}
-        onMouseDown={() => {
-          if (!open) {
-            setQuery('');
-            setOpen(true);
-            setHighlighted(-1);
-          }
-        }}
-        onBlur={() => setTimeout(() => { setOpen(false); setHighlighted(-1); }, 150)}
-        onKeyDown={handleKeyDown}
-        placeholder={placeholder}
-        autoComplete="off"
-        className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent"
-      />
-      {open && filtered.length > 0 && (
-        <div
-          ref={listRef}
-          className="absolute z-50 w-full mt-1 bg-white border border-[var(--border)] rounded-lg shadow-lg max-h-56 overflow-y-auto"
-        >
-          {filtered.map((o, i) => (
-            <div
-              key={o.value}
-              onMouseDown={e => {
-                e.preventDefault();
-                onChange(o.value);
-                setQuery(o.label);
-                setOpen(false);
-                setHighlighted(-1);
-              }}
-              onMouseEnter={() => setHighlighted(i)}
-              className={`px-3 py-2 text-sm cursor-pointer ${
-                i === highlighted
-                  ? 'bg-[var(--sky-mist)]'
-                  : o.value === value
-                  ? 'bg-[var(--sky-pale)]'
-                  : 'hover:bg-[var(--sky-mist)]'
-              }`}
-            >
-              <div className="text-[var(--text)]">{o.label}</div>
-              {o.sublabel && <div className="text-xs text-[var(--text-muted)]">{o.sublabel}</div>}
-            </div>
-          ))}
-        </div>
-      )}
-      {open && filtered.length === 0 && query.trim().length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-[var(--border)] rounded-lg shadow-lg px-3 py-2 text-sm text-[var(--text-muted)]">
-          No results for &quot;{query}&quot;
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -220,7 +71,9 @@ export function StepRoute({
   const portOptions = activePorts.map(p => ({
     value: p.un_code,
     label: p.name || p.un_code,
-    sublabel: `${p.un_code}${p.country ? ' · ' + p.country : ''}`,
+    sublabel: `${p.un_code}${p.country_name ? ' · ' + p.country_name : ''}`,
+    has_terminals: p.has_terminals,
+    terminals: p.terminals ?? [],
   }));
 
   const availableIncoterms = INCOTERMS.filter(code => {
@@ -243,45 +96,37 @@ export function StepRoute({
     <div className="space-y-5">
       <div>
         <FieldLabel required>Origin Port</FieldLabel>
-        <Combobox
+        <PortCombobox
           value={originCode}
           onChange={setOriginCode}
+          onTerminalChange={setOriginTerminalId}
           options={portOptions}
+          withTerminal
+          terminalValue={originTerminalId}
           placeholder="Search by port name or UN code…"
         />
         {originPort && (
-          <p className="text-xs text-[var(--text-muted)] mt-1">{originPort.un_code} · {originPort.country}</p>
-        )}
-        {originPort?.has_terminals && (
-          <TerminalSelector
-            terminals={originPort.terminals}
-            value={originTerminalId}
-            onChange={setOriginTerminalId}
-          />
+          <p className="text-xs text-[var(--text-muted)] mt-1">{originPort.un_code} · {originPort.country_name}</p>
         )}
       </div>
       <div>
         <FieldLabel required>Destination Port</FieldLabel>
-        <Combobox
+        <PortCombobox
           value={destCode}
           onChange={setDestCode}
+          onTerminalChange={setDestTerminalId}
           options={portOptions}
+          withTerminal
+          terminalValue={destTerminalId}
           placeholder="Search by port name or UN code…"
         />
         {destPort && (
-          <p className="text-xs text-[var(--text-muted)] mt-1">{destPort.un_code} · {destPort.country}</p>
-        )}
-        {destPort?.has_terminals && (
-          <TerminalSelector
-            terminals={destPort.terminals}
-            value={destTerminalId}
-            onChange={setDestTerminalId}
-          />
+          <p className="text-xs text-[var(--text-muted)] mt-1">{destPort.un_code} · {destPort.country_name}</p>
         )}
       </div>
       <div>
         <FieldLabel required>Incoterm</FieldLabel>
-        <Combobox
+        <PortCombobox
           value={incoterm}
           onChange={setIncoterm}
           options={incotermOptions}

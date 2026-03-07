@@ -65,7 +65,6 @@ interface PricingSubItem {
 }
 
 const PRICING_SUB_ITEMS: PricingSubItem[] = [
-  { label: 'Dashboard',      icon: Grid3X3,   href: '/pricing',              locked: false },
   { label: 'FCL Ocean',      icon: Ship,      href: '/pricing/fcl',          locked: false },
   { label: 'LCL Ocean',      icon: Package,   href: '/pricing/lcl',          locked: false },
   { label: 'Air Freight',    icon: Plane,     href: '/pricing/air',          locked: true  },
@@ -257,10 +256,17 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
               {/* Pricing sub-nav group — rendered before other SYSTEM items */}
               {section.title === 'SYSTEM' && (
                 <>
-                  {/* Pricing group header */}
-                  <button
-                    onClick={togglePricingExpanded}
+                  {/* Pricing group header — link + chevron toggle */}
+                  <Link
+                    href="/pricing"
                     title={isCollapsed ? "Pricing Tables" : undefined}
+                    onClick={() => {
+                      handleNavClick();
+                      if (!showPricingSub) {
+                        setPricingExpanded(true);
+                        localStorage.setItem("af-nav-pricing-expanded", "true");
+                      }
+                    }}
                     className={cn(
                       "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors w-full text-left",
                       isCollapsed && "justify-center px-0",
@@ -278,12 +284,18 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
                     {!isCollapsed && (
                       <>
                         <span className="flex-1 truncate">Pricing Tables</span>
-                        {showPricingSub
-                          ? <ChevronDown size={14} className="shrink-0 text-white/30" />
-                          : <ChevronRight size={14} className="shrink-0 text-white/30" />}
+                        <button
+                          type="button"
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); togglePricingExpanded(); }}
+                          className="shrink-0 p-0.5 rounded hover:bg-white/10 transition-colors"
+                        >
+                          {showPricingSub
+                            ? <ChevronDown size={14} className="text-white/30" />
+                            : <ChevronRight size={14} className="text-white/30" />}
+                        </button>
                       </>
                     )}
-                  </button>
+                  </Link>
 
                   {/* Pricing sub-items */}
                   {showPricingSub && !isCollapsed && (

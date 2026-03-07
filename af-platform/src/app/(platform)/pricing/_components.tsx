@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import {
   Ship, Package, Plane, MapPin, FileCheck, Truck, Car, Lock,
-  Search, Loader2, ChevronDown, ChevronRight, X,
+  Loader2, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -14,6 +14,8 @@ import {
   fetchFCLRateCardDetailAction,
   fetchLCLRateCardsAction,
   fetchLCLRateCardDetailAction,
+  fetchFCLOriginsAction,
+  fetchLCLOriginsAction,
 } from '@/app/actions/pricing';
 import type {
   PricingCountry,
@@ -21,90 +23,34 @@ import type {
   RateCard,
   RateDetail,
 } from '@/app/actions/pricing';
+import { fetchPortsAction } from '@/app/actions/shipments';
+import { PortCombobox } from '@/components/shared/PortCombobox';
 
 // ---------------------------------------------------------------------------
 // Shared styles
 // ---------------------------------------------------------------------------
 
-const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-[var(--border)] bg-white text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)]/30 focus:border-[var(--sky)]";
 const thCls = "px-4 py-3 text-left text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide";
 const tdCls = "px-4 py-3 text-sm text-[var(--text)]";
 
 // ---------------------------------------------------------------------------
-// FilterCombobox — reused from geography
+// Toggle Switch
 // ---------------------------------------------------------------------------
 
-function FilterCombobox({
-  value,
-  onChange,
-  options,
-  placeholder,
-}: {
-  value: string;
-  onChange: (val: string) => void;
-  options: { value: string; label: string }[];
-  placeholder?: string;
-}) {
-  const [query, setQuery] = useState('');
-  const [open, setOpen] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const selectedLabel = options.find(o => o.value === value)?.label ?? '';
-  const displayText = open ? query : selectedLabel;
-  const filtered = open
-    ? options.filter(o =>
-        o.label.toLowerCase().includes(query.toLowerCase()) ||
-        o.value.toLowerCase().includes(query.toLowerCase())
-      ).slice(0, 30)
-    : [];
-
+function ToggleSwitch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
-    <div className="relative min-w-[160px]">
-      <input
-        ref={inputRef}
-        type="text"
-        value={displayText}
-        placeholder={placeholder ?? 'Search...'}
-        className={inputCls}
-        onFocus={() => { setOpen(true); setQuery(''); }}
-        onChange={e => setQuery(e.target.value)}
-        onBlur={() => setTimeout(() => { setOpen(false); setQuery(''); }, 150)}
-        onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); setQuery(''); } }}
-      />
-      {value && !open && (
-        <button
-          type="button"
-          onMouseDown={e => {
-            e.preventDefault();
-            onChange('');
-            setOpen(true);
-            setQuery('');
-            setTimeout(() => inputRef.current?.focus(), 0);
-          }}
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text)]"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
-      )}
-      {open && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-[var(--border)] rounded-lg shadow-lg max-h-48 overflow-y-auto">
-          {filtered.length > 0 ? (
-            filtered.map(o => (
-              <button
-                key={o.value}
-                type="button"
-                onMouseDown={e => { e.preventDefault(); onChange(o.value); setOpen(false); setQuery(''); }}
-                className={`w-full text-left px-3 py-2 text-xs hover:bg-[var(--sky-mist)] ${o.value === value ? 'bg-[var(--sky-mist)] font-medium' : ''}`}
-              >
-                {o.label}
-              </button>
-            ))
-          ) : (
-            <div className="px-3 py-2 text-xs text-[var(--text-muted)]">No results</div>
-          )}
-        </div>
-      )}
-    </div>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="flex items-center gap-2 shrink-0"
+    >
+      <div className={`w-8 h-4 rounded-full transition-colors relative ${checked ? 'bg-[var(--sky)]' : 'bg-[var(--border)]'}`}>
+        <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`} />
+      </div>
+      <span className="text-xs text-[var(--text-muted)]">{label}</span>
+    </button>
   );
 }
 
@@ -139,7 +85,7 @@ function formatDate(d: string | null): string {
 
 export function PricingDashboard() {
   const [countries, setCountries] = useState<PricingCountry[]>([]);
-  const [country, setCountry] = useState('');
+  const [country, setCountry] = useState('MY');
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -159,7 +105,7 @@ export function PricingDashboard() {
 
   const countryOptions = [
     { value: '', label: 'All Countries' },
-    ...countries.map(c => ({ value: c.country_code, label: `${c.country_name} (${c.country_code})` })),
+    ...countries.filter(c => c.country_code && c.country_name).map(c => ({ value: c.country_code, label: `${c.country_code} — ${c.country_name}` })),
   ];
 
   return (
@@ -168,7 +114,7 @@ export function PricingDashboard() {
       <div className="flex items-center gap-3">
         <span className="text-sm font-medium text-[var(--text-muted)]">Country</span>
         <div className="w-64">
-          <FilterCombobox
+          <PortCombobox
             value={country}
             onChange={setCountry}
             options={countryOptions}
@@ -289,36 +235,79 @@ export function FCLRateCardsTab({ countryCode }: { countryCode?: string }) {
   const [countries, setCountries] = useState<PricingCountry[]>([]);
   const [country, setCountry] = useState(countryCode ?? '');
   const [cards, setCards] = useState<RateCard[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [originOptions, setOriginOptions] = useState<string[]>([]);
   const [originFilter, setOriginFilter] = useState('');
-  const [destFilter, setDestFilter] = useState('');
+  const [textFilter, setTextFilter] = useState('');
   const [sizeFilter, setSizeFilter] = useState('');
   const [showInactive, setShowInactive] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [expandedRates, setExpandedRates] = useState<Record<string, RateDetail[]> | null>(null);
   const [expandLoading, setExpandLoading] = useState(false);
+  const [portsMap, setPortsMap] = useState<Record<string, { name: string; country_name: string }>>({});
 
   useEffect(() => {
     fetchPricingCountriesAction().then(r => {
       if (r?.success) setCountries(r.data);
     });
+    fetchPortsAction().then(portsData => {
+      const map: Record<string, { name: string; country_name: string }> = {};
+      for (const p of portsData) { map[p.un_code] = { name: p.name, country_name: p.country_name }; }
+      setPortsMap(map);
+    });
   }, []);
 
+  // Fetch origin options on mount and when country changes
+  const prevCountry = useRef(country);
+  useEffect(() => {
+    if (prevCountry.current !== country) {
+      setOriginFilter('');
+      setTextFilter('');
+      prevCountry.current = country;
+    }
+    fetchFCLOriginsAction(country || undefined).then(r => {
+      if (r?.success) setOriginOptions(r.data);
+    });
+  }, [country]);
+
   const fetchCards = useCallback(() => {
+    if (!originFilter) {
+      setCards([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setExpandedId(null);
     setExpandedRates(null);
     fetchFCLRateCardsAction({
       countryCode: country || undefined,
+      originPort: originFilter,
       containerSize: sizeFilter || undefined,
       isActive: showInactive ? undefined : true,
     }).then(r => {
       if (r?.success) setCards(r.data);
       setLoading(false);
     });
-  }, [country, sizeFilter, showInactive]);
+  }, [country, originFilter, sizeFilter, showInactive]);
 
   useEffect(() => { fetchCards(); }, [fetchCards]);
+
+  const filteredCards = useMemo(() => {
+    if (!textFilter.trim()) return cards;
+    const q = textFilter.trim().toLowerCase();
+    return cards.filter(c => {
+      const dest = portsMap[c.destination_port_code];
+      return (
+        c.destination_port_code.toLowerCase().includes(q) ||
+        (dest?.name ?? '').toLowerCase().includes(q) ||
+        (dest?.country_name ?? '').toLowerCase().includes(q) ||
+        (c.container_size ?? '').toLowerCase().includes(q) ||
+        (c.container_type ?? '').toLowerCase().includes(q) ||
+        (c.dg_class_code ?? '').toLowerCase().includes(q) ||
+        (c.terminal_id ?? '').toLowerCase().includes(q)
+      );
+    });
+  }, [cards, textFilter, portsMap]);
 
   function handleExpand(cardId: number) {
     if (expandedId === cardId) {
@@ -337,15 +326,14 @@ export function FCLRateCardsTab({ countryCode }: { countryCode?: string }) {
     });
   }
 
-  const filtered = cards.filter(c => {
-    if (originFilter && !c.origin_port_code.toLowerCase().includes(originFilter.toLowerCase())) return false;
-    if (destFilter && !c.destination_port_code.toLowerCase().includes(destFilter.toLowerCase())) return false;
-    return true;
-  });
+  const originComboOptions = [
+    { value: '', label: 'All Origins' },
+    ...originOptions.map(code => ({ value: code, label: code, sublabel: portsMap[code]?.name ?? '' })),
+  ];
 
   const countryOptions = [
     { value: '', label: 'All Countries' },
-    ...countries.map(c => ({ value: c.country_code, label: `${c.country_name} (${c.country_code})` })),
+    ...countries.filter(c => c.country_code && c.country_name).map(c => ({ value: c.country_code, label: `${c.country_code} — ${c.country_name}` })),
   ];
 
   const sizeOptions = [
@@ -358,74 +346,89 @@ export function FCLRateCardsTab({ countryCode }: { countryCode?: string }) {
 
   return (
     <div className="space-y-4">
-      {/* Filter bar */}
+      {/* Filter bar — Row 1 */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="w-56">
-          <FilterCombobox value={country} onChange={setCountry} options={countryOptions} placeholder="All Countries" />
+          <PortCombobox value={country} onChange={setCountry} options={countryOptions} placeholder="All Countries" />
         </div>
-        <div className="relative w-40">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-          <input
-            type="text" value={originFilter} onChange={e => setOriginFilter(e.target.value)}
-            placeholder="Origin" className={`${inputCls} pl-8`}
-          />
-        </div>
-        <div className="relative w-40">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-          <input
-            type="text" value={destFilter} onChange={e => setDestFilter(e.target.value)}
-            placeholder="Destination" className={`${inputCls} pl-8`}
-          />
+        <div className="w-44">
+          <PortCombobox value={originFilter} onChange={setOriginFilter} options={originComboOptions} placeholder="All Origins" />
         </div>
         <div className="w-36">
-          <FilterCombobox value={sizeFilter} onChange={setSizeFilter} options={sizeOptions} placeholder="All Sizes" />
+          <PortCombobox value={sizeFilter} onChange={setSizeFilter} options={sizeOptions} placeholder="All Sizes" />
         </div>
-        <label className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] cursor-pointer">
-          <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="rounded" />
-          Show inactive
-        </label>
+        <ToggleSwitch checked={showInactive} onChange={setShowInactive} label="Show inactive" />
+      </div>
+      {/* Filter bar — Row 2: General text filter */}
+      <div className="relative">
+        <input
+          type="text"
+          value={textFilter}
+          onChange={e => setTextFilter(e.target.value)}
+          placeholder="Filter by destination, size, DG class, terminal…"
+          className="w-full h-9 pl-3 pr-8 text-sm rounded-lg border border-[var(--border)] bg-white text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--sky)] focus:border-[var(--sky)] transition-colors"
+        />
+        {textFilter && (
+          <button
+            onClick={() => setTextFilter('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+            aria-label="Clear filter"
+          >
+            ×
+          </button>
+        )}
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-xl border border-[var(--border)] overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-[var(--surface)]">
-              <tr>
-                <th className={thCls}>Origin</th>
-                <th className={thCls}>Destination</th>
-                <th className={thCls}>Container</th>
-                <th className={thCls}>DG Class</th>
-                <th className={thCls}>Terminal</th>
-                <th className={thCls}>Description</th>
-                <th className={thCls}>Latest Price</th>
-                <th className={thCls}>Last Updated</th>
-                <th className={thCls}>Active</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--border)]">
-              {loading ? (
-                <tr><td colSpan={9} className="py-12 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-[var(--text-muted)]" /></td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={9} className="py-8 text-center text-sm text-[var(--text-muted)]">No rate cards found</td></tr>
-              ) : (
-                filtered.map(c => (
-                  <RateCardRow
-                    key={c.id}
-                    card={c}
-                    showContainer
-                    expanded={expandedId === c.id}
-                    expandedRates={expandedId === c.id ? expandedRates : null}
-                    expandLoading={expandedId === c.id && expandLoading}
-                    onToggle={() => handleExpand(c.id)}
-                  />
-                ))
-              )}
-            </tbody>
-          </table>
+      {/* Table or empty state */}
+      {!originFilter ? (
+        <div className="bg-white rounded-xl border border-[var(--border)] py-16 flex flex-col items-center gap-3 text-[var(--text-muted)]">
+          <Ship className="w-8 h-8 opacity-40" />
+          <p className="text-sm">Select an origin port to view rate cards</p>
         </div>
-      </div>
-      <div className="text-xs text-[var(--text-muted)]">{filtered.length} rate cards</div>
+      ) : (
+        <>
+          <div className="bg-white rounded-xl border border-[var(--border)] overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-[var(--surface)]">
+                  <tr>
+                    <th className={thCls}>Origin</th>
+                    <th className={thCls}>Destination</th>
+                    <th className={thCls}>Container</th>
+                    <th className={thCls}>DG Class</th>
+                    <th className={thCls}>Terminal</th>
+                    <th className={thCls}>Latest Price</th>
+                    <th className={thCls}>Last Updated</th>
+                    <th className={thCls}>Active</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border)]">
+                  {loading ? (
+                    <tr><td colSpan={8} className="py-12 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-[var(--text-muted)]" /></td></tr>
+                  ) : filteredCards.length === 0 ? (
+                    <tr><td colSpan={8} className="py-8 text-center text-sm text-[var(--text-muted)]">No rate cards found</td></tr>
+                  ) : (
+                    filteredCards.map(c => (
+                      <RateCardRow
+                        key={c.id}
+                        card={c}
+                        showContainer
+                        expanded={expandedId === c.id}
+                        expandedRates={expandedId === c.id ? expandedRates : null}
+                        expandLoading={expandedId === c.id && expandLoading}
+                        onToggle={() => handleExpand(c.id)}
+                      />
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div className="text-xs text-[var(--text-muted)]">
+            {filteredCards.length}{filteredCards.length !== cards.length ? ` of ${cards.length}` : ''} rate cards
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -438,34 +441,77 @@ export function LCLRateCardsTab({ countryCode }: { countryCode?: string }) {
   const [countries, setCountries] = useState<PricingCountry[]>([]);
   const [country, setCountry] = useState(countryCode ?? '');
   const [cards, setCards] = useState<RateCard[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [originOptions, setOriginOptions] = useState<string[]>([]);
   const [originFilter, setOriginFilter] = useState('');
-  const [destFilter, setDestFilter] = useState('');
+  const [textFilter, setTextFilter] = useState('');
   const [showInactive, setShowInactive] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [expandedRates, setExpandedRates] = useState<Record<string, RateDetail[]> | null>(null);
   const [expandLoading, setExpandLoading] = useState(false);
+  const [portsMap, setPortsMap] = useState<Record<string, { name: string; country_name: string }>>({});
 
   useEffect(() => {
     fetchPricingCountriesAction().then(r => {
       if (r?.success) setCountries(r.data);
     });
+    fetchPortsAction().then(portsData => {
+      const map: Record<string, { name: string; country_name: string }> = {};
+      for (const p of portsData) { map[p.un_code] = { name: p.name, country_name: p.country_name }; }
+      setPortsMap(map);
+    });
   }, []);
 
+  // Fetch origin options on mount and when country changes
+  const prevCountry = useRef(country);
+  useEffect(() => {
+    if (prevCountry.current !== country) {
+      setOriginFilter('');
+      setTextFilter('');
+      prevCountry.current = country;
+    }
+    fetchLCLOriginsAction(country || undefined).then(r => {
+      if (r?.success) setOriginOptions(r.data);
+    });
+  }, [country]);
+
   const fetchCards = useCallback(() => {
+    if (!originFilter) {
+      setCards([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setExpandedId(null);
     setExpandedRates(null);
     fetchLCLRateCardsAction({
       countryCode: country || undefined,
+      originPort: originFilter,
       isActive: showInactive ? undefined : true,
     }).then(r => {
       if (r?.success) setCards(r.data);
       setLoading(false);
     });
-  }, [country, showInactive]);
+  }, [country, originFilter, showInactive]);
 
   useEffect(() => { fetchCards(); }, [fetchCards]);
+
+  const filteredCards = useMemo(() => {
+    if (!textFilter.trim()) return cards;
+    const q = textFilter.trim().toLowerCase();
+    return cards.filter(c => {
+      const dest = portsMap[c.destination_port_code];
+      return (
+        c.destination_port_code.toLowerCase().includes(q) ||
+        (dest?.name ?? '').toLowerCase().includes(q) ||
+        (dest?.country_name ?? '').toLowerCase().includes(q) ||
+        (c.container_size ?? '').toLowerCase().includes(q) ||
+        (c.container_type ?? '').toLowerCase().includes(q) ||
+        (c.dg_class_code ?? '').toLowerCase().includes(q) ||
+        (c.terminal_id ?? '').toLowerCase().includes(q)
+      );
+    });
+  }, [cards, textFilter, portsMap]);
 
   function handleExpand(cardId: number) {
     if (expandedId === cardId) {
@@ -484,83 +530,97 @@ export function LCLRateCardsTab({ countryCode }: { countryCode?: string }) {
     });
   }
 
-  const filtered = cards.filter(c => {
-    if (originFilter && !c.origin_port_code.toLowerCase().includes(originFilter.toLowerCase())) return false;
-    if (destFilter && !c.destination_port_code.toLowerCase().includes(destFilter.toLowerCase())) return false;
-    return true;
-  });
+  const originComboOptions = [
+    { value: '', label: 'All Origins' },
+    ...originOptions.map(code => ({ value: code, label: code, sublabel: portsMap[code]?.name ?? '' })),
+  ];
 
   const countryOptions = [
     { value: '', label: 'All Countries' },
-    ...countries.map(c => ({ value: c.country_code, label: `${c.country_name} (${c.country_code})` })),
+    ...countries.filter(c => c.country_code && c.country_name).map(c => ({ value: c.country_code, label: `${c.country_code} — ${c.country_name}` })),
   ];
 
   return (
     <div className="space-y-4">
-      {/* Filter bar */}
+      {/* Filter bar — Row 1 */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="w-56">
-          <FilterCombobox value={country} onChange={setCountry} options={countryOptions} placeholder="All Countries" />
+          <PortCombobox value={country} onChange={setCountry} options={countryOptions} placeholder="All Countries" />
         </div>
-        <div className="relative w-40">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-          <input
-            type="text" value={originFilter} onChange={e => setOriginFilter(e.target.value)}
-            placeholder="Origin" className={`${inputCls} pl-8`}
-          />
+        <div className="w-44">
+          <PortCombobox value={originFilter} onChange={setOriginFilter} options={originComboOptions} placeholder="All Origins" />
         </div>
-        <div className="relative w-40">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-          <input
-            type="text" value={destFilter} onChange={e => setDestFilter(e.target.value)}
-            placeholder="Destination" className={`${inputCls} pl-8`}
-          />
-        </div>
-        <label className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] cursor-pointer">
-          <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="rounded" />
-          Show inactive
-        </label>
+        <ToggleSwitch checked={showInactive} onChange={setShowInactive} label="Show inactive" />
+      </div>
+      {/* Filter bar — Row 2: General text filter */}
+      <div className="relative">
+        <input
+          type="text"
+          value={textFilter}
+          onChange={e => setTextFilter(e.target.value)}
+          placeholder="Filter by destination, size, DG class, terminal…"
+          className="w-full h-9 pl-3 pr-8 text-sm rounded-lg border border-[var(--border)] bg-white text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--sky)] focus:border-[var(--sky)] transition-colors"
+        />
+        {textFilter && (
+          <button
+            onClick={() => setTextFilter('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+            aria-label="Clear filter"
+          >
+            ×
+          </button>
+        )}
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-xl border border-[var(--border)] overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-[var(--surface)]">
-              <tr>
-                <th className={thCls}>Origin</th>
-                <th className={thCls}>Destination</th>
-                <th className={thCls}>DG Class</th>
-                <th className={thCls}>Terminal</th>
-                <th className={thCls}>Description</th>
-                <th className={thCls}>Latest Price</th>
-                <th className={thCls}>Last Updated</th>
-                <th className={thCls}>Active</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--border)]">
-              {loading ? (
-                <tr><td colSpan={8} className="py-12 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-[var(--text-muted)]" /></td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={8} className="py-8 text-center text-sm text-[var(--text-muted)]">No rate cards found</td></tr>
-              ) : (
-                filtered.map(c => (
-                  <RateCardRow
-                    key={c.id}
-                    card={c}
-                    showContainer={false}
-                    expanded={expandedId === c.id}
-                    expandedRates={expandedId === c.id ? expandedRates : null}
-                    expandLoading={expandedId === c.id && expandLoading}
-                    onToggle={() => handleExpand(c.id)}
-                  />
-                ))
-              )}
-            </tbody>
-          </table>
+      {/* Table or empty state */}
+      {!originFilter ? (
+        <div className="bg-white rounded-xl border border-[var(--border)] py-16 flex flex-col items-center gap-3 text-[var(--text-muted)]">
+          <Ship className="w-8 h-8 opacity-40" />
+          <p className="text-sm">Select an origin port to view rate cards</p>
         </div>
-      </div>
-      <div className="text-xs text-[var(--text-muted)]">{filtered.length} rate cards</div>
+      ) : (
+        <>
+          <div className="bg-white rounded-xl border border-[var(--border)] overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-[var(--surface)]">
+                  <tr>
+                    <th className={thCls}>Origin</th>
+                    <th className={thCls}>Destination</th>
+                    <th className={thCls}>DG Class</th>
+                    <th className={thCls}>Terminal</th>
+                    <th className={thCls}>Latest Price</th>
+                    <th className={thCls}>Last Updated</th>
+                    <th className={thCls}>Active</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border)]">
+                  {loading ? (
+                    <tr><td colSpan={7} className="py-12 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-[var(--text-muted)]" /></td></tr>
+                  ) : filteredCards.length === 0 ? (
+                    <tr><td colSpan={7} className="py-8 text-center text-sm text-[var(--text-muted)]">No rate cards found</td></tr>
+                  ) : (
+                    filteredCards.map(c => (
+                      <RateCardRow
+                        key={c.id}
+                        card={c}
+                        showContainer={false}
+                        expanded={expandedId === c.id}
+                        expandedRates={expandedId === c.id ? expandedRates : null}
+                        expandLoading={expandedId === c.id && expandLoading}
+                        onToggle={() => handleExpand(c.id)}
+                      />
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div className="text-xs text-[var(--text-muted)]">
+            {filteredCards.length}{filteredCards.length !== cards.length ? ` of ${cards.length}` : ''} rate cards
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -584,7 +644,7 @@ function RateCardRow({
   expandLoading: boolean;
   onToggle: () => void;
 }) {
-  const colSpan = showContainer ? 9 : 8;
+  const colSpan = showContainer ? 8 : 7;
   const ref = card.latest_price_ref;
   const priceLabel = ref?.list_price != null
     ? `${ref.currency} ${ref.list_price.toLocaleString()}`
@@ -606,7 +666,6 @@ function RateCardRow({
         {showContainer && <td className={tdCls}>{card.container_size ?? ''}{card.container_type ? ` ${card.container_type}` : ''}</td>}
         <td className={tdCls}>{card.dg_class_code}</td>
         <td className={tdCls}>{card.terminal_id ?? '—'}</td>
-        <td className={`${tdCls} max-w-[200px] truncate`}>{card.description || card.code || '—'}</td>
         <td className={tdCls}>{priceLabel}</td>
         <td className={tdCls}>{formatDate(card.updated_at)}</td>
         <td className={tdCls}>

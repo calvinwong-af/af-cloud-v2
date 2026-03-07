@@ -6,7 +6,9 @@ Items identified during development/testing that are not urgent but should be ad
 
 ## ACTIVE TODOS
 
-_No open items._
+| # | Item | Context | Notes |
+|---|---|---|---|
+| UI-17 | Per-user default country preference | Session 47 | Pricing module currently hardcodes MY as default country. Should default based on the logged-in user's country. Requires a `country_code` field on the user record (schema migration + users router + profile action). Low priority — MY hardcode is acceptable for now. |
 
 ## CLOSED
 

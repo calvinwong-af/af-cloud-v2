@@ -137,6 +137,33 @@ _VALID_RATE_STATUSES = {"PUBLISHED", "ON_REQUEST"}
 # Rate Card endpoints
 # ---------------------------------------------------------------------------
 
+@router.get("/origins")
+async def list_lcl_origins(
+    country_code: Optional[str] = Query(default=None),
+    is_active: bool = Query(default=True),
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    where = ["rc.is_active = :active"]
+    params: dict = {"active": is_active}
+    joins = ""
+
+    if country_code:
+        joins = "JOIN ports AS op ON op.un_code = rc.origin_port_code"
+        where.append("op.country_code = :country")
+        params["country"] = country_code
+
+    rows = conn.execute(text(f"""
+        SELECT DISTINCT rc.origin_port_code
+        FROM lcl_rate_cards rc
+        {joins}
+        WHERE {' AND '.join(where)}
+        ORDER BY rc.origin_port_code
+    """), params).fetchall()
+
+    return {"status": "OK", "data": [r[0] for r in rows]}
+
+
 @router.get("/rate-cards")
 async def list_lcl_rate_cards(
     origin_port_code: Optional[str] = Query(default=None),
@@ -152,11 +179,8 @@ async def list_lcl_rate_cards(
     joins = ""
 
     if country_code:
-        joins = """
-            JOIN ports AS op ON op.un_code = rc.origin_port_code
-            JOIN ports AS dp ON dp.un_code = rc.destination_port_code
-        """
-        where.append("(op.country_code = :country OR dp.country_code = :country)")
+        joins = "JOIN ports AS op ON op.un_code = rc.origin_port_code"
+        where.append("op.country_code = :country")
         params["country"] = country_code
 
     if origin_port_code:

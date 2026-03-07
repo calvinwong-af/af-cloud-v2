@@ -51,7 +51,7 @@ export default function ShipmentOrderDetailPage() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [showCompanyModal, setShowCompanyModal] = useState(false);
   const [showDocParseModal, setShowDocParseModal] = useState(false);
-  const [ports, setPorts] = useState<{ un_code: string; name: string; country: string; port_type: string; has_terminals: boolean; terminals: Array<{ terminal_id: string; name: string; is_default: boolean }> }[]>([]);
+  const [ports, setPorts] = useState<{ un_code: string; name: string; country_name: string; port_type: string; has_terminals: boolean; terminals: Array<{ terminal_id: string; name: string; is_default: boolean }> }[]>([]);
   const [diffParty, setDiffParty] = useState<'shipper' | 'consignee' | null>(null);
   const [showEditParties, setShowEditParties] = useState(false);
   const [showTransportEdit, setShowTransportEdit] = useState(false);

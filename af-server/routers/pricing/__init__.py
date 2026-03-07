@@ -89,19 +89,19 @@ async def pricing_countries(
     conn=Depends(get_db),
 ):
     rows = conn.execute(text("""
-        SELECT DISTINCT p.country_code, p.country
-        FROM ports p
-        WHERE p.un_code IN (
-            SELECT origin_port_code FROM fcl_rate_cards WHERE is_active = true
+        SELECT DISTINCT c.country_code, c.name AS country_name
+        FROM countries c
+        WHERE c.country_code IN (
+            SELECT LEFT(origin_port_code, 2) FROM fcl_rate_cards WHERE is_active = true
             UNION
-            SELECT destination_port_code FROM fcl_rate_cards WHERE is_active = true
+            SELECT LEFT(destination_port_code, 2) FROM fcl_rate_cards WHERE is_active = true
             UNION
-            SELECT origin_port_code FROM lcl_rate_cards WHERE is_active = true
+            SELECT LEFT(origin_port_code, 2) FROM lcl_rate_cards WHERE is_active = true
             UNION
-            SELECT destination_port_code FROM lcl_rate_cards WHERE is_active = true
+            SELECT LEFT(destination_port_code, 2) FROM lcl_rate_cards WHERE is_active = true
         )
-        AND p.country_code IS NOT NULL
-        ORDER BY p.country_code
+        AND c.is_active = true
+        ORDER BY c.name
     """)).fetchall()
 
     data = [{"country_code": r[0], "country_name": r[1]} for r in rows]

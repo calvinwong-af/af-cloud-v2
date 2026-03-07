@@ -12,7 +12,7 @@ export interface Terminal {
 export interface Port {
   un_code: string;
   name: string;
-  country: string;
+  country_name: string;
   country_code: string;
   port_type: 'SEA' | 'AIR';
   has_terminals: boolean;
@@ -46,6 +46,6 @@ export function getPortLabel(unCode: string | null | undefined, terminalId: stri
     const terminal = port.terminals.find(t => t.terminal_id === terminalId);
     if (terminal) label += ` (${terminal.name})`;
   }
-  label += `, ${port.country}`;
+  label += `, ${port.country_name}`;
   return label;
 }

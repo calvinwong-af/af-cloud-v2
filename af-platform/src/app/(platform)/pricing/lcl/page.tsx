@@ -22,7 +22,7 @@ export default function LCLPage({
         </p>
       </div>
 
-      <LCLRateCardsTab countryCode={searchParams.country} />
+      <LCLRateCardsTab countryCode={searchParams.country ?? 'MY'} />
     </div>
   );
 }

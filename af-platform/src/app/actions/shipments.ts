@@ -357,7 +357,7 @@ export async function fetchCompaniesForShipmentAction(): Promise<{ company_id: s
 export interface PortWithTerminals {
   un_code: string;
   name: string;
-  country: string;
+  country_name: string;
   country_code: string;
   port_type: string;
   has_terminals: boolean;

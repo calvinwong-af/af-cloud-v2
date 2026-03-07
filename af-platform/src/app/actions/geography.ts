@@ -158,7 +158,7 @@ export async function updatePortCoordinatesAction(unCode: string, data: { lat?: 
 export async function resolvePortAction(code: string): Promise<ActionResult<{
   already_exists: boolean;
   candidate: {
-    un_code: string; name: string; country: string; country_code: string;
+    un_code: string; name: string; country_name: string; country_code: string;
     port_type: string; lat: number | null; lng: number | null; confidence: string;
   };
 }>> {
@@ -189,7 +189,7 @@ export async function resolvePortAction(code: string): Promise<ActionResult<{
 }
 
 export async function confirmPortAction(data: {
-  un_code: string; name: string; country: string; country_code: string;
+  un_code: string; name: string; country_name: string; country_code: string;
   port_type: string; lat?: number | null; lng?: number | null;
 }) {
   return afuWriteAction('/api/v2/geography/ports/confirm', 'POST', data);

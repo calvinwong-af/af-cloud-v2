@@ -41,7 +41,7 @@ function sanitiseErrorMessage(raw: string | null | undefined): string {
 interface Port {
   un_code: string;
   name: string;
-  country: string;
+  country_name: string;
   port_type: string;
   has_terminals: boolean;
   terminals: Array<{ terminal_id: string; name: string; is_default: boolean }>;
@@ -86,6 +86,21 @@ const DOC_TYPE_CONFIG: Record<string, { label: string; color: string; icon: type
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// Seed default terminals into parsed data for BC/BL docs
+// so the PortCombobox renders with terminal pre-selected on open.
+function seedDefaultTerminals(data: Record<string, unknown>, ports: Port[]): Record<string, unknown> {
+  const result = { ...data };
+  for (const [codeKey, terminalKey] of [['pol_code', 'pol_terminal'], ['pod_code', 'pod_terminal']] as const) {
+    const code = result[codeKey] as string | undefined;
+    if (code && !result[terminalKey]) {
+      const port = ports.find(p => p.un_code === code);
+      const def = port?.terminals?.find(t => t.is_default) ?? port?.terminals?.[0];
+      if (def) result[terminalKey] = def.terminal_id;
+    }
+  }
+  return result;
+}
 
 const sanitiseAddress = (raw: string | null | undefined): string => {
   if (!raw) return '';
@@ -139,7 +154,7 @@ export default function DocumentParseModal({
   // Pre-fill BL/BC parsedData from initialParsedData on mount (reparse flow)
   useEffect(() => {
     if ((initialDocType === 'BL' || initialDocType === 'BOOKING_CONFIRMATION') && initialParsedData) {
-      setParsedData(initialParsedData);
+      setParsedData(seedDefaultTerminals(initialParsedData, ports));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialDocType]);
@@ -258,7 +273,7 @@ export default function DocumentParseModal({
       } else {
         data = result.data as Record<string, unknown>;
       }
-      setParsedData(data);
+      setParsedData(dt === 'BL' || dt === 'BOOKING_CONFIRMATION' ? seedDefaultTerminals(data, ports) : data);
 
       // Pre-fill AWB form if AWB
       if (dt === 'AWB') {

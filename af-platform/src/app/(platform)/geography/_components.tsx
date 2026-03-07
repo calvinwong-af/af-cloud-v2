@@ -510,7 +510,7 @@ export function AreasTab() {
     new Map(
       ports
         .filter(p => portsInAreas.has(p.un_code) && !!p.country_code)
-        .map(p => [p.country_code, { value: p.country_code, label: `${p.country_code} — ${p.country}` }])
+        .map(p => [p.country_code, { value: p.country_code, label: `${p.country_code} — ${p.country_name}` }])
     ).values()
   ).sort((a, b) => a.value.localeCompare(b.value));
 
@@ -730,7 +730,7 @@ export function PortsTab() {
     new Map(
       ports
         .filter(p => !!p.country_code)
-        .map(p => [p.country_code, { value: p.country_code, label: `${p.country_code} — ${p.country}` }])
+        .map(p => [p.country_code, { value: p.country_code, label: `${p.country_code} — ${p.country_name}` }])
     ).values()
   ).sort((a, b) => a.value.localeCompare(b.value));
 
@@ -787,7 +787,7 @@ export function PortsTab() {
               <tr key={p.un_code} className="hover:bg-[var(--surface)]/50">
                 <td className={`${tdCls} font-mono`}>{p.un_code}</td>
                 <td className={tdCls}>{p.name}</td>
-                <td className={`${tdCls} text-[var(--text-muted)]`}>{p.country}</td>
+                <td className={`${tdCls} text-[var(--text-muted)]`}>{p.country_name}</td>
                 <td className={tdCls}>
                   <span className={`text-xs px-2 py-0.5 rounded-full ${
                     p.port_type === 'AIR' ? 'bg-sky-50 text-sky-700' : 'bg-blue-50 text-blue-700'
@@ -844,7 +844,7 @@ function PortEditModal({ port, onClose, onSaved }: { port: Port; onClose: () => 
       <div className="space-y-3">
         <div className="text-sm text-[var(--text-muted)]">
           <p><strong>Name:</strong> {port.name}</p>
-          <p><strong>Country:</strong> {port.country} ({port.country_code})</p>
+          <p><strong>Country:</strong> {port.country_name} ({port.country_code})</p>
           <p><strong>Type:</strong> {port.port_type}</p>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -876,7 +876,7 @@ function PortResolveModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
   const [code, setCode] = useState('');
   const [resolving, setResolving] = useState(false);
   const [candidate, setCandidate] = useState<{
-    un_code: string; name: string; country: string; country_code: string;
+    un_code: string; name: string; country_name: string; country_code: string;
     port_type: string; lat: number | null; lng: number | null; confidence: string;
   } | null>(null);
   const [alreadyExists, setAlreadyExists] = useState(false);
@@ -907,7 +907,7 @@ function PortResolveModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
     setCandidate(c);
     setEditUnCode(c.un_code || '');
     setEditName(c.name || '');
-    setEditCountry(c.country || '');
+    setEditCountry(c.country_name || '');
     setEditCountryCode(c.country_code || '');
     setEditPortType(c.port_type || 'SEA');
     setEditLat(c.lat?.toString() ?? '');
@@ -922,7 +922,7 @@ function PortResolveModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
     const result = await confirmPortAction({
       un_code: editUnCode.trim(),
       name: editName.trim(),
-      country: editCountry.trim(),
+      country_name: editCountry.trim(),
       country_code: editCountryCode.trim(),
       port_type: editPortType,
       lat: editLat ? parseFloat(editLat) : null,

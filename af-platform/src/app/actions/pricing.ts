@@ -81,6 +81,26 @@ export async function fetchPricingDashboardSummaryAction(
 }
 
 // ---------------------------------------------------------------------------
+// Origin port lists
+// ---------------------------------------------------------------------------
+
+export async function fetchFCLOriginsAction(
+  countryCode?: string
+): Promise<ActionResult<string[]>> {
+  const params = new URLSearchParams({ is_active: 'true' });
+  if (countryCode) params.set('country_code', countryCode);
+  return pricingFetch(`/api/v2/pricing/fcl/origins?${params.toString()}`);
+}
+
+export async function fetchLCLOriginsAction(
+  countryCode?: string
+): Promise<ActionResult<string[]>> {
+  const params = new URLSearchParams({ is_active: 'true' });
+  if (countryCode) params.set('country_code', countryCode);
+  return pricingFetch(`/api/v2/pricing/lcl/origins?${params.toString()}`);
+}
+
+// ---------------------------------------------------------------------------
 // FCL rate cards
 // ---------------------------------------------------------------------------
 

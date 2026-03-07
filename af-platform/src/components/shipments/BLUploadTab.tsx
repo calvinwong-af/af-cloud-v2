@@ -20,7 +20,7 @@ function sanitiseErrorMessage(raw: string | null | undefined): string {
 interface Port {
   un_code: string;
   name: string;
-  country: string;
+  country_name: string;
   port_type: string;
   has_terminals: boolean;
   terminals: Array<{ terminal_id: string; name: string; is_default: boolean }>;

@@ -66,10 +66,11 @@ def _invalidate_cities_cache():
 def _load_ports(conn) -> list[dict]:
     """Query all ports from PostgreSQL and map to response shape."""
     rows = conn.execute(text("""
-        SELECT un_code, name, country, country_code, port_type,
-               has_terminals, terminals, lat, lng
-        FROM ports
-        ORDER BY name
+        SELECT p.un_code, p.name, p.country_code, c.name AS country_name,
+               p.port_type, p.has_terminals, p.terminals, p.lat, p.lng
+        FROM ports p
+        LEFT JOIN countries c ON c.country_code = p.country_code
+        ORDER BY p.name
     """)).fetchall()
 
     ports = []
@@ -77,8 +78,8 @@ def _load_ports(conn) -> list[dict]:
         ports.append({
             "un_code": r[0] or "",
             "name": r[1] or "",
-            "country": r[2] or "",
-            "country_code": r[3] or "",
+            "country_code": r[2] or "",
+            "country_name": r[3] or "",
             "port_type": r[4] or "SEA",
             "has_terminals": r[5] or False,
             "terminals": _parse_jsonb(r[6]) or [],
@@ -115,9 +116,11 @@ async def get_port(
 ):
     """Get a single port by UN code."""
     row = conn.execute(text("""
-        SELECT un_code, name, country, country_code, port_type,
-               has_terminals, terminals, lat, lng
-        FROM ports WHERE un_code = :code
+        SELECT p.un_code, p.name, p.country_code, c.name AS country_name,
+               p.port_type, p.has_terminals, p.terminals, p.lat, p.lng
+        FROM ports p
+        LEFT JOIN countries c ON c.country_code = p.country_code
+        WHERE p.un_code = :code
     """), {"code": un_code}).fetchone()
 
     if not row:
@@ -126,8 +129,8 @@ async def get_port(
     data = {
         "un_code": row[0] or "",
         "name": row[1] or "",
-        "country": row[2] or "",
-        "country_code": row[3] or "",
+        "country_code": row[2] or "",
+        "country_name": row[3] or "",
         "port_type": row[4] or "SEA",
         "has_terminals": row[5] or False,
         "terminals": _parse_jsonb(row[6]) or [],
@@ -243,7 +246,7 @@ class PortResolveRequest(BaseModel):
 class PortConfirmRequest(BaseModel):
     un_code: str
     name: str
-    country: str
+    country_name: str
     country_code: str
     port_type: str  # "AIR" | "SEA"
     lat: float | None = None
@@ -258,7 +261,7 @@ Return this exact structure:
 {{
   "un_code": "IATA or UN/LOCODE code (uppercase)",
   "name": "Full official name",
-  "country": "Full country name",
+  "country_name": "Full country name",
   "country_code": "ISO 2-letter country code (uppercase)",
   "port_type": "AIR or SEA",
   "lat": latitude as float or null,
@@ -282,8 +285,11 @@ async def resolve_port(
 
     # Check if already exists
     row = conn.execute(text("""
-        SELECT un_code, name, country, country_code, port_type, lat, lng
-        FROM ports WHERE un_code = :code
+        SELECT p.un_code, p.name, p.country_code, c.name AS country_name,
+               p.port_type, p.lat, p.lng
+        FROM ports p
+        LEFT JOIN countries c ON c.country_code = p.country_code
+        WHERE p.un_code = :code
     """), {"code": code}).fetchone()
 
     if row:
@@ -293,8 +299,8 @@ async def resolve_port(
             "candidate": {
                 "un_code": row[0],
                 "name": row[1],
-                "country": row[2],
-                "country_code": row[3],
+                "country_name": row[3] or "",
+                "country_code": row[2] or "",
                 "port_type": row[4],
                 "lat": float(row[5]) if row[5] is not None else None,
                 "lng": float(row[6]) if row[6] is not None else None,
@@ -361,14 +367,15 @@ async def confirm_port(
     if existing:
         raise HTTPException(status_code=409, detail=f"Port {un_code} already exists")
 
+    country_code = body.country_code.upper()
+
     conn.execute(text("""
-        INSERT INTO ports (un_code, name, country, country_code, port_type, has_terminals, terminals, lat, lng)
-        VALUES (:un_code, :name, :country, :country_code, :port_type, FALSE, '[]', :lat, :lng)
+        INSERT INTO ports (un_code, name, country_code, port_type, has_terminals, terminals, lat, lng)
+        VALUES (:un_code, :name, :country_code, :port_type, FALSE, '[]', :lat, :lng)
     """), {
         "un_code": un_code,
         "name": body.name,
-        "country": body.country,
-        "country_code": body.country_code.upper(),
+        "country_code": country_code,
         "port_type": body.port_type.upper(),
         "lat": body.lat,
         "lng": body.lng,
@@ -376,13 +383,19 @@ async def confirm_port(
 
     _invalidate_port_cache()
 
+    # Look up country name from countries table
+    c_row = conn.execute(text(
+        "SELECT name FROM countries WHERE country_code = :cc"
+    ), {"cc": country_code}).fetchone()
+    country_name = c_row[0] if c_row else body.country_name
+
     return {
         "status": "OK",
         "data": {
             "un_code": un_code,
             "name": body.name,
-            "country": body.country,
-            "country_code": body.country_code.upper(),
+            "country_code": country_code,
+            "country_name": country_name,
             "port_type": body.port_type.upper(),
             "has_terminals": False,
             "terminals": [],

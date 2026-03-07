@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { PortCombobox } from '@/components/shared/PortCombobox';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -28,7 +28,7 @@ export interface AWBFormState {
 interface Port {
   un_code: string;
   name: string;
-  country: string;
+  country_name: string;
   port_type: string;
   has_terminals: boolean;
   terminals: Array<{ terminal_id: string; name: string; is_default: boolean }>;
@@ -66,71 +66,6 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 }
 
 // ---------------------------------------------------------------------------
-// PortCombobox widget
-// ---------------------------------------------------------------------------
-
-function PortCombobox({
-  value, onChange, options, placeholder, className,
-}: {
-  value: string;
-  onChange: (code: string) => void;
-  options: { value: string; label: string }[];
-  placeholder?: string;
-  className?: string;
-}) {
-  const [query, setQuery] = useState('');
-  const [open, setOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-
-  const selectedLabel = options.find(o => o.value === value)?.label ?? '';
-  const displayText = open ? query : selectedLabel;
-  const filtered = open
-    ? options.filter(o =>
-        o.label.toLowerCase().includes(query.toLowerCase()) ||
-        o.value.toLowerCase().includes(query.toLowerCase())
-      ).slice(0, 30)
-    : [];
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
-        setOpen(false); setQuery('');
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  return (
-    <div ref={wrapperRef} className="relative">
-      <input
-        type="text"
-        value={displayText}
-        placeholder={placeholder ?? 'Search...'}
-        className={className}
-        onFocus={() => { setOpen(true); setQuery(''); }}
-        onChange={e => setQuery(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); setQuery(''); } }}
-      />
-      {open && filtered.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-[var(--border)] rounded-lg shadow-lg max-h-48 overflow-y-auto">
-          {filtered.map(o => (
-            <button
-              key={o.value}
-              type="button"
-              onMouseDown={e => { e.preventDefault(); onChange(o.value); setOpen(false); setQuery(''); }}
-              className={`w-full text-left px-3 py-2 text-xs hover:bg-[var(--sky-mist)] ${o.value === value ? 'bg-[var(--sky-mist)] font-medium' : ''}`}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // AWBReview component
 // ---------------------------------------------------------------------------
 
@@ -145,7 +80,13 @@ export function AWBReview({
   };
 
   const airPorts = ports.filter(p => p.port_type?.toLowerCase().includes('air') ?? false);
-  const airPortOptions = airPorts.map(p => ({ value: p.un_code, label: `${p.un_code} — ${p.name || p.un_code}` }));
+  const airPortOptions = airPorts.map(p => ({
+    value: p.un_code,
+    label: `${p.un_code} — ${p.name || p.un_code}`,
+    sublabel: p.country_name,
+    has_terminals: p.has_terminals,
+    terminals: p.terminals ?? [],
+  }));
 
   return (
     <>
