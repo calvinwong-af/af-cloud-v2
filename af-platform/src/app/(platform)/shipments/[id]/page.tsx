@@ -70,6 +70,7 @@ export default function ShipmentOrderDetailPage() {
   const [routePodEta, setRoutePodEta] = useState<string | null>(null);
   const [routePodAta, setRoutePodAta] = useState<string | null>(null);
   const [showScopeConfig, setShowScopeConfig] = useState(false);
+  const [tasksRefreshKey, setTasksRefreshKey] = useState(0);
 
   const loadOrder = useCallback(async () => {
     const result = await fetchShipmentOrderDetailAction(quotationId);
@@ -236,63 +237,73 @@ export default function ShipmentOrderDetailPage() {
       {/* Route Map */}
       <ShipmentRouteMapCard order={order} ports={ports as Port[]} />
 
-      {/* Upload Document button — AFU, any non-cancelled status */}
-      {accountType === 'AFU' && order.status !== -1 && (
-        <div className="flex justify-end">
-          <button
-            onClick={() => setShowDocParseModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--sky)] border border-[var(--sky)] rounded-lg hover:bg-[var(--sky-mist)] transition-colors"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            Upload Document
-          </button>
-        </div>
-      )}
-
       {/* Status Management */}
       <StatusCard order={order} onReload={loadOrder} accountType={accountType} />
 
       {/* Tab bar */}
-      <div className="flex gap-1 border-b border-[var(--border)]">
-        <button
-          onClick={() => setActiveTab('overview')}
-          className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
-            activeTab === 'overview'
-              ? 'border-[var(--sky)] text-[var(--sky)]'
-              : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text)]'
-          }`}
-        >
-          Overview
-        </button>
-        <button
-          onClick={() => setActiveTab('tasks')}
-          className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-1.5 ${
-            activeTab === 'tasks'
-              ? 'border-[var(--sky)] text-[var(--sky)]'
-              : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text)]'
-          }`}
-        >
-          <ClipboardList className="w-3.5 h-3.5" />
-          Tasks
-        </button>
-        <button
-          onClick={() => setActiveTab('files')}
-          className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-1.5 ${
-            activeTab === 'files'
-              ? 'border-[var(--sky)] text-[var(--sky)]'
-              : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text)]'
-          }`}
-        >
-          <FileText className="w-3.5 h-3.5" />
-          Files
-          {(fileCount !== null ? fileCount : 0) > 0 && (
-            <span className={`ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold leading-none ${
-              activeTab === 'files' ? 'bg-[var(--sky)] text-white' : 'bg-[var(--surface)] text-[var(--text-muted)] border border-[var(--border)]'
-            }`}>
-              {fileCount}
-            </span>
+      <div className="flex items-center justify-between border-b border-[var(--border)]">
+        <div className="flex gap-1">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              activeTab === 'overview'
+                ? 'border-[var(--sky)] text-[var(--sky)]'
+                : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text)]'
+            }`}
+          >
+            Overview
+          </button>
+          <button
+            onClick={() => setActiveTab('tasks')}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-1.5 ${
+              activeTab === 'tasks'
+                ? 'border-[var(--sky)] text-[var(--sky)]'
+                : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text)]'
+            }`}
+          >
+            <ClipboardList className="w-3.5 h-3.5" />
+            Tasks
+          </button>
+          <button
+            onClick={() => setActiveTab('files')}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-1.5 ${
+              activeTab === 'files'
+                ? 'border-[var(--sky)] text-[var(--sky)]'
+                : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text)]'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            Files
+            {(fileCount !== null ? fileCount : 0) > 0 && (
+              <span className={`ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold leading-none ${
+                activeTab === 'files' ? 'bg-[var(--sky)] text-white' : 'bg-[var(--surface)] text-[var(--text-muted)] border border-[var(--border)]'
+              }`}>
+                {fileCount}
+              </span>
+            )}
+          </button>
+        </div>
+        {/* Contextual actions — right side */}
+        <div className="flex items-center gap-2 pb-1">
+          {accountType === 'AFU' && (
+            <button
+              onClick={() => setShowScopeConfig(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--text-mid)] border border-[var(--border)] rounded-lg hover:bg-[var(--surface)] transition-colors"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              Configure Scope
+            </button>
           )}
-        </button>
+          {accountType === 'AFU' && order.status !== -1 && (
+            <button
+              onClick={() => setShowDocParseModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--sky)] border border-[var(--sky)] rounded-lg hover:bg-[var(--sky-mist)] transition-colors"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              Upload Document
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tab content */}
@@ -314,17 +325,6 @@ export default function ShipmentOrderDetailPage() {
 
       {activeTab === 'tasks' ? (
         <div className="space-y-4">
-          {accountType === 'AFU' && (
-            <div className="flex justify-end">
-              <button
-                onClick={() => setShowScopeConfig(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--text-mid)] border border-[var(--border)] rounded-lg hover:bg-[var(--surface)] transition-colors"
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                Configure Scope
-              </button>
-            </div>
-          )}
           <RouteNodeTimeline
             shipmentId={order.quotation_id}
             accountType={accountType}
@@ -340,6 +340,7 @@ export default function ShipmentOrderDetailPage() {
             accountType={accountType}
             vesselName={vesselName}
             voyageNumber={voyageNumber}
+            refreshKey={tasksRefreshKey}
             onTimingChanged={() => { loadRouteTimings(); loadOrder(); setRouteTimelineRefreshKey(k => k + 1); }}
           />
         </div>
@@ -601,6 +602,7 @@ export default function ShipmentOrderDetailPage() {
           onSaved={() => {
             setShowScopeConfig(false);
             setRouteTimelineRefreshKey(k => k + 1);
+            setTasksRefreshKey(k => k + 1);
           }}
         />
       )}

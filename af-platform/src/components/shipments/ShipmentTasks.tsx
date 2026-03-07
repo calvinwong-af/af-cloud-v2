@@ -47,6 +47,7 @@ interface ShipmentTasksProps {
   vesselName?: string | null;
   voyageNumber?: string | null;
   onTimingChanged?: () => void;
+  refreshKey?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -600,7 +601,7 @@ function EditTaskModal({
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function ShipmentTasks({ shipmentId, orderType, accountType, vesselName, voyageNumber, onTimingChanged }: ShipmentTasksProps) {
+export default function ShipmentTasks({ shipmentId, orderType, accountType, vesselName, voyageNumber, onTimingChanged, refreshKey }: ShipmentTasksProps) {
   const [tasks, setTasks] = useState<WorkflowTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -633,7 +634,7 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, vess
 
   useEffect(() => {
     loadTasks();
-  }, [loadTasks]);
+  }, [loadTasks, refreshKey]);
 
   // Dismiss warning after 5 seconds
   useEffect(() => {

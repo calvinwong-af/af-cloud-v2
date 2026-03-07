@@ -61,7 +61,7 @@ def main():
 
     with engine.connect() as conn:
         rows = conn.execute(text("""
-            SELECT o.order_id, o.scope, sw.workflow_tasks
+            SELECT o.order_id, sd.scope, sw.workflow_tasks
             FROM orders o
             JOIN shipment_details sd ON sd.order_id = o.order_id
             JOIN shipment_workflows sw ON sw.order_id = o.order_id
@@ -112,7 +112,7 @@ def main():
             else:
                 try:
                     conn.execute(text("""
-                        UPDATE orders SET scope = CAST(:scope AS jsonb)
+                        UPDATE shipment_details SET scope = CAST(:scope AS jsonb)
                         WHERE order_id = :id
                     """), {"scope": json.dumps(scope), "id": order_id})
                     updated += 1

@@ -1,6 +1,6 @@
 # AF Platform — Test Master
-**Version:** 2.60
-**Last Updated:** 06 March 2026
+**Version:** 2.61
+**Last Updated:** 07 March 2026
 
 > Individual series detail lives in `claude/tests/series/`. Retired series (MI, V2C, OF, SR, IN, SU) are in `AF-Test-Archive.md`.
 
@@ -35,8 +35,8 @@
 | MC | Manual Shipment Create | 6 | 6 | 0 | 0 | 0 | ✅ Complete | series/MC-manual-create.md |
 | SD | Shipment Delete | 3 | 3 | 0 | 0 | 0 | ✅ Complete | series/SD-shipment-delete.md |
 | LO | Loading State UI | 5 | 5 | 0 | 0 | 0 | ✅ Complete | series/LO-loading-state.md |
-| GT | Ground Transport | 13 | 7 | 6 | 0 | 0 | 🔵 Active | series/GT-ground-transport.md |
-| **TOTAL** | | **299** | **279** | **14** | **12** | **9** | | |
+| GT | Ground Transport | 0 | 0 | 0 | 0 | 0 | 🗄️ Retired | series/GT-ground-transport.md |
+| **TOTAL** | | **286** | **272** | **8** | **12** | **9** | | |
 
 ---
 
@@ -58,6 +58,7 @@
 | 🟡 Deferred | All tests deferred — parked for a dedicated pass |
 | ✅ Complete | All tests YES or NA — series closed |
 | 🗄️ Archived | Moved to AF-Test-Archive.md (legacy series) |
+| 🗄️ Retired | Series obsoleted by redesign — to be rewritten |
 
 ---
 

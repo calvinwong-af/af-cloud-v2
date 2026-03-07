@@ -19,6 +19,9 @@ yarn-error.log*
 # ---- Old V1 Project (zips + extracted source — never commit) ----
 old-af-project/
 
+# ---- Legacy Reference (study only — never commit) ----
+claude/legacy-reference/
+
 # ---- Tools (binaries — download locally, never commit) ----
 tools/cloud-sql-proxy.exe
 

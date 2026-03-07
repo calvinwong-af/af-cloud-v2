@@ -18,6 +18,71 @@ interface ScopeConfigDialogProps {
 
 const SCOPE_KEYS: (keyof ScopeFlags)[] = ['first_mile', 'export_clearance', 'import_clearance', 'last_mile'];
 
+// Mirror of backend logic/incoterm_tasks.py get_eligible_scope_keys
+const INCOTERM_TASK_RULES: Record<string, Record<string, string[]>> = {
+  EXW: {
+    EXPORT: [],
+    IMPORT: ['first_mile', 'export_clearance', 'import_clearance', 'last_mile'],
+    DOMESTIC: ['first_mile', 'import_clearance', 'last_mile'],
+  },
+  FCA: {
+    EXPORT: ['export_clearance'],
+    IMPORT: ['first_mile', 'export_clearance', 'import_clearance', 'last_mile'],
+    DOMESTIC: ['last_mile'],
+  },
+  FOB: {
+    EXPORT: ['first_mile', 'export_clearance'],
+    IMPORT: ['import_clearance', 'last_mile'],
+    DOMESTIC: ['first_mile', 'last_mile'],
+  },
+  CFR: {
+    EXPORT: ['first_mile', 'export_clearance'],
+    IMPORT: ['import_clearance', 'last_mile'],
+    DOMESTIC: ['first_mile', 'last_mile'],
+  },
+  CIF: {
+    EXPORT: ['first_mile', 'export_clearance'],
+    IMPORT: ['import_clearance', 'last_mile'],
+    DOMESTIC: ['first_mile', 'last_mile'],
+  },
+  CNF: {
+    EXPORT: ['first_mile', 'export_clearance'],
+    IMPORT: ['import_clearance', 'last_mile'],
+    DOMESTIC: ['first_mile', 'last_mile'],
+  },
+  CPT: {
+    EXPORT: ['first_mile', 'export_clearance'],
+    IMPORT: ['import_clearance', 'last_mile'],
+    DOMESTIC: ['first_mile', 'last_mile'],
+  },
+  CIP: {
+    EXPORT: ['first_mile', 'export_clearance'],
+    IMPORT: ['import_clearance', 'last_mile'],
+    DOMESTIC: ['first_mile', 'last_mile'],
+  },
+  DAP: {
+    EXPORT: ['first_mile', 'export_clearance', 'import_clearance', 'last_mile'],
+    IMPORT: ['import_clearance', 'last_mile'],
+    DOMESTIC: ['first_mile', 'last_mile'],
+  },
+  DPU: {
+    EXPORT: ['first_mile', 'export_clearance', 'import_clearance', 'last_mile'],
+    IMPORT: ['import_clearance', 'last_mile'],
+    DOMESTIC: ['first_mile', 'last_mile'],
+  },
+  DDP: {
+    EXPORT: ['first_mile', 'export_clearance', 'import_clearance', 'last_mile'],
+    IMPORT: ['import_clearance', 'last_mile'],
+    DOMESTIC: ['first_mile', 'last_mile'],
+  },
+};
+
+function getEligibleScopeKeys(incoterm: string, transactionType: string): string[] {
+  const rules = INCOTERM_TASK_RULES[incoterm.toUpperCase()];
+  if (!rules) return [];
+  return rules[transactionType.toUpperCase()] ?? [];
+}
+
 function getScopeLabel(key: keyof ScopeFlags, orderType: string): string {
   switch (key) {
     case 'first_mile':
@@ -40,6 +105,8 @@ const MODE_OPTIONS: { value: ScopeMode; label: string; desc: string }[] = [
 export default function ScopeConfigDialog({
   shipmentId,
   orderType,
+  incoterm,
+  transactionType,
   onClose,
   onSaved,
 }: ScopeConfigDialogProps) {
@@ -47,6 +114,9 @@ export default function ScopeConfigDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scope, setScope] = useState<Record<string, ScopeMode>>({});
+
+  // Eligible keys derived from incoterm rules — stable regardless of stored scope values
+  const eligibleKeys = getEligibleScopeKeys(incoterm, transactionType);
 
   useEffect(() => {
     async function load() {
@@ -66,9 +136,8 @@ export default function ScopeConfigDialog({
     load();
   }, [shipmentId]);
 
-  // Only show keys that are not IGNORED or are eligible (non-IGNORED keys from server + any IGNORED ones the server returned)
-  // The server already returns all eligible keys, so we show all returned keys
-  const visibleKeys = SCOPE_KEYS.filter(k => k in scope);
+  // Show keys that are eligible per incoterm rules
+  const visibleKeys = SCOPE_KEYS.filter(k => eligibleKeys.includes(k));
 
   async function handleSave() {
     setSaving(true);

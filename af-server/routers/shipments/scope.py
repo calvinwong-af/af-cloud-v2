@@ -104,7 +104,7 @@ async def update_scope(
     eligible = set(get_eligible_scope_keys(incoterm, txn_type))
 
     # Apply updates from request body
-    updates = body.model_dump(exclude_none=True)
+    updates = body.dict(exclude_none=True)
     for key, value in updates.items():
         if value not in _VALID_MODES:
             raise HTTPException(

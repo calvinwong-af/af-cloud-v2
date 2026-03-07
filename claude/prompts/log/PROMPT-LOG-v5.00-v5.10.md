@@ -1,5 +1,53 @@
 # Prompt Completion Log — v5.00–v5.10
 
+### [2026-03-07 UTC] — v5.10: Scope Dialog: Incoterm-Based Eligibility + Task Refresh
+- **Status:** Completed
+- **Tasks:**
+  - Replaced `eligibleKeys` state (derived from stored scope values) with `getEligibleScopeKeys()` function that mirrors backend `INCOTERM_TASK_RULES` — eligible keys now stable regardless of stored scope values
+  - Added `INCOTERM_TASK_RULES` map (11 incoterms × 3 transaction types) to `ScopeConfigDialog.tsx`
+  - Used `incoterm` and `transactionType` props (previously unused) to compute eligibility
+  - Added `refreshKey` prop to `ShipmentTasks` component, wired to `useEffect` dependency array
+  - Added `tasksRefreshKey` state to `page.tsx`, passed to `ShipmentTasks`, incremented on scope save
+- **Files Modified:**
+  - `af-platform/src/components/shipments/ScopeConfigDialog.tsx`
+  - `af-platform/src/components/shipments/ShipmentTasks.tsx`
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx`
+
+---
+
+### [2026-03-07 UTC] — v5.09: Scope Dialog Fix + UI Polish
+- **Status:** Completed
+- **Tasks:**
+  - Issue 1: Server actions already existed (fetchShipmentScopeAction + updateShipmentScopeAction) — no change needed
+  - Issue 2: Added `eligibleKeys` state to ScopeConfigDialog — keys that are IGNORED from initial server load (incoterm-ineligible) are now hidden from the dialog
+  - Issue 3: Moved Upload Document and Configure Scope buttons into the tab bar row (right-aligned), removed standalone button rows
+- **Files Modified:**
+  - `af-platform/src/components/shipments/ScopeConfigDialog.tsx`
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx`
+- **Notes:** Upload Document visible on all tabs (AFU, non-cancelled). Configure Scope only visible on Tasks tab (AFU only).
+
+---
+
+### [2026-03-07 UTC] — v5.08: Pricing Module Phase 1a: FCL & LCL Schema + Migration
+- **Status:** Completed
+- **Tasks:**
+  - Added `rate_status` enum + `fcl_rate_cards`, `fcl_rates`, `lcl_rate_cards`, `lcl_rates` tables with indexes to `create_schema.py`
+  - Created `migrate_pricing_freight.py` — reads PricingFCL/PricingLCL + PTMonthlyRateOceanAir from Datastore, writes to PostgreSQL (2024+ rates only, --dry-run support)
+  - Created `cleanup_pricing_duplicates.py` — deduplicates consecutive identical rate rows (--dry-run support)
+  - Created `routers/pricing/` package with `__init__.py`, `fcl.py` (7 endpoints), `lcl.py` (7 endpoints)
+  - Registered pricing router in `main.py` at `/api/v2/pricing`
+- **Files Modified:**
+  - `af-server/scripts/create_schema.py`
+  - `af-server/scripts/migrate_pricing_freight.py` (new)
+  - `af-server/scripts/cleanup_pricing_duplicates.py` (new)
+  - `af-server/routers/pricing/__init__.py` (new)
+  - `af-server/routers/pricing/fcl.py` (new)
+  - `af-server/routers/pricing/lcl.py` (new)
+  - `af-server/main.py`
+- **Notes:** No frontend changes. Migration script must be run after `create_schema.py` creates the tables. Cleanup script should be run after migration is verified.
+
+---
+
 ### [2026-03-07 UTC] — v5.07: Order Scope + Task Mode Redesign
 - **Status:** Completed
 - **Tasks:**
@@ -199,3 +247,31 @@
   - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — added Configure Scope button in Tasks tab, removed ScopeFlagsCard + GroundTransportReconcileCard from Overview
 - **Schema change:** `orders.scope` JSONB now uses `{ first_mile, export_clearance, import_clearance, last_mile }` each with value `ASSIGNED | TRACKED | IGNORED`. Old boolean schema treated as null.
 - **Backfill:** `backfill_scope_from_tasks.py` run on local DB. Must also run on prod after deploy.
+
+---
+
+## v5.09 — Scope Dialog Fix + UI Polish
+- **Date:** 2026-03-07
+- **Session:** 42
+- **Status:** ✅ Executed
+- **Summary:** Three fixes: (1) Server actions already existed — no change needed. (2) ✅ Added `eligibleKeys` state to `ScopeConfigDialog.tsx` — incoterm-ineligible IGNORED keys hidden from dialog. (3) ✅ Upload Document + Configure Scope buttons moved into tab bar row (right-aligned), standalone rows removed.
+- **Frontend files:**
+  - `af-platform/src/app/actions/ground-transport.ts` — add two missing scope server actions
+  - `af-platform/src/components/shipments/ScopeConfigDialog.tsx` — filter ineligible keys
+  - `af-platform/src/app/(platform)/shipments/[id]/page.tsx` — relocate buttons into tab bar
+
+---
+
+## v5.08 — Pricing Module Phase 1a: FCL & LCL Schema + Migration
+- **Date:** 2026-03-07
+- **Session:** 41
+- **Status:** ✅ Executed
+- **Summary:** Phase 1a of the Pricing module. FCL and LCL freight rate cards only (Air deferred). Schema additions to create_schema.py, migration script from Datastore, cleanup/deduplication script, af-server pricing router (FCL + LCL endpoints), registered in main.py. af-platform deferred to prototype session.
+- **Backend files:**
+  - `af-server/scripts/create_schema.py` — rate_status enum + fcl_rate_cards + fcl_rates + lcl_rate_cards + lcl_rates tables + indexes
+  - `af-server/scripts/migrate_pricing_freight.py` — new migration script (Datastore → PostgreSQL)
+  - `af-server/scripts/cleanup_pricing_duplicates.py` — new deduplication script (run after migration verified)
+  - `af-server/routers/pricing/__init__.py` — new pricing router package
+  - `af-server/routers/pricing/fcl.py` — FCL rate card + rate endpoints
+  - `af-server/routers/pricing/lcl.py` — LCL rate card + rate endpoints
+  - `af-server/main.py` — pricing router registered at /api/v2/pricing
