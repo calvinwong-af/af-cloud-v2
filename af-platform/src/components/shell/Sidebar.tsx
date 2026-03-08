@@ -156,6 +156,16 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
     });
   }, []);
 
+  // Auto-expand pricing sub-nav when navigating to a pricing route
+  const isPricingRoute = pathname.startsWith('/pricing');
+  useEffect(() => {
+    if (isPricingRoute && !pricingExpanded) {
+      setPricingExpanded(true);
+      localStorage.setItem("af-nav-pricing-expanded", "true");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPricingRoute]);
+
   function toggleCollapsed() {
     setCollapsed((prev) => {
       const next = !prev;
@@ -165,8 +175,10 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
   }
 
   const isCollapsed = isMobileDrawer ? false : collapsed;
-  const isPricingRoute = pathname.startsWith('/pricing');
-  const showPricingSub = isPricingRoute || pricingExpanded;
+  // showPricingSub is now purely driven by pricingExpanded state.
+  // Auto-expand via useEffect above ensures it opens on pricing route arrival,
+  // but the chevron can still close it even while on a pricing route.
+  const showPricingSub = pricingExpanded;
 
   function togglePricingExpanded() {
     setPricingExpanded((prev) => {

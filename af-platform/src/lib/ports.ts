@@ -12,8 +12,8 @@ export interface Terminal {
 export interface Port {
   un_code: string;
   name: string;
-  country_name: string;
   country_code: string;
+  country_name: string;
   port_type: 'SEA' | 'AIR';
   has_terminals: boolean;
   terminals: Terminal[];

@@ -63,8 +63,8 @@ function toShipmentOrder(item: ShipmentListItem): ShipmentOrder {
     ...(item.cargo_is_dg != null ? { cargo_is_dg: item.cargo_is_dg } as any : {}),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ...(item.is_test != null ? { is_test: item.is_test } as any : {}),
-    completed: false,
-    completed_at: null,
+    completed: item.completed ?? false,
+    completed_at: item.completed_at ?? null,
     last_status_updated: null,
     status_history: [],
     parent_id: null,

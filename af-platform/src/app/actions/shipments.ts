@@ -138,6 +138,8 @@ export interface ShipmentListItem {
   issued_invoice?: boolean;
   cargo_is_dg?: boolean;
   is_test?: boolean;
+  completed?: boolean;
+  completed_at?: string | null;
 }
 
 export async function getShipmentListAction(

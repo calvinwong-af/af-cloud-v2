@@ -8,7 +8,7 @@ import { FCLRateCardsTab } from '../_components';
 export default function FCLPage({
   searchParams,
 }: {
-  searchParams: { country?: string };
+  searchParams: { country?: string; alerts?: string };
 }) {
   return (
     <div className="p-6 space-y-6">
@@ -22,7 +22,7 @@ export default function FCLPage({
         </p>
       </div>
 
-      <FCLRateCardsTab countryCode={searchParams.country ?? 'MY'} />
+      <FCLRateCardsTab countryCode={searchParams.country ?? 'MY'} alertFilter={searchParams.alerts} />
     </div>
   );
 }

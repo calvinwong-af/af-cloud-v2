@@ -74,10 +74,91 @@ async def dashboard_summary(
 
         expiring_soon = exp_row[0] if exp_row else 0
 
+        # Scenario 1 — cost exceeds list price
+        s1_row = conn.execute(text(f"""
+            SELECT COUNT(DISTINCT rc.id)
+            FROM {card_table} rc
+            {joins}
+            WHERE rc.is_active = true {country_where}
+            AND (
+                SELECT MIN(r_cost.cost)
+                FROM {rate_table} r_cost
+                WHERE r_cost.rate_card_id = rc.id
+                  AND r_cost.supplier_id IS NOT NULL
+                  AND r_cost.rate_status = 'PUBLISHED'
+                  AND r_cost.effective_from <= CURRENT_DATE
+                  AND (r_cost.effective_to IS NULL OR r_cost.effective_to >= CURRENT_DATE)
+                  AND r_cost.cost IS NOT NULL
+            ) > (
+                SELECT r_price.list_price
+                FROM {rate_table} r_price
+                WHERE r_price.rate_card_id = rc.id
+                  AND r_price.supplier_id IS NULL
+                  AND r_price.rate_status = 'PUBLISHED'
+                  AND r_price.effective_from <= CURRENT_DATE
+                  AND (r_price.effective_to IS NULL OR r_price.effective_to >= CURRENT_DATE)
+                ORDER BY r_price.effective_from DESC
+                LIMIT 1
+            )
+        """), params).fetchone()
+        cost_exceeds_price = s1_row[0] if s1_row else 0
+
+        # Scenario 2 — cost but no list price
+        s2_row = conn.execute(text(f"""
+            SELECT COUNT(DISTINCT rc.id)
+            FROM {card_table} rc
+            {joins}
+            WHERE rc.is_active = true {country_where}
+            AND EXISTS (
+                SELECT 1 FROM {rate_table} r
+                WHERE r.rate_card_id = rc.id
+                  AND r.supplier_id IS NOT NULL
+                  AND r.rate_status = 'PUBLISHED'
+                  AND r.effective_from <= CURRENT_DATE
+                  AND (r.effective_to IS NULL OR r.effective_to >= CURRENT_DATE)
+                  AND r.cost IS NOT NULL
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM {rate_table} r
+                WHERE r.rate_card_id = rc.id
+                  AND r.supplier_id IS NULL
+                  AND r.rate_status = 'PUBLISHED'
+                  AND r.effective_from <= CURRENT_DATE
+                  AND (r.effective_to IS NULL OR r.effective_to >= CURRENT_DATE)
+                  AND r.list_price IS NOT NULL
+            )
+        """), params).fetchone()
+        no_list_price = s2_row[0] if s2_row else 0
+
+        # Scenario 3 — cost newer than list price
+        s3_row = conn.execute(text(f"""
+            SELECT COUNT(DISTINCT rc.id)
+            FROM {card_table} rc
+            {joins}
+            WHERE rc.is_active = true {country_where}
+            AND (
+                SELECT MAX(r_cost.effective_from)
+                FROM {rate_table} r_cost
+                WHERE r_cost.rate_card_id = rc.id
+                  AND r_cost.supplier_id IS NOT NULL
+                  AND r_cost.rate_status = 'PUBLISHED'
+            ) > (
+                SELECT MAX(r_price.effective_from)
+                FROM {rate_table} r_price
+                WHERE r_price.rate_card_id = rc.id
+                  AND r_price.supplier_id IS NULL
+                  AND r_price.rate_status = 'PUBLISHED'
+            )
+        """), params).fetchone()
+        price_review_needed = s3_row[0] if s3_row else 0
+
         result[mode] = {
             "total_cards": total_cards,
             "last_updated": last_updated,
             "expiring_soon": expiring_soon,
+            "cost_exceeds_price": cost_exceeds_price,
+            "no_list_price": no_list_price,
+            "price_review_needed": price_review_needed,
         }
 
     return {"status": "OK", "data": result}

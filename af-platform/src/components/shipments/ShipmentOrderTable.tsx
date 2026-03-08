@@ -70,7 +70,7 @@ function StatusIcon({ order }: { order: ShipmentOrder }) {
   return (
     <div className="flex items-center gap-2">
       <span title={label} style={{ color: entry.color }}>{entry.icon}</span>
-      {numericStatus === 5001 && (
+      {order.completed === true && (
         order.issued_invoice
           ? <span title="Invoiced" style={{ color: '#16a34a' }}><ReceiptText className="w-4 h-4" /></span>
           : <span title="Awaiting Invoice" style={{ color: '#ca8a04' }}><Receipt className="w-4 h-4" /></span>

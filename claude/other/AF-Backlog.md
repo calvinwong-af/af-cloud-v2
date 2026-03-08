@@ -9,6 +9,7 @@ Items identified during development/testing that are not urgent but should be ad
 | # | Item | Context | Notes |
 |---|---|---|---|
 | UI-17 | Per-user default country preference | Session 47 | Pricing module currently hardcodes MY as default country. Should default based on the logged-in user's country. Requires a `country_code` field on the user record (schema migration + users router + profile action). Low priority — MY hardcode is acceptable for now. |
+| PR-01 | Surcharge model clarification — list price vs. supplier side | Session 64 | Current data model allows `surcharges` JSONB on both list price records (`supplier_id IS NULL`) and supplier/cost records. Design decision required before building the quotation module: (1) Surcharges on supplier records = cost burden, absorbed or partially passed through. (2) Surcharges on list price records = ambiguous — could mean pass-through charges to customer, or data entry error. Resolution: define whether list price surcharges represent customer-facing pass-through charges (distinct from cost-side surcharges), and enforce the distinction in the UI and backend validation. Customer quote back-calculation model: quoted total (list price) − supplier surcharges = net freight shown to customer, with surcharges itemised separately. Review when starting the Quotation module. |
 
 ## CLOSED
 
@@ -38,6 +39,7 @@ Items identified during development/testing that are not urgent but should be ad
 | # | Item | Context | Notes |
 |---|---|---|---|
 | TD-01 | Refactor `_helpers.py` into domain-specific modules | Session 27 | CLOSED — v-TD-01: split into 4 modules, all import sites updated across 7 routers. |
+| TD-02 | Drop deprecated flat surcharge columns from fcl_rates / lcl_rates | Session 58 | Columns `lss`, `baf`, `ecrs`, `psc` deprecated in v5.38 — superseded by `surcharges` JSONB. Legacy data migrated to JSONB in migration 018. Drop columns once v5.38 is confirmed stable in prod. Migration: `ALTER TABLE fcl_rates DROP COLUMN lss, DROP COLUMN baf, DROP COLUMN ecrs, DROP COLUMN psc;` — same for `lcl_rates`. |
 
 ---
 

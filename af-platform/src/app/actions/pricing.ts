@@ -15,6 +15,43 @@ async function getToken(): Promise<string | null> {
   return cookieStore.get('af-session')?.value ?? null;
 }
 
+async function pricingMutate<T>(
+  path: string,
+  method: 'POST' | 'PATCH' | 'DELETE',
+  body?: unknown,
+): Promise<ActionResult<T>> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+    const token = await getToken();
+    if (!token) return { success: false, error: 'No session token' };
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) return { success: false, error: 'Server URL not configured' };
+
+    const url = new URL(path, serverUrl);
+    const res = await fetch(url.toString(), {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      return { success: false, error: `Server responded ${res.status}: ${text}` };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data ?? json };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'Request failed' };
+  }
+}
+
 async function pricingFetch<T>(path: string): Promise<ActionResult<T>> {
   try {
     const session = await verifySessionAndRole(['AFU-ADMIN']);
@@ -64,6 +101,9 @@ export interface DashboardComponentSummary {
   total_cards: number;
   last_updated: string | null;
   expiring_soon: number;
+  cost_exceeds_price: number;
+  no_list_price: number;
+  price_review_needed: number;
 }
 
 export interface DashboardSummary {
@@ -115,14 +155,36 @@ export interface RateCard {
   code: string;
   description: string;
   terminal_id: string | null;
+  terminal_name: string | null;
+  latest_list_price_from: string | null;
+  latest_cost_from: string | null;
   is_active: boolean;
   created_at: string | null;
   updated_at: string | null;
+  pending_draft_count?: number;
   latest_price_ref?: {
     list_price: number | null;
     currency: string;
     effective_from: string | null;
   } | null;
+  time_series?: Array<{
+    month_key: string;
+    list_price: number | null;
+    cost: number | null;
+    min_quantity: number | null;
+    currency: string | null;
+    rate_status: string | null;
+    surcharge_total: number;
+    list_surcharge_total?: number;
+    cost_surcharge_total?: number;
+    has_surcharges: boolean;
+  }>;
+}
+
+export interface SurchargeItem {
+  code: string;
+  description: string;
+  amount: number;
 }
 
 export interface RateDetail {
@@ -130,18 +192,15 @@ export interface RateDetail {
   rate_card_id: number;
   supplier_id: string | null;
   effective_from: string | null;
+  effective_to: string | null; // ISO date or null for open-ended
   rate_status: string;
   currency: string;
   uom: string;
   list_price: number | null;
-  min_list_price: number | null;
   cost: number | null;
-  min_cost: number | null;
+  min_quantity: number | null;
   roundup_qty: number;
-  lss: number | null;
-  baf: number | null;
-  ecrs: number | null;
-  psc: number | null;
+  surcharges: SurchargeItem[] | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -156,6 +215,7 @@ export async function fetchFCLRateCardsAction(params: {
   destPort?: string;
   containerSize?: string;
   isActive?: boolean;
+  alertsOnly?: boolean;
 }): Promise<ActionResult<RateCard[]>> {
   const sp = new URLSearchParams();
   if (params.countryCode) sp.set('country_code', params.countryCode);
@@ -163,6 +223,7 @@ export async function fetchFCLRateCardsAction(params: {
   if (params.destPort) sp.set('destination_port_code', params.destPort);
   if (params.containerSize) sp.set('container_size', params.containerSize);
   if (params.isActive !== undefined) sp.set('is_active', String(params.isActive));
+  if (params.alertsOnly) sp.set('alerts_only', 'true');
   const qs = sp.toString();
   return pricingFetch(`/api/v2/pricing/fcl/rate-cards${qs ? `?${qs}` : ''}`);
 }
@@ -182,12 +243,14 @@ export async function fetchLCLRateCardsAction(params: {
   originPort?: string;
   destPort?: string;
   isActive?: boolean;
+  alertsOnly?: boolean;
 }): Promise<ActionResult<RateCard[]>> {
   const sp = new URLSearchParams();
   if (params.countryCode) sp.set('country_code', params.countryCode);
   if (params.originPort) sp.set('origin_port_code', params.originPort);
   if (params.destPort) sp.set('destination_port_code', params.destPort);
   if (params.isActive !== undefined) sp.set('is_active', String(params.isActive));
+  if (params.alertsOnly) sp.set('alerts_only', 'true');
   const qs = sp.toString();
   return pricingFetch(`/api/v2/pricing/lcl/rate-cards${qs ? `?${qs}` : ''}`);
 }
@@ -196,4 +259,72 @@ export async function fetchLCLRateCardDetailAction(
   cardId: number
 ): Promise<ActionResult<RateCardDetail>> {
   return pricingFetch(`/api/v2/pricing/lcl/rate-cards/${cardId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Rate CRUD actions
+// ---------------------------------------------------------------------------
+
+interface RateCreateData {
+  supplier_id: string | null;
+  effective_from: string;
+  effective_to: string | null;
+  currency: string;
+  uom: string;
+  list_price: number | null;
+  cost: number | null;
+  min_quantity: number | null;
+  surcharges: SurchargeItem[] | null;
+  rate_status: string;
+}
+
+interface RateUpdateData {
+  effective_from?: string;
+  effective_to?: string | null;
+  currency?: string;
+  list_price?: number | null;
+  cost?: number | null;
+  min_quantity?: number | null;
+  surcharges?: SurchargeItem[] | null;
+  rate_status?: string;
+}
+
+export async function createFCLRateAction(
+  cardId: number,
+  data: RateCreateData,
+): Promise<ActionResult<{ id: number }>> {
+  return pricingMutate(`/api/v2/pricing/fcl/rate-cards/${cardId}/rates`, 'POST', data);
+}
+
+export async function createLCLRateAction(
+  cardId: number,
+  data: RateCreateData,
+): Promise<ActionResult<{ id: number }>> {
+  return pricingMutate(`/api/v2/pricing/lcl/rate-cards/${cardId}/rates`, 'POST', data);
+}
+
+export async function updateFCLRateAction(
+  rateId: number,
+  data: RateUpdateData,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/fcl/rates/${rateId}`, 'PATCH', data);
+}
+
+export async function updateLCLRateAction(
+  rateId: number,
+  data: RateUpdateData,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/lcl/rates/${rateId}`, 'PATCH', data);
+}
+
+export async function deleteFCLRateAction(
+  rateId: number,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/fcl/rates/${rateId}`, 'DELETE');
+}
+
+export async function deleteLCLRateAction(
+  rateId: number,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/lcl/rates/${rateId}`, 'DELETE');
 }

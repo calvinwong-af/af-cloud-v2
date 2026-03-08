@@ -8,7 +8,7 @@ import { LCLRateCardsTab } from '../_components';
 export default function LCLPage({
   searchParams,
 }: {
-  searchParams: { country?: string };
+  searchParams: { country?: string; alerts?: string };
 }) {
   return (
     <div className="p-6 space-y-6">
@@ -22,7 +22,7 @@ export default function LCLPage({
         </p>
       </div>
 
-      <LCLRateCardsTab countryCode={searchParams.country ?? 'MY'} />
+      <LCLRateCardsTab countryCode={searchParams.country ?? 'MY'} alertFilter={searchParams.alerts} />
     </div>
   );
 }
