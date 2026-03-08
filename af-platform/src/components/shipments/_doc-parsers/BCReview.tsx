@@ -131,8 +131,8 @@ export function BCReview({
             <FieldLabel>POL</FieldLabel>
             <PortCombobox
               value={str(formState.pol_code)}
-              onChange={code => setFormState(prev => ({ ...prev, pol_code: code }))}
-              onTerminalChange={id => setFormState(prev => ({ ...prev, pol_terminal: id }))}
+              onChange={code => update('pol_code', code)}
+              onTerminalChange={id => update('pol_terminal', id)}
               options={seaPortOptions}
               withTerminal
               terminalValue={str(formState.pol_terminal)}
@@ -149,8 +149,8 @@ export function BCReview({
             <FieldLabel>POD</FieldLabel>
             <PortCombobox
               value={str(formState.pod_code)}
-              onChange={code => setFormState(prev => ({ ...prev, pod_code: code }))}
-              onTerminalChange={id => setFormState(prev => ({ ...prev, pod_terminal: id }))}
+              onChange={code => update('pod_code', code)}
+              onTerminalChange={id => update('pod_terminal', id)}
               options={seaPortOptions}
               withTerminal
               terminalValue={str(formState.pod_terminal)}
