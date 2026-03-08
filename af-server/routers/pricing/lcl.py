@@ -130,7 +130,7 @@ _RATE_SELECT = """
     FROM lcl_rates
 """
 
-_VALID_RATE_STATUSES = {"PUBLISHED", "ON_REQUEST"}
+_VALID_RATE_STATUSES = {"PUBLISHED", "ON_REQUEST", "DRAFT", "REJECTED"}
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +223,18 @@ async def list_lcl_rate_cards(
 
         for c in cards:
             c["latest_price_ref"] = price_map.get(c["id"])
+
+        # Attach pending DRAFT count per card
+        draft_rows = conn.execute(text("""
+            SELECT rate_card_id, COUNT(*) AS cnt
+            FROM lcl_rates
+            WHERE rate_card_id = ANY(:ids) AND rate_status = 'DRAFT'
+            GROUP BY rate_card_id
+        """), {"ids": card_ids}).fetchall()
+
+        draft_map = {r[0]: r[1] for r in draft_rows}
+        for c in cards:
+            c["pending_draft_count"] = draft_map.get(c["id"], 0)
 
     return {"status": "OK", "data": cards}
 
@@ -479,6 +491,52 @@ async def update_lcl_rate(
     conn.execute(text(f"UPDATE lcl_rates SET {', '.join(updates)} WHERE id = :id"), params)
 
     return {"status": "OK", "msg": "Rate updated"}
+
+
+@router.post("/rates/{rate_id}/publish")
+async def publish_lcl_rate(
+    rate_id: int,
+    claims: Claims = Depends(require_afu_admin),
+    conn=Depends(get_db),
+):
+    """Transition a DRAFT rate to PUBLISHED. Admin only."""
+    row = conn.execute(text(
+        "SELECT id, rate_status::text FROM lcl_rates WHERE id = :id"
+    ), {"id": rate_id}).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"LCL rate {rate_id} not found")
+    if row[1] != "DRAFT":
+        raise HTTPException(status_code=400, detail=f"Rate is not in DRAFT status (current: {row[1]})")
+
+    conn.execute(text(
+        "UPDATE lcl_rates SET rate_status = 'PUBLISHED'::rate_status, updated_at = NOW() WHERE id = :id"
+    ), {"id": rate_id})
+
+    return {"status": "OK", "msg": "Rate published"}
+
+
+@router.post("/rates/{rate_id}/reject")
+async def reject_lcl_rate(
+    rate_id: int,
+    claims: Claims = Depends(require_afu_admin),
+    conn=Depends(get_db),
+):
+    """Transition a DRAFT rate to REJECTED. Admin only."""
+    row = conn.execute(text(
+        "SELECT id, rate_status::text FROM lcl_rates WHERE id = :id"
+    ), {"id": rate_id}).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"LCL rate {rate_id} not found")
+    if row[1] != "DRAFT":
+        raise HTTPException(status_code=400, detail=f"Rate is not in DRAFT status (current: {row[1]})")
+
+    conn.execute(text(
+        "UPDATE lcl_rates SET rate_status = 'REJECTED'::rate_status, updated_at = NOW() WHERE id = :id"
+    ), {"id": rate_id})
+
+    return {"status": "OK", "msg": "Rate rejected"}
 
 
 @router.delete("/rates/{rate_id}")
