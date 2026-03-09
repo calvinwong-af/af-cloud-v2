@@ -1,6 +1,6 @@
 # AF Dev Handover — Session 65 End
 **Date:** 2026-03-09  
-**Version Live:** v5.22  
+**Version Live:** v5.55  
 **Last Prompt Executed:** v5.55  
 **Tests:** v2.61 — 272/286 (unchanged this session)
 
@@ -9,7 +9,7 @@
 ## What Was Done This Session
 
 ### v5.51 — LCL Min Quantity + FCL Min Fields Removal ✅
-Removed `min_list_price` / `min_cost` from FCL entirely. Renamed `min_cost` → `min_quantity` on LCL supplier rows. Migration 020 run on local DB. Prod pending (run after 018).
+Removed `min_list_price` / `min_cost` from FCL entirely. Renamed `min_cost` → `min_quantity` on LCL supplier rows. Migration 020 run on local DB. Confirmed on prod — column already renamed (min_cost did not exist on prod DB).
 
 ### v5.52 — Terminal Name on Rate Card Display ✅
 LEFT JOIN `port_terminals` in FCL + LCL list/detail endpoints. `terminal_name` added to `RateCard` interface. Indigo badge on rate card row when terminal assigned. Resolves MYPKG duplicate visual identity issue.
@@ -36,7 +36,7 @@ Dashboard `ActiveCard` shows alert tray (red/amber/yellow dot lines). Backend: 3
 |---|---|---|
 | 018 — surcharges JSONB | ✅ | ✅ |
 | 019 — inverted date fix | ✅ | ⚠️ Rolled back — safe to skip |
-| 020 — lcl min_quantity rename | ✅ | ⚠️ Pending — run after 018 |
+| 020 — lcl min_quantity rename | ✅ | ✅ |
 
 ### No Active Prompt
 `PROMPT-CURRENT.md` is clear. No pending Opus work.
@@ -62,7 +62,6 @@ Dashboard `ActiveCard` shows alert tray (red/amber/yellow dot lines). Backend: 3
 
 ## What's Next (Suggested)
 
-- **Prod deployment** — migration 020 needs to run on prod before deploying v5.51+ backend changes
 - **Pricing module** appears largely complete for core data entry + alerting. Natural next area: **Quotation module** (designed in earlier sessions, implementation not yet started)
 - **Geography → Pricing → Quotation workstream** — verify implementation status before starting quotation work
 - **Ground transportation design** — separate plan, not yet scoped

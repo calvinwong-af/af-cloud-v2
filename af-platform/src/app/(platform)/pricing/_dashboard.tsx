@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
-  Ship, Package, Plane, MapPin, FileCheck, Truck, Car, Lock,
+  Ship, Package, Plane, Truck, Car, Lock, Warehouse, ClipboardList,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -26,8 +26,8 @@ const PRICING_COMPONENTS: PricingComponent[] = [
   { key: 'fcl',            label: 'FCL Ocean Freight',   icon: Ship,      href: '/pricing/fcl',              locked: false },
   { key: 'lcl',            label: 'LCL Ocean Freight',   icon: Package,   href: '/pricing/lcl',              locked: false },
   { key: 'air',            label: 'Air Freight',          icon: Plane,     href: '/pricing/air',              locked: true  },
-  { key: 'local-charges',  label: 'Local Charges',        icon: MapPin,    href: '/pricing/local-charges',    locked: true  },
-  { key: 'customs',        label: 'Customs Clearance',    icon: FileCheck, href: '/pricing/customs',          locked: true  },
+  { key: 'thc',            label: 'THC & Local Charges',   icon: Warehouse,     href: '/pricing/thc',              locked: false },
+  { key: 'customs',        label: 'Customs Clearance',    icon: ClipboardList, href: '/pricing/customs',          locked: false },
   { key: 'haulage',        label: 'Haulage',              icon: Truck,     href: '/pricing/haulage',          locked: true  },
   { key: 'transportation', label: 'Transportation',        icon: Car,       href: '/pricing/transportation',   locked: true  },
 ];
@@ -79,15 +79,18 @@ export function PricingDashboard() {
             return <LockedCard key={comp.key} comp={comp} />;
           }
           const stats = summary?.[comp.key as keyof DashboardSummary] ?? null;
-          return (
-            <ActiveCard
-              key={comp.key}
-              comp={comp}
-              stats={stats}
-              loading={loading}
-              country={country}
-            />
-          );
+          if (stats !== null) {
+            return (
+              <ActiveCard
+                key={comp.key}
+                comp={comp}
+                stats={stats}
+                loading={loading}
+                country={country}
+              />
+            );
+          }
+          return <SimpleCard key={comp.key} comp={comp} country={country} />;
         })}
       </div>
     </div>
@@ -192,6 +195,31 @@ function ActiveCard({
           )}
         </div>
       )}
+    </Link>
+  );
+}
+
+function SimpleCard({ comp, country }: { comp: PricingComponent; country: string }) {
+  const Icon = comp.icon;
+  const href = country ? `${comp.href}?country=${country}` : comp.href;
+
+  return (
+    <Link
+      href={href}
+      className="bg-white rounded-xl border border-[var(--border)] p-5 hover:border-[var(--sky)]/30 hover:shadow-sm transition-all"
+    >
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-[var(--sky-mist)] flex items-center justify-center">
+            <Icon size={16} className="text-[var(--sky)]" />
+          </div>
+          <span className="text-sm font-semibold text-[var(--text)]">{comp.label}</span>
+        </div>
+        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600">Live</span>
+      </div>
+      <div className="text-xs text-[var(--text-muted)]">
+        Manage {comp.label.toLowerCase()} rates
+      </div>
     </Link>
   );
 }

@@ -68,8 +68,8 @@ const PRICING_SUB_ITEMS: PricingSubItem[] = [
   { label: 'FCL Ocean',      icon: Ship,      href: '/pricing/fcl',          locked: false },
   { label: 'LCL Ocean',      icon: Package,   href: '/pricing/lcl',          locked: false },
   { label: 'Air Freight',    icon: Plane,     href: '/pricing/air',          locked: true  },
-  { label: 'Local Charges',  icon: MapPin,    href: '/pricing/local-charges', locked: true  },
-  { label: 'Customs',        icon: FileCheck, href: '/pricing/customs',      locked: true  },
+  { label: 'THC & Local',     icon: MapPin,    href: '/pricing/thc',           locked: false },
+  { label: 'Customs',        icon: FileCheck, href: '/pricing/customs',      locked: false },
   { label: 'Haulage',        icon: Truck,     href: '/pricing/haulage',      locked: true  },
   { label: 'Transportation', icon: Car,       href: '/pricing/transportation', locked: true },
 ];

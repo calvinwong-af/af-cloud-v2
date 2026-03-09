@@ -328,3 +328,114 @@ export async function deleteLCLRateAction(
 ): Promise<ActionResult<{ msg: string }>> {
   return pricingMutate(`/api/v2/pricing/lcl/rates/${rateId}`, 'DELETE');
 }
+
+// ---------------------------------------------------------------------------
+// THC (Terminal Handling Charges)
+// ---------------------------------------------------------------------------
+
+export interface THCRate {
+  id: number;
+  port_code: string;
+  trade_direction: 'IMPORT' | 'EXPORT';
+  shipment_type: 'FCL' | 'LCL' | 'AIR' | 'CB';
+  equipment_type: string | null;
+  charge_code: string;
+  description: string;
+  amount: number;
+  currency: string;
+  uom: string;
+  effective_from: string;
+  effective_to: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchTHCRatesAction(params: {
+  portCode?: string;
+  tradeDirection?: string;
+  shipmentType?: string;
+  isActive?: boolean;
+}): Promise<ActionResult<THCRate[]>> {
+  const sp = new URLSearchParams();
+  if (params.portCode) sp.set('port_code', params.portCode);
+  if (params.tradeDirection) sp.set('trade_direction', params.tradeDirection);
+  if (params.shipmentType) sp.set('shipment_type', params.shipmentType);
+  if (params.isActive !== undefined) sp.set('is_active', String(params.isActive));
+  const qs = sp.toString();
+  return pricingFetch(`/api/v2/pricing/thc/rates${qs ? `?${qs}` : ''}`);
+}
+
+export async function createTHCRateAction(
+  data: Omit<THCRate, 'id' | 'created_at' | 'updated_at'>,
+): Promise<ActionResult<{ id: number }>> {
+  return pricingMutate('/api/v2/pricing/thc/rates', 'POST', data);
+}
+
+export async function updateTHCRateAction(
+  id: number,
+  data: Partial<THCRate>,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/thc/rates/${id}`, 'PATCH', data);
+}
+
+export async function deleteTHCRateAction(
+  id: number,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/thc/rates/${id}`, 'DELETE');
+}
+
+// ---------------------------------------------------------------------------
+// Customs Clearance
+// ---------------------------------------------------------------------------
+
+export interface CustomsRate {
+  id: number;
+  port_code: string;
+  trade_direction: 'IMPORT' | 'EXPORT';
+  shipment_type: 'FCL' | 'LCL' | 'AIR' | 'CB';
+  charge_code: string;
+  description: string;
+  amount: number;
+  currency: string;
+  uom: string;
+  effective_from: string;
+  effective_to: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchCustomsRatesAction(params: {
+  portCode?: string;
+  tradeDirection?: string;
+  shipmentType?: string;
+  isActive?: boolean;
+}): Promise<ActionResult<CustomsRate[]>> {
+  const sp = new URLSearchParams();
+  if (params.portCode) sp.set('port_code', params.portCode);
+  if (params.tradeDirection) sp.set('trade_direction', params.tradeDirection);
+  if (params.shipmentType) sp.set('shipment_type', params.shipmentType);
+  if (params.isActive !== undefined) sp.set('is_active', String(params.isActive));
+  const qs = sp.toString();
+  return pricingFetch(`/api/v2/pricing/customs/rates${qs ? `?${qs}` : ''}`);
+}
+
+export async function createCustomsRateAction(
+  data: Omit<CustomsRate, 'id' | 'created_at' | 'updated_at'>,
+): Promise<ActionResult<{ id: number }>> {
+  return pricingMutate('/api/v2/pricing/customs/rates', 'POST', data);
+}
+
+export async function updateCustomsRateAction(
+  id: number,
+  data: Partial<CustomsRate>,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/customs/rates/${id}`, 'PATCH', data);
+}
+
+export async function deleteCustomsRateAction(
+  id: number,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/customs/rates/${id}`, 'DELETE');
+}
