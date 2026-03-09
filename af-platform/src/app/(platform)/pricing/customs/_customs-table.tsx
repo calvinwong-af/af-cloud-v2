@@ -223,7 +223,6 @@ function CustomsCardList({
   const groups = useMemo(() => [
     { label: 'IMPORT', cards: cards.filter(c => c.trade_direction === 'IMPORT') },
     { label: 'EXPORT', cards: cards.filter(c => c.trade_direction === 'EXPORT') },
-    { label: 'ALL', cards: cards.filter(c => c.trade_direction === 'ALL') },
   ].filter(g => g.cards.length > 0), [cards]);
 
   if (loading) {
