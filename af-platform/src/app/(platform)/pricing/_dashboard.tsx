@@ -26,7 +26,7 @@ const PRICING_COMPONENTS: PricingComponent[] = [
   { key: 'fcl',            label: 'FCL Ocean Freight',   icon: Ship,      href: '/pricing/fcl',              locked: false },
   { key: 'lcl',            label: 'LCL Ocean Freight',   icon: Package,   href: '/pricing/lcl',              locked: false },
   { key: 'air',            label: 'Air Freight',          icon: Plane,     href: '/pricing/air',              locked: true  },
-  { key: 'thc',            label: 'THC & Local Charges',   icon: Warehouse,     href: '/pricing/thc',              locked: false },
+  { key: 'local-charges',  label: 'Local Charges',          icon: Warehouse,     href: '/pricing/local-charges',    locked: false },
   { key: 'customs',        label: 'Customs Clearance',    icon: ClipboardList, href: '/pricing/customs',          locked: false },
   { key: 'haulage',        label: 'Haulage',              icon: Truck,     href: '/pricing/haulage',          locked: true  },
   { key: 'transportation', label: 'Transportation',        icon: Car,       href: '/pricing/transportation',   locked: true  },

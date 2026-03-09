@@ -3,7 +3,7 @@
  */
 
 import { ClipboardList } from 'lucide-react';
-import { CustomsTable } from './_customs-table';
+import { CustomsRatesTab } from './_customs-table';
 
 export default function CustomsPage() {
   return (
@@ -18,7 +18,7 @@ export default function CustomsPage() {
         </p>
       </div>
 
-      <CustomsTable />
+      <CustomsRatesTab countryCode="MY" />
     </div>
   );
 }

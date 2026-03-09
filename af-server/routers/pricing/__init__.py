@@ -11,13 +11,13 @@ from core.auth import Claims, require_afu
 from core.db import get_db
 from .fcl import router as fcl_router
 from .lcl import router as lcl_router
-from .thc import router as thc_router
+from .local_charges import router as local_charges_router
 from .customs import router as customs_router
 
 router = APIRouter()
 router.include_router(fcl_router, prefix="/fcl", tags=["Pricing - FCL"])
 router.include_router(lcl_router, prefix="/lcl", tags=["Pricing - LCL"])
-router.include_router(thc_router, prefix="/thc", tags=["Pricing - THC"])
+router.include_router(local_charges_router, prefix="/local-charges", tags=["Pricing - Local Charges"])
 router.include_router(customs_router, prefix="/customs", tags=["Pricing - Customs"])
 
 

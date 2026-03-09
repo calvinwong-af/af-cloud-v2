@@ -1,18 +1,17 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { ChevronDown, ChevronRight, Plus, Warehouse } from 'lucide-react';
+import { ChevronDown, ChevronRight, Warehouse } from 'lucide-react';
 import {
   fetchPricingCountriesAction,
-  fetchCustomsRateCardsAction,
-  fetchCustomsRatePortsAction,
+  fetchLocalChargeCardsAction,
+  fetchLocalChargePortsAction,
 } from '@/app/actions/pricing';
-import type { PricingCountry, CustomsRateCard, CustomsRate } from '@/app/actions/pricing';
+import type { PricingCountry, LocalChargeCard } from '@/app/actions/pricing';
 import { fetchPortsAction } from '@/app/actions/shipments';
 import { PortCombobox } from '@/components/shared/PortCombobox';
 import { ToggleSwitch } from '../_components';
 import { useMonthBuckets, formatCompact, formatDate } from '../_helpers';
-import { CustomsModal } from './_customs-modal';
 
 const SHIPMENT_TYPE_OPTIONS = [
   { value: '', label: 'All Types' },
@@ -39,7 +38,7 @@ const typeBadge = (t: string) => {
   return <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${colors[t] ?? 'bg-slate-100 text-slate-600'}`}>{t}</span>;
 };
 
-function CustomsRatesTab({ countryCode }: { countryCode?: string }) {
+export function LocalChargesTab({ countryCode }: { countryCode?: string }) {
   const [countries, setCountries] = useState<PricingCountry[]>([]);
   const [country, setCountry] = useState(countryCode ?? 'MY');
   const [portOptions, setPortOptions] = useState<string[]>([]);
@@ -47,11 +46,9 @@ function CustomsRatesTab({ countryCode }: { countryCode?: string }) {
   const [shipmentTypeFilter, setShipmentTypeFilter] = useState('');
   const [textFilter, setTextFilter] = useState('');
   const [showInactive, setShowInactive] = useState(false);
-  const [cards, setCards] = useState<CustomsRateCard[]>([]);
+  const [cards, setCards] = useState<LocalChargeCard[]>([]);
   const [loading, setLoading] = useState(false);
   const [portsMap, setPortsMap] = useState<Record<string, { name: string; country_name: string }>>({});
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editRate, setEditRate] = useState<CustomsRate | null>(null);
 
   useEffect(() => {
     fetchPricingCountriesAction().then(r => { if (r?.success) setCountries(r.data); });
@@ -69,7 +66,7 @@ function CustomsRatesTab({ countryCode }: { countryCode?: string }) {
       setTextFilter('');
       prevCountry.current = country;
     }
-    fetchCustomsRatePortsAction(country || undefined).then(r => {
+    fetchLocalChargePortsAction(country || undefined).then(r => {
       if (r?.success) setPortOptions(r.data);
     });
   }, [country]);
@@ -81,7 +78,7 @@ function CustomsRatesTab({ countryCode }: { countryCode?: string }) {
       return;
     }
     setLoading(true);
-    fetchCustomsRateCardsAction({
+    fetchLocalChargeCardsAction({
       portCode: portFilter,
       shipmentType: shipmentTypeFilter || undefined,
       isActive: showInactive ? undefined : true,
@@ -128,13 +125,6 @@ function CustomsRatesTab({ countryCode }: { countryCode?: string }) {
           <PortCombobox value={shipmentTypeFilter} onChange={setShipmentTypeFilter} options={SHIPMENT_TYPE_OPTIONS} placeholder="All Types" />
         </div>
         <ToggleSwitch checked={showInactive} onChange={setShowInactive} label="Show inactive" />
-        <div className="flex-1" />
-        <button
-          onClick={() => { setEditRate(null); setModalOpen(true); }}
-          className="h-9 px-3 text-sm rounded-lg bg-[var(--sky)] text-white font-medium hover:bg-[var(--sky)]/90 transition-colors flex items-center gap-1.5"
-        >
-          <Plus size={14} /> Add Rate
-        </button>
       </div>
       <div className="relative">
         <input
@@ -158,23 +148,16 @@ function CustomsRatesTab({ countryCode }: { countryCode?: string }) {
       {!portFilter ? (
         <div className="bg-white rounded-xl border border-[var(--border)] py-16 flex flex-col items-center gap-3 text-[var(--text-muted)]">
           <Warehouse className="w-8 h-8 opacity-40" />
-          <p className="text-sm">Select a port to view customs rates</p>
+          <p className="text-sm">Select a port to view local charges</p>
         </div>
       ) : (
         <>
-          <CustomsCardList cards={filteredCards} loading={loading} />
+          <LocalChargeCardList cards={filteredCards} loading={loading} />
           <div className="text-xs text-[var(--text-muted)]">
             {filteredCards.length}{filteredCards.length !== cards.length ? ` of ${cards.length}` : ''} charge codes
           </div>
         </>
       )}
-
-      <CustomsModal
-        open={modalOpen}
-        onClose={() => { setModalOpen(false); setEditRate(null); }}
-        onSave={async () => { setModalOpen(false); setEditRate(null); fetchCards(); }}
-        editRate={editRate}
-      />
     </div>
   );
 }
@@ -183,11 +166,11 @@ function CustomsRatesTab({ countryCode }: { countryCode?: string }) {
 // Card List Component
 // ---------------------------------------------------------------------------
 
-function CustomsCardList({
+function LocalChargeCardList({
   cards,
   loading,
 }: {
-  cards: CustomsRateCard[];
+  cards: LocalChargeCard[];
   loading: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -256,7 +239,7 @@ function CustomsCardList({
     return (
       <div ref={containerRef} className="bg-white rounded-xl border border-[var(--border)] py-12 flex flex-col items-center gap-3 text-[var(--text-muted)]">
         <Warehouse className="w-8 h-8 opacity-40" />
-        <p className="text-sm">No customs rates found for this port</p>
+        <p className="text-sm">No local charges found for this port</p>
       </div>
     );
   }
@@ -310,6 +293,7 @@ function CustomsCardList({
                 {!isCollapsed && group.cards.map(card => {
                   const ts = card.time_series ?? [];
                   const tsMap = new Map(ts.map(t => [t.month_key, t]));
+                  const hasContainer = card.container_size !== 'ALL' || card.container_type !== 'ALL';
 
                   return (
                     <div
@@ -327,8 +311,18 @@ function CustomsCardList({
                         <div className="flex items-center gap-1.5 pl-3 mt-0.5 flex-wrap">
                           {directionBadge(card.trade_direction)}
                           {typeBadge(card.shipment_type)}
+                          {hasContainer ? (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
+                              {card.container_size}/{card.container_type}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">ALL</span>
+                          )}
                           {card.is_domestic && (
                             <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">DOM</span>
+                          )}
+                          {card.paid_with_freight && (
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">PWF</span>
                           )}
                         </div>
                         <span className="text-[10px] text-[var(--text-muted)]/60 pl-3">{card.uom}</span>
@@ -385,4 +379,5 @@ function CustomsCardList({
   );
 }
 
-export { CustomsRatesTab };
+// Keep old export name for backward compat during transition
+export { LocalChargesTab as LocalChargesTable };

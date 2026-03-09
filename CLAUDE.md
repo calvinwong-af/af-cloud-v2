@@ -32,15 +32,18 @@ Do not write these files to the repo root.
 | File | Path |
 |---|---|
 | Active Opus prompt | `claude/prompts/PROMPT-CURRENT.md` |
-| Test list | `claude/tests/AF-Test-List.md` |
-| Handover notes | `claude/handover/AF-Handover-Notes-v2_XX.md` |
+| Test master | `claude/tests/AF-Test-Master.md` |
+| Test series files | `claude/tests/series/` |
+| Handover notes | `claude/handover/` (active — keep last 3 only) |
+| Handover archive | `claude/handover/archive/` |
 | Prompt completion log | `claude/prompts/log/` (versioned archive files) |
 
 ### Rules
 - Handover notes are written by Claude AI (Sonnet) via MCP at session end, only when prompted
 - `PROMPT-CURRENT.md` is overwritten each time a new prompt is prepared; cleared to `_No active prompt._` after Opus executes it
-- `AF-Test-List.md` is updated alongside each handover note
+- `AF-Test-Master.md` and the relevant series file in `claude/tests/series/` are updated alongside each handover note
 - Opus reads `PROMPT-CURRENT.md` from `claude/prompts/` — not the repo root
+- Handover files follow the naming pattern `handover-YYYY-MM-DD-session-end-vX.md`
 
 ### Prompt Completion Log (`claude/prompts/log/`)
 **Rule:** After completing any prompt (from `PROMPT-CURRENT.md` or user-issued tasks), Claude MUST append an entry to the active archive file in `claude/prompts/log/` with the following format:
@@ -53,7 +56,7 @@ Do not write these files to the repo root.
 - **Notes:** Any issues, blockers, or follow-ups (optional)
 ```
 
-- Archive files are named `PROMPT-LOG-v2.XX-v2.YY.md` with 10 entries per file
+- Archive files are named `PROMPT-LOG-vX.XX-vX.YY.md` with 10 entries per file
 - Append to the highest-numbered archive file; create a new file when it reaches 10 entries
 - Use UTC timestamps
 - Log every prompt execution, including partial completions and failures
@@ -67,7 +70,7 @@ Monorepo: `af-cloud-v2/`
 
 | Module | Domain | Status |
 |---|---|---|
-| `af-web/` | accelefreight.com | Live (Firebase Hosting, static) |
+| `af-web/` | accelefreight.com | Parked indefinitely |
 | `af-platform/` | appv2.accelefreight.com | In progress (Next.js, Cloud Run) |
 | `af-server/` | api.accelefreight.com | In progress (FastAPI, local only) |
 
@@ -84,7 +87,7 @@ Monorepo: `af-cloud-v2/`
 |---|---|
 | Platform frontend/SSR | Next.js 14 App Router (TypeScript, React 18) |
 | Server API | FastAPI (Python 3.11, Pydantic v1) |
-| Database | Google Cloud Datastore (Firestore in Datastore mode) |
+| Database | Google Cloud Datastore (Firestore in Datastore mode) + Cloud SQL PostgreSQL |
 | Auth | Firebase Auth — ID tokens verified by `af-server/core/auth.py` |
 | Hosting | Cloud Run (asia-northeast1) |
 | Styling | Tailwind 3, Lucide React icons, no component library |
@@ -112,9 +115,7 @@ pip install -r requirements.txt                   # Install dependencies
 ```
 
 > ⚠️ **ALWAYS use `.venv` — NEVER system Python**
-> System Python is 3.14 which is incompatible with `google-cloud-datastore`
-> (protobuf C extension fails with `TypeError: Metaclasses with custom tp_new`).
-> All `python` and `pip` commands must use the `.venv` interpreter:
+> The venv uses Python 3.11.9. All `python` and `pip` commands must use the `.venv` interpreter:
 > - Scripts: `.venv\Scripts\python scripts/my_script.py`
 > - One-liners: `.venv\Scripts\python -c "..."`
 > - pip: `.venv\Scripts\pip install ...`
@@ -124,12 +125,7 @@ pip install -r requirements.txt                   # Install dependencies
 - API docs available at `http://localhost:8000/docs` when running
 
 ### af-web (public site)
-```bash
-cd af-web
-npm run dev          # Dev server
-npm run build        # Production build
-```
-Deployed via Firebase Hosting (`firebase.json` in repo root).
+Parked indefinitely — do not treat as an active workstream.
 
 ### Environment Files (all gitignored)
 - `af-server/.env.local` + `af-server/cloud-accele-freight-b7a0a3b8fd98.json`
@@ -156,18 +152,19 @@ af-server/
     users.py           # /api/v2/users
     geography.py       # /api/v2/geography
     files.py           # /api/v2/files
+    pricing/           # /api/v2/pricing — FCL, LCL, local charges, customs
   logic/
     workflow.py        # Status transition logic, status_history management
   models/              # Pydantic v1 request/response models
+  migrations/          # SQL migration files (numbered sequentially)
 ```
 
 ### af-platform data flow
 ```
 React Server Component
   → Server Action (app/actions/*.ts — "use server" wrappers)
-    → lib function (lib/*.ts — fetch to af-server with Firebase ID token)
-      → af-server endpoint (/api/v2/*)
-        → Google Cloud Datastore
+    → af-server endpoint (/api/v2/*)
+      → Google Cloud Datastore or Cloud SQL PostgreSQL
 ```
 
 Key lib files:
@@ -179,7 +176,7 @@ Key lib files:
 - `lib/auth-server.ts` — server-side auth helpers
 
 Platform route groups:
-- `app/(platform)/` — authenticated pages (dashboard, shipments, users, companies)
+- `app/(platform)/` — authenticated pages (dashboard, shipments, users, companies, pricing)
 - `app/login/` — unauthenticated login page
 
 ### User role convention
@@ -198,6 +195,10 @@ Platform route groups:
 4. **Status writes and `status_history` appends are atomic** — both happen in the same server request handler. Never handle `status_history` in the platform layer.
 
 5. **`af-platform` calls `af-server` using `AF_SERVER_URL` env var** — `http://localhost:8000` in local dev, `https://api.accelefreight.com` in production.
+
+6. **All shipment records use `AF-` prefix** — `AFCQ-` prefix is fully retired.
+
+7. **Timing source of truth** — `shipments.etd` / `shipments.eta` flat columns are deprecated. POL/POD task legs (`scheduled_end` / `scheduled_start`) are the single source of truth for ETD/ETA.
 
 ---
 
@@ -237,4 +238,4 @@ Platform route groups:
 
 ---
 
-*Last updated: 28 Feb 2026*
+*Last updated: 09 Mar 2026*

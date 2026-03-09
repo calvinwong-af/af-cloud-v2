@@ -5,7 +5,7 @@ import { X } from 'lucide-react';
 import type { CustomsRate } from '@/app/actions/pricing';
 
 const TRADE_DIRECTIONS = ['IMPORT', 'EXPORT'] as const;
-const SHIPMENT_TYPES = ['FCL', 'LCL', 'AIR', 'CB'] as const;
+const SHIPMENT_TYPES = ['FCL', 'LCL', 'AIR', 'CB', 'ALL'] as const;
 const UOMS = ['CONTAINER', 'CBM', 'KG', 'W/M', 'CW_KG', 'SET', 'BL'] as const;
 
 interface CustomsModalProps {
@@ -21,11 +21,13 @@ export function CustomsModal({ open, onClose, onSave, editRate }: CustomsModalPr
   const [shipmentType, setShipmentType] = useState<string>('FCL');
   const [chargeCode, setChargeCode] = useState('');
   const [description, setDescription] = useState('');
-  const [amount, setAmount] = useState('');
+  const [price, setPrice] = useState('');
+  const [cost, setCost] = useState('');
   const [currency, setCurrency] = useState('MYR');
   const [uom, setUom] = useState<string>('SET');
   const [effectiveFrom, setEffectiveFrom] = useState('');
   const [effectiveTo, setEffectiveTo] = useState('');
+  const [isDomestic, setIsDomestic] = useState(false);
   const [isActive, setIsActive] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -36,11 +38,13 @@ export function CustomsModal({ open, onClose, onSave, editRate }: CustomsModalPr
       setShipmentType(editRate.shipment_type);
       setChargeCode(editRate.charge_code);
       setDescription(editRate.description);
-      setAmount(String(editRate.amount));
+      setPrice(String(editRate.price));
+      setCost(String(editRate.cost));
       setCurrency(editRate.currency);
       setUom(editRate.uom);
       setEffectiveFrom(editRate.effective_from);
       setEffectiveTo(editRate.effective_to ?? '');
+      setIsDomestic(editRate.is_domestic);
       setIsActive(editRate.is_active);
     } else {
       setPortCode('');
@@ -48,11 +52,13 @@ export function CustomsModal({ open, onClose, onSave, editRate }: CustomsModalPr
       setShipmentType('FCL');
       setChargeCode('');
       setDescription('');
-      setAmount('');
+      setPrice('');
+      setCost('');
       setCurrency('MYR');
       setUom('SET');
       setEffectiveFrom('');
       setEffectiveTo('');
+      setIsDomestic(false);
       setIsActive(true);
     }
   }, [editRate, open]);
@@ -68,9 +74,11 @@ export function CustomsModal({ open, onClose, onSave, editRate }: CustomsModalPr
         shipment_type: shipmentType as CustomsRate['shipment_type'],
         charge_code: chargeCode,
         description,
-        amount: parseFloat(amount),
+        price: parseFloat(price),
+        cost: parseFloat(cost),
         currency,
         uom,
+        is_domestic: isDomestic,
         effective_from: effectiveFrom,
         effective_to: effectiveTo || null,
         is_active: isActive,
@@ -140,11 +148,18 @@ export function CustomsModal({ open, onClose, onSave, editRate }: CustomsModalPr
             <input value={description} onChange={e => setDescription(e.target.value)}
               className="w-full h-9 px-3 text-sm rounded-lg border border-[var(--border)] bg-white" placeholder="Basic customs clearance" />
           </label>
-          <label className="space-y-1 block">
-            <span className="text-xs font-medium text-[var(--text-muted)]">Amount</span>
-            <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)}
-              className="w-full h-9 px-3 text-sm rounded-lg border border-[var(--border)] bg-white" placeholder="0.00" />
-          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-[var(--text-muted)]">Price</span>
+              <input type="number" step="0.01" value={price} onChange={e => setPrice(e.target.value)}
+                className="w-full h-9 px-3 text-sm rounded-lg border border-[var(--border)] bg-white" placeholder="0.00" />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-[var(--text-muted)]">Cost</span>
+              <input type="number" step="0.01" value={cost} onChange={e => setCost(e.target.value)}
+                className="w-full h-9 px-3 text-sm rounded-lg border border-[var(--border)] bg-white" placeholder="0.00" />
+            </label>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <label className="space-y-1">
               <span className="text-xs font-medium text-[var(--text-muted)]">Effective From</span>
@@ -158,6 +173,10 @@ export function CustomsModal({ open, onClose, onSave, editRate }: CustomsModalPr
             </label>
           </div>
           <label className="flex items-center gap-2">
+            <input type="checkbox" checked={isDomestic} onChange={e => setIsDomestic(e.target.checked)} />
+            <span className="text-sm text-[var(--text)]">Is Domestic</span>
+          </label>
+          <label className="flex items-center gap-2">
             <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} />
             <span className="text-sm text-[var(--text)]">Active</span>
           </label>
@@ -167,7 +186,7 @@ export function CustomsModal({ open, onClose, onSave, editRate }: CustomsModalPr
             className="h-9 px-4 text-sm rounded-lg border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors">
             Cancel
           </button>
-          <button onClick={handleSubmit} disabled={saving || !portCode || !chargeCode || !amount || !effectiveFrom}
+          <button onClick={handleSubmit} disabled={saving || !portCode || !chargeCode || !price || !cost || !effectiveFrom}
             className="h-9 px-4 text-sm rounded-lg bg-[var(--sky)] text-white font-medium hover:bg-[var(--sky)]/90 disabled:opacity-50 transition-colors">
             {saving ? 'Saving...' : editRate ? 'Update' : 'Create'}
           </button>

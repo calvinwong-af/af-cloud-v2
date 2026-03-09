@@ -330,20 +330,24 @@ export async function deleteLCLRateAction(
 }
 
 // ---------------------------------------------------------------------------
-// THC (Terminal Handling Charges)
+// Local Charges
 // ---------------------------------------------------------------------------
 
-export interface THCRate {
+export interface LocalCharge {
   id: number;
   port_code: string;
   trade_direction: 'IMPORT' | 'EXPORT';
-  shipment_type: 'FCL' | 'LCL' | 'AIR' | 'CB';
-  equipment_type: string | null;
+  shipment_type: 'FCL' | 'LCL' | 'AIR' | 'CB' | 'ALL';
+  container_size: '20' | '40' | 'ALL';
+  container_type: 'GP' | 'HC' | 'RF' | 'FF' | 'OT' | 'FR' | 'PL' | 'ALL';
   charge_code: string;
   description: string;
-  amount: number;
+  price: number;
+  cost: number;
   currency: string;
   uom: string;
+  is_domestic: boolean;
+  paid_with_freight: boolean;
   effective_from: string;
   effective_to: string | null;
   is_active: boolean;
@@ -351,38 +355,88 @@ export interface THCRate {
   updated_at: string;
 }
 
-export async function fetchTHCRatesAction(params: {
-  portCode?: string;
+export interface LocalChargeTimeSeries {
+  month_key: string;
+  price: number | null;
+  cost: number | null;
+  rate_id: number;
+}
+
+export interface LocalChargeCard {
+  card_key: string;
+  port_code: string;
+  trade_direction: 'IMPORT' | 'EXPORT';
+  shipment_type: 'FCL' | 'LCL' | 'AIR' | 'CB' | 'ALL';
+  container_size: '20' | '40' | 'ALL';
+  container_type: 'GP' | 'HC' | 'RF' | 'FF' | 'OT' | 'FR' | 'PL' | 'ALL';
+  charge_code: string;
+  description: string;
+  uom: string;
+  currency: string;
+  is_domestic: boolean;
+  paid_with_freight: boolean;
+  is_active: boolean;
+  time_series: LocalChargeTimeSeries[];
+  latest_effective_from: string | null;
+  latest_effective_to: string | null;
+}
+
+export async function fetchLocalChargeCardsAction(params: {
+  portCode: string;
   tradeDirection?: string;
   shipmentType?: string;
   isActive?: boolean;
-}): Promise<ActionResult<THCRate[]>> {
+}): Promise<ActionResult<LocalChargeCard[]>> {
+  const sp = new URLSearchParams();
+  sp.set('port_code', params.portCode);
+  if (params.tradeDirection) sp.set('trade_direction', params.tradeDirection);
+  if (params.shipmentType) sp.set('shipment_type', params.shipmentType);
+  if (params.isActive !== undefined) sp.set('is_active', String(params.isActive));
+  return pricingFetch(`/api/v2/pricing/local-charges/cards?${sp.toString()}`);
+}
+
+export async function fetchLocalChargePortsAction(
+  countryCode?: string
+): Promise<ActionResult<string[]>> {
+  const sp = new URLSearchParams();
+  if (countryCode) sp.set('country_code', countryCode);
+  return pricingFetch(`/api/v2/pricing/local-charges/ports${sp.toString() ? `?${sp}` : ''}`);
+}
+
+export async function fetchLocalChargesAction(params: {
+  portCode?: string;
+  tradeDirection?: string;
+  shipmentType?: string;
+  isDomestic?: boolean;
+  isActive?: boolean;
+}): Promise<ActionResult<LocalCharge[]>> {
   const sp = new URLSearchParams();
   if (params.portCode) sp.set('port_code', params.portCode);
   if (params.tradeDirection) sp.set('trade_direction', params.tradeDirection);
   if (params.shipmentType) sp.set('shipment_type', params.shipmentType);
+  if (params.isDomestic !== undefined) sp.set('is_domestic', String(params.isDomestic));
   if (params.isActive !== undefined) sp.set('is_active', String(params.isActive));
   const qs = sp.toString();
-  return pricingFetch(`/api/v2/pricing/thc/rates${qs ? `?${qs}` : ''}`);
+  return pricingFetch(`/api/v2/pricing/local-charges/rates${qs ? `?${qs}` : ''}`);
 }
 
-export async function createTHCRateAction(
-  data: Omit<THCRate, 'id' | 'created_at' | 'updated_at'>,
+export async function createLocalChargeAction(
+  data: Omit<LocalCharge, 'id' | 'created_at' | 'updated_at'>,
 ): Promise<ActionResult<{ id: number }>> {
-  return pricingMutate('/api/v2/pricing/thc/rates', 'POST', data);
+  return pricingMutate('/api/v2/pricing/local-charges/rates', 'POST', data);
 }
 
-export async function updateTHCRateAction(
+export async function updateLocalChargeAction(
   id: number,
-  data: Partial<THCRate>,
+  data: Partial<LocalCharge>,
 ): Promise<ActionResult<{ msg: string }>> {
-  return pricingMutate(`/api/v2/pricing/thc/rates/${id}`, 'PATCH', data);
+  return pricingMutate(`/api/v2/pricing/local-charges/rates/${id}`, 'PATCH', data);
 }
 
-export async function deleteTHCRateAction(
+export async function deleteLocalChargeAction(
   id: number,
 ): Promise<ActionResult<{ msg: string }>> {
-  return pricingMutate(`/api/v2/pricing/thc/rates/${id}`, 'DELETE');
+  return pricingMutate(`/api/v2/pricing/local-charges/rates/${id}`, 'DELETE');
 }
 
 // ---------------------------------------------------------------------------
@@ -393,17 +447,66 @@ export interface CustomsRate {
   id: number;
   port_code: string;
   trade_direction: 'IMPORT' | 'EXPORT';
-  shipment_type: 'FCL' | 'LCL' | 'AIR' | 'CB';
+  shipment_type: 'FCL' | 'LCL' | 'AIR' | 'CB' | 'ALL';
   charge_code: string;
   description: string;
-  amount: number;
+  price: number;
+  cost: number;
   currency: string;
   uom: string;
+  is_domestic: boolean;
   effective_from: string;
   effective_to: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface CustomsRateTimeSeries {
+  month_key: string;
+  price: number | null;
+  cost: number | null;
+  rate_id: number;
+}
+
+export interface CustomsRateCard {
+  card_key: string;
+  port_code: string;
+  trade_direction: 'IMPORT' | 'EXPORT';
+  shipment_type: 'FCL' | 'LCL' | 'AIR' | 'CB' | 'ALL';
+  charge_code: string;
+  description: string;
+  uom: string;
+  currency: string;
+  is_domestic: boolean;
+  is_active: boolean;
+  latest_effective_from: string | null;
+  latest_effective_to: string | null;
+  time_series: CustomsRateTimeSeries[];
+}
+
+export async function fetchCustomsRatePortsAction(
+  countryCode?: string,
+): Promise<ActionResult<string[]>> {
+  const sp = new URLSearchParams();
+  if (countryCode) sp.set('country_code', countryCode);
+  const qs = sp.toString();
+  return pricingFetch(`/api/v2/pricing/customs/ports${qs ? `?${qs}` : ''}`);
+}
+
+export async function fetchCustomsRateCardsAction(params: {
+  portCode: string;
+  tradeDirection?: string;
+  shipmentType?: string;
+  isActive?: boolean;
+}): Promise<ActionResult<CustomsRateCard[]>> {
+  const sp = new URLSearchParams();
+  sp.set('port_code', params.portCode);
+  if (params.tradeDirection) sp.set('trade_direction', params.tradeDirection);
+  if (params.shipmentType) sp.set('shipment_type', params.shipmentType);
+  if (params.isActive !== undefined) sp.set('is_active', String(params.isActive));
+  const qs = sp.toString();
+  return pricingFetch(`/api/v2/pricing/customs/cards${qs ? `?${qs}` : ''}`);
 }
 
 export async function fetchCustomsRatesAction(params: {

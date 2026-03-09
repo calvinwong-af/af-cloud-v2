@@ -1,4 +1,20 @@
-# Prompt Completion Log — v5.51–v5.60
+    # Prompt Completion Log — v5.51–v5.60
+
+### [2026-03-09 21:00 UTC] — v5.60: Add QTL and RAIL_3KG UOMs to Local Charges
+- **Status:** Completed
+- **Tasks:** (1) Created migration `024_local_charges_uom.sql` — drops and recreates `lc_uom_check` constraint to include `QTL` and `RAIL_3KG`. (2) Updated `local_charges.py` — added `QTL` and `RAIL_3KG` to `_VALID_UOMS`. (3) Ran migration 024 on local DB.
+- **Files Modified:** `af-server/migrations/024_local_charges_uom.sql` (new), `af-server/routers/pricing/local_charges.py`
+
+### [2026-03-09 20:30 UTC] — v5.59: Local Charges Legacy Data Migration Script
+- **Status:** Completed
+- **Tasks:** Created `af-server/scripts/migrate_local_charges.py` — standalone script to migrate `PricingLocalCharges` + `PTMonthlyRatePortCharges` (kind=PT-LOCAL-CHARGES) from Google Cloud Datastore into PostgreSQL `local_charges` table. Features: DRY_RUN mode (default), port validation against `ports` table, UOM validation, wildcard `*` → `ALL` conversion, `month_year` → `effective_from`/`effective_to` date parsing, `ON CONFLICT DO NOTHING` for safe re-runs, detailed summary output with skip reasons.
+- **Files Modified:** `af-server/scripts/migrate_local_charges.py` (new)
+
+### [2026-03-09 20:00 UTC] — v5.58: Local Charges Unification
+- **Status:** Completed
+- **Tasks:** (1) Created migration `023_local_charges.sql` — drops `thc_rates`, renames `customs_rates.amount` → `price`, adds `cost`/`is_domestic` to customs, creates `local_charges` table with `container_size`/`container_type`/`paid_with_freight`. (2) Created `local_charges.py` router — full CRUD with validation for container_size/type enums. (3) Updated `customs.py` — `amount` → `price`, added `cost`/`is_domestic` to models/SELECT/INSERT/UPDATE/uniqueness. Added `ALL` to `_VALID_SHIPMENT_TYPES`. (4) Updated `__init__.py` — removed `thc_router`, added `local_charges_router` at `/local-charges`. (5) Updated `pricing.ts` — removed `THCRate` + 4 THC actions, added `LocalCharge` interface + 4 local charge actions, updated `CustomsRate` with `price`/`cost`/`is_domestic`/`ALL` shipment type. (6) Deleted `thc/` directory. Created `local-charges/` with `page.tsx`, `_local-charges-table.tsx`, `_local-charges-modal.tsx`. (7) Updated customs modal — `price`/`cost`/`isDomestic` fields. Updated customs table — Price+Cost columns, ALL badge, colSpan 10. (8) Updated Sidebar — "Local Charges" with `Warehouse` icon at `/pricing/local-charges`. Updated Dashboard — same. Ran migration 023 on local DB.
+- **Files Modified:** `af-server/migrations/023_local_charges.sql` (new), `af-server/routers/pricing/local_charges.py` (new), `af-server/routers/pricing/customs.py`, `af-server/routers/pricing/__init__.py`, `af-platform/src/app/actions/pricing.ts`, `af-platform/src/app/(platform)/pricing/local-charges/page.tsx` (new), `af-platform/src/app/(platform)/pricing/local-charges/_local-charges-table.tsx` (new), `af-platform/src/app/(platform)/pricing/local-charges/_local-charges-modal.tsx` (new), `af-platform/src/app/(platform)/pricing/customs/_customs-table.tsx`, `af-platform/src/app/(platform)/pricing/customs/_customs-modal.tsx`, `af-platform/src/components/shell/Sidebar.tsx`, `af-platform/src/app/(platform)/pricing/_dashboard.tsx`
+- **Notes:** `thc/` directory deleted (replaced by `local-charges/`). `thc.py` router no longer imported but file still exists on disk.
 
 ### [2026-03-09 14:30 UTC] — v5.51: LCL Min Quantity on Supplier Rows + FCL Min Fields Removal
 - **Status:** Completed
