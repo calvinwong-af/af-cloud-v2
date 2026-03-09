@@ -216,6 +216,11 @@ async def list_lcl_rate_cards(
                 (SELECT MAX(r.effective_from) FROM lcl_rates r WHERE r.rate_card_id = rc.id AND r.supplier_id IS NOT NULL AND r.rate_status = 'PUBLISHED')
                 > (SELECT MAX(r.effective_from) FROM lcl_rates r WHERE r.rate_card_id = rc.id AND r.supplier_id IS NULL AND r.rate_status = 'PUBLISHED')
             )
+            OR
+            (
+                EXISTS (SELECT 1 FROM lcl_rates r WHERE r.rate_card_id = rc.id AND r.supplier_id IS NULL AND r.rate_status = 'PUBLISHED' AND r.effective_from <= CURRENT_DATE AND (r.effective_to IS NULL OR r.effective_to >= CURRENT_DATE) AND r.list_price IS NOT NULL)
+                AND NOT EXISTS (SELECT 1 FROM lcl_rates r WHERE r.rate_card_id = rc.id AND r.supplier_id IS NOT NULL AND r.rate_status = 'PUBLISHED' AND r.effective_from <= CURRENT_DATE AND (r.effective_to IS NULL OR r.effective_to >= CURRENT_DATE) AND r.cost IS NOT NULL)
+            )
         )""")
 
     terminal_join = "LEFT JOIN port_terminals pt ON pt.terminal_id = rc.terminal_id"
@@ -268,9 +273,9 @@ async def list_lcl_rate_cards(
         for c in cards:
             c["pending_draft_count"] = draft_map.get(c["id"], 0)
 
-        # Build 9-month time series per card (6 past + current + 2 forward)
+        # Build 12-month time series per card (9 past + current + 2 forward)
         today = date.today()
-        months = [(today + relativedelta(months=i - 6)).replace(day=1) for i in range(9)]
+        months = [(today + relativedelta(months=i - 9)).replace(day=1) for i in range(12)]
         month_start = months[0]
         month_end = (months[-1] + relativedelta(months=1))
 
@@ -746,10 +751,25 @@ async def update_lcl_rate(
             updates.append(f"{col} = :{field}")
             params[field] = val
 
-    # effective_to can be explicitly set to NULL, so handle separately
-    if body.effective_to is not None:
+    # effective_to can be explicitly set to NULL — use __fields_set__ to distinguish
+    # "not sent" (omitted) from "explicitly cleared" (null in JSON body)
+    if "effective_to" in body.__fields_set__:
         updates.append("effective_to = :effective_to")
         params["effective_to"] = body.effective_to
+
+    # Date range sanity check — resolve final values across provided + existing
+    if "effective_from" in body.__fields_set__ or "effective_to" in body.__fields_set__:
+        chk_from = params.get("effective_from")
+        chk_to = params.get("effective_to")  # None = open-ended (cleared)
+        if "effective_from" not in body.__fields_set__ or "effective_to" not in body.__fields_set__:
+            row = conn.execute(text("SELECT effective_from, effective_to FROM lcl_rates WHERE id = :id"), {"id": rate_id}).fetchone()
+            if row:
+                if "effective_from" not in body.__fields_set__:
+                    chk_from = str(row[0]) if row[0] else None
+                if "effective_to" not in body.__fields_set__:
+                    chk_to = str(row[1]) if row[1] else None
+        if chk_from and chk_to and str(chk_to) < str(chk_from):
+            raise HTTPException(status_code=400, detail="effective_to cannot be before effective_from")
 
     if body.rate_status is not None:
         if body.rate_status not in _VALID_RATE_STATUSES:

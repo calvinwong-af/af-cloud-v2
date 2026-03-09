@@ -24,7 +24,7 @@ from sqlalchemy import create_engine, text
 # Configuration
 # ---------------------------------------------------------------------------
 
-DRY_RUN = False  # Set to False to execute real inserts
+DRY_RUN = True  # Set to False to execute real inserts
 
 DATASTORE_PROJECT = "cloud-accele-freight"
 SERVICE_ACCOUNT_KEY = "claude/legacy-reference/af-team-af-cloud-webserver-2999c133ea36/cloud-accele-freight-b7a0a3b8fd98.json"

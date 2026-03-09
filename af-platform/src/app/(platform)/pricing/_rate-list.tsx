@@ -229,6 +229,8 @@ export function TimeSeriesRateList({
                     ? 'bg-red-50 hover:bg-red-100/70'
                     : alertLevel === 'no_list_price'
                     ? 'bg-amber-50 hover:bg-amber-100/70'
+                    : alertLevel === 'no_active_cost'
+                    ? 'bg-red-50 hover:bg-red-100/70'
                     : alertLevel === 'price_review_needed'
                     ? 'bg-yellow-50 hover:bg-yellow-100/70'
                     : isExpanded
@@ -241,6 +243,8 @@ export function TimeSeriesRateList({
                     ? 'border-l-red-400'
                     : alertLevel === 'no_list_price'
                     ? 'border-l-amber-400'
+                    : alertLevel === 'no_active_cost'
+                    ? 'border-l-red-500'
                     : alertLevel === 'price_review_needed'
                     ? 'border-l-yellow-400'
                     : 'border-l-transparent'
@@ -308,6 +312,11 @@ export function TimeSeriesRateList({
                         No list price
                       </span>
                     )}
+                    {alertLevel === 'no_active_cost' && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-semibold border border-red-300">
+                        Cost expired
+                      </span>
+                    )}
                     {alertLevel === 'price_review_needed' && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-200 text-yellow-800 font-semibold">
                         Price review needed
@@ -334,7 +343,7 @@ export function TimeSeriesRateList({
                         {hasData ? (
                           <>
                             <div className={`text-xs font-medium flex items-center justify-center gap-0 ${
-                              isDraft ? 'text-amber-600' : cellAlert === 'cost_exceeds_price' ? 'text-red-700 font-semibold' : cellAlert === 'no_list_price' ? 'text-amber-700 font-semibold' : 'text-[var(--text)]'
+                              isDraft ? 'text-amber-600' : cellAlert === 'cost_exceeds_price' ? 'text-red-700 font-semibold' : cellAlert === 'no_list_price' ? 'text-amber-700 font-semibold' : cellAlert === 'no_active_cost' ? 'text-red-600 font-semibold' : 'text-[var(--text)]'
                             }`}>
                               {formatCompact((bucket.list_price ?? 0) + (bucket.list_surcharge_total ?? bucket.surcharge_total ?? 0))}
                               {(bucket.list_surcharge_total ?? bucket.surcharge_total ?? 0) > 0 && (

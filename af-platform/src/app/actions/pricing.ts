@@ -102,6 +102,7 @@ export interface DashboardComponentSummary {
   last_updated: string | null;
   expiring_soon: number;
   cost_exceeds_price: number;
+  no_active_cost: number;
   no_list_price: number;
   price_review_needed: number;
 }
@@ -109,6 +110,8 @@ export interface DashboardComponentSummary {
 export interface DashboardSummary {
   fcl: DashboardComponentSummary;
   lcl: DashboardComponentSummary;
+  'local-charges': DashboardComponentSummary;
+  customs: DashboardComponentSummary;
 }
 
 export async function fetchPricingDashboardSummaryAction(
@@ -421,7 +424,7 @@ export async function fetchLocalChargesAction(params: {
 }
 
 export async function createLocalChargeAction(
-  data: Omit<LocalCharge, 'id' | 'created_at' | 'updated_at'>,
+  data: Omit<LocalCharge, 'id' | 'created_at' | 'updated_at'> & { close_previous?: boolean },
 ): Promise<ActionResult<{ id: number }>> {
   return pricingMutate('/api/v2/pricing/local-charges/rates', 'POST', data);
 }
@@ -525,7 +528,7 @@ export async function fetchCustomsRatesAction(params: {
 }
 
 export async function createCustomsRateAction(
-  data: Omit<CustomsRate, 'id' | 'created_at' | 'updated_at'>,
+  data: Omit<CustomsRate, 'id' | 'created_at' | 'updated_at'> & { close_previous?: boolean },
 ): Promise<ActionResult<{ id: number }>> {
   return pricingMutate('/api/v2/pricing/customs/rates', 'POST', data);
 }

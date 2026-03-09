@@ -11,11 +11,12 @@ const UOMS = ['CONTAINER', 'CBM', 'KG', 'W/M', 'CW_KG', 'SET', 'BL'] as const;
 interface CustomsModalProps {
   open: boolean;
   onClose: () => void;
-  onSave: (data: Omit<CustomsRate, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
+  onSave: (data: Omit<CustomsRate, 'id' | 'created_at' | 'updated_at'> & { close_previous?: boolean }) => Promise<void>;
   editRate?: CustomsRate | null;
+  mode?: 'edit' | 'new-rate';
 }
 
-export function CustomsModal({ open, onClose, onSave, editRate }: CustomsModalProps) {
+export function CustomsModal({ open, onClose, onSave, editRate, mode = 'edit' }: CustomsModalProps) {
   const [portCode, setPortCode] = useState('');
   const [tradeDirection, setTradeDirection] = useState<string>('IMPORT');
   const [shipmentType, setShipmentType] = useState<string>('FCL');
@@ -42,8 +43,15 @@ export function CustomsModal({ open, onClose, onSave, editRate }: CustomsModalPr
       setCost(String(editRate.cost));
       setCurrency(editRate.currency);
       setUom(editRate.uom);
-      setEffectiveFrom(editRate.effective_from);
-      setEffectiveTo(editRate.effective_to ?? '');
+      if (mode === 'new-rate') {
+        const now = new Date();
+        const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        setEffectiveFrom(next.toISOString().slice(0, 10));
+        setEffectiveTo('');
+      } else {
+        setEffectiveFrom(editRate.effective_from);
+        setEffectiveTo(editRate.effective_to ?? '');
+      }
       setIsDomestic(editRate.is_domestic);
       setIsActive(editRate.is_active);
     } else {
@@ -61,11 +69,16 @@ export function CustomsModal({ open, onClose, onSave, editRate }: CustomsModalPr
       setIsDomestic(false);
       setIsActive(true);
     }
-  }, [editRate, open]);
+  }, [editRate, open, mode]);
 
   if (!open) return null;
 
+  const dateRangeError = effectiveTo && effectiveFrom && effectiveTo < effectiveFrom
+    ? 'Effective To cannot be before Effective From'
+    : null;
+
   const handleSubmit = async () => {
+    if (dateRangeError) return;
     setSaving(true);
     try {
       await onSave({
@@ -82,6 +95,7 @@ export function CustomsModal({ open, onClose, onSave, editRate }: CustomsModalPr
         effective_from: effectiveFrom,
         effective_to: effectiveTo || null,
         is_active: isActive,
+        ...(mode === 'new-rate' ? { close_previous: true } : {}),
       });
       onClose();
     } finally {
@@ -94,7 +108,7 @@ export function CustomsModal({ open, onClose, onSave, editRate }: CustomsModalPr
       <div className="bg-white rounded-xl border border-[var(--border)] shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
           <h2 className="text-base font-semibold text-[var(--text)]">
-            {editRate ? 'Edit Customs Rate' : 'Add Customs Rate'}
+            {mode === 'new-rate' ? `New Rate — effective ${effectiveFrom}` : editRate ? 'Edit Customs Rate' : 'Add Customs Rate'}
           </h2>
           <button onClick={onClose} className="p-1 rounded hover:bg-[var(--surface)] transition-colors">
             <X size={16} className="text-[var(--text-muted)]" />
@@ -166,11 +180,30 @@ export function CustomsModal({ open, onClose, onSave, editRate }: CustomsModalPr
               <input type="date" value={effectiveFrom} onChange={e => setEffectiveFrom(e.target.value)}
                 className="w-full h-9 px-3 text-sm rounded-lg border border-[var(--border)] bg-white" />
             </label>
-            <label className="space-y-1">
-              <span className="text-xs font-medium text-[var(--text-muted)]">Effective To</span>
-              <input type="date" value={effectiveTo} onChange={e => setEffectiveTo(e.target.value)}
-                className="w-full h-9 px-3 text-sm rounded-lg border border-[var(--border)] bg-white" />
-            </label>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-[var(--text-muted)]">Effective To</span>
+                {editRate && mode === 'edit' && effectiveTo && (
+                  <button
+                    type="button"
+                    onClick={() => setEffectiveTo('')}
+                    className="text-xs text-[var(--text-muted)] hover:text-red-500 underline cursor-pointer"
+                  >
+                    × Remove end date
+                  </button>
+                )}
+              </div>
+              <input
+                type="date"
+                value={effectiveTo}
+                onChange={e => setEffectiveTo(e.target.value)}
+                placeholder="Ongoing"
+                className={`w-full h-9 px-3 text-sm rounded-lg border bg-white ${dateRangeError ? 'border-red-400' : 'border-[var(--border)]'}`}
+              />
+              {dateRangeError && (
+                <p className="text-xs text-red-500">{dateRangeError}</p>
+              )}
+            </div>
           </div>
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={isDomestic} onChange={e => setIsDomestic(e.target.checked)} />
@@ -186,9 +219,9 @@ export function CustomsModal({ open, onClose, onSave, editRate }: CustomsModalPr
             className="h-9 px-4 text-sm rounded-lg border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors">
             Cancel
           </button>
-          <button onClick={handleSubmit} disabled={saving || !portCode || !chargeCode || !price || !cost || !effectiveFrom}
+          <button onClick={handleSubmit} disabled={saving || !portCode || !chargeCode || !price || !cost || !effectiveFrom || !!dateRangeError}
             className="h-9 px-4 text-sm rounded-lg bg-[var(--sky)] text-white font-medium hover:bg-[var(--sky)]/90 disabled:opacity-50 transition-colors">
-            {saving ? 'Saving...' : editRate ? 'Update' : 'Create'}
+            {saving ? 'Saving...' : mode === 'new-rate' ? 'Create New Rate' : editRate ? 'Update' : 'Create'}
           </button>
         </div>
       </div>

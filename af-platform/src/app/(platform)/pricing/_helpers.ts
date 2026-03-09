@@ -35,7 +35,7 @@ export function formatDate(d: string | null): string {
   return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-export type AlertLevel = 'cost_exceeds_price' | 'no_list_price' | 'price_review_needed' | null;
+export type AlertLevel = 'cost_exceeds_price' | 'no_list_price' | 'no_active_cost' | 'price_review_needed' | null;
 
 export function getAlertLevel(
   timeSeries: RateCard['time_series'],
@@ -58,6 +58,8 @@ export function getAlertLevel(
     : null;
 
   if (costTotal != null && listTotal != null && costTotal > listTotal) return 'cost_exceeds_price';
+  // List price active but no supplier cost this month — cost may have expired; blind quoting risk, same priority as cost_exceeds_price
+  if (listTotal != null && costTotal == null) return 'no_active_cost';
   if (costTotal != null && listTotal == null) return 'no_list_price';
 
   // Scenario 3: cost updated more recently than list price

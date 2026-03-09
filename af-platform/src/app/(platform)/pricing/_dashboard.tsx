@@ -109,6 +109,7 @@ function ActiveCard({
     last_updated: string | null;
     expiring_soon: number;
     cost_exceeds_price: number;
+    no_active_cost: number;
     no_list_price: number;
     price_review_needed: number;
   } | null;
@@ -159,7 +160,7 @@ function ActiveCard({
               Up to date
             </div>
           )}
-          {(stats.cost_exceeds_price > 0 || stats.no_list_price > 0 || stats.price_review_needed > 0) && (
+          {(stats.cost_exceeds_price > 0 || stats.no_active_cost > 0 || stats.no_list_price > 0 || stats.price_review_needed > 0) && (
             <div className="mt-2 pt-2 border-t border-[var(--border)] space-y-1">
               {stats.cost_exceeds_price > 0 && (
                 <Link
@@ -169,6 +170,16 @@ function ActiveCard({
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
                   {stats.cost_exceeds_price} cost{stats.cost_exceeds_price > 1 ? 's exceed' : ' exceeds'} price
+                </Link>
+              )}
+              {stats.no_active_cost > 0 && (
+                <Link
+                  href={`${comp.href}?country=${country}&alerts=no_active_cost`}
+                  onClick={e => e.stopPropagation()}
+                  className="text-[11px] font-medium text-red-600 flex items-center gap-1.5 hover:text-red-800 hover:underline"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                  {stats.no_active_cost} cost{stats.no_active_cost > 1 ? 's' : ''} expired
                 </Link>
               )}
               {stats.no_list_price > 0 && (

@@ -13,11 +13,12 @@ const UOMS = ['CONTAINER', 'CBM', 'KG', 'W/M', 'CW_KG', 'SET', 'BL'] as const;
 interface LocalChargesModalProps {
   open: boolean;
   onClose: () => void;
-  onSave: (data: Omit<LocalCharge, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
+  onSave: (data: Omit<LocalCharge, 'id' | 'created_at' | 'updated_at'> & { close_previous?: boolean }) => Promise<void>;
   editRate?: LocalCharge | null;
+  mode?: 'edit' | 'new-rate';
 }
 
-export function LocalChargesModal({ open, onClose, onSave, editRate }: LocalChargesModalProps) {
+export function LocalChargesModal({ open, onClose, onSave, editRate, mode = 'edit' }: LocalChargesModalProps) {
   const [portCode, setPortCode] = useState('');
   const [tradeDirection, setTradeDirection] = useState<string>('IMPORT');
   const [shipmentType, setShipmentType] = useState<string>('ALL');
@@ -49,8 +50,15 @@ export function LocalChargesModal({ open, onClose, onSave, editRate }: LocalChar
       setCost(String(editRate.cost));
       setCurrency(editRate.currency);
       setUom(editRate.uom);
-      setEffectiveFrom(editRate.effective_from);
-      setEffectiveTo(editRate.effective_to ?? '');
+      if (mode === 'new-rate') {
+        const now = new Date();
+        const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        setEffectiveFrom(next.toISOString().slice(0, 10));
+        setEffectiveTo('');
+      } else {
+        setEffectiveFrom(editRate.effective_from);
+        setEffectiveTo(editRate.effective_to ?? '');
+      }
       setIsDomestic(editRate.is_domestic);
       setPaidWithFreight(editRate.paid_with_freight);
       setIsActive(editRate.is_active);
@@ -72,11 +80,16 @@ export function LocalChargesModal({ open, onClose, onSave, editRate }: LocalChar
       setPaidWithFreight(false);
       setIsActive(true);
     }
-  }, [editRate, open]);
+  }, [editRate, open, mode]);
 
   if (!open) return null;
 
+  const dateRangeError = effectiveTo && effectiveFrom && effectiveTo < effectiveFrom
+    ? 'Effective To cannot be before Effective From'
+    : null;
+
   const handleSubmit = async () => {
+    if (dateRangeError) return;
     setSaving(true);
     try {
       await onSave({
@@ -96,6 +109,7 @@ export function LocalChargesModal({ open, onClose, onSave, editRate }: LocalChar
         effective_from: effectiveFrom,
         effective_to: effectiveTo || null,
         is_active: isActive,
+        ...(mode === 'new-rate' ? { close_previous: true } : {}),
       });
       onClose();
     } finally {
@@ -110,7 +124,7 @@ export function LocalChargesModal({ open, onClose, onSave, editRate }: LocalChar
       <div className="bg-white rounded-xl border border-[var(--border)] shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
           <h2 className="text-base font-semibold text-[var(--text)]">
-            {editRate ? 'Edit Local Charge' : 'Add Local Charge'}
+            {mode === 'new-rate' ? `New Rate — effective ${effectiveFrom}` : editRate ? 'Edit Local Charge' : 'Add Local Charge'}
           </h2>
           <button onClick={onClose} className="p-1 rounded hover:bg-[var(--surface)] transition-colors">
             <X size={16} className="text-[var(--text-muted)]" />
@@ -193,11 +207,30 @@ export function LocalChargesModal({ open, onClose, onSave, editRate }: LocalChar
               <input type="date" value={effectiveFrom} onChange={e => setEffectiveFrom(e.target.value)}
                 className={inputCls} />
             </label>
-            <label className="space-y-1">
-              <span className="text-xs font-medium text-[var(--text-muted)]">Effective To</span>
-              <input type="date" value={effectiveTo} onChange={e => setEffectiveTo(e.target.value)}
-                className={inputCls} />
-            </label>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-[var(--text-muted)]">Effective To</span>
+                {editRate && mode === 'edit' && effectiveTo && (
+                  <button
+                    type="button"
+                    onClick={() => setEffectiveTo('')}
+                    className="text-xs text-[var(--text-muted)] hover:text-red-500 underline cursor-pointer"
+                  >
+                    × Remove end date
+                  </button>
+                )}
+              </div>
+              <input
+                type="date"
+                value={effectiveTo}
+                onChange={e => setEffectiveTo(e.target.value)}
+                placeholder="Ongoing"
+                className={`${inputCls} ${dateRangeError ? 'border-red-400' : ''}`}
+              />
+              {dateRangeError && (
+                <p className="text-xs text-red-500">{dateRangeError}</p>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-2">
@@ -219,9 +252,9 @@ export function LocalChargesModal({ open, onClose, onSave, editRate }: LocalChar
             className="h-9 px-4 text-sm rounded-lg border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors">
             Cancel
           </button>
-          <button onClick={handleSubmit} disabled={saving || !portCode || !chargeCode || !price || !cost || !effectiveFrom}
+          <button onClick={handleSubmit} disabled={saving || !portCode || !chargeCode || !price || !cost || !effectiveFrom || !!dateRangeError}
             className="h-9 px-4 text-sm rounded-lg bg-[var(--sky)] text-white font-medium hover:bg-[var(--sky)]/90 disabled:opacity-50 transition-colors">
-            {saving ? 'Saving...' : editRate ? 'Update' : 'Create'}
+            {saving ? 'Saving...' : mode === 'new-rate' ? 'Create New Rate' : editRate ? 'Update' : 'Create'}
           </button>
         </div>
       </div>

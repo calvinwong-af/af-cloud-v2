@@ -5,7 +5,12 @@
 import { ClipboardList } from 'lucide-react';
 import { CustomsRatesTab } from './_customs-table';
 
-export default function CustomsPage() {
+export default async function CustomsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ country?: string; alerts?: string }>;
+}) {
+  const params = await searchParams;
   return (
     <div className="p-6 space-y-6">
       <div>
@@ -18,7 +23,7 @@ export default function CustomsPage() {
         </p>
       </div>
 
-      <CustomsRatesTab countryCode="MY" />
+      <CustomsRatesTab countryCode="MY" alertFilter={params.alerts} />
     </div>
   );
 }

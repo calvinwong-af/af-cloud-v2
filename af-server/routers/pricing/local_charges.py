@@ -48,6 +48,7 @@ class LocalChargeCreate(BaseModel):
     effective_from: str
     effective_to: Optional[str] = None
     is_active: bool = True
+    close_previous: bool = True
 
 
 class LocalChargeUpdate(BaseModel):
@@ -328,6 +329,10 @@ async def create_local_charge(
     if body.uom not in _VALID_UOMS:
         raise HTTPException(status_code=400, detail=f"Invalid uom: {body.uom}")
 
+    # Date range sanity check
+    if body.effective_to and body.effective_to < body.effective_from:
+        raise HTTPException(status_code=400, detail="effective_to cannot be before effective_from")
+
     # Check uniqueness
     existing = conn.execute(text("""
         SELECT id FROM local_charges
@@ -382,6 +387,35 @@ async def create_local_charge(
         "now": now,
     })
     new_id = result.fetchone()[0]
+
+    # Auto-close previous open-ended row for the same card key
+    if body.close_previous:
+        conn.execute(text("""
+            UPDATE local_charges
+            SET effective_to = (CAST(:eff_from AS date) - INTERVAL '1 day')::date,
+                updated_at = :now
+            WHERE port_code = :port
+              AND trade_direction = :direction
+              AND shipment_type = :stype
+              AND container_size = :csize
+              AND container_type = :ctype
+              AND charge_code = :charge
+              AND is_domestic = :domestic
+              AND effective_to IS NULL
+              AND id != :new_id
+        """), {
+            "eff_from": body.effective_from,
+            "now": now,
+            "port": body.port_code,
+            "direction": body.trade_direction,
+            "stype": body.shipment_type,
+            "csize": body.container_size,
+            "ctype": body.container_type,
+            "charge": body.charge_code,
+            "domestic": body.is_domestic,
+            "new_id": new_id,
+        })
+
     conn.commit()
 
     return {"status": "OK", "data": {"id": new_id}}
@@ -439,6 +473,19 @@ async def update_local_charge(
 
     if not updates:
         return {"status": "OK", "data": {"msg": "No fields to update"}}
+
+    # Date range sanity check — resolve final effective_from/to across provided + existing values
+    eff_from_final = params.get("effective_from")
+    eff_to_final = params.get("effective_to")  # None means cleared (open-ended), not absent
+    if "effective_from" not in provided or "effective_to" not in provided:
+        row = conn.execute(text("SELECT effective_from, effective_to FROM local_charges WHERE id = :id"), {"id": rate_id}).fetchone()
+        if row:
+            if "effective_from" not in provided:
+                eff_from_final = str(row[0]) if row[0] else None
+            if "effective_to" not in provided:
+                eff_to_final = str(row[1]) if row[1] else None
+    if eff_from_final and eff_to_final and eff_to_final < eff_from_final:
+        raise HTTPException(status_code=400, detail="effective_to cannot be before effective_from")
 
     updates.append("updated_at = :now")
     params["now"] = datetime.now(timezone.utc).isoformat()

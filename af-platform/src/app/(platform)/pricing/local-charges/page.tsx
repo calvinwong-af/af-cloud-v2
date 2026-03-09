@@ -1,7 +1,12 @@
 import { Warehouse } from 'lucide-react';
 import { LocalChargesTab } from './_local-charges-table';
 
-export default function LocalChargesPage() {
+export default async function LocalChargesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ country?: string; alerts?: string }>;
+}) {
+  const params = await searchParams;
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -13,7 +18,7 @@ export default function LocalChargesPage() {
           <p className="text-xs text-[var(--text-muted)]">Port-level charges — THC, documentation, handling, etc.</p>
         </div>
       </div>
-      <LocalChargesTab countryCode="MY" />
+      <LocalChargesTab countryCode="MY" alertFilter={params.alerts} />
     </div>
   );
 }

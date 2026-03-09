@@ -75,6 +75,10 @@ export function RateModal({ open, mode, rateId, initial, cardMode, cardId, compa
 
   if (!open) return null;
 
+  const dateRangeError = effTo && effFrom && effTo < effFrom
+    ? 'Effective To cannot be before Effective From'
+    : null;
+
   const isListPriceMode = mode === 'add-list-price'
     || (mode === 'edit' && initial?.supplier_id === null)
     || (mode === 'update' && initial?.supplier_id === null);
@@ -169,10 +173,26 @@ export function RateModal({ open, mode, rateId, initial, cardMode, cardId, compa
               <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">Effective from</span>
               <input type="date" value={effFrom} onChange={e => setEffFrom(e.target.value)} className={inputClass} required />
             </label>
-            <label>
-              <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">Effective to</span>
-              <input type="date" value={effTo} onChange={e => setEffTo(e.target.value)} className={inputClass} placeholder="Open-ended" />
-            </label>
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">Effective to</span>
+                {mode === 'edit' && effTo && (
+                  <button
+                    type="button"
+                    onClick={() => setEffTo('')}
+                    className="text-xs text-[var(--text-muted)] hover:text-red-500 underline cursor-pointer"
+                  >
+                    × Remove end date
+                  </button>
+                )}
+              </div>
+              <input type="date" value={effTo} onChange={e => setEffTo(e.target.value)}
+                className={`${inputClass} ${dateRangeError ? '!border-red-400' : ''}`}
+                placeholder="Ongoing" />
+              {dateRangeError && (
+                <p className="text-xs text-red-500 mt-0.5">{dateRangeError}</p>
+              )}
+            </div>
           </div>
 
           {/* Currency + Status row */}

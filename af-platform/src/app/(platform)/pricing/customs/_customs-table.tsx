@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { ChevronDown, ChevronRight, Plus, Warehouse } from 'lucide-react';
+import { ChevronDown, ChevronRight, Pencil, Plus, Warehouse } from 'lucide-react';
 import {
   fetchPricingCountriesAction,
   fetchCustomsRateCardsAction,
   fetchCustomsRatePortsAction,
+  createCustomsRateAction,
+  updateCustomsRateAction,
 } from '@/app/actions/pricing';
 import type { PricingCountry, CustomsRateCard, CustomsRate } from '@/app/actions/pricing';
 import { fetchPortsAction } from '@/app/actions/shipments';
@@ -20,12 +22,31 @@ const SHIPMENT_TYPE_OPTIONS = [
   { value: 'LCL', label: 'LCL' },
   { value: 'AIR', label: 'AIR' },
   { value: 'CB', label: 'CB' },
-  { value: 'ALL', label: 'ALL' },
 ];
+
+const UOM_TOOLTIPS: Record<string, string> = {
+  CONTAINER: 'Per container (FCL)',
+  CBM: 'Per cubic metre (LCL)',
+  KG: 'Per kilogram — gross weight',
+  'W/M': 'W/M — Weight or Measurement (revenue tonne)',
+  CW_KG: 'CW — Chargeable weight in kg (AIR)',
+  SET: 'Per set — fixed fee, qty 1',
+  BL: 'Per Bill of Lading',
+};
 
 const directionBadge = (d: string) => {
   const cls = d === 'IMPORT' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700';
-  return <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${cls}`}>{d}</span>;
+  const tip = d === 'IMPORT' ? 'Import — inbound shipment' : 'Export — outbound shipment';
+  const label = d === 'IMPORT' ? 'IMP' : d === 'EXPORT' ? 'EXP' : d;
+  return <span title={tip} className={`text-[10px] font-medium px-1.5 py-0.5 rounded cursor-help ${cls}`}>{label}</span>;
+};
+
+const TYPE_TOOLTIPS: Record<string, string> = {
+  FCL: 'FCL — Full Container Load',
+  LCL: 'LCL — Less than Container Load',
+  AIR: 'AIR — Air freight',
+  CB: 'CB — Cross-border',
+  ALL: 'ALL — Applies to all shipment types',
 };
 
 const typeBadge = (t: string) => {
@@ -36,10 +57,22 @@ const typeBadge = (t: string) => {
     CB: 'bg-slate-100 text-slate-600',
     ALL: 'bg-slate-100 text-slate-600',
   };
-  return <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${colors[t] ?? 'bg-slate-100 text-slate-600'}`}>{t}</span>;
+  return <span title={TYPE_TOOLTIPS[t] ?? t} className={`text-[10px] font-medium px-1.5 py-0.5 rounded cursor-help ${colors[t] ?? 'bg-slate-100 text-slate-600'}`}>{t}</span>;
 };
 
-function CustomsRatesTab({ countryCode }: { countryCode?: string }) {
+function getCustomsAlertLevel(card: CustomsRateCard): 'cost_exceeds_price' | 'no_active_cost' | null {
+  const today = new Date();
+  const currentKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const bucket = (card.time_series ?? []).find(t => t.month_key === currentKey);
+  if (!bucket) return null;
+  const price = bucket.price;
+  const cost = bucket.cost;
+  if (price != null && cost != null && cost > price) return 'cost_exceeds_price';
+  if (price != null && cost == null) return 'no_active_cost';
+  return null;
+}
+
+function CustomsRatesTab({ countryCode, alertFilter }: { countryCode?: string; alertFilter?: string }) {
   const [countries, setCountries] = useState<PricingCountry[]>([]);
   const [country, setCountry] = useState(countryCode ?? 'MY');
   const [portOptions, setPortOptions] = useState<string[]>([]);
@@ -52,6 +85,9 @@ function CustomsRatesTab({ countryCode }: { countryCode?: string }) {
   const [portsMap, setPortsMap] = useState<Record<string, { name: string; country_name: string }>>({});
   const [modalOpen, setModalOpen] = useState(false);
   const [editRate, setEditRate] = useState<CustomsRate | null>(null);
+  const [editRateId, setEditRateId] = useState<number | null>(null);
+  const [modalMode, setModalMode] = useState<'edit' | 'new-rate'>('edit');
+  const [showIssuesOnly, setShowIssuesOnly] = useState(!!alertFilter);
 
   useEffect(() => {
     fetchPricingCountriesAction().then(r => { if (r?.success) setCountries(r.data); });
@@ -83,24 +119,30 @@ function CustomsRatesTab({ countryCode }: { countryCode?: string }) {
     setLoading(true);
     fetchCustomsRateCardsAction({
       portCode: portFilter,
-      shipmentType: shipmentTypeFilter || undefined,
       isActive: showInactive ? undefined : true,
     }).then(r => {
       if (r?.success) setCards(r.data);
       setLoading(false);
     });
-  }, [portFilter, shipmentTypeFilter, showInactive]);
+  }, [portFilter, showInactive]);
 
   useEffect(() => { fetchCards(); }, [fetchCards]);
 
   const filteredCards = useMemo(() => {
-    if (!textFilter.trim()) return cards;
+    let result = cards;
+    if (showIssuesOnly) {
+      result = result.filter(c => getCustomsAlertLevel(c) !== null);
+    }
+    if (shipmentTypeFilter) {
+      result = result.filter(c => c.shipment_type === shipmentTypeFilter || c.shipment_type === 'ALL');
+    }
+    if (!textFilter.trim()) return result;
     const q = textFilter.trim().toLowerCase();
-    return cards.filter(c =>
+    return result.filter(c =>
       c.charge_code.toLowerCase().includes(q) ||
       c.description.toLowerCase().includes(q)
     );
-  }, [cards, textFilter]);
+  }, [cards, showIssuesOnly, shipmentTypeFilter, textFilter]);
 
   const portComboOptions = [
     { value: '', label: 'All Ports' },
@@ -128,9 +170,20 @@ function CustomsRatesTab({ countryCode }: { countryCode?: string }) {
           <PortCombobox value={shipmentTypeFilter} onChange={setShipmentTypeFilter} options={SHIPMENT_TYPE_OPTIONS} placeholder="All Types" />
         </div>
         <ToggleSwitch checked={showInactive} onChange={setShowInactive} label="Show inactive" />
+        <button
+          onClick={() => setShowIssuesOnly(v => !v)}
+          className={`h-9 px-3 text-sm rounded-lg border font-medium transition-colors flex items-center gap-1.5 ${
+            showIssuesOnly
+              ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100'
+              : 'bg-white border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--text-muted)]'
+          }`}
+        >
+          <span className={`w-1.5 h-1.5 rounded-full ${showIssuesOnly ? 'bg-red-500' : 'bg-[var(--text-muted)]'}`} />
+          Issues only
+        </button>
         <div className="flex-1" />
         <button
-          onClick={() => { setEditRate(null); setModalOpen(true); }}
+          onClick={() => { setEditRate(null); setEditRateId(null); setModalMode('edit'); setModalOpen(true); }}
           className="h-9 px-3 text-sm rounded-lg bg-[var(--sky)] text-white font-medium hover:bg-[var(--sky)]/90 transition-colors flex items-center gap-1.5"
         >
           <Plus size={14} /> Add Rate
@@ -162,18 +215,58 @@ function CustomsRatesTab({ countryCode }: { countryCode?: string }) {
         </div>
       ) : (
         <>
-          <CustomsCardList cards={filteredCards} loading={loading} />
+          <CustomsCardList
+            cards={filteredCards}
+            loading={loading}
+            onAction={(card, rateId, price, cost, actionMode) => {
+              setEditRateId(rateId);
+              setModalMode(actionMode);
+              setEditRate({
+                id: rateId,
+                port_code: card.port_code,
+                trade_direction: card.trade_direction,
+                shipment_type: card.shipment_type,
+                charge_code: card.charge_code,
+                description: card.description,
+                price: price ?? 0,
+                cost: cost ?? 0,
+                currency: card.currency,
+                uom: card.uom,
+                is_domestic: card.is_domestic,
+                effective_from: card.latest_effective_from ?? '',
+                effective_to: card.latest_effective_to ?? null,
+                is_active: card.is_active,
+                created_at: '',
+                updated_at: '',
+              });
+              setModalOpen(true);
+            }}
+          />
           <div className="text-xs text-[var(--text-muted)]">
-            {filteredCards.length}{filteredCards.length !== cards.length ? ` of ${cards.length}` : ''} charge codes
+            {showIssuesOnly
+              ? `${filteredCards.length} charge${filteredCards.length !== 1 ? 's' : ''} with issues`
+              : `${filteredCards.length}${filteredCards.length !== cards.length ? ` of ${cards.length}` : ''} charge codes`
+            }
           </div>
         </>
       )}
 
       <CustomsModal
         open={modalOpen}
-        onClose={() => { setModalOpen(false); setEditRate(null); }}
-        onSave={async () => { setModalOpen(false); setEditRate(null); fetchCards(); }}
+        onClose={() => { setModalOpen(false); setEditRate(null); setEditRateId(null); }}
+        onSave={async (data) => {
+          if (editRateId && modalMode === 'edit') {
+            await updateCustomsRateAction(editRateId, data);
+          } else {
+            await createCustomsRateAction(data);
+          }
+          setModalOpen(false);
+          setEditRate(null);
+          setEditRateId(null);
+          fetchCards();
+        }}
         editRate={editRate}
+        mode={modalMode}
       />
     </div>
   );
@@ -186,9 +279,11 @@ function CustomsRatesTab({ countryCode }: { countryCode?: string }) {
 function CustomsCardList({
   cards,
   loading,
+  onAction,
 }: {
   cards: CustomsRateCard[];
   loading: boolean;
+  onAction: (card: CustomsRateCard, rateId: number, price: number | null, cost: number | null, mode: 'edit' | 'new-rate') => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [historicalCount, setHistoricalCount] = useState(6);
@@ -221,8 +316,8 @@ function CustomsCardList({
   };
 
   const groups = useMemo(() => [
-    { label: 'IMPORT', cards: cards.filter(c => c.trade_direction === 'IMPORT') },
     { label: 'EXPORT', cards: cards.filter(c => c.trade_direction === 'EXPORT') },
+    { label: 'IMPORT', cards: cards.filter(c => c.trade_direction === 'IMPORT') },
   ].filter(g => g.cards.length > 0), [cards]);
 
   if (loading) {
@@ -309,15 +404,22 @@ function CustomsCardList({
                 {!isCollapsed && group.cards.map(card => {
                   const ts = card.time_series ?? [];
                   const tsMap = new Map(ts.map(t => [t.month_key, t]));
+                  const alertLevel = getCustomsAlertLevel(card);
 
                   return (
                     <div
                       key={card.card_key}
-                      className="flex border-b border-[var(--border)] hover:bg-[var(--sky-mist)]/10 border-l-2 border-l-transparent"
+                      className={`flex border-b border-[var(--border)] border-l-2 ${
+                        alertLevel === 'cost_exceeds_price'
+                          ? 'bg-red-50 hover:bg-red-100/70 border-l-red-400'
+                          : alertLevel === 'no_active_cost'
+                          ? 'bg-red-50 hover:bg-red-100/70 border-l-red-500'
+                          : 'hover:bg-[var(--sky-mist)]/10 border-l-transparent'
+                      }`}
                       style={{ minWidth: `${totalWidth}px` }}
                     >
                       {/* Left identity panel */}
-                      <div className="w-[260px] shrink-0 px-3 py-2.5 flex flex-col gap-0.5">
+                      <div className="w-[260px] shrink-0 px-3 py-2.5 flex flex-col gap-0.5 relative group">
                         <div className="flex items-center gap-1.5">
                           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${card.is_active ? 'bg-emerald-500' : 'bg-red-400'}`} />
                           <span className="text-sm font-semibold text-[var(--text)] truncate">{card.charge_code}</span>
@@ -327,15 +429,58 @@ function CustomsCardList({
                           {directionBadge(card.trade_direction)}
                           {typeBadge(card.shipment_type)}
                           {card.is_domestic && (
-                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">DOM</span>
+                            <span title="DOM — Domestic (local delivery component)" className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 cursor-help">DOM</span>
+                          )}
+                          <span title={UOM_TOOLTIPS[card.uom] ?? card.uom} className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 cursor-help">{card.uom}</span>
+                          {alertLevel === 'cost_exceeds_price' && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-200 text-red-800 font-semibold">
+                              Cost exceeds price
+                            </span>
+                          )}
+                          {alertLevel === 'no_active_cost' && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-semibold border border-red-300">
+                              Cost expired
+                            </span>
                           )}
                         </div>
-                        <span className="text-[10px] text-[var(--text-muted)]/60 pl-3">{card.uom}</span>
                         <span className="text-[10px] text-[var(--text-muted)]/60 pl-3">
                           {card.latest_effective_from
                             ? `Eff: ${formatDate(card.latest_effective_from)}${card.latest_effective_to ? ` \u2013 ${formatDate(card.latest_effective_to)}` : ' \u2013 ongoing'}`
                             : '\u2014'}
                         </span>
+                        <div className="absolute top-2 right-2 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+                          <button
+                            onClick={e => {
+                              e.stopPropagation();
+                              // Edit: use the LATEST rate entry (highest month_key) so the
+                              // rate_id, price and cost all correspond to the same row.
+                              const tsList = card.time_series ?? [];
+                              const latest = tsList.length > 0
+                                ? tsList.reduce((a, b) => b.month_key > a.month_key ? b : a)
+                                : null;
+                              onAction(card, latest?.rate_id ?? 0, latest?.price ?? null, latest?.cost ?? null, 'edit');
+                            }}
+                            className="p-1 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--text)]"
+                            title="Edit rate"
+                          >
+                            <Pencil size={12} />
+                          </button>
+                          <button
+                            onClick={e => {
+                              e.stopPropagation();
+                              // New rate: also seed from the latest rate's values.
+                              const tsList = card.time_series ?? [];
+                              const latest = tsList.length > 0
+                                ? tsList.reduce((a, b) => b.month_key > a.month_key ? b : a)
+                                : null;
+                              onAction(card, latest?.rate_id ?? 0, latest?.price ?? null, latest?.cost ?? null, 'new-rate');
+                            }}
+                            className="p-1 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--sky)]"
+                            title="New rate"
+                          >
+                            <Plus size={12} />
+                          </button>
+                        </div>
                       </div>
 
                       {/* Right: time-series cells */}
@@ -353,7 +498,11 @@ function CustomsCardList({
                             >
                               {hasData ? (
                                 <>
-                                  <div className="text-xs font-medium text-[var(--text)]">
+                                  <div className={`text-xs font-medium ${
+                                    m.isCurrentMonth && alertLevel === 'cost_exceeds_price' ? 'text-red-700 font-semibold' :
+                                    m.isCurrentMonth && alertLevel === 'no_active_cost' ? 'text-red-600 font-semibold' :
+                                    'text-[var(--text)]'
+                                  }`}>
                                     {formatCompact(bucket.price)}
                                   </div>
                                   <div className="text-[10px] text-[var(--text-muted)]">
