@@ -1,5 +1,10 @@
 # Prompt Completion Log — v5.61–v5.70
 
+### [2026-03-10 04:30 UTC] — v5.70: Pricing Dashboard Alert Badge Fix
+- **Status:** Completed
+- **Tasks:** Replaced `expiring_soon`-based status badge in `ActiveCard` with sum of all four alert scenario counts (`cost_exceeds_price + no_active_cost + no_list_price + price_review_needed`). FCL/LCL no longer show inflated "391/198 cards need attention"; Local Charges/Customs now correctly reflect real alert counts.
+- **Files Modified:** `af-platform/src/app/(platform)/pricing/_dashboard.tsx`
+
 ### [2026-03-09 16:00 UTC] — v5.69: Full Alert Standardisation Across All Pricing Modules
 - **Status:** Completed
 - **Tasks:** (A) Backend dashboard: added Scenario 4 `no_active_cost` SQL count for FCL/LCL — list price active but no supplier cost covering today. (B) FCL + LCL `alerts_only` filter: added Scenario 4 OR clause to existing 3-scenario block. (C) TypeScript types: added `no_active_cost: number` to `DashboardComponentSummary`; added `'local-charges'` and `'customs'` keys to `DashboardSummary`. (D) Dashboard frontend: added `no_active_cost` to `ActiveCard` stats type, alert row ("X costs expired" in red), updated visibility condition. (E) Local charges table: added `getLocalChargeAlertLevel()` helper (checks current month bucket for cost>price or missing cost), row/badge/cell alert coloring, `alertFilter` prop, `showIssuesOnly` state + toggle button, client-side issues filter in `filteredCards`, updated footer count. (F) Customs table: identical alert treatment with `getCustomsAlertLevel()`. (G) Backend dashboard: added flat-rate loop for `local-charges` and `customs_rates` tables with `total_cards`, `last_updated`, `cost_exceeds_price`, `no_active_cost` counts. Customs uses 5-column DISTINCT key (no container_size/type), local_charges uses 7-column key. (J/K) Pages: `local-charges/page.tsx` and `customs/page.tsx` now accept `searchParams.alerts` and forward as `alertFilter` prop. (L/M) Issues Only toggle + filter added to both tables.

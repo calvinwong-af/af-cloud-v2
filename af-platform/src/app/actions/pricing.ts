@@ -112,6 +112,7 @@ export interface DashboardSummary {
   lcl: DashboardComponentSummary;
   'local-charges': DashboardComponentSummary;
   customs: DashboardComponentSummary;
+  'port-transport': DashboardComponentSummary;
 }
 
 export async function fetchPricingDashboardSummaryAction(
@@ -544,4 +545,177 @@ export async function deleteCustomsRateAction(
   id: number,
 ): Promise<ActionResult<{ msg: string }>> {
   return pricingMutate(`/api/v2/pricing/customs/rates/${id}`, 'DELETE');
+}
+
+// ---------------------------------------------------------------------------
+// Port Transport
+// ---------------------------------------------------------------------------
+
+export interface PortTransportArea {
+  area_id: number;
+  area_code: string;
+  area_name: string;
+  port_un_code: string;
+  state_code: string;
+  state_name: string;
+}
+
+export interface VehicleType {
+  vehicle_type_id: string;
+  label: string;
+  category: string;
+  sort_order: number;
+}
+
+export interface PortTransportRateCard {
+  id: number;
+  rate_card_key: string;
+  port_un_code: string;
+  area_id: number;
+  area_name: string;
+  area_code: string;
+  vehicle_type_id: string;
+  vehicle_type_label: string;
+  include_depot_gate_fee: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  latest_price_ref: { list_price: number | null; currency: string; effective_from: string } | null;
+  pending_draft_count: number;
+  latest_list_price_from: string | null;
+  latest_cost_from: string | null;
+  time_series: PortTransportTimeSeries[];
+  rates_by_supplier?: Record<string, PortTransportRate[]>;
+}
+
+export interface PortTransportTimeSeries {
+  month_key: string;
+  list_price: number | null;
+  cost: number | null;
+  currency: string | null;
+  rate_status: string | null;
+  surcharge_total: number;
+  list_surcharge_total?: number;
+  cost_surcharge_total?: number;
+  has_surcharges: boolean;
+}
+
+export interface PortTransportRate {
+  id: number;
+  rate_card_id: number;
+  supplier_id: string | null;
+  effective_from: string;
+  effective_to: string | null;
+  rate_status: string;
+  currency: string;
+  uom: string;
+  list_price: number | null;
+  cost: number | null;
+  min_list_price: number | null;
+  min_cost: number | null;
+  surcharges: SurchargeItem[] | null;
+  roundup_qty: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchPortTransportPortsAction(
+  countryCode?: string
+): Promise<ActionResult<string[]>> {
+  const sp = new URLSearchParams({ is_active: 'true' });
+  if (countryCode) sp.set('country_code', countryCode);
+  return pricingFetch(`/api/v2/pricing/port-transport/ports?${sp.toString()}`);
+}
+
+export async function fetchPortTransportAreasAction(
+  portUnCode?: string
+): Promise<ActionResult<PortTransportArea[]>> {
+  const sp = new URLSearchParams();
+  if (portUnCode) sp.set('port_un_code', portUnCode);
+  const qs = sp.toString();
+  return pricingFetch(`/api/v2/pricing/port-transport/areas${qs ? `?${qs}` : ''}`);
+}
+
+export async function fetchPortTransportVehicleTypesAction(): Promise<ActionResult<VehicleType[]>> {
+  return pricingFetch('/api/v2/pricing/port-transport/vehicle-types');
+}
+
+export async function fetchPortTransportRateCardsAction(params: {
+  countryCode?: string;
+  portUnCode?: string;
+  areaId?: number;
+  vehicleTypeId?: string;
+  isActive?: boolean;
+  alertsOnly?: boolean;
+}): Promise<ActionResult<PortTransportRateCard[]>> {
+  const sp = new URLSearchParams();
+  if (params.countryCode) sp.set('country_code', params.countryCode);
+  if (params.portUnCode) sp.set('port_un_code', params.portUnCode);
+  if (params.areaId) sp.set('area_id', String(params.areaId));
+  if (params.vehicleTypeId) sp.set('vehicle_type_id', params.vehicleTypeId);
+  if (params.isActive !== undefined) sp.set('is_active', String(params.isActive));
+  if (params.alertsOnly) sp.set('alerts_only', 'true');
+  const qs = sp.toString();
+  return pricingFetch(`/api/v2/pricing/port-transport/rate-cards${qs ? `?${qs}` : ''}`);
+}
+
+export async function fetchPortTransportRateCardDetailAction(
+  cardId: number
+): Promise<ActionResult<PortTransportRateCard>> {
+  return pricingFetch(`/api/v2/pricing/port-transport/rate-cards/${cardId}`);
+}
+
+export async function createPortTransportRateCardAction(
+  data: { port_un_code: string; area_id: number; vehicle_type_id: string; include_depot_gate_fee?: boolean },
+): Promise<ActionResult<{ id: number }>> {
+  return pricingMutate('/api/v2/pricing/port-transport/rate-cards', 'POST', data);
+}
+
+export async function updatePortTransportRateCardAction(
+  cardId: number,
+  data: { include_depot_gate_fee?: boolean; is_active?: boolean },
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/port-transport/rate-cards/${cardId}`, 'PATCH', data);
+}
+
+export async function fetchPortTransportRatesAction(
+  cardId: number,
+  supplierId?: string,
+): Promise<ActionResult<PortTransportRate[]>> {
+  const sp = new URLSearchParams();
+  if (supplierId !== undefined) sp.set('supplier_id', supplierId);
+  const qs = sp.toString();
+  return pricingFetch(`/api/v2/pricing/port-transport/rate-cards/${cardId}/rates${qs ? `?${qs}` : ''}`);
+}
+
+export async function createPortTransportRateAction(
+  cardId: number,
+  data: Record<string, unknown>,
+): Promise<ActionResult<{ id: number }>> {
+  return pricingMutate(`/api/v2/pricing/port-transport/rate-cards/${cardId}/rates`, 'POST', data);
+}
+
+export async function updatePortTransportRateAction(
+  rateId: number,
+  data: Record<string, unknown>,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/port-transport/rates/${rateId}`, 'PATCH', data);
+}
+
+export async function publishPortTransportRateAction(
+  rateId: number,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/port-transport/rates/${rateId}/publish`, 'POST');
+}
+
+export async function rejectPortTransportRateAction(
+  rateId: number,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/port-transport/rates/${rateId}/reject`, 'POST');
+}
+
+export async function deletePortTransportRateAction(
+  rateId: number,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/port-transport/rates/${rateId}`, 'DELETE');
 }

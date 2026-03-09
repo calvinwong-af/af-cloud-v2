@@ -29,7 +29,7 @@ const PRICING_COMPONENTS: PricingComponent[] = [
   { key: 'local-charges',  label: 'Local Charges',          icon: Warehouse,     href: '/pricing/local-charges',    locked: false },
   { key: 'customs',        label: 'Customs Clearance',    icon: ClipboardList, href: '/pricing/customs',          locked: false },
   { key: 'haulage',        label: 'Haulage',              icon: Truck,     href: '/pricing/haulage',          locked: true  },
-  { key: 'transportation', label: 'Transportation',        icon: Car,       href: '/pricing/transportation',   locked: true  },
+  { key: 'port-transport', label: 'Transportation',        icon: Car,       href: '/pricing/transportation',   locked: false },
 ];
 
 export function PricingDashboard() {
@@ -151,15 +151,18 @@ function ActiveCard({
           <div className="text-xs text-[var(--text-muted)]">
             Last Updated: {formatDate(stats.last_updated)}
           </div>
-          {stats.expiring_soon > 0 ? (
-            <div className="text-xs font-medium px-2 py-1 rounded-md bg-amber-50 text-amber-600 inline-block">
-              {stats.expiring_soon} cards need attention
-            </div>
-          ) : (
-            <div className="text-xs font-medium px-2 py-1 rounded-md bg-emerald-50 text-emerald-600 inline-block">
-              Up to date
-            </div>
-          )}
+          {(() => {
+            const expiringSoon = stats.expiring_soon ?? 0;
+            return expiringSoon > 0 ? (
+              <div className="text-xs font-medium px-2 py-1 rounded-md bg-amber-50 text-amber-600 inline-block">
+                {expiringSoon} card{expiringSoon !== 1 ? 's' : ''} need attention
+              </div>
+            ) : (
+              <div className="text-xs font-medium px-2 py-1 rounded-md bg-emerald-50 text-emerald-600 inline-block">
+                Up to date
+              </div>
+            );
+          })()}
           {(stats.cost_exceeds_price > 0 || stats.no_active_cost > 0 || stats.no_list_price > 0 || stats.price_review_needed > 0) && (
             <div className="mt-2 pt-2 border-t border-[var(--border)] space-y-1">
               {stats.cost_exceeds_price > 0 && (

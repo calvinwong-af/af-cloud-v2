@@ -1,18 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import type { RateDetail } from '@/app/actions/pricing';
 import {
-  createFCLRateAction, createLCLRateAction,
-  updateFCLRateAction, updateLCLRateAction,
+  createPortTransportRateAction,
+  updatePortTransportRateAction,
 } from '@/app/actions/pricing';
 
-interface RateModalProps {
+interface PortTransportRateModalProps {
   open: boolean;
   mode: 'add-list-price' | 'add-supplier' | 'edit' | 'update';
   rateId?: number;
-  initial?: RateDetail;
-  cardMode: 'fcl' | 'lcl';
+  initial?: Record<string, unknown>;
   cardId: number;
   companiesList: { company_id: string; name: string }[];
   onSaved: () => void;
@@ -21,22 +19,24 @@ interface RateModalProps {
 
 const inputClass = "h-8 px-2 text-xs rounded border border-[var(--border)] bg-white text-[var(--text)] focus:outline-none focus:ring-1 focus:ring-[var(--sky)] focus:border-[var(--sky)] w-full";
 
-export function RateModal({ open, mode, rateId, initial, cardMode, cardId, companiesList, onSaved, onClose }: RateModalProps) {
+export function PortTransportRateModal({ open, mode, rateId, initial, cardId, companiesList, onSaved, onClose }: PortTransportRateModalProps) {
   const [saving, setSaving] = useState(false);
   const [supplier, setSupplier] = useState('');
   const [effFrom, setEffFrom] = useState('');
   const [effTo, setEffTo] = useState('');
-  const [currency, setCurrency] = useState('USD');
+  const [currency, setCurrency] = useState('MYR');
+  const [uom, setUom] = useState('SET');
   const [listPrice, setListPrice] = useState('');
   const [cost, setCost] = useState('');
-  const [minQuantity, setMinQuantity] = useState('');
+  const [minListPrice, setMinListPrice] = useState('');
+  const [minCost, setMinCost] = useState('');
   const [status, setStatus] = useState('PUBLISHED');
   const [surcharges, setSurcharges] = useState<{ code: string; description: string; amount: string }[]>([]);
 
   useEffect(() => {
     if (!open) return;
     if ((mode === 'edit' || mode === 'update') && initial) {
-      setSupplier(initial.supplier_id ?? '');
+      setSupplier((initial.supplier_id as string) ?? '');
       if (mode === 'update') {
         const now = new Date();
         const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
@@ -45,16 +45,18 @@ export function RateModal({ open, mode, rateId, initial, cardMode, cardId, compa
         setEffFrom(`${yyyy}-${mm}-01`);
         setEffTo('');
       } else {
-        setEffFrom(initial.effective_from ?? '');
-        setEffTo(initial.effective_to ?? '');
+        setEffFrom((initial.effective_from as string) ?? '');
+        setEffTo((initial.effective_to as string) ?? '');
       }
-      setCurrency(initial.currency);
+      setCurrency((initial.currency as string) ?? 'MYR');
+      setUom((initial.uom as string) ?? 'SET');
       setListPrice(initial.list_price != null ? String(initial.list_price) : '');
       setCost(initial.cost != null ? String(initial.cost) : '');
-      setMinQuantity(initial.min_quantity != null ? String(initial.min_quantity) : '');
+      setMinListPrice(initial.min_list_price != null ? String(initial.min_list_price) : '');
+      setMinCost(initial.min_cost != null ? String(initial.min_cost) : '');
       setStatus('PUBLISHED');
       setSurcharges(
-        (initial.surcharges ?? []).map(s => ({
+        ((initial.surcharges as Array<{ code: string; description: string; amount: number }>) ?? []).map(s => ({
           code: s.code,
           description: s.description,
           amount: String(s.amount),
@@ -64,10 +66,12 @@ export function RateModal({ open, mode, rateId, initial, cardMode, cardId, compa
       setSupplier('');
       setEffFrom('');
       setEffTo('');
-      setCurrency('USD');
+      setCurrency('MYR');
+      setUom('SET');
       setListPrice('');
       setCost('');
-      setMinQuantity('');
+      setMinListPrice('');
+      setMinCost('');
       setStatus('PUBLISHED');
       setSurcharges([]);
     }
@@ -94,38 +98,39 @@ export function RateModal({ open, mode, rateId, initial, cardMode, cardId, compa
     setSaving(true);
     try {
       if (mode === 'add-list-price' || mode === 'add-supplier' || mode === 'update') {
-        const isSupplierRow = mode === 'add-supplier'
-          || ((mode === 'update') && initial?.supplier_id != null);
-        const data = {
+        const data: Record<string, unknown> = {
           supplier_id: mode === 'add-list-price' ? null
             : mode === 'update' ? (initial?.supplier_id ?? null)
             : (supplier || null),
           effective_from: effFrom,
           effective_to: effTo || null,
           currency,
-          uom: cardMode === 'fcl' ? 'CONTAINER' : 'W/M',
+          uom,
           list_price: listPrice ? parseFloat(listPrice) : null,
           cost: cost ? parseFloat(cost) : null,
-          min_quantity: (cardMode === 'lcl' && isSupplierRow && minQuantity) ? parseFloat(minQuantity) : null,
+          min_list_price: minListPrice ? parseFloat(minListPrice) : null,
+          min_cost: minCost ? parseFloat(minCost) : null,
           surcharges: serializeSurcharges(),
           rate_status: status,
         };
-        const action = cardMode === 'fcl' ? createFCLRateAction : createLCLRateAction;
-        await action(cardId, data);
+        if (mode === 'update') {
+          data.close_previous = true;
+        }
+        await createPortTransportRateAction(cardId, data);
       } else if (mode === 'edit' && rateId != null) {
-        const isSupplierEdit = initial?.supplier_id != null;
         const data: Record<string, unknown> = {
           effective_from: effFrom || undefined,
           effective_to: effTo || null,
           currency,
+          uom,
           list_price: listPrice ? parseFloat(listPrice) : null,
           cost: cost ? parseFloat(cost) : null,
-          min_quantity: (cardMode === 'lcl' && isSupplierEdit && minQuantity) ? parseFloat(minQuantity) : null,
+          min_list_price: minListPrice ? parseFloat(minListPrice) : null,
+          min_cost: minCost ? parseFloat(minCost) : null,
           surcharges: serializeSurcharges(),
           rate_status: status,
         };
-        const action = cardMode === 'fcl' ? updateFCLRateAction : updateLCLRateAction;
-        await action(rateId, data);
+        await updatePortTransportRateAction(rateId, data);
       }
       onSaved();
       onClose();
@@ -197,11 +202,21 @@ export function RateModal({ open, mode, rateId, initial, cardMode, cardId, compa
             </div>
           </div>
 
-          {/* Currency + Status row */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Currency + UOM + Status row */}
+          <div className="grid grid-cols-3 gap-3">
             <label>
               <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">Currency</span>
               <input type="text" value={currency} onChange={e => setCurrency(e.target.value.toUpperCase())} maxLength={3} className={inputClass} />
+            </label>
+            <label>
+              <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">UOM</span>
+              <select value={uom} onChange={e => setUom(e.target.value)} className={inputClass}>
+                <option value="SET">SET</option>
+                <option value="RT">RT</option>
+                <option value="KG">KG</option>
+                <option value="CBM">CBM</option>
+                <option value="W/M">W/M</option>
+              </select>
             </label>
             <label>
               <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">Status</span>
@@ -212,35 +227,36 @@ export function RateModal({ open, mode, rateId, initial, cardMode, cardId, compa
             </label>
           </div>
 
-          {/* Price/Cost row */}
+          {/* Price/Cost fields */}
           {isListPriceMode ? (
-            <label>
-              <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">List price</span>
-              <input type="number" step="0.01" value={listPrice} onChange={e => setListPrice(e.target.value)} className={inputClass} />
-            </label>
-          ) : cardMode === 'lcl' ? (
+            <div className="grid grid-cols-2 gap-3">
+              <label>
+                <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">List Price</span>
+                <input type="number" step="0.01" value={listPrice} onChange={e => setListPrice(e.target.value)} className={inputClass} />
+              </label>
+              <label>
+                <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">Min List Price</span>
+                <input type="number" step="0.01" value={minListPrice} onChange={e => setMinListPrice(e.target.value)} className={inputClass} />
+              </label>
+            </div>
+          ) : (
             <div className="grid grid-cols-2 gap-3">
               <label>
                 <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">Cost</span>
                 <input type="number" step="0.01" value={cost} onChange={e => setCost(e.target.value)} className={inputClass} />
               </label>
               <label>
-                <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">Min qty (W/M)</span>
-                <input type="number" step="0.01" placeholder="e.g. 2" value={minQuantity} onChange={e => setMinQuantity(e.target.value)} className={inputClass} />
+                <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">Min Cost</span>
+                <input type="number" step="0.01" value={minCost} onChange={e => setMinCost(e.target.value)} className={inputClass} />
               </label>
             </div>
-          ) : (
-            <label>
-              <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">Cost</span>
-              <input type="number" step="0.01" value={cost} onChange={e => setCost(e.target.value)} className={inputClass} />
-            </label>
           )}
 
-          {/* Surcharges section — supplier rates only */}
+          {/* Surcharges section */}
           {!isListPriceMode && <div className="border-t border-[var(--border)] pt-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wide">
-                Surcharges <span className="normal-case font-normal">(optional — leave empty if freight is all-in)</span>
+                Surcharges <span className="normal-case font-normal">(optional)</span>
               </span>
               <button
                 type="button"
@@ -252,33 +268,17 @@ export function RateModal({ open, mode, rateId, initial, cardMode, cardId, compa
             </div>
             {surcharges.map((s, i) => (
               <div key={i} className="flex gap-2 items-center mb-1.5">
-                <input
-                  type="text"
-                  placeholder="Code"
-                  value={s.code}
+                <input type="text" placeholder="Code" value={s.code}
                   onChange={e => setSurcharges(prev => prev.map((x, j) => j === i ? { ...x, code: e.target.value } : x))}
-                  className={`${inputClass} !w-20`}
-                />
-                <input
-                  type="text"
-                  placeholder="Description"
-                  value={s.description}
+                  className={`${inputClass} !w-20`} />
+                <input type="text" placeholder="Description" value={s.description}
                   onChange={e => setSurcharges(prev => prev.map((x, j) => j === i ? { ...x, description: e.target.value } : x))}
-                  className={`${inputClass} !w-[200px]`}
-                />
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="Amount"
-                  value={s.amount}
+                  className={`${inputClass} !w-[200px]`} />
+                <input type="number" step="0.01" placeholder="Amount" value={s.amount}
                   onChange={e => setSurcharges(prev => prev.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))}
-                  className={`${inputClass} !w-[90px]`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setSurcharges(prev => prev.filter((_, j) => j !== i))}
-                  className="text-[10px] px-1.5 py-0.5 rounded border border-red-200 text-red-500 hover:bg-red-50 transition-colors shrink-0"
-                >
+                  className={`${inputClass} !w-[90px]`} />
+                <button type="button" onClick={() => setSurcharges(prev => prev.filter((_, j) => j !== i))}
+                  className="text-[10px] px-1.5 py-0.5 rounded border border-red-200 text-red-500 hover:bg-red-50 transition-colors shrink-0">
                   Remove
                 </button>
               </div>

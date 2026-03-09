@@ -345,8 +345,11 @@ export function TimeSeriesRateList({
                             <div className={`text-xs font-medium flex items-center justify-center gap-0 ${
                               isDraft ? 'text-amber-600' : cellAlert === 'cost_exceeds_price' ? 'text-red-700 font-semibold' : cellAlert === 'no_list_price' ? 'text-amber-700 font-semibold' : cellAlert === 'no_active_cost' ? 'text-red-600 font-semibold' : 'text-[var(--text)]'
                             }`}>
-                              {formatCompact((bucket.list_price ?? 0) + (bucket.list_surcharge_total ?? bucket.surcharge_total ?? 0))}
-                              {(bucket.list_surcharge_total ?? bucket.surcharge_total ?? 0) > 0 && (
+                              {bucket.list_price != null
+                                ? formatCompact(bucket.list_price + (bucket.list_surcharge_total ?? bucket.surcharge_total ?? 0))
+                                : <span className="text-[var(--text-muted)]/50">N/A</span>
+                              }
+                              {bucket.list_price != null && (bucket.list_surcharge_total ?? bucket.surcharge_total ?? 0) > 0 && (
                                 <SurchargeTooltip
                                   mode="list"
                                   listPrice={bucket.list_price}
@@ -357,8 +360,11 @@ export function TimeSeriesRateList({
                               )}
                             </div>
                             <div className="text-[10px] text-[var(--text-muted)] flex items-center justify-center gap-0">
-                              {formatCompact((bucket.cost ?? 0) + (bucket.cost_surcharge_total ?? bucket.surcharge_total ?? 0))}
-                              {(bucket.cost_surcharge_total ?? bucket.surcharge_total ?? 0) > 0 && (
+                              {bucket.cost != null
+                                ? formatCompact(bucket.cost + (bucket.cost_surcharge_total ?? bucket.surcharge_total ?? 0))
+                                : <span className="text-[var(--text-muted)]/50">N/A</span>
+                              }
+                              {bucket.cost != null && (bucket.cost_surcharge_total ?? bucket.surcharge_total ?? 0) > 0 && (
                                 <SurchargeTooltip
                                   mode="cost"
                                   listPrice={bucket.list_price}

@@ -27,3 +27,4 @@ export function ToggleSwitch({ checked, onChange, label }: { checked: boolean; o
 
 export { PricingDashboard } from './_dashboard';
 export { FCLRateCardsTab, LCLRateCardsTab } from './_rate-cards-tab';
+export { PortTransportRateCardsTab } from './transportation/_port-transport-rate-cards-tab';
