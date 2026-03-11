@@ -7,6 +7,10 @@ import {
 } from 'lucide-react';
 import { fetchShipmentTasksAction, updateShipmentTaskAction } from '@/app/actions/shipments-write';
 import type { WorkflowTask } from '@/app/actions/shipments-write';
+import { fetchTransportOrderByTaskAction } from '@/app/actions/ground-transport';
+import type { GroundTransportOrder } from '@/app/actions/ground-transport';
+import TransportOrderBadge from '@/components/ground-transport/TransportOrderBadge';
+import CreateGroundTransportModal from '@/components/ground-transport/CreateGroundTransportModal';
 import { DateTimeInput } from '@/components/shared/DateInput';
 
 // ---------------------------------------------------------------------------
@@ -47,7 +51,15 @@ interface ShipmentTasksProps {
   vesselName?: string | null;
   voyageNumber?: string | null;
   onTimingChanged?: () => void;
+  onTransportOrderCreated?: () => void;
   refreshKey?: number;
+  shipmentPolUnCode?: string | null;
+  shipmentPolName?: string | null;
+  shipmentPodUnCode?: string | null;
+  shipmentPodName?: string | null;
+  shipmentContainerNumbers?: string[];
+  shipmentWeightKg?: number | null;
+  shipmentVolumeCbm?: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,8 +95,6 @@ const STALE_LABELS = new Set([
 
 function getTaskLabel(task: WorkflowTask, orderType?: string): string {
   const stored = task.display_name;
-  // If stored name is valid (not stale), use it — unless it's a haulage
-  // label on a loose-cargo shipment, in which case override it.
   if (stored && !STALE_LABELS.has(stored)) {
     if (orderType && LOOSE_CARGO_TYPES.has(orderType)) {
       const override = LOOSE_CARGO_LABEL_OVERRIDES[task.task_type];
@@ -92,7 +102,6 @@ function getTaskLabel(task: WorkflowTask, orderType?: string): string {
     }
     return stored;
   }
-  // Fallback: use label map, with loose-cargo override if applicable
   if (orderType && LOOSE_CARGO_TYPES.has(orderType)) {
     const override = LOOSE_CARGO_LABEL_OVERRIDES[task.task_type];
     if (override) return override;
@@ -120,10 +129,6 @@ const ASSIGNED_LABELS: Record<string, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// Permission helpers
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // Freight-specific timing labels for TRACKED tasks
 // ---------------------------------------------------------------------------
 
@@ -134,7 +139,6 @@ function getTimingLabels(task: WorkflowTask): {
   completedLabel: string;
 } {
   if (task.mode === 'TRACKED') {
-    // Standardised across all TRACKED port tasks (POL, POD, transhipments)
     return { scheduledStartLabel: 'ETA', scheduledEndLabel: 'ETD', startedLabel: 'ATA', completedLabel: 'ATD' };
   }
   return { scheduledStartLabel: 'Sched. Start', scheduledEndLabel: 'Sched. End', startedLabel: 'Started', completedLabel: 'Completed' };
@@ -167,6 +171,15 @@ function TaskCard({
   saving,
   vesselName,
   voyageNumber,
+  shipmentId,
+  onTransportOrderCreated,
+  shipmentPolUnCode,
+  shipmentPolName,
+  shipmentPodUnCode,
+  shipmentPodName,
+  shipmentContainerNumbers,
+  shipmentWeightKg,
+  shipmentVolumeCbm,
 }: {
   task: WorkflowTask;
   orderType?: string;
@@ -178,6 +191,15 @@ function TaskCard({
   saving: string | null;
   vesselName?: string | null;
   voyageNumber?: string | null;
+  shipmentId?: string;
+  onTransportOrderCreated?: () => void;
+  shipmentPolUnCode?: string | null;
+  shipmentPolName?: string | null;
+  shipmentPodUnCode?: string | null;
+  shipmentPodName?: string | null;
+  shipmentContainerNumbers?: string[];
+  shipmentWeightKg?: number | null;
+  shipmentVolumeCbm?: number | null;
 }) {
   const style = STATUS_STYLES[task.status] ?? STATUS_STYLES.PENDING;
   const modeStyle = MODE_STYLES[task.mode] ?? MODE_STYLES.ASSIGNED;
@@ -189,6 +211,40 @@ function TaskCard({
   const showUndo = editable && task.status === 'COMPLETED';
   const label = getTaskLabel(task, orderType);
   const timingLabels = getTimingLabels(task);
+
+  // Transport order integration for haulage tasks
+  const isHaulageTask = task.task_type === 'ORIGIN_HAULAGE' || task.task_type === 'DESTINATION_HAULAGE';
+  const [transportOrder, setTransportOrder] = useState<GroundTransportOrder | null>(null);
+  const [transportLoading, setTransportLoading] = useState(false);
+  const [transportError, setTransportError] = useState<string | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
+  const loadTransportOrder = useCallback(async () => {
+    if (!isHaulageTask || !shipmentId || task.mode !== 'ASSIGNED') return;
+    setTransportLoading(true);
+    setTransportError(null);
+    try {
+      const result = await fetchTransportOrderByTaskAction(shipmentId, task.task_type);
+      if (!result) { setTransportLoading(false); return; }
+      if (result.success) {
+        setTransportOrder(result.data);
+      } else if (result.error === 'NOT_FOUND') {
+        setTransportOrder(null);
+      } else {
+        setTransportError(result.error);
+      }
+    } catch {
+      setTransportError('Failed to load transport order');
+    }
+    setTransportLoading(false);
+  }, [isHaulageTask, shipmentId, task.mode, task.task_type]);
+
+  useEffect(() => {
+    loadTransportOrder();
+  }, [loadTransportOrder]);
+
+  // Show the unified action row when any action button is relevant
+  const showActionRow = !isIgnored && (showComplete || showUndo || (isHaulageTask && task.mode === 'ASSIGNED' && accountType === 'AFU'));
 
   return (
     <div
@@ -279,7 +335,6 @@ function TaskCard({
                   {task.scheduled_start ? formatDateTime(task.scheduled_start) : '—'}
                 </div>
               </div>
-              {/* ETD only shown on POL and non-TRACKED tasks — not on POD */}
               {!(task.mode === 'TRACKED' && task.task_type === 'POD') && (
                 <div>
                   <span className="text-[var(--text-muted)]">{timingLabels.scheduledEndLabel}</span>
@@ -289,7 +344,7 @@ function TaskCard({
                 </div>
               )}
             </div>
-            {/* Actual row — shown whenever actual values are present (regardless of status) */}
+            {/* Actual row */}
             {(task.actual_start || task.actual_end) && (
               <div className="grid grid-cols-2 gap-x-4">
                 <div>
@@ -298,7 +353,6 @@ function TaskCard({
                     {task.actual_start ? formatDateTime(task.actual_start) : '—'}
                   </div>
                 </div>
-                {/* ATD hidden for TRACKED POD — ATA is the meaningful completion event */}
                 {!(task.mode === 'TRACKED' && task.task_type === 'POD') && (
                   <div>
                     <span className="text-[var(--text-muted)]">{timingLabels.completedLabel}</span>
@@ -337,41 +391,102 @@ function TaskCard({
         </div>
       )}
 
-      {/* Mark Complete button */}
-      {showComplete && (
-        <div className="mt-3 pt-3 border-t border-[var(--border)]">
-          <button
-            onClick={() => onMarkComplete(task.task_id)}
-            disabled={isSaving || task.status === 'BLOCKED'}
-            className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-1.5"
-          >
-            {isSaving ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
-            ) : (
-              <CheckCircle2 className="w-3 h-3" />
+      {/* Unified action row — Arrange Transport (left) + Mark Complete / Undo (right) */}
+      {showActionRow && (
+        <div className="mt-3 pt-3 border-t border-[var(--border)] flex items-center justify-between gap-3">
+          {/* Left side — Arrange Transport (haulage tasks only, no existing order) */}
+          <div className="flex items-center gap-2">
+            {isHaulageTask && task.mode === 'ASSIGNED' && accountType === 'AFU' && (
+              <>
+                {transportLoading && (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--text-muted)]" />
+                )}
+                {!transportLoading && !transportOrder && !transportError && (
+                  <button
+                    onClick={() => setShowCreateModal(true)}
+                    className="px-3 py-1.5 text-xs font-medium text-[var(--sky)] border border-[var(--sky)] rounded-lg hover:bg-[var(--sky-pale)] transition-colors"
+                  >
+                    Arrange Transport
+                  </button>
+                )}
+                {transportError && (
+                  <span className="text-xs text-red-600">{transportError}</span>
+                )}
+              </>
             )}
-            Mark Complete
-          </button>
+          </div>
+
+          {/* Right side — Mark Complete / Undo */}
+          <div>
+            {showComplete && (
+              <button
+                onClick={() => onMarkComplete(task.task_id)}
+                disabled={isSaving || task.status === 'BLOCKED'}
+                className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isSaving ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-3 h-3" />
+                )}
+                Mark Complete
+              </button>
+            )}
+            {showUndo && (
+              <button
+                onClick={() => onUndo(task.task_id)}
+                disabled={isSaving}
+                className="px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isSaving ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Undo2 className="w-3 h-3" />
+                )}
+                Undo Complete
+              </button>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Undo Complete button */}
-      {showUndo && (
-        <div className="mt-3 pt-3 border-t border-[var(--border)]">
-          <button
-            onClick={() => onUndo(task.task_id)}
-            disabled={isSaving}
-            className="px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-50 flex items-center gap-1.5"
-          >
-            {isSaving ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
-            ) : (
-              <Undo2 className="w-3 h-3" />
-            )}
-            Undo Complete
-          </button>
+      {/* Transport order badge — shown below action row when order exists */}
+      {isHaulageTask && task.mode === 'ASSIGNED' && !isIgnored && transportOrder && (
+        <div className="mt-2">
+          <TransportOrderBadge order={transportOrder} />
         </div>
       )}
+
+      {/* Inline create transport modal */}
+      {showCreateModal && shipmentId && (() => {
+        const portUnCode = task.task_type === 'ORIGIN_HAULAGE' ? shipmentPolUnCode : shipmentPodUnCode;
+        const portName = task.task_type === 'ORIGIN_HAULAGE' ? shipmentPolName : shipmentPodName;
+        return (
+          <CreateGroundTransportModal
+            onClose={() => setShowCreateModal(false)}
+            onCreated={() => {
+              setShowCreateModal(false);
+              loadTransportOrder();
+              onTransportOrderCreated?.();
+            }}
+            prefillParentShipmentId={shipmentId}
+            prefillTaskRef={task.task_type}
+            prefillTransportType={
+              orderType === 'SEA_FCL' ? 'haulage'
+                : (orderType === 'SEA_LCL' || orderType === 'AIR') ? 'port'
+                : 'haulage'
+            }
+            prefillLegType={task.task_type === 'ORIGIN_HAULAGE' ? 'first_mile' : 'last_mile'}
+            prefillContainerNumbers={shipmentContainerNumbers}
+            prefillWeightKg={shipmentWeightKg}
+            prefillVolumeCbm={shipmentVolumeCbm}
+            prefillPortUnCode={portUnCode}
+            prefillPortName={portName}
+            cities={[]}
+            areas={[]}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -405,7 +520,6 @@ function EditTaskModal({
 
   const showModeSelector = canChangeMode(accountType);
 
-  // When TRACKED mode, remove BLOCKED from status options
   const statusOptions = mode === 'TRACKED'
     ? [{ v: 'PENDING', l: 'Pending' }, { v: 'IN_PROGRESS', l: 'In Progress' }, { v: 'COMPLETED', l: 'Completed' }]
     : [{ v: 'PENDING', l: 'Pending' }, { v: 'IN_PROGRESS', l: 'In Progress' }, { v: 'COMPLETED', l: 'Completed' }, { v: 'BLOCKED', l: 'Blocked' }];
@@ -488,11 +602,7 @@ function EditTaskModal({
           {/* Status */}
           <div>
             <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Status</label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className={inputCls}
-            >
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className={inputCls}>
               {statusOptions.map(o => (
                 <option key={o.v} value={o.v}>{o.l}</option>
               ))}
@@ -502,11 +612,7 @@ function EditTaskModal({
           {/* Assigned to */}
           <div>
             <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Assigned to</label>
-            <select
-              value={assignedTo}
-              onChange={(e) => setAssignedTo(e.target.value)}
-              className={inputCls}
-            >
+            <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className={inputCls}>
               <option value="AF">AcceleFreight</option>
               <option value="CUSTOMER">Customer</option>
               <option value="THIRD_PARTY">Third Party</option>
@@ -535,7 +641,6 @@ function EditTaskModal({
                 <span className="text-[10px] text-[var(--text-muted)]">Start</span>
                 <DateTimeInput value={scheduledStart} onChange={setScheduledStart} className={inputCls} />
               </div>
-              {/* ETD hidden for TRACKED POD — not relevant */}
               {!(task.mode === 'TRACKED' && task.task_type === 'POD') && (
                 <div>
                   <span className="text-[10px] text-[var(--text-muted)]">End / Due</span>
@@ -553,7 +658,6 @@ function EditTaskModal({
                 <span className="text-[10px] text-[var(--text-muted)]">Start</span>
                 <DateTimeInput value={actualStart} onChange={setActualStart} className={inputCls} />
               </div>
-              {/* ATD hidden for TRACKED POD — ATA is the completion event */}
               {!(task.mode === 'TRACKED' && task.task_type === 'POD') && (
                 <div>
                   <span className="text-[10px] text-[var(--text-muted)]">End</span>
@@ -577,10 +681,7 @@ function EditTaskModal({
         </div>
 
         <div className="flex items-center justify-end gap-2 p-4 border-t border-[var(--border)] flex-shrink-0">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
-          >
+          <button onClick={onClose} className="px-4 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text)] transition-colors">
             Cancel
           </button>
           <button
@@ -601,7 +702,7 @@ function EditTaskModal({
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function ShipmentTasks({ shipmentId, orderType, accountType, vesselName, voyageNumber, onTimingChanged, refreshKey }: ShipmentTasksProps) {
+export default function ShipmentTasks({ shipmentId, orderType, accountType, vesselName, voyageNumber, onTimingChanged, onTransportOrderCreated, refreshKey, shipmentPolUnCode, shipmentPolName, shipmentPodUnCode, shipmentPodName, shipmentContainerNumbers, shipmentWeightKg, shipmentVolumeCbm }: ShipmentTasksProps) {
   const [tasks, setTasks] = useState<WorkflowTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -636,7 +737,6 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, vess
     loadTasks();
   }, [loadTasks, refreshKey]);
 
-  // Dismiss warning after 5 seconds
   useEffect(() => {
     if (!warning) return;
     const timer = setTimeout(() => setWarning(null), 5000);
@@ -649,7 +749,6 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, vess
     const matchedTask = tasks.find((t) => t.task_id === taskId);
     const isTrackedPOD = matchedTask?.mode === 'TRACKED' && matchedTask?.task_type === 'POD';
 
-    // Optimistic update — TRACKED POD: ATA (actual_start) is the completion event
     setTasks((prev) =>
       prev.map((t) =>
         t.task_id === taskId
@@ -670,12 +769,9 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, vess
         return;
       }
 
-      if (result.warning) {
-        setWarning(result.warning);
-      }
+      if (result.warning) setWarning(result.warning);
       await loadTasks();
 
-      // TRACKED POL/POD completion syncs timing to route nodes
       if (matchedTask?.mode === 'TRACKED' && ['POL', 'POD'].includes(matchedTask?.task_type ?? '')) {
         onTimingChanged?.();
       }
@@ -709,7 +805,6 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, vess
       }
       await loadTasks();
 
-      // TRACKED POL/POD undo may affect route node timing
       if (matchedTask?.mode === 'TRACKED' && ['POL', 'POD'].includes(matchedTask?.task_type ?? '')) {
         onTimingChanged?.();
       }
@@ -732,11 +827,8 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, vess
         return;
       }
 
-      if (result.warning) {
-        setWarning(result.warning);
-      }
+      if (result.warning) setWarning(result.warning);
 
-      // Check if timing changed on a TRACKED port task → refresh route timeline
       const timingFields = ['scheduled_start', 'scheduled_end', 'actual_start', 'actual_end'];
       const hadTimingUpdate = timingFields.some(f => f in updates);
       const isTrackedPort = editingTask?.mode === 'TRACKED' && ['POL', 'POD'].includes(editingTask?.task_type ?? '');
@@ -744,9 +836,7 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, vess
       setEditingTask(null);
       await loadTasks();
 
-      if (hadTimingUpdate && isTrackedPort) {
-        onTimingChanged?.();
-      }
+      if (hadTimingUpdate && isTrackedPort) onTimingChanged?.();
     } catch (err) {
       console.error('[ShipmentTasks] handleEditSave failed:', err);
       setEditSaving(false);
@@ -778,7 +868,6 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, vess
     }
   }
 
-  // --- Loading state ---
   if (loading) {
     return (
       <div className="bg-white border border-[var(--border)] rounded-xl p-6">
@@ -790,7 +879,6 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, vess
     );
   }
 
-  // --- Error state ---
   if (error && tasks.length === 0) {
     return (
       <div className="bg-white border border-[var(--border)] rounded-xl p-6">
@@ -802,7 +890,6 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, vess
     );
   }
 
-  // --- Empty state ---
   if (tasks.length === 0) {
     return (
       <div className="bg-white border border-[var(--border)] rounded-xl p-6">
@@ -818,7 +905,6 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, vess
 
   return (
     <div className="space-y-3">
-      {/* Warning toast */}
       {warning && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-2 text-sm text-amber-700">
           <AlertTriangle className="w-4 h-4 flex-shrink-0" />
@@ -826,7 +912,6 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, vess
         </div>
       )}
 
-      {/* Task cards */}
       {tasks.map((task) => (
         <TaskCard
           key={task.task_id}
@@ -840,10 +925,18 @@ export default function ShipmentTasks({ shipmentId, orderType, accountType, vess
           saving={saving}
           vesselName={vesselName}
           voyageNumber={voyageNumber}
+          shipmentId={shipmentId}
+          onTransportOrderCreated={onTransportOrderCreated}
+          shipmentPolUnCode={shipmentPolUnCode}
+          shipmentPolName={shipmentPolName}
+          shipmentPodUnCode={shipmentPodUnCode}
+          shipmentPodName={shipmentPodName}
+          shipmentContainerNumbers={shipmentContainerNumbers}
+          shipmentWeightKg={shipmentWeightKg}
+          shipmentVolumeCbm={shipmentVolumeCbm}
         />
       ))}
 
-      {/* Edit modal */}
       {editingTask && (
         <EditTaskModal
           task={editingTask}

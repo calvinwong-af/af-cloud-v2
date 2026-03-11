@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Loader2, X as XIcon } from 'lucide-react';
-import { fetchPlaceAutocompleteAction, fetchPlaceDetailsAction } from '@/app/actions/ground-transport';
+import { fetchPlaceAutocompleteAction, fetchPlaceDetailsAction, fetchNearestAreasAction } from '@/app/actions/ground-transport';
+import type { NearestAreaResult } from '@/app/actions/ground-transport';
 import type { City, Area } from '@/lib/types';
 
 export interface AddressValue {
@@ -46,6 +47,9 @@ export function AddressInput({ label, value, onChange, areas, cities }: AddressI
   const addressInputRef = useRef<HTMLInputElement>(null);
   const addressDropdownRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Nearest area suggestion
+  const [nearestSuggestion, setNearestSuggestion] = useState<NearestAreaResult | null>(null);
 
   // Zone combobox state
   const [zoneQuery, setZoneQuery] = useState('');
@@ -167,6 +171,19 @@ export function AddressInput({ label, value, onChange, areas, cities }: AddressI
         });
         setAddressMsg(geo.formatted_address ?? 'Coordinates found');
         setAddressMsgOk(true);
+
+        // Auto-suggest nearest area if none already assigned
+        if (!value.area_id && geo.lat != null && geo.lng != null) {
+          try {
+            const nearestRes = await fetchNearestAreasAction(geo.lat, geo.lng, 1);
+            if (nearestRes.success && nearestRes.data.length > 0) {
+              const nearest = nearestRes.data[0];
+              if (nearest.distance_km <= 50) {
+                setNearestSuggestion(nearest);
+              }
+            }
+          } catch { /* silent — suggestion is best-effort */ }
+        }
       } else {
         setAddressMsg('Address not found — coordinates not available');
         setAddressMsgOk(false);
@@ -303,6 +320,7 @@ export function AddressInput({ label, value, onChange, areas, cities }: AddressI
                   setSuggestionsOpen(false);
                   setAddressMsg(null);
                   setAddressMsgOk(false);
+                  setNearestSuggestion(null);
                   setSessionToken(crypto.randomUUID());
                   setTimeout(() => addressInputRef.current?.focus(), 0);
                 }}
@@ -348,6 +366,31 @@ export function AddressInput({ label, value, onChange, areas, cities }: AddressI
             <p className={`text-xs ${addressMsgOk ? 'text-emerald-600' : 'text-amber-600'}`}>
               {addressMsg}
             </p>
+          )}
+          {nearestSuggestion && !value.area_id && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-50 border border-indigo-200 text-xs">
+              <span className="text-indigo-700 flex-1">
+                Nearest zone: <span className="font-semibold">{nearestSuggestion.area_name}</span>
+                <span className="text-indigo-500 ml-1">({nearestSuggestion.distance_km} km)</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  onChange({ ...value, area_id: nearestSuggestion.area_id });
+                  setNearestSuggestion(null);
+                }}
+                className="px-2 py-0.5 rounded bg-indigo-600 text-white font-medium hover:bg-indigo-700 transition-colors"
+              >
+                Use
+              </button>
+              <button
+                type="button"
+                onClick={() => setNearestSuggestion(null)}
+                className="px-2 py-0.5 rounded text-indigo-500 hover:text-indigo-700 transition-colors"
+              >
+                Dismiss
+              </button>
+            </div>
           )}
         </div>
       ) : (

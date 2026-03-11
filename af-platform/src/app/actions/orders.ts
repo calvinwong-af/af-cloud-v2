@@ -9,7 +9,7 @@ import { verifySessionAndRole } from '@/lib/auth-server';
 export interface OrderListItem {
   order_id: string;
   order_type: 'shipment' | 'transport';
-  transport_mode: string | null;
+  transport_type: string | null;
   order_type_detail: string | null;
   transaction_type: string | null;
   origin_port: string | null;
@@ -18,7 +18,7 @@ export interface OrderListItem {
   sub_status: string | null;
   company_id: string;
   company_name: string;
-  parent_order_id: string | null;
+  parent_shipment_id: string | null;
   is_test: boolean;
   created_at: string;
   updated_at: string;

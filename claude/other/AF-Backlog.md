@@ -20,7 +20,7 @@ Items identified during development/testing that are not urgent but should be ad
 | # | Item | Context | Notes |
 |---|---|---|---|
 | TD-01 | Refactor `_helpers.py` into domain-specific modules | Session 27 | CLOSED — v-TD-01: split into 4 modules, all import sites updated across 7 routers. |
-| TD-02 | Drop deprecated flat surcharge columns from fcl_rates / lcl_rates | Session 58 | Columns `lss`, `baf`, `ecrs`, `psc` deprecated in v5.38 — superseded by `surcharges` JSONB. Legacy data migrated to JSONB in migration 018. Drop columns once v5.38 is confirmed stable in prod. Migration: `ALTER TABLE fcl_rates DROP COLUMN lss, DROP COLUMN baf, DROP COLUMN ecrs, DROP COLUMN psc;` — same for `lcl_rates`. |
+| TD-02 | Drop deprecated flat surcharge columns from fcl_rates / lcl_rates | Session 58 | CLOSED — v5.90: migration 034 created, fcl.py + lcl.py cleaned. Migration NOT yet applied — Calvin to run manually via Auth Proxy. |
 
 ---
 

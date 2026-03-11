@@ -112,8 +112,8 @@ function OrderTypeIcon({ order }: { order: OrderListItem }) {
     if (order.order_type_detail === 'SEA_LCL') return <Package   className={cls} />;
     return <Ship className={cls} />;
   }
-  if (order.transport_mode === 'trucking') return <Truck     className={cls} />;
-  if (order.transport_mode === 'haulage')  return <Container className={cls} />;
+  if (order.transport_type === 'general')  return <Truck     className={cls} />;
+  if (order.transport_type === 'haulage')  return <Container className={cls} />;
   return <Package className={cls} />;
 }
 
@@ -573,8 +573,8 @@ function OrdersPageInner() {
                         <span className="font-mono text-xs font-medium text-[var(--sky)]">
                           {order.order_id}
                         </span>
-                        {order.parent_order_id && (
-                          <span title={`Child of ${order.parent_order_id}`}>
+                        {order.parent_shipment_id && (
+                          <span title={`Child of ${order.parent_shipment_id}`}>
                             <LinkIcon className="w-3 h-3 text-[var(--text-muted)]" />
                           </span>
                         )}

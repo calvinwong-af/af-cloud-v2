@@ -32,6 +32,8 @@ export function PortTransportRateCardsTab({ countryCode, alertFilter }: { countr
   const [showIssuesOnly, setShowIssuesOnly] = useState(!!alertFilter);
   const [portsMap, setPortsMap] = useState<Record<string, { name: string; country_name: string }>>({});
   const [companiesMap, setCompaniesMap] = useState<Record<string, string>>({});
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 25;
 
   useEffect(() => {
     fetchPricingCountriesAction().then(r => {
@@ -103,15 +105,32 @@ export function PortTransportRateCardsTab({ countryCode, alertFilter }: { countr
   const filteredCards = useMemo(() => {
     if (!textFilter.trim()) return cards;
     const q = textFilter.trim().toLowerCase();
-    return cards.filter(c =>
-      (c.area_name ?? '').toLowerCase().includes(q) ||
-      (c.area_code ?? '').toLowerCase().includes(q) ||
-      (c.vehicle_type_label ?? '').toLowerCase().includes(q) ||
-      (c.vehicle_type_id ?? '').toLowerCase().includes(q) ||
-      c.port_un_code.toLowerCase().includes(q) ||
-      c.rate_card_key.toLowerCase().includes(q)
-    );
+    return cards.filter(c => {
+      const stateCode = c.area_code ? c.area_code.split('-').slice(0, 2).join('-') : '';
+      return (
+        (c.area_name ?? '').toLowerCase().includes(q) ||
+        (c.area_code ?? '').toLowerCase().includes(q) ||
+        stateCode.toLowerCase().includes(q) ||
+        (c.state_name ?? '').toLowerCase().includes(q) ||
+        (c.vehicle_type_label ?? '').toLowerCase().includes(q) ||
+        (c.vehicle_type_id ?? '').toLowerCase().includes(q) ||
+        c.port_un_code.toLowerCase().includes(q) ||
+        c.rate_card_key.toLowerCase().includes(q)
+      );
+    });
   }, [cards, textFilter]);
+
+  useEffect(() => { setPage(1); }, [filteredCards]);
+
+  const pagedCards = useMemo(
+    () => filteredCards.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filteredCards, page, PAGE_SIZE]
+  );
+  const totalPages = Math.ceil(filteredCards.length / PAGE_SIZE);
+
+  const companiesList = useMemo(() =>
+    Object.entries(companiesMap).map(([id, name]) => ({ company_id: id, name })),
+    [companiesMap]);
 
   const portComboOptions = [
     { value: '', label: 'All Ports' },
@@ -188,17 +207,41 @@ export function PortTransportRateCardsTab({ countryCode, alertFilter }: { countr
       ) : (
         <>
           <PortTransportTimeSeriesRateList
-            cards={filteredCards}
+            cards={pagedCards}
             loading={loading}
             portsMap={portsMap}
             companiesMap={companiesMap}
+            companiesList={companiesList}
             onCardsRefresh={fetchCards}
           />
-          <div className="text-xs text-[var(--text-muted)]">
-            {showIssuesOnly
-              ? `${filteredCards.length} card${filteredCards.length !== 1 ? 's' : ''} with issues`
-              : `${filteredCards.length}${filteredCards.length !== cards.length ? ` of ${cards.length}` : ''} rate cards`
-            }
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-[var(--text-muted)]">
+              {showIssuesOnly
+                ? `${filteredCards.length} card${filteredCards.length !== 1 ? 's' : ''} with issues`
+                : `${filteredCards.length}${filteredCards.length !== cards.length ? ` of ${cards.length}` : ''} rate cards`
+              }
+            </div>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="h-7 px-2.5 text-xs rounded border border-[var(--border)] bg-white hover:bg-[var(--surface)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Prev
+                </button>
+                <span className="text-xs text-[var(--text-muted)]">
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="h-7 px-2.5 text-xs rounded border border-[var(--border)] bg-white hover:bg-[var(--surface)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         </>
       )}

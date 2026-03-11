@@ -62,20 +62,20 @@ function timeAgo(dateStr: string | null): string {
 // Filter tabs
 // ---------------------------------------------------------------------------
 
-type FilterTab = 'all' | 'haulage' | 'trucking' | 'active' | 'completed' | 'cancelled';
+type FilterTab = 'all' | 'haulage' | 'general' | 'active' | 'completed' | 'cancelled';
 
 const FILTER_TABS: { key: FilterTab; label: string }[] = [
   { key: 'all',        label: 'All' },
   { key: 'haulage',    label: 'Haulage' },
-  { key: 'trucking',   label: 'Trucking' },
+  { key: 'general',    label: 'General' },
   { key: 'active',     label: 'Active' },
   { key: 'completed',  label: 'Completed' },
   { key: 'cancelled',  label: 'Cancelled' },
 ];
 
-function buildFilters(tab: FilterTab): { transport_mode?: string; status?: string } {
-  if (tab === 'haulage') return { transport_mode: 'haulage' };
-  if (tab === 'trucking') return { transport_mode: 'trucking' };
+function buildFilters(tab: FilterTab): { transport_type?: string; status?: string } {
+  if (tab === 'haulage') return { transport_type: 'haulage' };
+  if (tab === 'general') return { transport_type: 'general' };
   if (tab === 'active') return { status: 'active' };
   if (tab === 'completed') return { status: 'completed' };
   if (tab === 'cancelled') return { status: 'cancelled' };
@@ -166,8 +166,8 @@ function DeliveriesPageInner() {
   const stats = {
     total: allOrders.length,
     active: allOrders.filter((o) => activeStatuses.has(o.status)).length,
-    haulage: allOrders.filter((o) => o.transport_mode === 'haulage').length,
-    trucking: allOrders.filter((o) => o.transport_mode === 'trucking').length,
+    haulage: allOrders.filter((o) => o.transport_type === 'haulage').length,
+    general: allOrders.filter((o) => o.transport_type === 'general').length,
   };
 
   return (
@@ -203,7 +203,7 @@ function DeliveriesPageInner() {
         <KpiCard icon={<Package className="w-5 h-5" />} label="Total Orders" value={stats.total} loading={loading} />
         <KpiCard icon={<CheckCircle2 className="w-5 h-5" />} label="Active" value={stats.active} loading={loading} color="sky" />
         <KpiCard icon={<Container className="w-5 h-5" />} label="Haulage" value={stats.haulage} loading={loading} color="amber" />
-        <KpiCard icon={<Truck className="w-5 h-5" />} label="Trucking" value={stats.trucking} loading={loading} color="purple" />
+        <KpiCard icon={<Truck className="w-5 h-5" />} label="General" value={stats.general} loading={loading} color="purple" />
       </div>
 
       {/* Filter tabs */}
@@ -294,26 +294,26 @@ function DeliveriesPageInner() {
                       </td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                          order.transport_mode === 'haulage'
+                          order.transport_type === 'haulage'
                             ? 'bg-amber-100 text-amber-800'
                             : 'bg-blue-100 text-blue-800'
                         }`}>
-                          {order.transport_mode.toUpperCase()}
+                          {order.transport_type.toUpperCase()}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-[var(--text-mid)]">
                         {LEG_TYPE_LABELS[order.leg_type] ?? order.leg_type}
                       </td>
                       <td className="px-4 py-3">
-                        {order.parent_order_id ? (
+                        {order.parent_shipment_id ? (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              window.open(`/orders/shipments/${order.parent_order_id}`, '_blank');
+                              window.open(`/orders/shipments/${order.parent_shipment_id}`, '_blank');
                             }}
                             className="font-mono text-xs text-[var(--sky)] hover:underline"
                           >
-                            {order.parent_order_id}
+                            {order.parent_shipment_id}
                           </button>
                         ) : (
                           <span className="text-[var(--text-muted)]">—</span>

@@ -6,11 +6,17 @@ from Google Cloud Datastore to PostgreSQL port_transport_rate_cards + port_trans
 
 Field mapping:
   PricingTransport (Datastore kind)     → port_transport_rate_cards
-    port_un_code                        → port_un_code
+    port_un_code                        → port_un_code (normalised — see LEGACY_PORT_TERMINAL_MAP)
+    terminal_id                         → terminal_id (resolved from legacy port codes, e.g. MYPKG_N → MYPKG_N)
     city_code                           → area_id (looked up via areas table)
     tonnage (int)                       → vehicle_type_id (looked up via vehicle_types)
     include_depot_gate_fee              → include_depot_gate_fee
     trash                               → is_active (inverted)
+
+  Legacy port code normalisation:
+    MYPKG_N was used in Datastore to represent Port Klang Northport.
+    In the new schema, both terminals use port_un_code = MYPKG, distinguished by terminal_id.
+    LEGACY_PORT_TERMINAL_MAP maps legacy codes → (port_un_code, terminal_id).
 
   PTMonthlyRateHaulageTransport         → port_transport_rates
     (where kind = 'PT-TRANSPORT')
@@ -27,9 +33,10 @@ Field mapping:
     currency                            → currency (default: MYR)
 
 Tonnage → vehicle_type_id mapping:
-  Datastore TransportTonnage uses integer ton keys (3, 5, 10, etc.)
-  New vehicle_types table uses string ids (lorry_3t, lorry_5t, lorry_10t, etc.)
+  Datastore TransportTonnage uses integer ton keys (1, 3, 5, 10, 20, etc.)
+  New vehicle_types table uses string ids (lorry_3t, lorry_10t, trailer_20, etc.)
   This script builds the mapping from vehicle_types at runtime — no hardcoding.
+  Suffix parsing: lorry_3t → 3 (strip 't'), trailer_20 → 20 (plain integer)
 
 Areas mapping:
   Datastore city_code (e.g. MY-SGR-001) maps to areas.area_code
@@ -47,6 +54,7 @@ Run from af-server root with Cloud SQL Auth Proxy running and venv active:
 """
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -61,6 +69,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env.local'))
 from sqlalchemy import text
 from core.db import get_engine
 from google.cloud import datastore
+from google.cloud.datastore.query import PropertyFilter
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -77,6 +86,144 @@ _MONTH_MAP = {
 }
 
 BATCH_SIZE = 500
+
+# Normalise legacy port codes and resolve terminal_id.
+# MYPKG_N was used in legacy system to represent Northport terminal at Klang.
+LEGACY_PORT_TERMINAL_MAP = {
+    "MYPKG_N": ("MYPKG", "MYPKG_N"),  # Northport
+}
+
+# Maps legacy Datastore city_code → new standardised area_code in areas table.
+# Legacy codes were ad-hoc (postal codes, compound keys, invalid prefixes).
+# New codes follow {STATE_CODE}-{3-digit sequence} format.
+# MY-KUL-000 and MY-MLK-000 are unchanged (already seeded with clean codes).
+LEGACY_AREA_CODE_MAP: dict[str, str] = {
+    "AE-215":              "AE-DU-001",
+    "AE-DXB-000":          "AE-DU-002",
+    "AE-DXB-002":          "AE-DU-003",
+    "AU-NSW-SYD":          "AU-NSW-001",
+    "AU-WA-6069":          "AU-WA-001",
+    "BD-1222":             "BD-DHA-001",
+    "BE-AN-2110":          "BE-VAN-001",
+    "BN-T4":               "BN-00-001",
+    "CH-3400":             "CH-BE-001",
+    "CH-ZUR-000":          "CH-ZH-001",
+    "CN-AH-15-0564":       "CN-AH-001",
+    "CN-BJ":               "CN-BJ-001",
+    "CN-BJ-10-100020":     "CN-BJ-002",
+    "CN-BJ-10-10080":      "CN-BJ-003",
+    "CN-FJ":               "CN-FJ-001",
+    "CN-FJ-02-361006":     "CN-FJ-002",
+    "CN-GD":               "CN-GD-001",
+    "CN-GD-01-020-440115": "CN-GD-002",
+    "CN-GD-01-020-511300": "CN-GD-003",
+    "CN-GD-01-020-528400": "CN-GD-004",
+    "CN-GD-03":            "CN-GD-005",
+    "CN-GD-06":            "CN-GD-006",
+    "CN-GD-13-51600":      "CN-GD-007",
+    "CN-GDG-003":          "CN-GD-008",
+    "CN-GZ-020":           "CN-GZ-001",
+    "CN-HB-433000":        "CN-HB-001",
+    "CN-HE-01-050000":     "CN-HE-001",
+    "CN-JS":               "CN-JS-001",
+    "CN-JS-0510":          "CN-JS-002",
+    "CN-JS-13":            "CN-JS-003",
+    "CN-JS-215000":        "CN-JS-004",
+    "CN-LN-01-110000":     "CN-LN-001",
+    "CN-SC-01":            "CN-SC-001",
+    "CN-SD-02-266500":     "CN-SD-001",
+    "CN-SH-201100":        "CN-SH-001",
+    "CN-ZH-05":            "CN-ZJ-001",
+    "CN-ZJ-02":            "CN-ZJ-002",
+    "CN-ZJ-03-325000":     "CN-ZJ-003",
+    "DE-24568":            "DE-SH-001",
+    "DE-33442":            "DE-NW-001",
+    "DE-42329":            "DE-NW-002",
+    "DE-85774":            "DE-BY-001",
+    "ES-07608":            "ES-IB-001",
+    "ES-08292":            "ES-CT-001",
+    "ES-28880":            "ES-MD-001",
+    "ES-29620":            "ES-AN-001",
+    "FR-ARA-01150":        "FR-ARA-001",
+    "FR-BFC-89107":        "FR-BFC-001",
+    "HK-HKG-002":          "HK-00-001",
+    "HK-HKG-003":          "HK-00-002",
+    "ID-31":               "ID-JI-001",
+    "ID-338":              "ID-JI-002",
+    "ID-60183":            "ID-JI-003",
+    "ID-JKT-0001":         "ID-JK-001",
+    "IN-221401":           "IN-UP-001",
+    "IN-247001":           "IN-UP-002",
+    "IN-302003":           "IN-RJ-001",
+    "IN-533005":           "IN-AP-001",
+    "IN-GJ-07":            "IN-GJ-001",
+    "IN-KA-560":           "IN-KA-001",
+    "IT-00159":            "IT-LAZ-001",
+    "IT-20099":            "IT-LOM-001",
+    "IT-21054":            "IT-LOM-002",
+    "IT-42018":            "IT-EMR-001",
+    "IT-45-001":           "IT-EMR-002",
+    "JP-160":              "JP-TYO-001",
+    "JP-173":              "JP-TYO-002",
+    "JP-311":              "JP-IBR-001",
+    "JP-370":              "JP-GUN-001",
+    "JP-616-8312":         "JP-KYO-001",
+    "KH-PNH-000":          "KH-00-001",
+    "KR-INC-001":          "KR-ICN-001",
+    "KR-INC-002":          "KR-GYG-001",
+    "KR-PUS-000":          "KR-PUS-001",
+    "KR-SEL-05609":        "KR-SEL-001",
+    "MN-210":              "MN-00-001",
+    "MO-0001":             "MO-00-001",
+    "MY-JHR-000":          "MY-JHR-030",
+    "MY-JHR-030":          "MY-JHR-031",
+    "MY-KUL-000":          "MY-KUL-000",   # already in DB, code unchanged
+    "MY-KUL-000-A":        "MY-KUL-070",
+    "MY-KUL-099":          "MY-KUL-071",
+    "MY-KUL-GOMBAK":       "MY-KUL-072",
+    "MY-KUL-SETAPAK":      "MY-KUL-073",
+    "MY-LBU-001":          "MY-LBN-001",
+    "MY-LBU-002":          "MY-LBN-002",
+    "MY-MLK-000":          "MY-MLK-000",   # already in DB, code unchanged
+    "MY-SBH-012":          "MY-SBH-001",
+    "MY-SBH-89850":        "MY-SBH-002",
+    "MY-SBH-91000":        "MY-SBH-003",
+    "MY-SEL-064":          "MY-SGR-001",
+    "MY-SWK-002":          "MY-SWK-001",
+    "MY-SWK-93010":        "MY-SWK-002",
+    "MY-SWK-93350":        "MY-SWK-003",
+    "MY-SWK-94300":        "MY-SWK-004",
+    "MY-SWK-98000":        "MY-SWK-005",
+    "MY-SWK-98850":        "MY-SWK-006",
+    "NL-0050":             "NL-GR-001",
+    "NZ-0001":             "NZ-CAN-001",
+    "PL-05092":            "PL-MZ-001",
+    "PL-80209":            "PL-PM-001",
+    "PT-4590-049":         "PT-OPO-001",
+    "PT-4750-823":         "PT-OPO-002",
+    "SG-SIN-002":          "SG-00-001",
+    "SG-SIN-347730":       "SG-00-002",
+    "SG-SIN-69201":        "SG-00-003",
+    "SI-1330":             "SI-00-001",
+    "TH-13":               "TH-PTM-001",
+    "TH-BKK":              "TH-BKK-001",
+    "TH-BKK-10250":        "TH-BKK-002",
+    "TH-BKK-10400":        "TH-BKK-003",
+    "TN-8080":             "TN-NAB-001",
+    "TW-HSZ-300":          "TW-00-001",
+    "TW-NWT":              "TW-00-002",
+    "TW-NWT-251":          "TW-00-003",
+    "UK-B24":              "GB-ENG-001",
+    "UK-D7":               "GB-ENG-002",
+    "US-IN-001":           "US-IN-001",
+    "US-LA-70123":         "US-LA-001",
+    "US-OH-45066":         "US-OH-001",
+    "US-OH-45414":         "US-OH-002",
+    "US-TX-78557":         "US-TX-001",
+    "VN-013":              "VN-QN-001",
+    "VN-024":              "VN-HN-001",
+    "VN-028-00001":        "VN-SGN-001",
+}
 
 
 def _parse_month_year(month_year: str) -> date | None:
@@ -128,8 +275,10 @@ def load_areas_map(conn) -> dict[str, int]:
 def load_vehicle_types_map(conn) -> dict[int, str]:
     """
     Returns {tonnage_int: vehicle_type_id} by parsing vehicle_type_id labels.
-    vehicle_type_id format expected: lorry_3t, lorry_5t, lorry_10t, van_1t etc.
-    Parses the numeric portion before 't' as the tonnage integer key.
+
+    Suffix parsing rules:
+      lorry_3t, lorry_10t  → strip trailing 't' → 3, 10
+      trailer_20, trailer_40 → plain integer suffix → 20, 40
     """
     rows = conn.execute(text(
         "SELECT vehicle_type_id FROM vehicle_types WHERE is_active = true"
@@ -137,13 +286,13 @@ def load_vehicle_types_map(conn) -> dict[int, str]:
 
     mapping: dict[int, str] = {}
     for (vt_id,) in rows:
-        # Parse e.g. "lorry_3t" → 3, "lorry_10t" → 10, "van_1t" → 1
         try:
-            # Take the part after the last '_' and strip 't'
             suffix = vt_id.split("_")[-1]
             if suffix.endswith("t"):
                 ton = int(suffix[:-1])
-                mapping[ton] = vt_id
+            else:
+                ton = int(suffix)
+            mapping[ton] = vt_id
         except (ValueError, IndexError):
             pass
 
@@ -168,7 +317,7 @@ def migrate_rate_cards(
 ) -> dict[int, int]:
     """
     Migrate PricingTransport Datastore kind → port_transport_rate_cards.
-    Returns {datastore_pt_id: transport_rate_card_db_id}.
+    Returns card_map: {datastore_pt_id: transport_rate_card_db_id}
     """
     logger.info("\n=== Step 2: Transport Rate Cards ===")
 
@@ -198,16 +347,22 @@ def migrate_rate_cards(
         tonnage = _safe_int(e.get("tonnage"), default=None)
         include_dgf = bool(e.get("include_depot_gate_fee", False))
 
+        # Normalise legacy port codes and resolve terminal_id
+        terminal_id = None
+        if port_un_code in LEGACY_PORT_TERMINAL_MAP:
+            port_un_code, terminal_id = LEGACY_PORT_TERMINAL_MAP[port_un_code]
+
         if not city_code:
             skipped_no_city += 1
             logger.warning(f"  WARN: pt_id={pt_id} has no city_code, skipping")
             continue
 
-        # Resolve area_id
-        area_id = areas_map.get(city_code)
+        # Translate legacy city_code → new standardised area_code, then resolve area_id
+        mapped_code = LEGACY_AREA_CODE_MAP.get(city_code, city_code)
+        area_id = areas_map.get(mapped_code)
         if area_id is None:
             skipped_no_area += 1
-            logger.warning(f"  WARN: pt_id={pt_id} city_code={city_code!r} not found in areas table, skipping")
+            logger.warning(f"  WARN: pt_id={pt_id} city_code={city_code!r} (mapped={mapped_code!r}) not found in areas table, skipping")
             continue
 
         # Resolve vehicle_type_id
@@ -222,7 +377,11 @@ def migrate_rate_cards(
             logger.warning(f"  WARN: pt_id={pt_id} tonnage={tonnage} not found in vehicle_types, skipping")
             continue
 
-        rate_card_key = f"{port_un_code}:{area_id}:{vehicle_type_id}"
+        rate_card_key = (
+            f"{port_un_code}:{terminal_id}:{area_id}:{vehicle_type_id}"
+            if terminal_id
+            else f"{port_un_code}:{area_id}:{vehicle_type_id}"
+        )
         is_active = not bool(e.get("trash", False))
 
         if dry_run:
@@ -233,15 +392,16 @@ def migrate_rate_cards(
 
         row = conn.execute(text("""
             INSERT INTO port_transport_rate_cards
-                (rate_card_key, port_un_code, area_id, vehicle_type_id,
+                (rate_card_key, port_un_code, terminal_id, area_id, vehicle_type_id,
                  include_depot_gate_fee, is_active)
             VALUES
-                (:key, :port, :area_id, :vehicle_type_id, :dgf, :active)
+                (:key, :port, :terminal_id, :area_id, :vehicle_type_id, :dgf, :active)
             ON CONFLICT (rate_card_key) DO NOTHING
             RETURNING id
         """), {
             "key": rate_card_key,
             "port": port_un_code,
+            "terminal_id": terminal_id,
             "area_id": area_id,
             "vehicle_type_id": vehicle_type_id,
             "dgf": include_dgf,
@@ -291,7 +451,7 @@ def migrate_rates(
     logger.info("\n=== Step 3: Transport Rates ===")
 
     query = ds_client.query(kind=KIND_MONTHLY_RATE)
-    query.add_filter("kind", "=", PT_TRANSPORT)
+    query.add_filter(filter=PropertyFilter("kind", "=", PT_TRANSPORT))
     entities = list(query.fetch())
     logger.info(f"  Fetched {len(entities)} PT-TRANSPORT rate entities from Datastore")
 
@@ -330,8 +490,8 @@ def migrate_rates(
 
         db_card_id = card_map[pt_id]
         if db_card_id == -1:
-            # dry run placeholder
-            continue
+            # dry run — still count for reporting, use pt_id as surrogate key for grouping
+            db_card_id = pt_id
 
         is_price = bool(e.get("is_price", False))
         supplier_id = None if is_price else (e.get("supplier_id") or None)
@@ -375,8 +535,9 @@ def migrate_rates(
     logger.info(f"  Parse errors: {parse_errors}")
     logger.info(f"  Groups (card+supplier combos): {len(grouped)}")
 
+    total_rows = sum(len(v) for v in grouped.values())
+
     if dry_run:
-        total_rows = sum(len(v) for v in grouped.values())
         logger.info(f"  [DRY RUN] Would insert {total_rows} port_transport_rates rows")
         return
 
@@ -396,7 +557,6 @@ def migrate_rates(
             else:
                 row["effective_to"] = None  # open-ended — most recent
 
-            import json
             batch.append({
                 "rate_card_id": row["rate_card_id"],
                 "supplier_id": row["supplier_id"],
@@ -435,7 +595,7 @@ def _insert_rates(conn, batch: list[dict]):
             (:rate_card_id, :supplier_id, :effective_from, :effective_to,
              :rate_status, :currency, :uom,
              :list_price, :min_list_price, :cost, :min_cost,
-             :surcharges::jsonb, :roundup_qty)
+             CAST(:surcharges AS jsonb), :roundup_qty)
     """), batch)
 
 

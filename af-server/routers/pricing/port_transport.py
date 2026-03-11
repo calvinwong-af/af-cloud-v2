@@ -27,6 +27,7 @@ router = APIRouter()
 
 class PortTransportRateCardCreate(BaseModel):
     port_un_code: str
+    terminal_id: Optional[str] = None
     area_id: int
     vehicle_type_id: str
     include_depot_gate_fee: bool = False
@@ -83,6 +84,7 @@ def _row_to_rate_card(r) -> dict:
         "is_active": r[6],
         "created_at": str(r[7]) if r[7] else None,
         "updated_at": str(r[8]) if r[8] else None,
+        "terminal_id": r[9],
     }
 
 
@@ -219,6 +221,7 @@ async def list_transport_ports(
 @router.get("/rate-cards")
 async def list_port_transport_rate_cards(
     port_un_code: Optional[str] = Query(default=None),
+    terminal_id: Optional[str] = Query(default=None),
     area_id: Optional[int] = Query(default=None),
     vehicle_type_id: Optional[str] = Query(default=None),
     country_code: Optional[str] = Query(default=None),
@@ -239,6 +242,9 @@ async def list_port_transport_rate_cards(
     if port_un_code and not alerts_only:
         where.append("rc.port_un_code = :port")
         params["port"] = port_un_code
+    if terminal_id:
+        where.append("rc.terminal_id = :terminal_id")
+        params["terminal_id"] = terminal_id
     if area_id:
         where.append("rc.area_id = :area")
         params["area"] = area_id
@@ -273,10 +279,15 @@ async def list_port_transport_rate_cards(
     rows = conn.execute(text(f"""
         SELECT rc.id, rc.rate_card_key, rc.port_un_code, rc.area_id, rc.vehicle_type_id,
                rc.include_depot_gate_fee, rc.is_active, rc.created_at, rc.updated_at,
-               a.area_name, a.area_code, vt.label AS vehicle_type_label
+               rc.terminal_id,
+               a.area_name, a.area_code, vt.label AS vehicle_type_label,
+               s.name AS state_name,
+               pt.name AS terminal_name
         FROM port_transport_rate_cards rc
         LEFT JOIN areas a ON a.area_id = rc.area_id
         LEFT JOIN vehicle_types vt ON vt.vehicle_type_id = rc.vehicle_type_id
+        LEFT JOIN states s ON s.state_code = a.state_code
+        LEFT JOIN port_terminals pt ON pt.terminal_id = rc.terminal_id
         {joins}
         WHERE {' AND '.join(where)}
         ORDER BY rc.port_un_code, a.area_name, vt.sort_order
@@ -285,9 +296,11 @@ async def list_port_transport_rate_cards(
     cards = []
     for r in rows:
         card = _row_to_rate_card(r)
-        card["area_name"] = r[9]
-        card["area_code"] = r[10]
-        card["vehicle_type_label"] = r[11]
+        card["area_name"] = r[10]
+        card["area_code"] = r[11]
+        card["vehicle_type_label"] = r[12]
+        card["state_name"] = r[13]
+        card["terminal_name"] = r[14]
         cards.append(card)
 
     if cards:
@@ -458,17 +471,29 @@ async def list_port_transport_rate_cards(
                     if pr_eff_to is not None and pr_eff_to < month_start_d:
                         last_pr = None
 
+                # Both future and past/current months use last_pr / last_cost (carry-forward).
+                # For future months, an exact-match rate starting this month takes precedence,
+                # but open-ended rates from prior months must still carry forward.
                 if is_future:
-                    pr_sc = _surcharge_total(pr.get("_surcharges")) if pr else 0.0
-                    best_cost_entry = min(cost_entries, key=lambda e: e[0] + _surcharge_total(e[1])) if cost_entries else None
-                    cost_sc = _surcharge_total(best_cost_entry[1]) if best_cost_entry else 0.0
-                    has_any = pr is not None or bool(cost_entries)
+                    # Use exact-match pr if available, otherwise fall back to carried last_pr
+                    effective_pr = pr if pr is not None else last_pr
+                    # Use exact-match cost_entries if available, otherwise fall back to last_cost
+                    if cost_entries:
+                        best_cost_entry = min(cost_entries, key=lambda e: e[0] + _surcharge_total(e[1]))
+                        effective_cost = best_cost_entry[0]
+                        effective_cost_surcharges = best_cost_entry[1]
+                    else:
+                        effective_cost = last_cost
+                        effective_cost_surcharges = last_cost_surcharges
+                    pr_sc = _surcharge_total(effective_pr.get("_surcharges")) if effective_pr else 0.0
+                    cost_sc = _surcharge_total(effective_cost_surcharges) if effective_cost is not None else 0.0
+                    has_any = effective_pr is not None or effective_cost is not None
                     ts.append({
                         "month_key": mk,
-                        "list_price": pr["list_price"] if pr else None,
-                        "cost": best_cost_entry[0] if best_cost_entry else None,
-                        "currency": pr["currency"] if pr else None,
-                        "rate_status": pr["rate_status"] if pr else None,
+                        "list_price": effective_pr["list_price"] if effective_pr else None,
+                        "cost": effective_cost,
+                        "currency": effective_pr["currency"] if effective_pr else None,
+                        "rate_status": effective_pr["rate_status"] if effective_pr else None,
                         "list_surcharge_total": pr_sc,
                         "cost_surcharge_total": cost_sc,
                         "surcharge_total": pr_sc,
@@ -521,10 +546,15 @@ async def get_transport_rate_card(
     row = conn.execute(text("""
         SELECT rc.id, rc.rate_card_key, rc.port_un_code, rc.area_id, rc.vehicle_type_id,
                rc.include_depot_gate_fee, rc.is_active, rc.created_at, rc.updated_at,
-               a.area_name, a.area_code, vt.label AS vehicle_type_label
+               rc.terminal_id,
+               a.area_name, a.area_code, vt.label AS vehicle_type_label,
+               s.name AS state_name,
+               pt.name AS terminal_name
         FROM port_transport_rate_cards rc
         LEFT JOIN areas a ON a.area_id = rc.area_id
         LEFT JOIN vehicle_types vt ON vt.vehicle_type_id = rc.vehicle_type_id
+        LEFT JOIN states s ON s.state_code = a.state_code
+        LEFT JOIN port_terminals pt ON pt.terminal_id = rc.terminal_id
         WHERE rc.id = :id
     """), {"id": card_id}).fetchone()
 
@@ -532,9 +562,11 @@ async def get_transport_rate_card(
         raise HTTPException(status_code=404, detail=f"Transport rate card {card_id} not found")
 
     card = _row_to_rate_card(row)
-    card["area_name"] = row[9]
-    card["area_code"] = row[10]
-    card["vehicle_type_label"] = row[11]
+    card["area_name"] = row[10]
+    card["area_code"] = row[11]
+    card["vehicle_type_label"] = row[12]
+    card["state_name"] = row[13]
+    card["terminal_name"] = row[14]
 
     MIGRATION_FLOOR = date(2024, 1, 1)
 
@@ -591,7 +623,12 @@ async def create_transport_rate_card(
     conn=Depends(get_db),
 ):
     port = body.port_un_code.strip().upper()
-    rate_card_key = f"{port}:{body.area_id}:{body.vehicle_type_id}"
+    terminal = body.terminal_id.strip() if body.terminal_id else None
+    rate_card_key = (
+        f"{port}:{terminal}:{body.area_id}:{body.vehicle_type_id}"
+        if terminal
+        else f"{port}:{body.area_id}:{body.vehicle_type_id}"
+    )
 
     existing = conn.execute(text(
         "SELECT id FROM port_transport_rate_cards WHERE rate_card_key = :key"
@@ -612,18 +649,19 @@ async def create_transport_rate_card(
 
     row = conn.execute(text("""
         INSERT INTO port_transport_rate_cards
-            (rate_card_key, port_un_code, area_id, vehicle_type_id, include_depot_gate_fee)
-        VALUES (:key, :port, :area, :vtype, :depot)
+            (rate_card_key, port_un_code, terminal_id, area_id, vehicle_type_id, include_depot_gate_fee)
+        VALUES (:key, :port, :terminal, :area, :vtype, :depot)
         RETURNING id, created_at
     """), {
-        "key": rate_card_key, "port": port,
+        "key": rate_card_key, "port": port, "terminal": terminal,
         "area": body.area_id, "vtype": body.vehicle_type_id,
         "depot": body.include_depot_gate_fee,
     }).fetchone()
 
     return {"status": "OK", "data": {
         "id": row[0], "rate_card_key": rate_card_key,
-        "port_un_code": port, "area_id": body.area_id,
+        "port_un_code": port, "terminal_id": terminal,
+        "area_id": body.area_id,
         "vehicle_type_id": body.vehicle_type_id,
         "include_depot_gate_fee": body.include_depot_gate_fee,
         "is_active": True, "created_at": str(row[1]),

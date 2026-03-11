@@ -144,11 +144,17 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
       const isFuture = m.month_key > currentMonthKey;
 
       if (isFuture) {
+        // Check for a rate starting exactly in this future month
         const exactRate = sorted.find(r => (r.effective_from ?? '').substring(0, 7) === m.month_key) ?? null;
         if (exactRate && (exactRate.effective_to === null || exactRate.effective_to >= monthStart)) {
           result.set(m.month_key, { value: exactRate[valueKey] ?? null, isDraft: exactRate.rate_status === 'DRAFT' });
         } else {
-          result.set(m.month_key, { value: null, isDraft: false });
+          // Carry forward the latest open-ended rate into future months
+          const dominant = getDominantRate(sorted, m.month_key, monthStart);
+          result.set(m.month_key, dominant
+            ? { value: dominant[valueKey] ?? null, isDraft: dominant.rate_status === 'DRAFT' }
+            : { value: null, isDraft: false }
+          );
         }
         continue;
       }
@@ -176,11 +182,14 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
       const isFuture = m.month_key > currentMonthKey;
 
       if (isFuture) {
+        // Check for a rate starting exactly in this future month
         const exactRate = sorted.find(r => (r.effective_from ?? '').substring(0, 7) === m.month_key) ?? null;
         if (exactRate && (exactRate.effective_to === null || exactRate.effective_to >= monthStart)) {
           result.set(m.month_key, exactRate.surcharges ?? null);
         } else {
-          result.set(m.month_key, null);
+          // Carry forward surcharges from latest open-ended rate
+          const dominant = getDominantRate(sorted, m.month_key, monthStart);
+          result.set(m.month_key, dominant?.surcharges ?? null);
         }
         continue;
       }

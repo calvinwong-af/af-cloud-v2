@@ -13,7 +13,7 @@ export interface OrderStop {
   stop_type: 'pickup' | 'dropoff' | 'waypoint';
   address_line: string | null;
   area_id: number | null;
-  city_id: number | null;
+  area_name: string | null;
   lat: number | null;
   lng: number | null;
   scheduled_arrival: string | null;
@@ -46,9 +46,10 @@ export interface VehicleType {
 
 export interface GroundTransportOrder {
   order_id: string;
-  transport_mode: 'haulage' | 'trucking';
+  transport_type: 'haulage' | 'port' | 'general' | 'cross_border';
   leg_type: 'first_mile' | 'last_mile' | 'standalone' | 'distribution';
-  parent_order_id: string | null;
+  parent_shipment_id: string | null;
+  task_ref: string | null;
   vendor_id: string | null;
   status: string;
   sub_status: string | null;
@@ -90,6 +91,16 @@ export interface GeocodeResult {
   country: string | null;
 }
 
+export interface NearestAreaResult {
+  area_id: number;
+  area_code: string;
+  area_name: string;
+  state_code: string;
+  lat: number;
+  lng: number;
+  distance_km: number;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -109,9 +120,10 @@ async function getAuthHeaders(): Promise<{ token: string; serverUrl: string } | 
 // ---------------------------------------------------------------------------
 
 export interface GroundTransportCreatePayload {
-  transport_mode: 'haulage' | 'trucking';
+  transport_type: 'haulage' | 'port' | 'general';
   leg_type: 'first_mile' | 'last_mile' | 'standalone' | 'distribution';
-  parent_order_id?: string | null;
+  parent_shipment_id?: string | null;
+  task_ref?: string | null;
   vendor_id?: string | null;
   cargo_description?: string | null;
   container_numbers?: string[];
@@ -159,7 +171,7 @@ export async function createGroundTransportOrderAction(
 // ---------------------------------------------------------------------------
 
 export async function listGroundTransportOrdersAction(
-  filters?: { transport_mode?: string; status?: string; parent_order_id?: string },
+  filters?: { transport_type?: string; status?: string; parent_shipment_id?: string; task_ref?: string },
 ): Promise<{ success: true; data: GroundTransportOrder[] } | { success: false; error: string }> {
   try {
     const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
@@ -169,9 +181,10 @@ export async function listGroundTransportOrdersAction(
     if (!auth) return { success: false, error: 'No session token or server URL' };
 
     const url = new URL('/api/v2/ground-transport', auth.serverUrl);
-    if (filters?.transport_mode) url.searchParams.set('transport_mode', filters.transport_mode);
+    if (filters?.transport_type) url.searchParams.set('transport_type', filters.transport_type);
     if (filters?.status) url.searchParams.set('status', filters.status);
-    if (filters?.parent_order_id) url.searchParams.set('parent_order_id', filters.parent_order_id);
+    if (filters?.parent_shipment_id) url.searchParams.set('parent_shipment_id', filters.parent_shipment_id);
+    if (filters?.task_ref) url.searchParams.set('task_ref', filters.task_ref);
 
     const res = await fetch(url.toString(), {
       headers: { Authorization: `Bearer ${auth.token}` },
@@ -362,6 +375,45 @@ export async function addStopAction(
   } catch (err) {
     console.error('[addStopAction]', err instanceof Error ? err.message : err);
     return { success: false, error: 'Failed to add stop' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Update Stop
+// ---------------------------------------------------------------------------
+
+export async function updateStopAction(
+  orderId: string,
+  stopId: number,
+  stop: Partial<OrderStop>,
+): Promise<{ success: true; data: { stops: OrderStop[]; legs: OrderLeg[] } } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const auth = await getAuthHeaders();
+    if (!auth) return { success: false, error: 'No session token or server URL' };
+
+    const res = await fetch(
+      `${auth.serverUrl}/api/v2/ground-transport/${encodeURIComponent(orderId)}/stops/${stopId}`,
+      {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(stop),
+        cache: 'no-store',
+      },
+    );
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: json?.detail ?? `Server responded ${res.status}` };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data };
+  } catch (err) {
+    console.error('[updateStopAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to update stop' };
   }
 }
 
@@ -640,5 +692,88 @@ export async function geocodeAddressAction(
   } catch (err) {
     console.error('[geocodeAddressAction]', err instanceof Error ? err.message : err);
     return { success: false, error: 'Failed to geocode address' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fetch Transport Order by Shipment Task
+// ---------------------------------------------------------------------------
+
+export async function fetchTransportOrderByTaskAction(
+  shipmentId: string,
+  taskRef: string,
+): Promise<
+  | { success: true; data: GroundTransportOrder }
+  | { success: false; error: 'NOT_FOUND' | string }
+> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const auth = await getAuthHeaders();
+    if (!auth) return { success: false, error: 'No session token or server URL' };
+
+    const url = new URL('/api/v2/ground-transport/by-task', auth.serverUrl);
+    url.searchParams.set('shipment_id', shipmentId);
+    url.searchParams.set('task_ref', taskRef);
+
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${auth.token}` },
+      cache: 'no-store',
+    });
+
+    if (res.status === 404) {
+      return { success: false, error: 'NOT_FOUND' };
+    }
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: json?.detail ?? `Server responded ${res.status}` };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data };
+  } catch (err) {
+    console.error('[fetchTransportOrderByTaskAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to fetch transport order by task' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Nearest Areas (geo-matching)
+// ---------------------------------------------------------------------------
+
+export async function fetchNearestAreasAction(
+  lat: number,
+  lng: number,
+  limit: number = 3,
+): Promise<{ success: true; data: NearestAreaResult[] } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const auth = await getAuthHeaders();
+    if (!auth) return { success: false, error: 'No session token or server URL' };
+
+    const url = new URL('/api/v2/ground-transport/areas/nearest', auth.serverUrl);
+    url.searchParams.set('lat', lat.toString());
+    url.searchParams.set('lng', lng.toString());
+    url.searchParams.set('limit', limit.toString());
+
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${auth.token}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: json?.detail ?? `Server responded ${res.status}` };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data ?? [] };
+  } catch (err) {
+    console.error('[fetchNearestAreasAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to fetch nearest areas' };
   }
 }

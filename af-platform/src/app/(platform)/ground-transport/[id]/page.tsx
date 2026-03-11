@@ -9,7 +9,7 @@ import {
   getGroundTransportOrderAction,
   cancelGroundTransportOrderAction,
 } from '@/app/actions/ground-transport';
-import type { GroundTransportOrder, OrderLeg } from '@/app/actions/ground-transport';
+import type { GroundTransportOrder, OrderStop, OrderLeg } from '@/app/actions/ground-transport';
 import { fetchCitiesAction, fetchAreasAction } from '@/app/actions/geography';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
 import type { City, Area } from '@/lib/types';
@@ -20,6 +20,7 @@ import {
   GTDataRow,
   EditOrderModal,
   AddStopModal,
+  EditStopModal,
   EditLegModal,
   LegsCard,
 } from './_components';
@@ -44,6 +45,7 @@ export default function GroundTransportDetailPage() {
   const [areas, setAreas] = useState<Area[]>([]);
   const [showEditOrder, setShowEditOrder] = useState(false);
   const [showAddStop, setShowAddStop] = useState(false);
+  const [editingStop, setEditingStop] = useState<OrderStop | null>(null);
   const [editingLeg, setEditingLeg] = useState<OrderLeg | null>(null);
   const [cancelling, setCancelling] = useState(false);
 
@@ -131,9 +133,9 @@ export default function GroundTransportDetailPage() {
                 {order.order_id}
               </h1>
               <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                order.transport_mode === 'haulage' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
+                order.transport_type === 'haulage' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
               }`}>
-                {order.transport_mode.toUpperCase()}
+                {order.transport_type.toUpperCase()}
               </span>
               <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${GT_STATUS_STYLES[order.status] ?? 'bg-gray-100 text-gray-700'}`}>
                 {order.status.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase())}
@@ -141,14 +143,14 @@ export default function GroundTransportDetailPage() {
             </div>
             <div className="flex items-center gap-2 mt-2 flex-wrap text-sm text-[var(--text-mid)]">
               <span>{LEG_TYPE_LABELS[order.leg_type] ?? order.leg_type}</span>
-              {order.parent_order_id && (
+              {order.parent_shipment_id && (
                 <>
                   <span className="text-[var(--border)]">·</span>
                   <button
-                    onClick={() => window.open(`/shipments/${order.parent_order_id}`, '_blank')}
+                    onClick={() => window.open(`/shipments/${order.parent_shipment_id}`, '_blank')}
                     className="font-mono text-xs text-[var(--sky)] hover:underline"
                   >
-                    {order.parent_order_id}
+                    {order.parent_shipment_id}
                   </button>
                 </>
               )}
@@ -187,12 +189,12 @@ export default function GroundTransportDetailPage() {
             ) : undefined
           }
         >
-          <GTDataRow label="Transport mode" value={order.transport_mode.charAt(0).toUpperCase() + order.transport_mode.slice(1).toLowerCase()} />
+          <GTDataRow label="Transport type" value={order.transport_type.charAt(0).toUpperCase() + order.transport_type.slice(1).toLowerCase()} />
           <GTDataRow label="Leg type" value={LEG_TYPE_LABELS[order.leg_type]} />
           <GTDataRow label="Created" value={order.created_at ? order.created_at.slice(0, 10) : null} />
-          <GTDataRow label="Parent Order" value={order.parent_order_id} mono />
+          <GTDataRow label="Parent Shipment" value={order.parent_shipment_id} mono />
           <GTDataRow label="Vendor" value={order.vendor_id} mono />
-          {order.transport_mode === 'haulage' && (
+          {order.transport_type === 'haulage' && (
             <>
               <GTDataRow label="Detention Mode" value={order.detention_mode} />
               <GTDataRow label="Detention Free Days" value={order.detention_free_days} />
@@ -240,6 +242,7 @@ export default function GroundTransportDetailPage() {
       <LegsCard
         order={order}
         onAddStop={() => setShowAddStop(true)}
+        onEditStop={setEditingStop}
         onEditLeg={setEditingLeg}
       />
 
@@ -260,6 +263,17 @@ export default function GroundTransportDetailPage() {
           areas={areas}
           onSaved={loadOrder}
           onClose={() => setShowAddStop(false)}
+        />
+      )}
+
+      {editingStop && (
+        <EditStopModal
+          orderId={order.order_id}
+          stop={editingStop}
+          cities={cities}
+          areas={areas}
+          onSaved={() => { setEditingStop(null); loadOrder(); }}
+          onClose={() => setEditingStop(null)}
         />
       )}
 

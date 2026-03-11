@@ -571,9 +571,12 @@ export interface PortTransportRateCard {
   id: number;
   rate_card_key: string;
   port_un_code: string;
+  terminal_id: string | null;
+  terminal_name: string | null;
   area_id: number;
   area_name: string;
   area_code: string;
+  state_name: string | null;
   vehicle_type_id: string;
   vehicle_type_label: string;
   include_depot_gate_fee: boolean;

@@ -102,14 +102,10 @@ def _row_to_rate(r) -> dict:
         "cost": float(r[8]) if r[8] is not None else None,
         "min_quantity": float(r[9]) if r[9] is not None else None,
         "roundup_qty": r[10],
-        "lss": float(r[11]) if r[11] is not None else None,
-        "baf": float(r[12]) if r[12] is not None else None,
-        "ecrs": float(r[13]) if r[13] is not None else None,
-        "psc": float(r[14]) if r[14] is not None else None,
-        "created_at": str(r[15]) if r[15] else None,
-        "updated_at": str(r[16]) if r[16] else None,
-        "effective_to": str(r[17]) if r[17] else None,
-        "surcharges": r[18] if r[18] is not None else None,
+        "created_at": str(r[11]) if r[11] else None,
+        "updated_at": str(r[12]) if r[12] else None,
+        "effective_to": str(r[13]) if r[13] else None,
+        "surcharges": r[14] if r[14] is not None else None,
     }
 
 
@@ -130,7 +126,7 @@ _RATE_SELECT = """
     SELECT id, rate_card_id, supplier_id, effective_from,
            rate_status::text, currency, uom,
            list_price, cost, min_quantity,
-           roundup_qty, lss, baf, ecrs, psc,
+           roundup_qty,
            created_at, updated_at, effective_to, surcharges
     FROM lcl_rates
 """
@@ -513,7 +509,7 @@ async def get_lcl_rate_card(
             id, rate_card_id, supplier_id, effective_from,
             rate_status::text, currency, uom,
             list_price, cost, min_quantity,
-            roundup_qty, lss, baf, ecrs, psc,
+            roundup_qty,
             created_at, updated_at, effective_to, surcharges
         FROM lcl_rates
         WHERE rate_card_id = :id

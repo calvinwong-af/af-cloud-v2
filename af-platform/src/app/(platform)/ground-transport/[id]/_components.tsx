@@ -5,9 +5,10 @@ import { Loader2, X, Pencil } from 'lucide-react';
 import {
   updateGroundTransportOrderAction,
   addStopAction,
+  updateStopAction,
   updateLegAction,
 } from '@/app/actions/ground-transport';
-import type { GroundTransportOrder, OrderLeg } from '@/app/actions/ground-transport';
+import type { GroundTransportOrder, OrderStop, OrderLeg } from '@/app/actions/ground-transport';
 import { AddressInput } from '@/components/ground-transport/AddressInput';
 import type { AddressValue } from '@/components/ground-transport/AddressInput';
 import type { City, Area } from '@/lib/types';
@@ -202,7 +203,7 @@ export function EditOrderModal({
         </div>
         <div className="px-5 py-4 space-y-3">
           <div><label className="text-xs text-[var(--text-muted)]">Vendor ID</label><input type="text" value={vendorId} onChange={(e) => setVendorId(e.target.value)} className={inputCls} /></div>
-          {order.transport_mode === 'haulage' && (
+          {order.transport_type === 'haulage' && (
             <>
               <div><label className="text-xs text-[var(--text-muted)]">Detention Mode</label>
                 <select value={detentionMode} onChange={(e) => setDetentionMode(e.target.value)} className={inputCls}>
@@ -308,6 +309,104 @@ export function AddStopModal({
           <button onClick={handleSave} disabled={saving} className="px-4 py-2 text-sm bg-[var(--sky)] text-white rounded-lg disabled:opacity-50 flex items-center gap-2">
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             {saving ? 'Adding…' : 'Add Stop'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Edit Stop Modal
+// ---------------------------------------------------------------------------
+
+export function EditStopModal({
+  orderId,
+  stop,
+  cities,
+  areas,
+  onSaved,
+  onClose,
+}: {
+  orderId: string;
+  stop: OrderStop;
+  cities: City[];
+  areas: Area[];
+  onSaved: () => void;
+  onClose: () => void;
+}) {
+  const [stopType, setStopType] = useState(stop.stop_type);
+  const [address, setAddress] = useState<AddressValue>({
+    address_line: stop.address_line,
+    city_id: null,
+    area_id: stop.area_id,
+    lat: stop.lat,
+    lng: stop.lng,
+  });
+  const [scheduledArrival, setScheduledArrival] = useState(stop.scheduled_arrival ?? '');
+  const [actualArrival, setActualArrival] = useState(stop.actual_arrival ?? '');
+  const [notes, setNotes] = useState(stop.notes ?? '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await updateStopAction(orderId, stop.stop_id, {
+        stop_type: stopType,
+        address_line: address.address_line,
+        area_id: address.area_id,
+        lat: address.lat,
+        lng: address.lng,
+        scheduled_arrival: scheduledArrival || null,
+        actual_arrival: actualArrival || null,
+        notes: notes || null,
+      });
+      if (!result) { setError('No response'); setSaving(false); return; }
+      if (result.success) { onSaved(); onClose(); } else { setError(result.error); }
+    } catch { setError('Failed to update stop'); }
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
+          <h2 className="text-base font-semibold text-[var(--text)]">Edit Stop #{stop.sequence}</h2>
+          <button onClick={onClose} className="p-1 rounded hover:bg-[var(--surface)]"><X size={16} /></button>
+        </div>
+        <div className="px-5 py-4 space-y-4">
+          <div>
+            <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Stop Type</label>
+            <select value={stopType} onChange={(e) => setStopType(e.target.value as typeof stopType)} className={`${inputCls} mt-1`}>
+              <option value="pickup">Pickup</option>
+              <option value="dropoff">Dropoff</option>
+              <option value="waypoint">Waypoint</option>
+            </select>
+          </div>
+          <AddressInput label="Address / Zone" value={address} onChange={setAddress} areas={areas} cities={cities} />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Scheduled Arrival</label>
+              <input type="date" value={scheduledArrival} onChange={(e) => setScheduledArrival(e.target.value)} className={`${inputCls} mt-1`} />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Actual Arrival</label>
+              <input type="date" value={actualArrival} onChange={(e) => setActualArrival(e.target.value)} className={`${inputCls} mt-1`} />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Notes</label>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={`${inputCls} mt-1 resize-none`} />
+          </div>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-[var(--border)]">
+          <button onClick={onClose} className="px-4 py-2 text-sm border border-[var(--border)] rounded-lg text-[var(--text-mid)]">Cancel</button>
+          <button onClick={handleSave} disabled={saving} className="px-4 py-2 text-sm bg-[var(--sky)] text-white rounded-lg disabled:opacity-50 flex items-center gap-2">
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
       </div>
@@ -431,10 +530,12 @@ export function EditLegModal({
 export function LegsCard({
   order,
   onAddStop,
+  onEditStop,
   onEditLeg,
 }: {
   order: GroundTransportOrder;
   onAddStop: () => void;
+  onEditStop: (stop: OrderStop) => void;
   onEditLeg: (leg: OrderLeg) => void;
 }) {
   const stops = (order.stops ?? []).sort((a, b) => a.sequence - b.sequence);
@@ -464,17 +565,31 @@ export function LegsCard({
                 key={stop.stop_id}
                 className="border border-[var(--border)] rounded-lg p-3 space-y-1"
               >
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-mono font-semibold text-[var(--text-muted)]">
-                    #{stop.sequence}
-                  </span>
-                  <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
-                    {STOP_TYPE_LABELS[stop.stop_type] ?? stop.stop_type}
-                  </span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono font-semibold text-[var(--text-muted)]">
+                      #{stop.sequence}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+                      {STOP_TYPE_LABELS[stop.stop_type] ?? stop.stop_type}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => onEditStop(stop)}
+                    className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
+                    title="Edit stop"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
                 </div>
                 <div className="text-xs text-[var(--text-mid)]">
                   {stop.address_line ?? '—'}
                 </div>
+                {stop.area_name && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
+                    {stop.area_name}
+                  </span>
+                )}
                 {(stop.scheduled_arrival || stop.actual_arrival) && (
                   <div className="text-xs text-[var(--text-muted)] flex gap-4">
                     {stop.scheduled_arrival && <span>Scheduled: {stop.scheduled_arrival}</span>}

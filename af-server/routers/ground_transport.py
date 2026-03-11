@@ -35,7 +35,6 @@ class StopCreate(BaseModel):
     stop_type: Literal["pickup", "dropoff", "waypoint"]
     address_line: Optional[str] = None
     area_id: Optional[int] = None
-    city_id: Optional[int] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
     scheduled_arrival: Optional[date] = None
@@ -46,7 +45,6 @@ class StopUpdate(BaseModel):
     stop_type: Optional[Literal["pickup", "dropoff", "waypoint"]] = None
     address_line: Optional[str] = None
     area_id: Optional[int] = None
-    city_id: Optional[int] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
     scheduled_arrival: Optional[date] = None
@@ -55,9 +53,10 @@ class StopUpdate(BaseModel):
 
 
 class GroundTransportCreate(BaseModel):
-    transport_mode: Literal["haulage", "trucking"]
+    transport_type: Literal["haulage", "port", "general"]
     leg_type: Literal["first_mile", "last_mile", "standalone", "distribution"]
-    parent_order_id: Optional[str] = None
+    parent_shipment_id: Optional[str] = None
+    task_ref: Optional[str] = None
     vendor_id: Optional[str] = None
     cargo_description: Optional[str] = None
     container_numbers: List[str] = []
@@ -135,9 +134,10 @@ def _order_row_to_dict(row) -> dict:
     cargo = _parse_cargo(data.get("cargo"))
     return {
         "order_id": data["order_id"],
-        "transport_mode": data.get("transport_mode"),
+        "transport_type": data.get("transport_type"),
         "leg_type": data.get("leg_type"),
-        "parent_order_id": data.get("parent_order_id"),
+        "parent_shipment_id": data.get("parent_shipment_id"),
+        "task_ref": data.get("task_ref"),
         "vendor_id": data.get("vendor_id"),
         "status": data.get("status"),
         "sub_status": data.get("sub_status"),
@@ -157,7 +157,7 @@ def _order_row_to_dict(row) -> dict:
 
 
 _ORDER_SELECT = """
-    SELECT order_id, transport_mode, leg_type, parent_order_id,
+    SELECT order_id, transport_type, leg_type, parent_shipment_id, task_ref,
            vendor_id, status, sub_status, cargo,
            detention_mode, detention_free_days,
            notes, created_by, created_at, updated_at, is_test, trash
@@ -176,7 +176,7 @@ def _stop_row_to_dict(row) -> dict:
         "stop_type": data["stop_type"],
         "address_line": data.get("address_line"),
         "area_id": data.get("area_id"),
-        "city_id": data.get("city_id"),
+        "area_name": data.get("area_name"),
         "lat": float(data["lat"]) if data.get("lat") is not None else None,
         "lng": float(data["lng"]) if data.get("lng") is not None else None,
         "scheduled_arrival": str(data["scheduled_arrival"]) if data.get("scheduled_arrival") else None,
@@ -208,7 +208,15 @@ def _leg_row_to_dict(row) -> dict:
 
 def _get_stops(conn, order_id: str) -> list[dict]:
     rows = conn.execute(text("""
-        SELECT * FROM order_stops WHERE order_id = :id ORDER BY sequence
+        SELECT
+            os.stop_id, os.order_id, os.sequence, os.stop_type,
+            os.address_line, os.area_id, os.lat, os.lng,
+            os.scheduled_arrival, os.actual_arrival, os.notes,
+            a.area_name
+        FROM order_stops os
+        LEFT JOIN areas a ON a.area_id = os.area_id
+        WHERE os.order_id = :id
+        ORDER BY os.sequence
     """), {"id": order_id}).fetchall()
     return [_stop_row_to_dict(r) for r in rows]
 
@@ -271,6 +279,62 @@ async def list_vehicle_types(
 
 
 # ---------------------------------------------------------------------------
+# GET /areas/nearest — Nearest areas by Haversine distance
+# ---------------------------------------------------------------------------
+
+@router.get("/areas/nearest")
+async def get_nearest_areas(
+    lat: float = Query(...),
+    lng: float = Query(...),
+    limit: int = Query(default=3, ge=1, le=10),
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    """
+    Return the nearest areas to a given lat/lng using Haversine distance.
+    Only returns areas with coordinates. Used for automatic area suggestion
+    after address geocoding in the frontend.
+    """
+    rows = conn.execute(text("""
+        SELECT
+            area_id,
+            area_code,
+            area_name,
+            state_code,
+            lat,
+            lng,
+            -- Haversine formula (result in km)
+            (
+                6371 * acos(
+                    LEAST(1.0, cos(radians(:lat)) * cos(radians(lat::float))
+                    * cos(radians(lng::float) - radians(:lng))
+                    + sin(radians(:lat)) * sin(radians(lat::float)))
+                )
+            ) AS distance_km
+        FROM areas
+        WHERE lat IS NOT NULL AND lng IS NOT NULL AND is_active = TRUE
+        ORDER BY distance_km ASC
+        LIMIT :limit
+    """), {"lat": lat, "lng": lng, "limit": limit}).fetchall()
+
+    return {
+        "status": "OK",
+        "data": [
+            {
+                "area_id": r[0],
+                "area_code": r[1],
+                "area_name": r[2],
+                "state_code": r[3],
+                "lat": float(r[4]),
+                "lng": float(r[5]),
+                "distance_km": round(float(r[6]), 2),
+            }
+            for r in rows
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
 # POST / — Create ground transport order
 # ---------------------------------------------------------------------------
 
@@ -294,21 +358,22 @@ async def create_ground_transport_order(
 
     conn.execute(text("""
         INSERT INTO orders (
-            order_id, order_type, transport_mode, status,
-            leg_type, parent_order_id, vendor_id,
+            order_id, order_type, transport_type, status,
+            leg_type, parent_shipment_id, task_ref, vendor_id,
             cargo, detention_mode, detention_free_days, notes,
             created_by, created_at, updated_at, trash, is_test
         ) VALUES (
-            :id, 'transport', :transport_mode, 'draft',
-            :leg_type, :parent_order_id, :vendor_id,
+            :id, 'transport', :transport_type, 'draft',
+            :leg_type, :parent_shipment_id, :task_ref, :vendor_id,
             CAST(:cargo AS jsonb), :detention_mode, :detention_free_days, :notes,
             :created_by, :now, :now, FALSE, :is_test
         )
     """), {
         "id": order_id,
-        "transport_mode": body.transport_mode,
+        "transport_type": body.transport_type,
         "leg_type": body.leg_type,
-        "parent_order_id": body.parent_order_id,
+        "parent_shipment_id": body.parent_shipment_id,
+        "task_ref": body.task_ref,
         "vendor_id": body.vendor_id,
         "cargo": json.dumps(cargo),
         "detention_mode": body.detention_mode,
@@ -324,11 +389,11 @@ async def create_ground_transport_order(
         conn.execute(text("""
             INSERT INTO order_stops (
                 order_id, sequence, stop_type,
-                address_line, area_id, city_id, lat, lng,
+                address_line, area_id, lat, lng,
                 scheduled_arrival, notes, created_at, updated_at
             ) VALUES (
                 :order_id, :sequence, :stop_type,
-                :address_line, :area_id, :city_id, :lat, :lng,
+                :address_line, :area_id, :lat, :lng,
                 :scheduled_arrival, :notes, :now, :now
             )
         """), {
@@ -337,7 +402,6 @@ async def create_ground_transport_order(
             "stop_type": stop.stop_type,
             "address_line": stop.address_line,
             "area_id": stop.area_id,
-            "city_id": stop.city_id,
             "lat": stop.lat,
             "lng": stop.lng,
             "scheduled_arrival": str(stop.scheduled_arrival) if stop.scheduled_arrival else None,
@@ -366,11 +430,10 @@ async def create_ground_transport_order(
 
 @router.get("")
 async def list_ground_transport_orders(
-    transport_type: Optional[Literal["haulage", "trucking"]] = Query(None, alias="transport_type"),
-    transport_mode: Optional[Literal["haulage", "trucking"]] = Query(None),
-    status: Optional[Literal["draft", "confirmed", "dispatched", "in_transit", "detained", "completed", "cancelled"]] = Query(None),
-    parent_shipment_id: Optional[str] = Query(None, alias="parent_shipment_id"),
-    parent_order_id: Optional[str] = Query(None),
+    transport_type: Optional[Literal["haulage", "port", "general"]] = Query(None),
+    status: Optional[str] = Query(None),
+    parent_shipment_id: Optional[str] = Query(None),
+    task_ref: Optional[str] = Query(None),
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
 ):
@@ -378,25 +441,58 @@ async def list_ground_transport_orders(
     where = "order_type = 'transport' AND trash = FALSE"
     params: dict = {}
 
-    # Support both old (transport_type) and new (transport_mode) param names
-    mode = transport_mode or transport_type
-    if mode:
-        where += " AND transport_mode = :transport_mode"
-        params["transport_mode"] = mode
+    if transport_type:
+        where += " AND transport_type = :transport_type"
+        params["transport_type"] = transport_type
     if status:
         where += " AND status = :status"
         params["status"] = status
-    # Support both old (parent_shipment_id) and new (parent_order_id) param names
-    parent = parent_order_id or parent_shipment_id
-    if parent:
-        where += " AND parent_order_id = :parent_order_id"
-        params["parent_order_id"] = parent
+    if parent_shipment_id:
+        where += " AND parent_shipment_id = :parent_shipment_id"
+        params["parent_shipment_id"] = parent_shipment_id
+    if task_ref:
+        where += " AND task_ref = :task_ref"
+        params["task_ref"] = task_ref
 
     rows = conn.execute(text(f"""
         {_ORDER_SELECT} WHERE {where} ORDER BY created_at DESC
     """), params).fetchall()
 
     return {"status": "OK", "data": [_order_row_to_dict(r) for r in rows]}
+
+
+# ---------------------------------------------------------------------------
+# GET /by-task — Get transport order by shipment task
+# ---------------------------------------------------------------------------
+
+@router.get("/by-task")
+async def get_transport_order_by_task(
+    shipment_id: str = Query(...),
+    task_ref: str = Query(...),
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    """
+    Get the transport order linked to a specific shipment workflow task.
+    Returns 404 (not a 500) when no order exists yet — callers use this
+    to determine whether to show 'Arrange Transport' or the order summary.
+    """
+    row = conn.execute(text(f"""
+        {_ORDER_SELECT}
+        WHERE parent_shipment_id = :shipment_id
+          AND task_ref = :task_ref
+          AND order_type = 'transport'
+          AND trash = FALSE
+        LIMIT 1
+    """), {"shipment_id": shipment_id, "task_ref": task_ref}).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="No transport order found for this task")
+
+    order = _order_row_to_dict(row)
+    order["stops"] = _get_stops(conn, order["order_id"])
+    order["legs"] = _get_legs(conn, order["order_id"])
+    return {"status": "OK", "data": order}
 
 
 # ---------------------------------------------------------------------------
@@ -601,11 +697,11 @@ async def add_stop(
     conn.execute(text("""
         INSERT INTO order_stops (
             order_id, sequence, stop_type,
-            address_line, area_id, city_id, lat, lng,
+            address_line, area_id, lat, lng,
             scheduled_arrival, notes, created_at, updated_at
         ) VALUES (
             :order_id, :sequence, :stop_type,
-            :address_line, :area_id, :city_id, :lat, :lng,
+            :address_line, :area_id, :lat, :lng,
             :scheduled_arrival, :notes, :now, :now
         )
     """), {
@@ -614,7 +710,6 @@ async def add_stop(
         "stop_type": body.stop_type,
         "address_line": body.address_line,
         "area_id": body.area_id,
-        "city_id": body.city_id,
         "lat": body.lat,
         "lng": body.lng,
         "scheduled_arrival": str(body.scheduled_arrival) if body.scheduled_arrival else None,
@@ -660,7 +755,6 @@ async def update_stop(
         "stop_type": "stop_type",
         "address_line": "address_line",
         "area_id": "area_id",
-        "city_id": "city_id",
         "lat": "lat",
         "lng": "lng",
         "scheduled_arrival": "scheduled_arrival",
@@ -748,9 +842,9 @@ _SCOPE_TO_LEG_TYPE = {
 
 _SCOPE_TO_TRANSPORT_MODE = {
     "first_mile_haulage": "haulage",
-    "first_mile_trucking": "trucking",
+    "first_mile_trucking": "general",
     "last_mile_haulage": "haulage",
-    "last_mile_trucking": "trucking",
+    "last_mile_trucking": "general",
 }
 
 
@@ -772,7 +866,7 @@ async def reconcile_shipment_ground_transport(
     # Fetch linked transport orders
     order_rows = conn.execute(text(f"""
         {_ORDER_SELECT}
-        WHERE parent_order_id = :id AND order_type = 'transport' AND status != 'cancelled'
+        WHERE parent_shipment_id = :id AND order_type = 'transport' AND status != 'cancelled'
         ORDER BY created_at
     """), {"id": shipment_id}).fetchall()
 
@@ -793,7 +887,7 @@ async def reconcile_shipment_ground_transport(
         if expected_leg_type is None:
             continue
         has_match = any(
-            o["leg_type"] == expected_leg_type and o["transport_mode"] == expected_transport_mode
+            o["leg_type"] == expected_leg_type and o["transport_type"] == expected_transport_mode
             for o in orders
         )
         if not has_match:

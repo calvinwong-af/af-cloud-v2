@@ -1,5 +1,22 @@
 # Prompt Completion Log — v5.76–v5.80
 
+### [2026-03-10 15:00 UTC] — v5.80: Migration 028 — Formalise states.country_code FK + Deprecate 026/027
+- **Status:** Completed
+- **Tasks:** (A) Deprecated migrations 026 and 027 with header blocks. (B) Created migration 028 — verification query (abort on dirty data), dropped DEFAULT 'MY' on states.country_code, added FK constraint `fk_states_country_code` to countries with ON UPDATE CASCADE DEFERRABLE, added column comment.
+- **Files Modified:** `af-server/migrations/026_transport_pricing.sql`, `af-server/migrations/027_seed_transport_areas.sql`, `af-server/migrations/028_formalise_states_country_fk.sql` (new)
+- **Notes:** All 3 verifications pass: FK constraint exists (contype='f'), column_default is NULL, orphan count is 0. Applied to local DB successfully.
+
+### [2026-03-10 14:30 UTC] — v5.79: Standalone export script — transport skipped cards + rates to Excel
+- **Status:** Completed
+- **Tasks:** (A) Created `export_transport_skipped.py` — standalone Datastore-only script that exports skipped rate cards and their 2024+ rates to two Excel files (`transport_skipped_cards_YYYYMMDD.xlsx` + `transport_skipped_rates_YYYYMMDD.xlsx`). Cards file has editable columns (action, new_area_code, new_area_name, notes) with yellow fill; rates file is read-only reference data. Both have Instructions sheets. (B) Cleaned up `migrate_transport_pricing.py` — removed `export_skipped_to_excel()` function, openpyxl imports, `skipped_records` list and all 4 `.append()` blocks, reverted return type to `dict[int, int]`, updated `main()` call site, removed unused `date_cls` alias. (C) Fixed Datastore `add_filter` deprecation warning — switched to `PropertyFilter` keyword form in both scripts.
+- **Files Modified:** `af-server/scripts/export_transport_skipped.py` (new), `af-server/scripts/migrate_transport_pricing.py`
+- **Notes:** Export produced 525 skipped cards and 31,430 rate rows. Migration dry-run still passes cleanly (342 cards, 22,288 rates).
+
+### [2026-03-10 10:15 UTC] — v5.78: Port Transport — terminal_id support + area seed data + migration script fixes + skipped records export
+- **Status:** Completed
+- **Tasks:** (A) Updated migration 026 — DROP+CREATE with `terminal_id` column, updated UNIQUE constraint to include terminal_id, added terminal index, seeded MY-KUL-000 and MY-MLK-000 catch-all areas. (B) Area seed inserts added to migration. (C) Backend router updated — added `terminal_id` to Pydantic model, `_row_to_rate_card` helper, all SELECT queries (list, get-by-id), create INSERT + rate_card_key format, and list endpoint filter param. (D) Migration script updated — added `LEGACY_PORT_TERMINAL_MAP` for MYPKG_N normalisation, terminal_id in rate_card_key + INSERT, fixed dry-run 0 rates bug (removed `continue` on db_card_id == -1, using pt_id as surrogate), updated docstring. (E) Frontend `PortTransportRateCard` interface updated with `terminal_id: string | null`. (F) Added Excel export for skipped records — `export_skipped_to_excel()` with styled headers, editable columns, Instructions sheet, outputs to `af-server/scripts/output/`. Added openpyxl to requirements.txt, created output/.gitkeep, added xlsx exclusion to .gitignore.
+- **Files Modified:** `af-server/migrations/026_transport_pricing.sql`, `af-server/routers/pricing/port_transport.py`, `af-server/scripts/migrate_transport_pricing.py`, `af-server/requirements.txt`, `af-server/scripts/output/.gitkeep`, `.gitignore`, `af-platform/src/app/actions/pricing.ts`
+
 ### [2026-03-10 07:30 UTC] — v5.76: Transport Pricing Module (Phase 1)
 - **Status:** Completed
 - **Tasks:** Built complete Transport Pricing Module — backend and frontend. (1) Created `026_transport_pricing.sql` migration with `transport_rate_cards` and `transport_rates` tables. (2) Created `af-server/routers/pricing/transport.py` with full CRUD, 12-month time-series, 4-scenario alerts_only, close_previous logic. (3) Registered transport router in `__init__.py` + added transport dashboard summary block. (4) Added all transport types and server actions to `pricing.ts`. (5) Created frontend: `page.tsx`, `_transport-rate-cards-tab.tsx` (filters: country, port, area, vehicle, text, inactive, issues-only), `_transport-rate-list.tsx` (time-series with port→area+vehicle display), `_transport-rate-modal.tsx` (list_price, cost, min_list_price, min_cost, surcharges). (6) Unlocked transportation card in `_dashboard.tsx`. (7) Added TransportRateCardsTab export to `_components.tsx`.

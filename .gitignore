@@ -25,6 +25,9 @@ claude/legacy-reference/
 # ---- Tools (binaries — download locally, never commit) ----
 tools/cloud-sql-proxy.exe
 
+# ---- Migration script output (Excel exports) ----
+af-server/scripts/output/*.xlsx
+
 # ---- General ----
 .DS_Store
 Thumbs.db

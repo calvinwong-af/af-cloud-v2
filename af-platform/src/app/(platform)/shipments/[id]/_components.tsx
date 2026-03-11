@@ -2003,9 +2003,9 @@ export function GroundTransportReconcileCard({
                   {order.order_id}
                 </button>
                 <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
-                  order.transport_mode === 'haulage' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
+                  order.transport_type === 'haulage' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
                 }`}>
-                  {order.transport_mode?.toUpperCase()}
+                  {order.transport_type?.toUpperCase()}
                 </span>
               </div>
               <div className="flex items-center gap-2">

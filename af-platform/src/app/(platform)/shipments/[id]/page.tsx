@@ -342,6 +342,41 @@ export default function ShipmentOrderDetailPage() {
             voyageNumber={voyageNumber}
             refreshKey={tasksRefreshKey}
             onTimingChanged={() => { loadRouteTimings(); loadOrder(); setRouteTimelineRefreshKey(k => k + 1); }}
+            onTransportOrderCreated={() => { loadOrder(); }}
+            shipmentPolUnCode={order.origin?.port_un_code ?? null}
+            shipmentPolName={(() => { const c = order.origin?.port_un_code; return c ? (ports.find(p => p.un_code === c)?.name ?? c) : null; })()}
+            shipmentPodUnCode={order.destination?.port_un_code ?? null}
+            shipmentPodName={(() => { const c = order.destination?.port_un_code; return c ? (ports.find(p => p.un_code === c)?.name ?? c) : null; })()}
+            shipmentContainerNumbers={(() => {
+              const td = order.type_details;
+              if (order.order_type === 'SEA_FCL' && td && 'containers' in td) {
+                return ((td as { containers?: { container_numbers?: string[]; container_number?: string | null }[] }).containers ?? [])
+                  .flatMap(c => [
+                    ...(c.container_numbers ?? []),
+                    ...(c.container_number ? [c.container_number] : []),
+                  ])
+                  .filter(Boolean) as string[];
+              }
+              return [];
+            })()}
+            shipmentWeightKg={(() => {
+              const td = order.type_details;
+              if (td && 'packages' in td) {
+                const pkgs = (td as { packages?: { gross_weight_kg?: number | null }[] }).packages ?? [];
+                const total = pkgs.reduce((sum, p) => sum + (p.gross_weight_kg ?? 0), 0);
+                return total || null;
+              }
+              return null;
+            })()}
+            shipmentVolumeCbm={(() => {
+              const td = order.type_details;
+              if (td && 'packages' in td) {
+                const pkgs = (td as { packages?: { volume_cbm?: number | null }[] }).packages ?? [];
+                const total = pkgs.reduce((sum, p) => sum + (p.volume_cbm ?? 0), 0);
+                return total || null;
+              }
+              return null;
+            })()}
           />
         </div>
       ) : activeTab === 'files' ? null : (

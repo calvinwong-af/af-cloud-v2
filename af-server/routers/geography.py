@@ -1,6 +1,6 @@
 """
 routers/geography.py — Geography endpoints (PostgreSQL).
-Port, state, city, and area lookups + CRUD.
+Port, state, and area lookups + CRUD.
 """
 import json
 import logging
@@ -27,13 +27,9 @@ _port_cache: list[dict] = []
 _port_cache_ts: float = 0
 _PORT_CACHE_TTL = 600  # 10 minutes
 
-# States / cities caches — 10-minute TTL
+# States cache — 10-minute TTL
 _states_cache: list[dict] = []
 _states_cache_ts: float = 0
-
-_cities_cache: list[dict] = []
-_cities_cache_ts: float = 0
-
 
 _terminals_cache: list[dict] = []
 _terminals_cache_ts: float = 0
@@ -51,12 +47,6 @@ def _invalidate_states_cache():
     global _states_cache, _states_cache_ts
     _states_cache = []
     _states_cache_ts = 0
-
-
-def _invalidate_cities_cache():
-    global _cities_cache, _cities_cache_ts
-    _cities_cache = []
-    _cities_cache_ts = 0
 
 
 # ---------------------------------------------------------------------------
@@ -456,181 +446,26 @@ async def get_state(
 
 
 # ---------------------------------------------------------------------------
-# Cities
-# ---------------------------------------------------------------------------
-
-@router.get("/cities")
-async def list_cities(
-    state_code: str | None = Query(default=None),
-    claims: Claims = Depends(require_auth),
-    conn=Depends(get_db),
-):
-    global _cities_cache, _cities_cache_ts
-
-    # If filtering by state, skip cache
-    if state_code:
-        rows = conn.execute(text("""
-            SELECT c.city_id, c.name, c.state_code, s.name AS state_name,
-                   c.lat, c.lng, c.is_active
-            FROM cities c JOIN states s ON c.state_code = s.state_code
-            WHERE c.is_active = TRUE AND c.state_code = :sc
-            ORDER BY c.name
-        """), {"sc": state_code}).fetchall()
-    else:
-        now = time.monotonic()
-        if _cities_cache and (now - _cities_cache_ts) < _PORT_CACHE_TTL:
-            return {"status": "OK", "data": _cities_cache}
-
-        rows = conn.execute(text("""
-            SELECT c.city_id, c.name, c.state_code, s.name AS state_name,
-                   c.lat, c.lng, c.is_active
-            FROM cities c JOIN states s ON c.state_code = s.state_code
-            WHERE c.is_active = TRUE
-            ORDER BY c.name
-        """)).fetchall()
-
-    data = [
-        {
-            "city_id": r[0], "name": r[1], "state_code": r[2],
-            "state_name": r[3],
-            "lat": float(r[4]) if r[4] is not None else None,
-            "lng": float(r[5]) if r[5] is not None else None,
-            "is_active": r[6],
-        }
-        for r in rows
-    ]
-
-    if not state_code:
-        _cities_cache = data
-        _cities_cache_ts = time.monotonic()
-        logger.info(f"[geography] Cities cache refreshed — {len(_cities_cache)} cities loaded")
-
-    return {"status": "OK", "data": data}
-
-
-@router.get("/cities/{city_id}")
-async def get_city(
-    city_id: int,
-    claims: Claims = Depends(require_auth),
-    conn=Depends(get_db),
-):
-    row = conn.execute(text("""
-        SELECT c.city_id, c.name, c.state_code, s.name AS state_name,
-               c.lat, c.lng, c.is_active
-        FROM cities c JOIN states s ON c.state_code = s.state_code
-        WHERE c.city_id = :id
-    """), {"id": city_id}).fetchone()
-
-    if not row:
-        raise HTTPException(status_code=404, detail=f"City {city_id} not found")
-
-    return {"status": "OK", "data": {
-        "city_id": row[0], "name": row[1], "state_code": row[2],
-        "state_name": row[3],
-        "lat": float(row[4]) if row[4] is not None else None,
-        "lng": float(row[5]) if row[5] is not None else None,
-        "is_active": row[6],
-    }}
-
-
-class CityCreate(BaseModel):
-    name: str
-    state_code: str
-    lat: float | None = None
-    lng: float | None = None
-
-
-class CityUpdate(BaseModel):
-    name: str | None = None
-    is_active: bool | None = None
-    lat: float | None = None
-    lng: float | None = None
-
-
-@router.post("/cities")
-async def create_city(
-    body: CityCreate,
-    claims: Claims = Depends(require_afu),
-    conn=Depends(get_db),
-):
-    # Validate state exists
-    state = conn.execute(text("SELECT state_code FROM states WHERE state_code = :sc"),
-                         {"sc": body.state_code}).fetchone()
-    if not state:
-        raise HTTPException(status_code=400, detail=f"Invalid state_code: {body.state_code}")
-
-    row = conn.execute(text("""
-        INSERT INTO cities (name, state_code, lat, lng)
-        VALUES (:name, :sc, :lat, :lng)
-        RETURNING city_id
-    """), {"name": body.name, "sc": body.state_code, "lat": body.lat, "lng": body.lng}).fetchone()
-
-    _invalidate_cities_cache()
-    return {"status": "OK", "data": {"city_id": row[0], "name": body.name}}
-
-
-@router.patch("/cities/{city_id}")
-async def update_city(
-    city_id: int,
-    body: CityUpdate,
-    claims: Claims = Depends(require_afu),
-    conn=Depends(get_db),
-):
-    existing = conn.execute(text("SELECT city_id FROM cities WHERE city_id = :id"),
-                            {"id": city_id}).fetchone()
-    if not existing:
-        raise HTTPException(status_code=404, detail=f"City {city_id} not found")
-
-    updates = []
-    params: dict = {"id": city_id}
-    if body.name is not None:
-        updates.append("name = :name")
-        params["name"] = body.name
-    if body.is_active is not None:
-        updates.append("is_active = :active")
-        params["active"] = body.is_active
-    if body.lat is not None:
-        updates.append("lat = :lat")
-        params["lat"] = body.lat
-    if body.lng is not None:
-        updates.append("lng = :lng")
-        params["lng"] = body.lng
-
-    if not updates:
-        return {"status": "OK"}
-
-    conn.execute(text(f"UPDATE cities SET {', '.join(updates)} WHERE city_id = :id"), params)
-    _invalidate_cities_cache()
-    return {"status": "OK"}
-
-
-# ---------------------------------------------------------------------------
 # Areas (renamed from Haulage Areas)
 # ---------------------------------------------------------------------------
 
 @router.get("/areas")
 async def list_areas(
-    port_un_code: str | None = Query(default=None),
     state_code: str | None = Query(default=None),
     claims: Claims = Depends(require_auth),
     conn=Depends(get_db),
 ):
     where_clauses = ["a.is_active = TRUE"]
     params: dict = {}
-    if port_un_code:
-        where_clauses.append("a.port_un_code = :port")
-        params["port"] = port_un_code
     if state_code:
         where_clauses.append("a.state_code = :sc")
         params["sc"] = state_code
 
     where = " AND ".join(where_clauses)
     rows = conn.execute(text(f"""
-        SELECT a.area_id, a.area_code, a.area_name, a.port_un_code,
-               a.state_code, a.city_id, c.name AS city_name,
-               a.lat, a.lng, a.is_active
+        SELECT a.area_id, a.area_code, a.area_name,
+               a.state_code, a.lat, a.lng, a.is_active
         FROM areas a
-        LEFT JOIN cities c ON a.city_id = c.city_id
         WHERE {where}
         ORDER BY a.area_name
     """), params).fetchall()
@@ -638,11 +473,10 @@ async def list_areas(
     data = [
         {
             "area_id": r[0], "area_code": r[1], "area_name": r[2],
-            "port_un_code": r[3], "state_code": r[4], "city_id": r[5],
-            "city_name": r[6],
-            "lat": float(r[7]) if r[7] is not None else None,
-            "lng": float(r[8]) if r[8] is not None else None,
-            "is_active": r[9],
+            "state_code": r[3],
+            "lat": float(r[4]) if r[4] is not None else None,
+            "lng": float(r[5]) if r[5] is not None else None,
+            "is_active": r[6],
         }
         for r in rows
     ]
@@ -656,11 +490,9 @@ async def get_area(
     conn=Depends(get_db),
 ):
     row = conn.execute(text("""
-        SELECT a.area_id, a.area_code, a.area_name, a.port_un_code,
-               a.state_code, a.city_id, c.name AS city_name,
-               a.lat, a.lng, a.is_active
+        SELECT a.area_id, a.area_code, a.area_name,
+               a.state_code, a.lat, a.lng, a.is_active
         FROM areas a
-        LEFT JOIN cities c ON a.city_id = c.city_id
         WHERE a.area_id = :id
     """), {"id": area_id}).fetchone()
 
@@ -669,20 +501,17 @@ async def get_area(
 
     return {"status": "OK", "data": {
         "area_id": row[0], "area_code": row[1], "area_name": row[2],
-        "port_un_code": row[3], "state_code": row[4], "city_id": row[5],
-        "city_name": row[6],
-        "lat": float(row[7]) if row[7] is not None else None,
-        "lng": float(row[8]) if row[8] is not None else None,
-        "is_active": row[9],
+        "state_code": row[3],
+        "lat": float(row[4]) if row[4] is not None else None,
+        "lng": float(row[5]) if row[5] is not None else None,
+        "is_active": row[6],
     }}
 
 
 class AreaCreate(BaseModel):
     area_code: str
     area_name: str
-    port_un_code: str
-    state_code: str | None = None
-    city_id: int | None = None
+    state_code: str
     lat: float | None = None
     lng: float | None = None
 
@@ -690,9 +519,7 @@ class AreaCreate(BaseModel):
 class AreaUpdate(BaseModel):
     area_code: str | None = None
     area_name: str | None = None
-    port_un_code: str | None = None
     state_code: str | None = None
-    city_id: int | None = None
     lat: float | None = None
     lng: float | None = None
 
@@ -706,13 +533,12 @@ async def create_area(
     area_code = body.area_code.strip().upper()
 
     row = conn.execute(text("""
-        INSERT INTO areas (area_code, area_name, port_un_code, state_code, city_id, lat, lng)
-        VALUES (:code, :name, :port, :sc, :city, :lat, :lng)
+        INSERT INTO areas (area_code, area_name, state_code, lat, lng)
+        VALUES (:code, :name, :sc, :lat, :lng)
         RETURNING area_id
     """), {
         "code": area_code, "name": body.area_name,
-        "port": body.port_un_code, "sc": body.state_code,
-        "city": body.city_id, "lat": body.lat, "lng": body.lng,
+        "sc": body.state_code, "lat": body.lat, "lng": body.lng,
     }).fetchone()
 
     return {"status": "OK", "data": {"area_id": row[0], "area_code": area_code}}
@@ -733,7 +559,7 @@ async def update_area(
     updates = []
     params: dict = {"id": area_id}
 
-    for field in ["area_code", "area_name", "port_un_code", "state_code", "city_id", "lat", "lng"]:
+    for field in ["area_code", "area_name", "state_code", "lat", "lng"]:
         val = getattr(body, field, None)
         if val is not None:
             if field == "area_code":

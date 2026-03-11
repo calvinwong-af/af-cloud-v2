@@ -55,144 +55,155 @@ async def dashboard_summary(
             joins = _country_join_filter("rc", params, country_code)
             country_where = "AND (op.country_code = :country OR dp.country_code = :country)"
 
-        # total_cards + last_updated
         row = conn.execute(text(f"""
-            SELECT COUNT(*), MAX(rc.updated_at)::date
-            FROM {card_table} rc
-            {joins}
-            WHERE rc.is_active = true {country_where}
+            WITH
+            active_cards AS (
+                SELECT rc.id, rc.updated_at
+                FROM {card_table} rc
+                {joins}
+                WHERE rc.is_active = true {country_where}
+            ),
+            alert_cep AS (
+                SELECT DISTINCT rc.id
+                FROM {card_table} rc
+                JOIN active_cards ac ON ac.id = rc.id
+                CROSS JOIN LATERAL (
+                    SELECT r.cost, r.effective_to
+                    FROM {rate_table} r
+                    WHERE r.rate_card_id = rc.id
+                      AND r.supplier_id IS NOT NULL
+                      AND r.rate_status = 'PUBLISHED'
+                      AND r.cost IS NOT NULL
+                    ORDER BY r.effective_from DESC
+                    LIMIT 1
+                ) lc
+                CROSS JOIN LATERAL (
+                    SELECT r.list_price, r.effective_to
+                    FROM {rate_table} r
+                    WHERE r.rate_card_id = rc.id
+                      AND r.supplier_id IS NULL
+                      AND r.rate_status = 'PUBLISHED'
+                      AND r.list_price IS NOT NULL
+                    ORDER BY r.effective_from DESC
+                    LIMIT 1
+                ) llp
+                WHERE (lc.effective_to IS NULL OR lc.effective_to >= CURRENT_DATE)
+                  AND (llp.effective_to IS NULL OR llp.effective_to >= CURRENT_DATE)
+                  AND lc.cost > llp.list_price
+            ),
+            alert_nac AS (
+                SELECT DISTINCT rc.id
+                FROM {card_table} rc
+                JOIN active_cards ac ON ac.id = rc.id
+                CROSS JOIN LATERAL (
+                    SELECT r.effective_to
+                    FROM {rate_table} r
+                    WHERE r.rate_card_id = rc.id
+                      AND r.supplier_id IS NULL
+                      AND r.rate_status = 'PUBLISHED'
+                      AND r.list_price IS NOT NULL
+                    ORDER BY r.effective_from DESC
+                    LIMIT 1
+                ) llp
+                LEFT JOIN LATERAL (
+                    SELECT r.effective_to, 1 AS found
+                    FROM {rate_table} r
+                    WHERE r.rate_card_id = rc.id
+                      AND r.supplier_id IS NOT NULL
+                      AND r.rate_status = 'PUBLISHED'
+                      AND r.cost IS NOT NULL
+                    ORDER BY r.effective_from DESC
+                    LIMIT 1
+                ) lc ON true
+                WHERE (llp.effective_to IS NULL OR llp.effective_to >= CURRENT_DATE)
+                  AND (lc.found IS NULL
+                       OR (lc.effective_to IS NOT NULL AND lc.effective_to < CURRENT_DATE))
+            ),
+            alert_nlp AS (
+                SELECT DISTINCT rc.id
+                FROM {card_table} rc
+                JOIN active_cards ac ON ac.id = rc.id
+                CROSS JOIN LATERAL (
+                    SELECT r.effective_to
+                    FROM {rate_table} r
+                    WHERE r.rate_card_id = rc.id
+                      AND r.supplier_id IS NOT NULL
+                      AND r.rate_status = 'PUBLISHED'
+                      AND r.cost IS NOT NULL
+                    ORDER BY r.effective_from DESC
+                    LIMIT 1
+                ) lc
+                LEFT JOIN LATERAL (
+                    SELECT r.effective_to, 1 AS found
+                    FROM {rate_table} r
+                    WHERE r.rate_card_id = rc.id
+                      AND r.supplier_id IS NULL
+                      AND r.rate_status = 'PUBLISHED'
+                      AND r.list_price IS NOT NULL
+                    ORDER BY r.effective_from DESC
+                    LIMIT 1
+                ) llp ON true
+                WHERE (lc.effective_to IS NULL OR lc.effective_to >= CURRENT_DATE)
+                  AND (llp.found IS NULL
+                       OR (llp.effective_to IS NOT NULL AND llp.effective_to < CURRENT_DATE))
+            ),
+            alert_prn AS (
+                SELECT DISTINCT rc.id
+                FROM {card_table} rc
+                JOIN active_cards ac ON ac.id = rc.id
+                WHERE (
+                    SELECT MAX(r.effective_from)
+                    FROM {rate_table} r
+                    WHERE r.rate_card_id = rc.id
+                      AND r.supplier_id IS NOT NULL
+                      AND r.rate_status = 'PUBLISHED'
+                ) > (
+                    SELECT MAX(r.effective_from)
+                    FROM {rate_table} r
+                    WHERE r.rate_card_id = rc.id
+                      AND r.supplier_id IS NULL
+                      AND r.rate_status = 'PUBLISHED'
+                )
+            ),
+            alert_union AS (
+                SELECT id FROM alert_cep
+                UNION
+                SELECT id FROM alert_nac
+                UNION
+                SELECT id FROM alert_nlp
+                UNION
+                SELECT id FROM alert_prn
+            ),
+            expiring_soon_cards AS (
+                SELECT ac.id
+                FROM active_cards ac
+                WHERE
+                    CURRENT_DATE >= DATE_TRUNC('month', CURRENT_DATE + interval '1 month') - interval '7 days'
+                    AND NOT EXISTS (
+                        SELECT 1 FROM {rate_table} r
+                        WHERE r.rate_card_id = ac.id
+                          AND r.effective_from >= DATE_TRUNC('month', CURRENT_DATE + interval '1 month')
+                    )
+                    AND ac.id NOT IN (SELECT id FROM alert_union)
+            )
+            SELECT
+                (SELECT COUNT(*) FROM active_cards)                    AS total_cards,
+                (SELECT MAX(updated_at)::date FROM active_cards)       AS last_updated,
+                (SELECT COUNT(*) FROM expiring_soon_cards)             AS expiring_soon,
+                (SELECT COUNT(*) FROM alert_cep)                       AS cost_exceeds_price,
+                (SELECT COUNT(*) FROM alert_nac)                       AS no_active_cost,
+                (SELECT COUNT(*) FROM alert_nlp)                       AS no_list_price,
+                (SELECT COUNT(*) FROM alert_prn)                       AS price_review_needed
         """), params).fetchone()
-
-        total_cards = row[0] if row else 0
-        last_updated = str(row[1]) if row and row[1] else None
-
-        # expiring_soon — cards with no future-dated rate
-        exp_row = conn.execute(text(f"""
-            SELECT COUNT(*) FROM {card_table} rc
-            {joins}
-            WHERE rc.is_active = true {country_where}
-            AND NOT EXISTS (
-                SELECT 1 FROM {rate_table} r
-                WHERE r.rate_card_id = rc.id
-                AND r.effective_from > DATE_TRUNC('month', CURRENT_DATE)
-            )
-        """), params).fetchone()
-
-        expiring_soon = exp_row[0] if exp_row else 0
-
-        # Scenario 1 — cost exceeds list price
-        s1_row = conn.execute(text(f"""
-            SELECT COUNT(DISTINCT rc.id)
-            FROM {card_table} rc
-            {joins}
-            WHERE rc.is_active = true {country_where}
-            AND (
-                SELECT MIN(r_cost.cost)
-                FROM {rate_table} r_cost
-                WHERE r_cost.rate_card_id = rc.id
-                  AND r_cost.supplier_id IS NOT NULL
-                  AND r_cost.rate_status = 'PUBLISHED'
-                  AND r_cost.effective_from <= CURRENT_DATE
-                  AND (r_cost.effective_to IS NULL OR r_cost.effective_to >= CURRENT_DATE)
-                  AND r_cost.cost IS NOT NULL
-            ) > (
-                SELECT r_price.list_price
-                FROM {rate_table} r_price
-                WHERE r_price.rate_card_id = rc.id
-                  AND r_price.supplier_id IS NULL
-                  AND r_price.rate_status = 'PUBLISHED'
-                  AND r_price.effective_from <= CURRENT_DATE
-                  AND (r_price.effective_to IS NULL OR r_price.effective_to >= CURRENT_DATE)
-                ORDER BY r_price.effective_from DESC
-                LIMIT 1
-            )
-        """), params).fetchone()
-        cost_exceeds_price = s1_row[0] if s1_row else 0
-
-        # Scenario 2 — cost but no list price
-        s2_row = conn.execute(text(f"""
-            SELECT COUNT(DISTINCT rc.id)
-            FROM {card_table} rc
-            {joins}
-            WHERE rc.is_active = true {country_where}
-            AND EXISTS (
-                SELECT 1 FROM {rate_table} r
-                WHERE r.rate_card_id = rc.id
-                  AND r.supplier_id IS NOT NULL
-                  AND r.rate_status = 'PUBLISHED'
-                  AND r.effective_from <= CURRENT_DATE
-                  AND (r.effective_to IS NULL OR r.effective_to >= CURRENT_DATE)
-                  AND r.cost IS NOT NULL
-            )
-            AND NOT EXISTS (
-                SELECT 1 FROM {rate_table} r
-                WHERE r.rate_card_id = rc.id
-                  AND r.supplier_id IS NULL
-                  AND r.rate_status = 'PUBLISHED'
-                  AND r.effective_from <= CURRENT_DATE
-                  AND (r.effective_to IS NULL OR r.effective_to >= CURRENT_DATE)
-                  AND r.list_price IS NOT NULL
-            )
-        """), params).fetchone()
-        no_list_price = s2_row[0] if s2_row else 0
-
-        # Scenario 3 — cost newer than list price
-        s3_row = conn.execute(text(f"""
-            SELECT COUNT(DISTINCT rc.id)
-            FROM {card_table} rc
-            {joins}
-            WHERE rc.is_active = true {country_where}
-            AND (
-                SELECT MAX(r_cost.effective_from)
-                FROM {rate_table} r_cost
-                WHERE r_cost.rate_card_id = rc.id
-                  AND r_cost.supplier_id IS NOT NULL
-                  AND r_cost.rate_status = 'PUBLISHED'
-            ) > (
-                SELECT MAX(r_price.effective_from)
-                FROM {rate_table} r_price
-                WHERE r_price.rate_card_id = rc.id
-                  AND r_price.supplier_id IS NULL
-                  AND r_price.rate_status = 'PUBLISHED'
-            )
-        """), params).fetchone()
-        price_review_needed = s3_row[0] if s3_row else 0
-
-        # Scenario 4 — list price active but no current supplier cost (cost expired)
-        s4_row = conn.execute(text(f"""
-            SELECT COUNT(DISTINCT rc.id)
-            FROM {card_table} rc
-            {joins}
-            WHERE rc.is_active = true {country_where}
-            AND EXISTS (
-                SELECT 1 FROM {rate_table} r
-                WHERE r.rate_card_id = rc.id
-                  AND r.supplier_id IS NULL
-                  AND r.rate_status = 'PUBLISHED'
-                  AND r.effective_from <= CURRENT_DATE
-                  AND (r.effective_to IS NULL OR r.effective_to >= CURRENT_DATE)
-                  AND r.list_price IS NOT NULL
-            )
-            AND NOT EXISTS (
-                SELECT 1 FROM {rate_table} r
-                WHERE r.rate_card_id = rc.id
-                  AND r.supplier_id IS NOT NULL
-                  AND r.rate_status = 'PUBLISHED'
-                  AND r.effective_from <= CURRENT_DATE
-                  AND (r.effective_to IS NULL OR r.effective_to >= CURRENT_DATE)
-                  AND r.cost IS NOT NULL
-            )
-        """), params).fetchone()
-        no_active_cost = s4_row[0] if s4_row else 0
 
         result[mode] = {
-            "total_cards": total_cards,
-            "last_updated": last_updated,
-            "expiring_soon": expiring_soon,
-            "cost_exceeds_price": cost_exceeds_price,
-            "no_active_cost": no_active_cost,
-            "no_list_price": no_list_price,
-            "price_review_needed": price_review_needed,
+            "total_cards": row[0] if row else 0,
+            "last_updated": str(row[1]) if row and row[1] else None,
+            "expiring_soon": row[2] if row else 0,
+            "cost_exceeds_price": row[3] if row else 0,
+            "no_active_cost": row[4] if row else 0,
+            "no_list_price": row[5] if row else 0,
+            "price_review_needed": row[6] if row else 0,
         }
 
     # --- Local Charges and Customs (flat-rate modules) ---
