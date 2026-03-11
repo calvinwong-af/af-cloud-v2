@@ -1,17 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import type { MonthBucket, PanelMode } from './_types';
-import type { RateCardDetail, RateDetail, SurchargeItem } from '@/app/actions/pricing';
+import type { AirRateCard, AirRate, SurchargeItem, RateDetail } from '@/app/actions/pricing';
 import {
-  updateFCLRateAction,
-  updateLCLRateAction,
-  deleteFCLRateAction,
-  deleteLCLRateAction,
+  updateAirRateAction,
+  deleteAirRateAction,
 } from '@/app/actions/pricing';
-import { formatDate } from './_helpers';
-import { CostSparkline } from './_sparkline';
-import { RateModal } from './_rate-modal';
+import { useMonthBuckets, formatDate } from '../_helpers';
+import { CostSparkline } from '../_sparkline';
+import { AirRateModal } from './_air-rate-modal';
 
 // Migration floor — rates with no changes before this date display this as their start
 const MIGRATION_FLOOR = '2024-01-01';
@@ -20,33 +17,42 @@ type ModalState =
   | { open: false }
   | { open: true; mode: 'add-list-price' }
   | { open: true; mode: 'add-supplier' }
-  | { open: true; mode: 'edit'; rateId: number; initial: RateDetail }
-  | { open: true; mode: 'update'; initial: RateDetail };
+  | { open: true; mode: 'edit'; rateId: number; initial: Record<string, unknown> }
+  | { open: true; mode: 'update'; initial: Record<string, unknown> };
 
-interface ExpandedRatePanelProps {
-  detail: RateCardDetail;
-  months: MonthBucket[];
+type PanelMode =
+  | { type: 'view' }
+  | { type: 'terminate'; rateId: number };
+
+interface AirExpandedPanelProps {
+  detail: AirRateCard;
   companiesMap: Record<string, string>;
-  totalWidth: number;
-  cardMode: 'fcl' | 'lcl';
   cardId: number;
   companiesList: { company_id: string; name: string }[];
   onRatesChanged: () => void;
 }
 
-export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, cardMode, cardId, companiesList, onRatesChanged }: ExpandedRatePanelProps) {
+export function AirExpandedPanel({
+  detail,
+  companiesMap,
+  cardId,
+  companiesList,
+  onRatesChanged,
+}: AirExpandedPanelProps) {
   const [panelMode, setPanelMode] = useState<PanelMode>({ type: 'view' });
   const [saving, setSaving] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [modalState, setModalState] = useState<ModalState>({ open: false });
   const [formTerminateDate, setFormTerminateDate] = useState('');
 
+  const months = useMonthBuckets(6);
+  const totalWidth = 220 + months.length * 80;
+
   const handleTerminate = async () => {
     if (panelMode.type !== 'terminate' || !formTerminateDate) return;
     setSaving(true);
     try {
-      const action = cardMode === 'fcl' ? updateFCLRateAction : updateLCLRateAction;
-      await action(panelMode.rateId, { effective_to: formTerminateDate });
+      await updateAirRateAction(panelMode.rateId, { effective_to: formTerminateDate });
       setFormTerminateDate('');
       setPanelMode({ type: 'view' });
       onRatesChanged();
@@ -58,8 +64,7 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
   const handleDelete = async (rateId: number) => {
     setSaving(true);
     try {
-      const action = cardMode === 'fcl' ? deleteFCLRateAction : deleteLCLRateAction;
-      await action(rateId);
+      await deleteAirRateAction(rateId);
       setConfirmDeleteId(null);
       onRatesChanged();
     } finally {
@@ -69,36 +74,26 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
 
   const currentMonthKey = months.find(m => m.isCurrentMonth)?.month_key ?? '';
 
-  const getLatestEffective = (rates: RateDetail[]): string | null => {
-    return rates.map(r => r.effective_from).filter(Boolean).sort().at(-1) ?? null;
-  };
-
-  const formatRatesRange = (rates: RateDetail[]): string => {
+  const formatRatesRange = (rates: AirRate[]): string => {
     if (rates.length === 0) return '\u2014';
-
-    // Filter out rates with inverted dates (effective_from > effective_to)
     const validRates = rates.filter(r =>
       r.effective_to === null || (r.effective_from ?? '') <= r.effective_to
     );
     if (validRates.length === 0) return '\u2014';
-
     const latestRate = validRates.slice().sort(
       (a, b) => (b.effective_from ?? '').localeCompare(a.effective_from ?? '')
     )[0];
-
     const rawFrom = latestRate.effective_from ?? MIGRATION_FLOOR;
     const displayFrom = rawFrom <= MIGRATION_FLOOR
       ? formatDate(MIGRATION_FLOOR)
       : formatDate(rawFrom);
-
     const displayTo = latestRate.effective_to === null
       ? 'Open'
       : formatDate(latestRate.effective_to);
-
     return `Since ${displayFrom} \u2192 ${displayTo}`;
   };
 
-  const getEffectiveRate = (rates: RateDetail[]): RateDetail | undefined => {
+  const getEffectiveRate = (rates: AirRate[]): AirRate | undefined => {
     const today = new Date().toISOString().slice(0, 10);
     return rates.find(r =>
       r.rate_status === 'PUBLISHED' &&
@@ -107,22 +102,7 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
     );
   };
 
-  const priceRefRates = detail.rates_by_supplier['null'] ?? [];
-  const supplierEntries = Object.entries(detail.rates_by_supplier);
-  const supplierRows = supplierEntries
-    .filter(([key]) => key !== 'null')
-    .sort(([idA, ratesA], [idB, ratesB]) => {
-      const latestA = getLatestEffective(ratesA) ?? '';
-      const latestB = getLatestEffective(ratesB) ?? '';
-      if (latestB > latestA) return 1;
-      if (latestB < latestA) return -1;
-      const nameA = companiesMap[idA] ?? idA;
-      const nameB = companiesMap[idB] ?? idB;
-      return nameA.localeCompare(nameB);
-    });
-
-  // Find dominant rate for a month (shared logic for buildMonthMap and buildSurchargesMap)
-  const getDominantRate = (sorted: RateDetail[], monthKey: string, monthStart: string): RateDetail | null => {
+  const getDominantRate = (sorted: AirRate[], monthKey: string, monthStart: string): AirRate | null => {
     const upperBound = monthStart;
     const dominantRate = sorted.find(r => (r.effective_from ?? '') <= upperBound) ?? null;
     if (!dominantRate) return null;
@@ -134,8 +114,8 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
   };
 
   const buildMonthMap = (
-    rates: RateDetail[],
-    valueKey: 'list_price' | 'cost',
+    rates: AirRate[],
+    valueKey: 'p100_list_price' | 'p100_cost',
   ): Map<string, { value: number | null; isDraft: boolean }> => {
     const sorted = [...rates].sort(
       (a, b) => (b.effective_from ?? '').localeCompare(a.effective_from ?? ''),
@@ -146,12 +126,10 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
       const isFuture = m.month_key > currentMonthKey;
 
       if (isFuture) {
-        // Check for a rate starting exactly in this future month
         const exactRate = sorted.find(r => (r.effective_from ?? '').substring(0, 7) === m.month_key) ?? null;
         if (exactRate && (exactRate.effective_to === null || exactRate.effective_to >= monthStart)) {
           result.set(m.month_key, { value: exactRate[valueKey] ?? null, isDraft: exactRate.rate_status === 'DRAFT' });
         } else {
-          // Carry forward the latest open-ended rate into future months
           const dominant = getDominantRate(sorted, m.month_key, monthStart);
           result.set(m.month_key, dominant
             ? { value: dominant[valueKey] ?? null, isDraft: dominant.rate_status === 'DRAFT' }
@@ -174,7 +152,7 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
     return result;
   };
 
-  const buildSurchargesMap = (rates: RateDetail[]): Map<string, SurchargeItem[] | null> => {
+  const buildSurchargesMap = (rates: AirRate[]): Map<string, SurchargeItem[] | null> => {
     const sorted = [...rates].sort(
       (a, b) => (b.effective_from ?? '').localeCompare(a.effective_from ?? ''),
     );
@@ -184,12 +162,10 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
       const isFuture = m.month_key > currentMonthKey;
 
       if (isFuture) {
-        // Check for a rate starting exactly in this future month
         const exactRate = sorted.find(r => (r.effective_from ?? '').substring(0, 7) === m.month_key) ?? null;
         if (exactRate && (exactRate.effective_to === null || exactRate.effective_to >= monthStart)) {
           result.set(m.month_key, exactRate.surcharges ?? null);
         } else {
-          // Carry forward surcharges from latest open-ended rate
           const dominant = getDominantRate(sorted, m.month_key, monthStart);
           result.set(m.month_key, dominant?.surcharges ?? null);
         }
@@ -202,21 +178,21 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
     return result;
   };
 
-  const buildEndDateMap = (rates: RateDetail[]): Map<string, RateDetail> => {
+  const buildEndDateMap = (rates: AirRate[]): Map<string, RateDetail> => {
     const map = new Map<string, RateDetail>();
     for (const rate of rates) {
       if (rate.effective_to) {
         const mk = rate.effective_to.substring(0, 7);
         const existing = map.get(mk);
         if (!existing || (rate.effective_from ?? '') > (existing.effective_from ?? '')) {
-          map.set(mk, rate);
+          map.set(mk, rate as unknown as RateDetail);
         }
       }
     }
     return map;
   };
 
-  const buildStartDateMap = (rates: RateDetail[]): Map<string, RateDetail> => {
+  const buildStartDateMap = (rates: AirRate[]): Map<string, RateDetail> => {
     const MIGRATION_FLOOR_MK = '2024-01';
     const map = new Map<string, RateDetail>();
     for (const rate of rates) {
@@ -224,14 +200,26 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
         const mk = rate.effective_from.substring(0, 7);
         const existing = map.get(mk);
         if (!existing || (rate.effective_from ?? '') > (existing.effective_from ?? '')) {
-          map.set(mk, rate);
+          map.set(mk, rate as unknown as RateDetail);
         }
       }
     }
     return map;
   };
 
-  const priceRefMap = buildMonthMap(priceRefRates, 'list_price');
+  const priceRefRates = (detail.rates_by_supplier?.['null'] ?? []) as AirRate[];
+  const supplierEntries = Object.entries(detail.rates_by_supplier ?? {});
+  const supplierRows = supplierEntries
+    .filter(([key]) => key !== 'null')
+    .sort(([idA, ratesA], [idB, ratesB]) => {
+      const latestA = (ratesA as AirRate[]).map(r => r.effective_from).filter(Boolean).sort().at(-1) ?? '';
+      const latestB = (ratesB as AirRate[]).map(r => r.effective_from).filter(Boolean).sort().at(-1) ?? '';
+      if (latestB > latestA) return 1;
+      if (latestB < latestA) return -1;
+      return (companiesMap[idA] ?? idA).localeCompare(companiesMap[idB] ?? idB);
+    });
+
+  const priceRefMap = buildMonthMap(priceRefRates, 'p100_list_price');
   const priceRefSurchargesMap = buildSurchargesMap(priceRefRates);
   const priceRefEndDateMap = buildEndDateMap(priceRefRates);
   const latestPriceRef = priceRefRates[0] ?? null;
@@ -265,18 +253,18 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
                   <>
                     <button onClick={() => {
                         const effective = getEffectiveRate(priceRefRates);
-                        setModalState({ open: true, mode: 'update', initial: effective ?? latestPriceRef });
+                        setModalState({ open: true, mode: 'update', initial: (effective ?? latestPriceRef) as unknown as Record<string, unknown> });
                       }}
                       className={btnClass}>Update</button>
-                    <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestPriceRef.id, initial: latestPriceRef })}
+                    <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestPriceRef.id, initial: latestPriceRef as unknown as Record<string, unknown> })}
                       className={btnClass}>Edit</button>
-                    <button onClick={() => { setFormTerminateDate(''); setPanelMode({ type: 'terminate', rateId: latestPriceRef.id, current: latestPriceRef }); }}
+                    <button onClick={() => { setFormTerminateDate(''); setPanelMode({ type: 'terminate', rateId: latestPriceRef.id }); }}
                       className={btnClass}>Set end date</button>
                   </>
                 )}
                 {latestPriceRef.rate_status === 'DRAFT' && (
                   <>
-                    <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestPriceRef.id, initial: latestPriceRef })}
+                    <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestPriceRef.id, initial: latestPriceRef as unknown as Record<string, unknown> })}
                       className={btnClass}>Edit</button>
                     {confirmDeleteId === latestPriceRef.id ? (
                       <span className="text-[10px] text-red-600 flex items-center gap-1">
@@ -299,7 +287,7 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
               surchargesMap={priceRefSurchargesMap}
               endDateMap={priceRefEndDateMap}
               startDateMap={buildStartDateMap(priceRefRates)}
-              onNodeClick={(rate) => setModalState({ open: true, mode: 'edit', rateId: rate.id, initial: rate })}
+              onNodeClick={(rate) => setModalState({ open: true, mode: 'edit', rateId: rate.id, initial: rate as unknown as Record<string, unknown> })}
             />
           </div>
         </div>
@@ -316,7 +304,7 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
           </div>
         )}
 
-        {/* Supplier Costs divider — always shown, with + Supplier Rate button */}
+        {/* Supplier Costs divider */}
         <div className="px-3 py-1 bg-slate-100/80 border-y border-[var(--border)]/60 flex items-center justify-between" style={{ minWidth: `${totalWidth}px` }}>
           <span className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wide">Supplier Costs</span>
           {panelMode.type === 'view' && (
@@ -330,9 +318,10 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
         </div>
 
         {/* Supplier rows — sparkline per row */}
-        {supplierRows.map(([supplierId, rates]) => {
+        {supplierRows.map(([supplierId, rawRates]) => {
+          const rates = rawRates as AirRate[];
           const supplierName = companiesMap[supplierId] ?? '';
-          const costMapData = buildMonthMap(rates, 'cost');
+          const costMapData = buildMonthMap(rates, 'p100_cost');
           const costSurchargesMap = buildSurchargesMap(rates);
           const supplierEndDateMap = buildEndDateMap(rates);
           const latestRate = rates[0];
@@ -347,29 +336,24 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
                   {rates.length > 0 && (
                     <div className="text-[10px] text-[var(--text-muted)]">{formatRatesRange(rates)}</div>
                   )}
-                  {cardMode === 'lcl' && latestRate.min_quantity != null && (
-                    <span className="text-[10px] text-[var(--text-muted)]">
-                      Min: {latestRate.min_quantity} W/M
-                    </span>
-                  )}
                   {latestRate && panelMode.type === 'view' && (
                     <div className="flex gap-1 mt-0.5">
                       {latestRate.rate_status === 'PUBLISHED' && (
                         <>
                           <button onClick={() => {
                               const effective = getEffectiveRate(rates);
-                              setModalState({ open: true, mode: 'update', initial: effective ?? latestRate });
+                              setModalState({ open: true, mode: 'update', initial: (effective ?? latestRate) as unknown as Record<string, unknown> });
                             }}
                             className={btnClass}>Update</button>
-                          <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestRate.id, initial: latestRate })}
+                          <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestRate.id, initial: latestRate as unknown as Record<string, unknown> })}
                             className={btnClass}>Edit</button>
-                          <button onClick={() => { setFormTerminateDate(''); setPanelMode({ type: 'terminate', rateId: latestRate.id, current: latestRate }); }}
+                          <button onClick={() => { setFormTerminateDate(''); setPanelMode({ type: 'terminate', rateId: latestRate.id }); }}
                             className={btnClass}>Set end date</button>
                         </>
                       )}
                       {latestRate.rate_status === 'DRAFT' && (
                         <>
-                          <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestRate.id, initial: latestRate })}
+                          <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestRate.id, initial: latestRate as unknown as Record<string, unknown> })}
                             className={btnClass}>Edit</button>
                           {confirmDeleteId === latestRate.id ? (
                             <span className="text-[10px] text-red-600 flex items-center gap-1">
@@ -391,7 +375,7 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
                     surchargesMap={costSurchargesMap}
                     endDateMap={supplierEndDateMap}
                     startDateMap={buildStartDateMap(rates)}
-                    onNodeClick={(rate) => setModalState({ open: true, mode: 'edit', rateId: rate.id, initial: rate })}
+                    onNodeClick={(rate) => setModalState({ open: true, mode: 'edit', rateId: rate.id, initial: rate as unknown as Record<string, unknown> })}
                   />
                 </div>
               </div>
@@ -414,15 +398,13 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
         {supplierRows.length === 0 && priceRefRates.length === 0 && (
           <div className="px-4 py-3 text-xs text-[var(--text-muted)]" style={{ minWidth: `${totalWidth}px` }}>No rate data available</div>
         )}
-
       </div>
 
-      <RateModal
+      <AirRateModal
         open={modalState.open}
         mode={modalState.open ? modalState.mode : 'add-list-price'}
         rateId={modalState.open && modalState.mode === 'edit' ? modalState.rateId : undefined}
         initial={modalState.open && (modalState.mode === 'edit' || modalState.mode === 'update') ? modalState.initial : undefined}
-        cardMode={cardMode}
         cardId={cardId}
         companiesList={companiesList}
         onSaved={onRatesChanged}

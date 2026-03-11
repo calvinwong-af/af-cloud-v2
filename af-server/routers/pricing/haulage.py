@@ -315,17 +315,23 @@ async def list_haulage_rate_cards(
         # Latest price reference
         price_rows = conn.execute(text("""
             SELECT DISTINCT ON (rate_card_id)
-                   rate_card_id, list_price, currency, effective_from
+                   rate_card_id, list_price, currency, effective_from, surcharges
             FROM haulage_rates
             WHERE rate_card_id = ANY(:ids) AND supplier_id IS NULL
             ORDER BY rate_card_id, effective_from DESC
         """), {"ids": card_ids}).fetchall()
 
-        price_map = {r[0]: {
-            "list_price": float(r[1]) if r[1] is not None else None,
-            "currency": r[2],
-            "effective_from": str(r[3]) if r[3] else None,
-        } for r in price_rows}
+        price_map = {}
+        for r in price_rows:
+            lp = float(r[1]) if r[1] is not None else None
+            sc = _surcharge_total(r[4])
+            price_map[r[0]] = {
+                "list_price": lp,
+                "currency": r[2],
+                "effective_from": str(r[3]) if r[3] else None,
+                "list_surcharge_total": sc,
+                "total_list_price": round(lp + sc, 4) if lp is not None else None,
+            }
 
         for c in cards:
             c["latest_price_ref"] = price_map.get(c["id"])
@@ -489,14 +495,17 @@ async def list_haulage_rate_cards(
                     pr_sc = _surcharge_total(effective_pr.get("_surcharges")) if effective_pr else 0.0
                     cost_sc = _surcharge_total(effective_cost_surcharges) if effective_cost is not None else 0.0
                     has_any = effective_pr is not None or effective_cost is not None
+                    f_lp = effective_pr["list_price"] if effective_pr else None
                     ts.append({
                         "month_key": mk,
-                        "list_price": effective_pr["list_price"] if effective_pr else None,
+                        "list_price": f_lp,
                         "cost": effective_cost,
                         "currency": effective_pr["currency"] if effective_pr else None,
                         "rate_status": effective_pr["rate_status"] if effective_pr else None,
                         "list_surcharge_total": pr_sc,
                         "cost_surcharge_total": cost_sc,
+                        "total_list_price": round(f_lp + pr_sc, 4) if f_lp is not None else None,
+                        "total_cost": round(effective_cost + cost_sc, 4) if effective_cost is not None else None,
                         "surcharge_total": pr_sc,
                         "has_surcharges": (pr_sc > 0 or cost_sc > 0) and has_any,
                     })
@@ -504,14 +513,17 @@ async def list_haulage_rate_cards(
                     pr_sc = _surcharge_total(last_pr.get("_surcharges")) if last_pr else 0.0
                     cost_sc = _surcharge_total(last_cost_surcharges) if last_cost is not None else 0.0
                     has_any = last_pr is not None or last_cost is not None
+                    h_lp = last_pr["list_price"] if last_pr else None
                     ts.append({
                         "month_key": mk,
-                        "list_price": last_pr["list_price"] if last_pr else None,
+                        "list_price": h_lp,
                         "cost": last_cost,
                         "currency": last_pr["currency"] if last_pr else None,
                         "rate_status": last_pr["rate_status"] if last_pr else None,
                         "list_surcharge_total": pr_sc,
                         "cost_surcharge_total": cost_sc,
+                        "total_list_price": round(h_lp + pr_sc, 4) if h_lp is not None else None,
+                        "total_cost": round(last_cost + cost_sc, 4) if last_cost is not None else None,
                         "surcharge_total": pr_sc,
                         "has_surcharges": (pr_sc > 0 or cost_sc > 0) and has_any,
                     })
@@ -1140,6 +1152,7 @@ _VALID_REBATE_CONTAINER_SIZES = (
 
 class SupplierRebateCreate(BaseModel):
     supplier_id: str
+    port_un_code: str
     container_size: str
     effective_from: date
     effective_to: Optional[date] = None
@@ -1157,18 +1170,19 @@ def _row_to_rebate(r) -> dict:
     return {
         "id": r[0],
         "supplier_id": r[1],
-        "container_size": r[2],
-        "effective_from": str(r[3]) if r[3] else None,
-        "effective_to": str(r[4]) if r[4] else None,
-        "rate_status": r[5],
-        "rebate_percent": float(r[6]) if r[6] is not None else None,
-        "created_at": str(r[7]) if r[7] else None,
-        "updated_at": str(r[8]) if r[8] else None,
+        "port_un_code": r[2],
+        "container_size": r[3],
+        "effective_from": str(r[4]) if r[4] else None,
+        "effective_to": str(r[5]) if r[5] else None,
+        "rate_status": r[6],
+        "rebate_percent": float(r[7]) if r[7] is not None else None,
+        "created_at": str(r[8]) if r[8] else None,
+        "updated_at": str(r[9]) if r[9] else None,
     }
 
 
 _REBATE_SELECT = """
-    SELECT id, supplier_id, container_size, effective_from, effective_to,
+    SELECT id, supplier_id, port_un_code, container_size, effective_from, effective_to,
            rate_status::text, rebate_percent, created_at, updated_at
     FROM haulage_supplier_rebates
 """
@@ -1203,20 +1217,20 @@ async def create_supplier_rebate(
 
     existing = conn.execute(text("""
         SELECT id FROM haulage_supplier_rebates
-        WHERE supplier_id = :supplier AND container_size = :csize AND effective_from = :eff
-    """), {"supplier": body.supplier_id, "csize": body.container_size, "eff": body.effective_from}).fetchone()
+        WHERE supplier_id = :supplier AND port_un_code = :port AND container_size = :csize AND effective_from = :eff
+    """), {"supplier": body.supplier_id, "port": body.port_un_code, "csize": body.container_size, "eff": body.effective_from}).fetchone()
 
     if existing:
-        raise HTTPException(status_code=409, detail="A rebate already exists for this supplier, container size and effective date.")
+        raise HTTPException(status_code=409, detail="A rebate already exists for this supplier, port, container size and effective date.")
 
     row = conn.execute(text("""
         INSERT INTO haulage_supplier_rebates
-            (supplier_id, container_size, effective_from, effective_to, rate_status, rebate_percent)
-        VALUES (:supplier, :csize, :eff, :eff_to, CAST(:status AS rate_status), :rebate)
-        RETURNING id, supplier_id, container_size, effective_from, effective_to,
+            (supplier_id, port_un_code, container_size, effective_from, effective_to, rate_status, rebate_percent)
+        VALUES (:supplier, :port, :csize, :eff, :eff_to, CAST(:status AS rate_status), :rebate)
+        RETURNING id, supplier_id, port_un_code, container_size, effective_from, effective_to,
                   rate_status::text, rebate_percent, created_at, updated_at
     """), {
-        "supplier": body.supplier_id, "csize": body.container_size,
+        "supplier": body.supplier_id, "port": body.port_un_code, "csize": body.container_size,
         "eff": body.effective_from, "eff_to": body.effective_to,
         "status": body.rate_status, "rebate": body.rebate_percent,
     }).fetchone()

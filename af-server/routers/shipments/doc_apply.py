@@ -23,7 +23,7 @@ from sqlalchemy import text
 
 from core.auth import Claims, require_afu
 from core.db import get_db
-from core.constants import FILES_BUCKET_NAME
+from core.constants import FILES_BUCKET_NAME, NUMERIC_TO_STRING_STATUS
 
 from ._helpers import _parse_jsonb, _resolve_document_status
 from ._file_helpers import (
@@ -184,8 +184,10 @@ async def apply_booking_confirmation(
 
     # 4b: Compute status from incoterm logic (not hard-coded)
     new_status = _resolve_document_status(row[4], row[5], body.etd)
-    conn.execute(text("UPDATE orders SET status = :status WHERE order_id = :id"),
-                 {"status": new_status, "id": shipment_id})
+    str_status, str_sub_status = NUMERIC_TO_STRING_STATUS.get(new_status, ("in_progress", None))
+    conn.execute(text("""
+        UPDATE orders SET status = :s, sub_status = :ss, updated_at = :now WHERE order_id = :id
+    """), {"s": str_status, "ss": str_sub_status, "now": now, "id": shipment_id})
     # No ATD check for BC — vessel has not departed by definition
 
     logger.info("[apply-bc] Updated %s with booking confirmation data (status → %s)", shipment_id, new_status)
@@ -382,8 +384,10 @@ async def apply_awb(
     incoterm_code = row[5]   # incoterm_code
     txn_type = row[6]        # transaction_type
     new_status = _resolve_document_status(incoterm_code, txn_type, body.flight_date)
-    conn.execute(text("UPDATE orders SET status = :status WHERE order_id = :id"),
-                 {"status": new_status, "id": shipment_id})
+    str_status, str_sub_status = NUMERIC_TO_STRING_STATUS.get(new_status, ("in_progress", None))
+    conn.execute(text("""
+        UPDATE orders SET status = :s, sub_status = :ss, updated_at = :now WHERE order_id = :id
+    """), {"s": str_status, "ss": str_sub_status, "now": now, "id": shipment_id})
     new_status = _check_atd_advancement_pg(
         conn, shipment_id, new_status, claims.email, "Auto-advanced from ATD (AWB apply)"
     )

@@ -67,7 +67,7 @@ interface PricingSubItem {
 const PRICING_SUB_ITEMS: PricingSubItem[] = [
   { label: 'FCL Ocean',      icon: Ship,      href: '/pricing/fcl',          locked: false },
   { label: 'LCL Ocean',      icon: Package,   href: '/pricing/lcl',          locked: false },
-  { label: 'Air Freight',    icon: Plane,     href: '/pricing/air',          locked: true  },
+  { label: 'Air Freight',    icon: Plane,     href: '/pricing/air',          locked: false },
   { label: 'Local Charges',  icon: Warehouse, href: '/pricing/local-charges', locked: false },
   { label: 'Customs',        icon: FileCheck, href: '/pricing/customs',      locked: false },
   { label: 'Haulage',        icon: Truck,     href: '/pricing/haulage',      locked: false },

@@ -12,7 +12,9 @@ import { useRouter } from 'next/navigation';
 import { Building2, CheckCircle2, Globe, Link2, Loader2, Plus, RefreshCw, Search } from 'lucide-react';
 import { fetchCompaniesAction, fetchCompanyStatsAction } from '@/app/actions/companies';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
+import { fetchGeoPortsAction } from '@/app/actions/geography';
 import type { Company } from '@/lib/types';
+import type { Port } from '@/lib/ports';
 import { CompanyTable } from '@/components/companies/CompanyTable';
 import { CreateCompanyModal } from '@/components/companies/CreateCompanyModal';
 import { EditCompanyModal } from '@/components/companies/EditCompanyModal';
@@ -38,6 +40,7 @@ export default function CompaniesPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [ports, setPorts] = useState<Port[]>([]);
 
   const load = useCallback(async (searchTerm?: string) => {
     setLoading(true);
@@ -68,6 +71,9 @@ export default function CompaniesPage() {
       setAuthorized(true);
       setUserRole(profile.role ?? null);
       load();
+      fetchGeoPortsAction().then(result => {
+        if (result.success) setPorts(result.data);
+      });
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -186,6 +192,7 @@ export default function CompaniesPage() {
         onRefresh={() => load(search || undefined)}
         onEdit={(company) => setEditingCompany(company)}
         userRole={userRole}
+        ports={ports}
       />
 
       <CreateCompanyModal

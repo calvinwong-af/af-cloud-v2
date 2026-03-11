@@ -26,6 +26,7 @@ import { MoreVertical, Pencil, Trash2, Loader2, AlertTriangle, ArrowRight, Tags 
 import Link from 'next/link';
 import { deleteCompanyAction } from '@/app/actions/companies';
 import type { Company } from '@/lib/types';
+import type { Port } from '@/lib/ports';
 import { SupplierPricingModal } from './SupplierPricingModal';
 
 interface CompanyActionsMenuProps {
@@ -33,9 +34,10 @@ interface CompanyActionsMenuProps {
   onEdit: (company: Company) => void;
   onRefresh: () => void;
   userRole: string | null;
+  ports: Port[];
 }
 
-export function CompanyActionsMenu({ company, onEdit, onRefresh, userRole }: CompanyActionsMenuProps) {
+export function CompanyActionsMenu({ company, onEdit, onRefresh, userRole, ports }: CompanyActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showPricingModal, setShowPricingModal] = useState(false);
@@ -141,6 +143,7 @@ export function CompanyActionsMenu({ company, onEdit, onRefresh, userRole }: Com
         company={company}
         open={showPricingModal}
         onClose={() => setShowPricingModal(false)}
+        ports={ports}
       />
 
       {/* Delete confirmation modal */}

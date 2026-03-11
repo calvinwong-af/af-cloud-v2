@@ -17,6 +17,7 @@ from core.auth import Claims, require_auth
 from core.db import get_db
 from core.exceptions import NotFoundError
 from core import constants, db_queries
+from core.constants import NUMERIC_TO_STRING_STATUS
 from logic.incoterm_tasks import (
     migrate_task_on_read,
     PENDING,
@@ -273,14 +274,15 @@ async def update_shipment_task(
         if task_type == "POL" and body.actual_end is not None:
             cur = conn.execute(
                 text("""
-                    SELECT o.status, sd.status_history
+                    SELECT o.status, sd.status_history, o.sub_status
                     FROM orders o
                     JOIN shipment_details sd ON sd.order_id = o.order_id
                     WHERE o.order_id = :id
                 """),
                 {"id": shipment_id}
             ).fetchone()
-            if cur and (cur[0] or 0) < constants.STATUS_DEPARTED:
+            # Not yet departed: sub_status not in (in_transit, arrived), status not completed/cancelled
+            if cur and (cur[2] or "") not in ("in_transit", "arrived") and (cur[0] or "") not in ("completed", "cancelled"):
                 new_status = constants.STATUS_DEPARTED
                 history = _parse_jsonb(cur[1]) or []
                 history.append({
@@ -290,11 +292,12 @@ async def update_shipment_task(
                     "changed_by": claims.email,
                     "note": "Auto-advanced from ATD (POL task)",
                 })
+                str_status, str_sub_status = NUMERIC_TO_STRING_STATUS.get(new_status, ("in_progress", "in_transit"))
                 conn.execute(text("""
                     UPDATE orders
-                    SET status = :status, updated_at = :now
+                    SET status = :s, sub_status = :ss, updated_at = :now
                     WHERE order_id = :id
-                """), {"status": new_status, "now": now, "id": shipment_id})
+                """), {"s": str_status, "ss": str_sub_status, "now": now, "id": shipment_id})
                 conn.execute(text("""
                     UPDATE shipment_details
                     SET status_history = CAST(:history AS jsonb)
@@ -305,14 +308,15 @@ async def update_shipment_task(
         elif task_type == "POD" and body.actual_start is not None:
             cur = conn.execute(
                 text("""
-                    SELECT o.status, sd.status_history
+                    SELECT o.status, sd.status_history, o.sub_status
                     FROM orders o
                     JOIN shipment_details sd ON sd.order_id = o.order_id
                     WHERE o.order_id = :id
                 """),
                 {"id": shipment_id}
             ).fetchone()
-            if cur and (cur[0] or 0) < constants.STATUS_ARRIVED:
+            # Not yet arrived: sub_status not 'arrived', status not completed/cancelled
+            if cur and (cur[2] or "") != "arrived" and (cur[0] or "") not in ("completed", "cancelled"):
                 new_status = constants.STATUS_ARRIVED
                 history = _parse_jsonb(cur[1]) or []
                 history.append({
@@ -322,11 +326,12 @@ async def update_shipment_task(
                     "changed_by": claims.email,
                     "note": "Auto-advanced from ATA (POD task)",
                 })
+                str_status, str_sub_status = NUMERIC_TO_STRING_STATUS.get(new_status, ("in_progress", "arrived"))
                 conn.execute(text("""
                     UPDATE orders
-                    SET status = :status, updated_at = :now
+                    SET status = :s, sub_status = :ss, updated_at = :now
                     WHERE order_id = :id
-                """), {"status": new_status, "now": now, "id": shipment_id})
+                """), {"s": str_status, "ss": str_sub_status, "now": now, "id": shipment_id})
                 conn.execute(text("""
                     UPDATE shipment_details
                     SET status_history = CAST(:history AS jsonb)

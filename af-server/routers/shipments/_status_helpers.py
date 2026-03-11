@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
-from core.constants import STATUS_DEPARTED, STATUS_LABELS
+from core.constants import STATUS_DEPARTED, STATUS_LABELS, NUMERIC_TO_STRING_STATUS
 from logic.incoterm_tasks import (
     FREIGHT_BOOKING,
     EXPORT_CLEARANCE,
@@ -54,14 +54,18 @@ def _check_atd_advancement_pg(
 
     cur = conn.execute(
         text("""
-            SELECT o.status, sd.status_history
+            SELECT o.status, sd.status_history, o.sub_status
             FROM orders o
             JOIN shipment_details sd ON sd.order_id = o.order_id
             WHERE o.order_id = :id
         """),
         {"id": shipment_id}
     ).fetchone()
-    if not cur or (cur[0] or 0) >= STATUS_DEPARTED:
+    if not cur:
+        return current_status
+    # Check if already at or past departed — sub_status in_transit/arrived or status completed/cancelled
+    db_sub = cur[2] or ""
+    if db_sub in ("in_transit", "arrived") or (cur[0] or "") in ("completed", "cancelled"):
         return current_status
 
     history = _parse_jsonb(cur[1]) or []
@@ -72,12 +76,14 @@ def _check_atd_advancement_pg(
         "changed_by": claims_email,
         "note": note,
     })
+    str_status, str_sub_status = NUMERIC_TO_STRING_STATUS.get(STATUS_DEPARTED, ("in_progress", "in_transit"))
     conn.execute(text("""
         UPDATE orders
-        SET status = :status, updated_at = :now
+        SET status = :s, sub_status = :ss, updated_at = :now
         WHERE order_id = :id
     """), {
-        "status": STATUS_DEPARTED,
+        "s": str_status,
+        "ss": str_sub_status,
         "now": now,
         "id": shipment_id,
     })

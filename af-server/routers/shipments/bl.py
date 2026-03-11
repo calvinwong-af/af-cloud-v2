@@ -23,6 +23,7 @@ from core.constants import (
     FILES_BUCKET_NAME,
     STATUS_LABELS,
     STATUS_BOOKING_CONFIRMED,
+    NUMERIC_TO_STRING_STATUS,
 )
 from logic.incoterm_tasks import generate_tasks as generate_incoterm_tasks
 
@@ -394,6 +395,11 @@ async def create_from_bl(
     elif body.containers:
         type_details = {"containers": body.containers}
 
+    # Convert numeric status to string for orders.status VARCHAR column
+    str_init_status, str_init_sub = NUMERIC_TO_STRING_STATUS.get(
+        body.initial_status, ("in_progress", "bkg_confirmed")
+    )
+
     # Insert into orders table
     conn.execute(text("""
         INSERT INTO orders (
@@ -404,7 +410,7 @@ async def create_from_bl(
             migrated_from_v1, completed
         ) VALUES (
             :id, 'shipment', :countid, :company_id,
-            :status, NULL, FALSE,
+            :status, :sub_status, FALSE,
             CAST(:cargo AS jsonb), CAST(:parties AS jsonb), NULL,
             FALSE, CAST(:creator AS jsonb), :now, :now,
             FALSE, FALSE
@@ -413,7 +419,8 @@ async def create_from_bl(
         "id": shipment_id,
         "countid": new_countid,
         "company_id": body.company_id or "",
-        "status": body.initial_status,
+        "status": str_init_status,
+        "sub_status": str_init_sub,
         "now": now,
         "cargo": json.dumps(cargo),
         "parties": json.dumps(parties),
@@ -513,15 +520,14 @@ async def create_from_bl(
     # Insert into shipment_workflows table
     conn.execute(text("""
         INSERT INTO shipment_workflows (
-            order_id, company_id, status_history, workflow_tasks,
+            order_id, status_history, workflow_tasks,
             completed, created_at, updated_at
         ) VALUES (
-            :order_id, :company_id, CAST(:status_history AS jsonb), CAST(:workflow_tasks AS jsonb),
+            :order_id, CAST(:status_history AS jsonb), CAST(:workflow_tasks AS jsonb),
             FALSE, :now, :now
         )
     """), {
         "order_id": shipment_id,
-        "company_id": body.company_id or "",
         "status_history": json.dumps(wf_history),
         "workflow_tasks": json.dumps(tasks),
         "now": now,
@@ -829,9 +835,11 @@ async def update_from_bl(
     incoterm_code = row[7]   # incoterm_code
     txn_type = row[8]        # transaction_type
     new_status = _resolve_document_status(incoterm_code, txn_type, etd)
-    conn.execute(text("UPDATE orders SET status = :status WHERE order_id = :id"),
-                 {"status": new_status, "id": shipment_id})
-    logger.info("[bl_update] Status auto-advanced to %s for %s", new_status, shipment_id)
+    str_status, str_sub_status = NUMERIC_TO_STRING_STATUS.get(new_status, ("in_progress", None))
+    conn.execute(text("""
+        UPDATE orders SET status = :s, sub_status = :ss, updated_at = :now WHERE order_id = :id
+    """), {"s": str_status, "ss": str_sub_status, "now": now, "id": shipment_id})
+    logger.info("[bl_update] Status auto-advanced to %s (%s) for %s", new_status, str_status, shipment_id)
     new_status = _check_atd_advancement_pg(
         conn, shipment_id, new_status, claims.email, "Auto-advanced from ATD (BL apply)"
     )

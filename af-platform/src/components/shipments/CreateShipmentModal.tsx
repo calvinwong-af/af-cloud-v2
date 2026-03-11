@@ -523,7 +523,8 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
                 {step < BASE_STEPS.length ? (
                   <button
                     onClick={next}
-                    className="px-5 py-2 bg-[var(--slate)] text-white rounded-lg text-sm font-medium hover:bg-[var(--slate-mid)] transition-colors"
+                    disabled={step === 1 && !companyId}
+                    className="px-5 py-2 bg-[var(--slate)] text-white rounded-lg text-sm font-medium hover:bg-[var(--slate-mid)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Next →
                   </button>

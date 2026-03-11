@@ -192,25 +192,44 @@ export default function ShipmentOrderDetailPage() {
             </div>
           </div>
 
-          {/* Company */}
-          {order.company_id && (
+          {/* Company — always shown for AFU, even when unassigned */}
+          {(order.company_id || accountType === 'AFU') && (
             <div className="text-right flex-shrink-0">
               <div className="text-xs text-[var(--text-muted)] mb-0.5">Customer</div>
-              <div className="flex items-center gap-1.5 justify-end">
-                <div className="text-sm font-semibold text-[var(--text)]">
-                  {order._company_name ?? order.company_id}
+              {order.company_id ? (
+                <div className="flex items-center gap-1.5 justify-end">
+                  <div className="text-sm font-semibold text-[var(--text)]">
+                    {order._company_name ?? order.company_id}
+                  </div>
+                  {accountType === 'AFU' && (
+                    <button
+                      onClick={() => setShowCompanyModal(true)}
+                      className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
+                      title="Reassign company"
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
-                {accountType === 'AFU' && (
-                  <button
-                    onClick={() => setShowCompanyModal(true)}
-                    className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
-                    title="Reassign company"
-                  >
-                    <Pencil className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-              {order._company_name && (
+              ) : (
+                /* Null company_id — AFU only: show warning + assign button */
+                <div className="flex items-center gap-1.5 justify-end">
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200">
+                    <AlertTriangle className="w-3 h-3" />
+                    No customer assigned
+                  </span>
+                  {accountType === 'AFU' && (
+                    <button
+                      onClick={() => setShowCompanyModal(true)}
+                      className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
+                      title="Assign company"
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              )}
+              {order.company_id && order._company_name && (
                 <div className="text-xs font-mono text-[var(--text-muted)]">{order.company_id}</div>
               )}
             </div>
@@ -555,10 +574,10 @@ export default function ShipmentOrderDetailPage() {
       )}
 
       {/* Company reassignment modal */}
-      {showCompanyModal && order.company_id && (
+      {showCompanyModal && (
         <CompanyReassignModal
           shipmentId={order.quotation_id}
-          currentCompanyId={order.company_id}
+          currentCompanyId={order.company_id ?? ''}
           onClose={() => setShowCompanyModal(false)}
           onReassigned={(companyId, companyName) => {
             setOrder(prev => prev ? { ...prev, company_id: companyId, _company_name: companyName } : prev);

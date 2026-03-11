@@ -9,6 +9,7 @@ import Link from 'next/link';
 import { AlertCircle, CheckCircle2, XCircle } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import type { Company } from '@/lib/types';
+import type { Port } from '@/lib/ports';
 import { CompanyActionsMenu } from './CompanyActionsMenu';
 
 function getCountryCode(country: string): string | null {
@@ -42,12 +43,13 @@ interface CompanyTableProps {
   onRefresh: () => void;
   onEdit: (company: Company) => void;
   userRole: string | null;
+  ports: Port[];
 }
 
 type SortKey = 'name' | 'company_id' | 'created' | 'updated';
 type SortDir = 'asc' | 'desc';
 
-export function CompanyTable({ companies, loading, onRefresh, onEdit, userRole }: CompanyTableProps) {
+export function CompanyTable({ companies, loading, onRefresh, onEdit, userRole, ports }: CompanyTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
@@ -124,7 +126,7 @@ export function CompanyTable({ companies, loading, onRefresh, onEdit, userRole }
           </thead>
           <tbody className="divide-y divide-[var(--border)]">
             {sorted.map((company) => (
-              <CompanyRow key={company.company_id} company={company} onRefresh={onRefresh} onEdit={onEdit} userRole={userRole} />
+              <CompanyRow key={company.company_id} company={company} onRefresh={onRefresh} onEdit={onEdit} userRole={userRole} ports={ports} />
             ))}
           </tbody>
         </table>
@@ -148,7 +150,7 @@ function Th({ children, onClick, className }: { children: React.ReactNode; onCli
   );
 }
 
-function CompanyRow({ company, onRefresh, onEdit, userRole }: { company: Company; onRefresh: () => void; onEdit: (company: Company) => void; userRole: string | null }) {
+function CompanyRow({ company, onRefresh, onEdit, userRole, ports }: { company: Company; onRefresh: () => void; onEdit: (company: Company) => void; userRole: string | null; ports: Port[] }) {
   const initials = company.short_name?.slice(0, 2).toUpperCase() ||
     company.name.slice(0, 2).toUpperCase();
 
@@ -245,7 +247,7 @@ function CompanyRow({ company, onRefresh, onEdit, userRole }: { company: Company
 
       {/* Actions */}
       <td className="px-4 py-3">
-        <CompanyActionsMenu company={company} onEdit={onEdit} onRefresh={onRefresh} userRole={userRole} />
+        <CompanyActionsMenu company={company} onEdit={onEdit} onRefresh={onRefresh} userRole={userRole} ports={ports} />
       </td>
     </tr>
   );

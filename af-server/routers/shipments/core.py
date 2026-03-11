@@ -243,15 +243,16 @@ async def get_status_history(
     this feature was added will have an empty history array.
     """
     row = conn.execute(text("""
-        SELECT sw.status_history, sw.company_id
+        SELECT sw.status_history, o.company_id
         FROM shipment_workflows sw
+        JOIN orders o ON o.order_id = sw.order_id
         WHERE sw.order_id = :id
     """), {"id": shipment_id}).fetchone()
 
     if not row:
         raise NotFoundError(f"Shipment workflow {shipment_id} not found")
 
-    # AFC users: verify company ownership via the workflow's company_id
+    # AFC users: verify company ownership via orders.company_id
     if claims.is_afc():
         wf_company = row[1] or ""
         if wf_company != claims.company_id:
@@ -633,15 +634,14 @@ async def create_shipment_manual(
     # 14. INSERT into shipment_workflows
     conn.execute(text("""
         INSERT INTO shipment_workflows (
-            order_id, company_id, status_history, workflow_tasks,
+            order_id, status_history, workflow_tasks,
             completed, created_at, updated_at
         ) VALUES (
-            :order_id, :company_id, CAST(:status_history AS jsonb), CAST(:workflow_tasks AS jsonb),
+            :order_id, CAST(:status_history AS jsonb), CAST(:workflow_tasks AS jsonb),
             FALSE, :now, :now
         )
     """), {
         "order_id": shipment_id,
-        "company_id": body.company_id,
         "status_history": json.dumps(wf_history),
         "workflow_tasks": json.dumps(tasks),
         "now": now,

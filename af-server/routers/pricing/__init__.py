@@ -15,6 +15,7 @@ from .local_charges import router as local_charges_router
 from .customs import router as customs_router
 from .port_transport import router as port_transport_router
 from .haulage import router as haulage_router
+from .air import router as air_router
 
 router = APIRouter()
 router.include_router(fcl_router, prefix="/fcl", tags=["Pricing - FCL"])
@@ -23,6 +24,7 @@ router.include_router(local_charges_router, prefix="/local-charges", tags=["Pric
 router.include_router(customs_router, prefix="/customs", tags=["Pricing - Customs"])
 router.include_router(port_transport_router, prefix="/port-transport", tags=["Pricing - Port Transport"])
 router.include_router(haulage_router, prefix="/haulage", tags=["Pricing - Haulage"])
+router.include_router(air_router, prefix="/air", tags=["Pricing - Air Freight"])
 
 
 # ---------------------------------------------------------------------------

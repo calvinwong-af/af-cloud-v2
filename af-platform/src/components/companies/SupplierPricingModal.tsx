@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { X, Loader2, Pencil, Trash2, Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import type { Company } from '@/lib/types';
+import { PortCombobox } from '@/components/shared/PortCombobox';
+import type { Port } from '@/lib/ports';
 import {
   fetchHaulageSupplierRebatesAction,
   createHaulageSupplierRebateAction,
@@ -21,6 +23,7 @@ interface SupplierPricingModalProps {
   company: Company;
   open: boolean;
   onClose: () => void;
+  ports: Port[];
 }
 
 const inputClass = "h-8 px-2 text-xs rounded border border-[var(--border)] bg-white text-[var(--text)] focus:outline-none focus:ring-1 focus:ring-[var(--sky)] focus:border-[var(--sky)] w-full";
@@ -73,16 +76,25 @@ function formatDate(d: string | null): string {
 // Rebates Tab
 // ============================================================================
 
-function RebatesTab({ supplierId }: { supplierId: string }) {
+function RebatesTab({ supplierId, ports }: { supplierId: string; ports: Port[] }) {
   const [rebates, setRebates] = useState<HaulageSupplierRebate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  const portOptions = ports.map(p => ({
+    value: p.un_code,
+    label: p.name,
+    sublabel: p.country_name,
+    terminals: p.terminals,
+    has_terminals: p.has_terminals,
+  }));
+
   // Form state
   const [formOpen, setFormOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
+  const [formPortCode, setFormPortCode] = useState('');
   const [formContainerSize, setFormContainerSize] = useState('20');
   const [formRebatePercent, setFormRebatePercent] = useState('');
   const [formEffFrom, setFormEffFrom] = useState('');
@@ -110,6 +122,7 @@ function RebatesTab({ supplierId }: { supplierId: string }) {
 
   const openAdd = () => {
     setEditId(null);
+    setFormPortCode('');
     setFormContainerSize('20');
     setFormRebatePercent('');
     setFormEffFrom('');
@@ -121,6 +134,7 @@ function RebatesTab({ supplierId }: { supplierId: string }) {
 
   const openEdit = (r: HaulageSupplierRebate) => {
     setEditId(r.id);
+    setFormPortCode(r.port_un_code);
     setFormContainerSize(r.container_size);
     setFormRebatePercent((r.rebate_percent * 100).toFixed(2));
     setFormEffFrom(r.effective_from);
@@ -136,6 +150,7 @@ function RebatesTab({ supplierId }: { supplierId: string }) {
     try {
       const percentValue = parseFloat(formRebatePercent) / 100;
       if (isNaN(percentValue)) { setFormError('Invalid rebate percentage'); setSaving(false); return; }
+      if (!formPortCode) { setFormError('Port is required'); setSaving(false); return; }
 
       if (editId) {
         const result = await updateHaulageSupplierRebateAction(editId, {
@@ -148,6 +163,7 @@ function RebatesTab({ supplierId }: { supplierId: string }) {
       } else {
         const result = await createHaulageSupplierRebateAction({
           supplier_id: supplierId,
+          port_un_code: formPortCode,
           container_size: formContainerSize,
           effective_from: formEffFrom,
           effective_to: formEffTo || null,
@@ -215,7 +231,19 @@ function RebatesTab({ supplierId }: { supplierId: string }) {
           {formError && (
             <div className="p-2 rounded bg-red-50 border border-red-200 text-red-700 text-xs">{formError}</div>
           )}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-[10px] font-medium text-[var(--text-muted)] mb-1">Port</label>
+              <div className={editId ? 'pointer-events-none opacity-50' : ''}>
+                <PortCombobox
+                  value={formPortCode}
+                  onChange={setFormPortCode}
+                  options={portOptions}
+                  placeholder="Search port..."
+                  className="h-8 px-2 text-xs rounded border border-[var(--border)] bg-white text-[var(--text)] focus:outline-none focus:ring-1 focus:ring-[var(--sky)] focus:border-[var(--sky)] w-full"
+                />
+              </div>
+            </div>
             <div>
               <label className="block text-[10px] font-medium text-[var(--text-muted)] mb-1">Container Size</label>
               <select value={formContainerSize} onChange={e => setFormContainerSize(e.target.value)} className={inputClass} disabled={!!editId}>
@@ -234,6 +262,8 @@ function RebatesTab({ supplierId }: { supplierId: string }) {
                 <option value="ARCHIVED">Archived</option>
               </select>
             </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-[10px] font-medium text-[var(--text-muted)] mb-1">Effective From</label>
               <input type="date" value={formEffFrom} onChange={e => setFormEffFrom(e.target.value)} className={inputClass} disabled={!!editId} />
@@ -246,7 +276,7 @@ function RebatesTab({ supplierId }: { supplierId: string }) {
           <div className="flex gap-2 pt-1">
             <button
               onClick={handleSave}
-              disabled={saving || (!editId && (!formEffFrom || !formRebatePercent))}
+              disabled={saving || !formPortCode || (!editId && (!formEffFrom || !formRebatePercent))}
               className="px-4 py-1.5 text-xs rounded-lg text-white font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
               style={{ background: 'var(--sky)' }}
             >
@@ -270,6 +300,7 @@ function RebatesTab({ supplierId }: { supplierId: string }) {
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-[var(--surface)] border-b border-[var(--border)]">
+                <th className="px-3 py-2 text-left font-medium text-[var(--text-muted)] uppercase tracking-wide">Port</th>
                 <th className="px-3 py-2 text-left font-medium text-[var(--text-muted)] uppercase tracking-wide">Container Size</th>
                 <th className="px-3 py-2 text-left font-medium text-[var(--text-muted)] uppercase tracking-wide">Rebate %</th>
                 <th className="px-3 py-2 text-left font-medium text-[var(--text-muted)] uppercase tracking-wide">From</th>
@@ -281,6 +312,7 @@ function RebatesTab({ supplierId }: { supplierId: string }) {
             <tbody className="divide-y divide-[var(--border)]">
               {rebates.map(r => (
                 <tr key={r.id} className="hover:bg-[var(--surface)] transition-colors">
+                  <td className="px-3 py-2 font-mono">{r.port_un_code}</td>
                   <td className="px-3 py-2 font-medium">{containerSizeLabel(r.container_size)}</td>
                   <td className="px-3 py-2">{(r.rebate_percent * 100).toFixed(2)}%</td>
                   <td className="px-3 py-2 text-[var(--text-muted)]">{formatDate(r.effective_from)}</td>
@@ -324,10 +356,18 @@ interface FafFormPortRate {
   faf_percent: string; // stored as string in form, converted on save
 }
 
-function FafTab({ supplierId }: { supplierId: string }) {
+function FafTab({ supplierId, ports }: { supplierId: string; ports: Port[] }) {
   const [fafRates, setFafRates] = useState<HaulageFafRate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const portOptions = ports.map(p => ({
+    value: p.un_code,
+    label: p.name,
+    sublabel: p.country_name,
+    terminals: p.terminals,
+    has_terminals: p.has_terminals,
+  }));
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -523,12 +563,12 @@ function FafTab({ supplierId }: { supplierId: string }) {
               <div key={idx} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-end">
                 <div>
                   {idx === 0 && <label className="block text-[10px] text-[var(--text-muted)] mb-1">Port UN Code</label>}
-                  <input
-                    type="text"
+                  <PortCombobox
                     value={pr.port_un_code}
-                    onChange={e => updatePortRate(idx, 'port_un_code', e.target.value)}
+                    onChange={val => updatePortRate(idx, 'port_un_code', val)}
+                    options={portOptions}
+                    placeholder="Search port..."
                     className={inputClass}
-                    placeholder="e.g. MYPKG"
                   />
                 </div>
                 <div>
@@ -672,7 +712,7 @@ function FafTab({ supplierId }: { supplierId: string }) {
 
 import React from 'react';
 
-export function SupplierPricingModal({ company, open, onClose }: SupplierPricingModalProps) {
+export function SupplierPricingModal({ company, open, onClose, ports }: SupplierPricingModalProps) {
   const [activeTab, setActiveTab] = useState<'rebates' | 'faf'>('rebates');
 
   if (!open) return null;
@@ -712,8 +752,8 @@ export function SupplierPricingModal({ company, open, onClose }: SupplierPricing
 
         {/* Tab content */}
         <div className="flex-1 overflow-y-auto p-5">
-          {activeTab === 'rebates' && <RebatesTab supplierId={company.company_id} />}
-          {activeTab === 'faf' && <FafTab supplierId={company.company_id} />}
+          {activeTab === 'rebates' && <RebatesTab supplierId={company.company_id} ports={ports} />}
+          {activeTab === 'faf' && <FafTab supplierId={company.company_id} ports={ports} />}
         </div>
       </div>
     </div>

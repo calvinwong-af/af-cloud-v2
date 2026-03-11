@@ -253,17 +253,23 @@ async def list_fcl_rate_cards(
         card_ids = [c["id"] for c in cards]
         price_rows = conn.execute(text(f"""
             SELECT DISTINCT ON (rate_card_id)
-                   rate_card_id, list_price, currency, effective_from
+                   rate_card_id, list_price, currency, effective_from, surcharges
             FROM fcl_rates
             WHERE rate_card_id = ANY(:ids) AND supplier_id IS NULL
             ORDER BY rate_card_id, effective_from DESC
         """), {"ids": card_ids}).fetchall()
 
-        price_map = {r[0]: {
-            "list_price": float(r[1]) if r[1] is not None else None,
-            "currency": r[2],
-            "effective_from": str(r[3]) if r[3] else None,
-        } for r in price_rows}
+        price_map = {}
+        for r in price_rows:
+            lp = float(r[1]) if r[1] is not None else None
+            sc = _surcharge_total(r[4])
+            price_map[r[0]] = {
+                "list_price": lp,
+                "currency": r[2],
+                "effective_from": str(r[3]) if r[3] else None,
+                "list_surcharge_total": sc,
+                "total_list_price": round(lp + sc, 4) if lp is not None else None,
+            }
 
         for c in cards:
             c["latest_price_ref"] = price_map.get(c["id"])
@@ -431,14 +437,18 @@ async def list_fcl_rate_cards(
                     best_cost_entry = min(cost_entries, key=lambda e: e[0] + _surcharge_total(e[1])) if cost_entries else None
                     cost_sc = _surcharge_total(best_cost_entry[1]) if best_cost_entry else 0.0
                     has_any = pr is not None or bool(cost_entries)
+                    f_lp = pr["list_price"] if pr else None
+                    f_cost = best_cost_entry[0] if best_cost_entry else None
                     ts.append({
                         "month_key": mk,
-                        "list_price": pr["list_price"] if pr else None,
-                        "cost": best_cost_entry[0] if best_cost_entry else None,
+                        "list_price": f_lp,
+                        "cost": f_cost,
                         "currency": pr["currency"] if pr else None,
                         "rate_status": pr["rate_status"] if pr else None,
                         "list_surcharge_total": pr_sc,
                         "cost_surcharge_total": cost_sc,
+                        "total_list_price": round(f_lp + pr_sc, 4) if f_lp is not None else None,
+                        "total_cost": round(f_cost + cost_sc, 4) if f_cost is not None else None,
                         "surcharge_total": pr_sc,
                         "has_surcharges": (pr_sc > 0 or cost_sc > 0) and has_any,
                     })
@@ -446,14 +456,17 @@ async def list_fcl_rate_cards(
                     pr_sc = _surcharge_total(last_pr.get("_surcharges")) if last_pr else 0.0
                     cost_sc = _surcharge_total(last_cost_surcharges) if last_cost is not None else 0.0
                     has_any = last_pr is not None or last_cost is not None
+                    h_lp = last_pr["list_price"] if last_pr else None
                     ts.append({
                         "month_key": mk,
-                        "list_price": last_pr["list_price"] if last_pr else None,
+                        "list_price": h_lp,
                         "cost": last_cost,
                         "currency": last_pr["currency"] if last_pr else None,
                         "rate_status": last_pr["rate_status"] if last_pr else None,
                         "list_surcharge_total": pr_sc,
                         "cost_surcharge_total": cost_sc,
+                        "total_list_price": round(h_lp + pr_sc, 4) if h_lp is not None else None,
+                        "total_cost": round(last_cost + cost_sc, 4) if last_cost is not None else None,
                         "surcharge_total": pr_sc,
                         "has_surcharges": (pr_sc > 0 or cost_sc > 0) and has_any,
                     })

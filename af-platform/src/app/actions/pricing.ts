@@ -950,6 +950,7 @@ export async function deleteDepotGateFeeAction(
 export interface HaulageSupplierRebate {
   id: number;
   supplier_id: string;
+  port_un_code: string;
   container_size: string; // '20' | '40' | '40HC' | 'side_loader_20' | 'side_loader_40' | 'side_loader_40HC'
   effective_from: string;
   effective_to: string | null;
@@ -1030,4 +1031,215 @@ export async function deleteHaulageFafRateAction(
   fafId: number,
 ): Promise<ActionResult<{ deleted: boolean }>> {
   return pricingMutate(`/api/v2/pricing/haulage/faf-rates/${fafId}`, 'DELETE');
+}
+
+// ---------------------------------------------------------------------------
+// Air Freight
+// ---------------------------------------------------------------------------
+
+export interface AirRateCard {
+  id: number;
+  rate_card_key: string;
+  origin_port_code: string;
+  destination_port_code: string;
+  dg_class_code: string;
+  airline_code: string;
+  code: string;
+  description: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  latest_price_ref?: {
+    l45_list_price: number | null;
+    currency: string;
+    effective_from: string;
+  } | null;
+  pending_draft_count?: number;
+  time_series?: AirTimeSeries[];
+  rates_by_supplier?: Record<string, AirRate[]>;
+  latest_list_price_from?: string | null;
+  latest_cost_from?: string | null;
+}
+
+export interface AirTimeSeries {
+  month_key: string;
+  l45_list_price: number | null;
+  l45_cost: number | null;
+  p100_list_price: number | null;
+  p100_cost: number | null;
+  currency: string | null;
+  rate_status: string | null;
+  list_surcharge_total: number;
+  cost_surcharge_total: number;
+  has_surcharges: boolean;
+}
+
+export interface AirRate {
+  id: number;
+  rate_card_id: number;
+  supplier_id: string | null;
+  effective_from: string | null;
+  effective_to: string | null;
+  rate_status: string;
+  currency: string;
+  l45_list_price: number | null;
+  p45_list_price: number | null;
+  p100_list_price: number | null;
+  p250_list_price: number | null;
+  p300_list_price: number | null;
+  p500_list_price: number | null;
+  p1000_list_price: number | null;
+  min_list_price: number | null;
+  l45_cost: number | null;
+  p45_cost: number | null;
+  p100_cost: number | null;
+  p250_cost: number | null;
+  p300_cost: number | null;
+  p500_cost: number | null;
+  p1000_cost: number | null;
+  min_cost: number | null;
+  surcharges: SurchargeItem[] | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AirResolveResult {
+  rate_id: number;
+  rate_card_id: number;
+  supplier_id: string | null;
+  chargeable_weight: number;
+  reference_date: string;
+  currency: string;
+  tier_applied: string;
+  tier_rate: number;
+  min_rate: number | null;
+  min_applied: boolean;
+  surcharge_total_per_kg: number;
+  surcharge_amount: number;
+  surcharges: SurchargeItem[];
+  base_charge: number;
+  total_charge: number;
+}
+
+export type LCLResolveResult = {
+  rate_id: number;
+  rate_card_id: number;
+  supplier_id: string | null;
+  quantity: number;
+  billable_quantity: number;
+  effective_quantity: number;
+  reference_date: string;
+  currency: string;
+  uom: string;
+  rate_per_unit: number;
+  min_quantity: number | null;
+  min_applied: boolean;
+  roundup_qty: number;
+  surcharge_total_per_unit: number;
+  surcharge_amount: number;
+  surcharges: Array<{ code: string; description: string; amount: number }> | null;
+  base_charge: number;
+  total_charge: number;
+};
+
+export async function fetchAirOriginsAction(
+  countryCode?: string,
+): Promise<ActionResult<string[]>> {
+  const sp = new URLSearchParams({ is_active: 'true' });
+  if (countryCode) sp.set('country_code', countryCode);
+  return pricingFetch(`/api/v2/pricing/air/origins?${sp.toString()}`);
+}
+
+export async function fetchAirAirlinesAction(
+  originPortCode?: string,
+): Promise<ActionResult<string[]>> {
+  const sp = new URLSearchParams({ is_active: 'true' });
+  if (originPortCode) sp.set('origin_port_code', originPortCode);
+  return pricingFetch(`/api/v2/pricing/air/airlines?${sp.toString()}`);
+}
+
+export async function fetchAirRateCardsAction(params: {
+  originPortCode?: string;
+  destinationPortCode?: string;
+  airlineCode?: string;
+  dgClassCode?: string;
+  countryCode?: string;
+  isActive?: boolean;
+  alertsOnly?: boolean;
+}): Promise<ActionResult<AirRateCard[]>> {
+  const sp = new URLSearchParams();
+  if (params.countryCode) sp.set('country_code', params.countryCode);
+  if (params.originPortCode) sp.set('origin_port_code', params.originPortCode);
+  if (params.destinationPortCode) sp.set('destination_port_code', params.destinationPortCode);
+  if (params.airlineCode) sp.set('airline_code', params.airlineCode);
+  if (params.dgClassCode) sp.set('dg_class_code', params.dgClassCode);
+  if (params.isActive !== undefined) sp.set('is_active', String(params.isActive));
+  if (params.alertsOnly) sp.set('alerts_only', 'true');
+  const qs = sp.toString();
+  return pricingFetch(`/api/v2/pricing/air/rate-cards${qs ? `?${qs}` : ''}`);
+}
+
+export async function fetchAirRateCardDetailAction(
+  cardId: number,
+): Promise<ActionResult<AirRateCard>> {
+  return pricingFetch(`/api/v2/pricing/air/rate-cards/${cardId}`);
+}
+
+export async function createAirRateCardAction(
+  data: Record<string, unknown>,
+): Promise<ActionResult<AirRateCard>> {
+  return pricingMutate('/api/v2/pricing/air/rate-cards', 'POST', data);
+}
+
+export async function updateAirRateCardAction(
+  cardId: number,
+  data: Record<string, unknown>,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/air/rate-cards/${cardId}`, 'PATCH', data);
+}
+
+export async function createAirRateAction(
+  cardId: number,
+  data: Record<string, unknown>,
+): Promise<ActionResult<{ id: number }>> {
+  return pricingMutate(`/api/v2/pricing/air/rate-cards/${cardId}/rates`, 'POST', data);
+}
+
+export async function updateAirRateAction(
+  rateId: number,
+  data: Record<string, unknown>,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/air/rates/${rateId}`, 'PATCH', data);
+}
+
+export async function deleteAirRateAction(
+  rateId: number,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/air/rates/${rateId}`, 'DELETE');
+}
+
+export async function publishAirRateAction(
+  rateId: number,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/air/rates/${rateId}/publish`, 'POST');
+}
+
+export async function rejectAirRateAction(
+  rateId: number,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/air/rates/${rateId}/reject`, 'POST');
+}
+
+export async function resolveAirRateAction(
+  cardId: number,
+  data: { chargeable_weight: number; supplier_id: string | null; reference_date?: string },
+): Promise<ActionResult<AirResolveResult>> {
+  return pricingMutate(`/api/v2/pricing/air/rate-cards/${cardId}/resolve`, 'POST', data);
+}
+
+export async function resolveLCLRateAction(
+  cardId: number,
+  data: { quantity: number; supplier_id: string | null; reference_date?: string },
+): Promise<ActionResult<LCLResolveResult>> {
+  return pricingMutate(`/api/v2/pricing/lcl/rate-cards/${cardId}/resolve`, 'POST', data);
 }
