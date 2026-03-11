@@ -1,5 +1,23 @@
 ## Prompt Log — v5.91 to v6.00
 
+### [2026-03-11 18:20 UTC] — v6.00: Haulage Pricing Data Migration Script
+- **Status:** Completed
+- **Tasks:** Created `af-server/scripts/migrate_haulage_pricing.py` — migrates PricingHaulage → haulage_rate_cards and PTMonthlyRateHaulageTransport (PT-HAULAGE) → haulage_rates. Filters: 2024+ only, trash skipped, MYPKG limited to Singa Gemini (AFC-0023 → AFS-0023). side_loader_available inferred from rate row data. FAF skipped with per-port logging for future migration 040. Supplier ID validation against companies table with explicit remap table.
+- **Files Modified:** `af-server/scripts/migrate_haulage_pricing.py` (new)
+- **Notes:** Script created — not yet executed. Run dry-run first to verify supplier remap table is complete before live execution.
+
+### [2026-03-11 18:00 UTC] — v5.99: Hard FK Retrofit on Rate Tables
+- **Status:** Completed
+- **Tasks:** Created `039_supplier_fk_retrofit.sql` — adds named FK constraints (REFERENCES companies(id) ON DELETE RESTRICT) to supplier_id on fcl_rates, lcl_rates, port_transport_rates, and haulage_rates. Pure DDL, no data changes. Pre-flight diagnostic confirmed zero orphans across all tables.
+- **Files Modified:** `af-server/migrations/039_supplier_fk_retrofit.sql` (new)
+- **Notes:** Migration not applied — Calvin applies manually.
+
+### [2026-03-11 17:50 UTC] — v5.98: Haulage Supplier Rebates Schema Migration
+- **Status:** Completed
+- **Tasks:** Created `038_haulage_supplier_rebates.sql` — single table for percentage-based supplier rebate agreements. Hard FK to `companies(id)`, 6-value container_size CHECK (includes side_loader variants), perpetual effective_from model, NUMERIC(5,4) rebate_percent. Two indexes + inline resolution comments.
+- **Files Modified:** `af-server/migrations/038_haulage_supplier_rebates.sql` (new)
+- **Notes:** Schema-only — no router or frontend. Migration not applied.
+
 ### [2026-03-11 17:30 UTC] — v5.97: Haulage Pricing Schema Migration
 - **Status:** Completed
 - **Tasks:** Created `037_haulage_pricing.sql` with three tables: `haulage_rate_cards` (route × container size dimension), `haulage_rates` (time-series pricing with surcharges JSONB, side_loader_surcharge column), `port_depot_gate_fees` (port-level depot gate fees with terminal override). All indexes, named constraints, and inline resolution comments included.

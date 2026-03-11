@@ -37,6 +37,7 @@ export default function CompaniesPage() {
   const [search, setSearch] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   const load = useCallback(async (searchTerm?: string) => {
     setLoading(true);
@@ -65,6 +66,7 @@ export default function CompaniesPage() {
         return;
       }
       setAuthorized(true);
+      setUserRole(profile.role ?? null);
       load();
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -183,6 +185,7 @@ export default function CompaniesPage() {
         loading={loading}
         onRefresh={() => load(search || undefined)}
         onEdit={(company) => setEditingCompany(company)}
+        userRole={userRole}
       />
 
       <CreateCompanyModal

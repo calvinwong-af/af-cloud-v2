@@ -722,3 +722,312 @@ export async function deletePortTransportRateAction(
 ): Promise<ActionResult<{ msg: string }>> {
   return pricingMutate(`/api/v2/pricing/port-transport/rates/${rateId}`, 'DELETE');
 }
+
+// ---------------------------------------------------------------------------
+// Haulage pricing
+// ---------------------------------------------------------------------------
+
+export interface HaulageRateCard {
+  id: number;
+  rate_card_key: string;
+  port_un_code: string;
+  terminal_id: string | null;
+  terminal_name: string | null;
+  area_id: number;
+  area_name: string;
+  area_code: string;
+  state_name: string | null;
+  container_size: string;
+  include_depot_gate_fee: boolean;
+  side_loader_available: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  latest_price_ref: { list_price: number | null; currency: string; effective_from: string } | null;
+  pending_draft_count: number;
+  latest_list_price_from: string | null;
+  latest_cost_from: string | null;
+  time_series: HaulageTimeSeries[];
+  rates_by_supplier?: Record<string, HaulageRate[]>;
+}
+
+export interface HaulageTimeSeries {
+  month_key: string;
+  list_price: number | null;
+  cost: number | null;
+  currency: string | null;
+  rate_status: string | null;
+  surcharge_total: number;
+  list_surcharge_total?: number;
+  cost_surcharge_total?: number;
+  has_surcharges: boolean;
+}
+
+export interface HaulageRate {
+  id: number;
+  rate_card_id: number;
+  supplier_id: string | null;
+  effective_from: string;
+  effective_to: string | null;
+  rate_status: string;
+  currency: string;
+  uom: string;
+  list_price: number | null;
+  cost: number | null;
+  min_list_price: number | null;
+  min_cost: number | null;
+  surcharges: SurchargeItem[] | null;
+  side_loader_surcharge: number | null;
+  roundup_qty: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContainerSize {
+  container_size: string;
+  label: string;
+}
+
+export async function fetchHaulagePortsAction(
+  countryCode?: string
+): Promise<ActionResult<string[]>> {
+  const sp = new URLSearchParams({ is_active: 'true' });
+  if (countryCode) sp.set('country_code', countryCode);
+  return pricingFetch(`/api/v2/pricing/haulage/ports?${sp.toString()}`);
+}
+
+export async function fetchHaulageAreasAction(
+  portUnCode?: string
+): Promise<ActionResult<PortTransportArea[]>> {
+  const sp = new URLSearchParams();
+  if (portUnCode) sp.set('port_un_code', portUnCode);
+  const qs = sp.toString();
+  return pricingFetch(`/api/v2/pricing/haulage/areas${qs ? `?${qs}` : ''}`);
+}
+
+export async function fetchHaulageContainerSizesAction(): Promise<ActionResult<ContainerSize[]>> {
+  return pricingFetch('/api/v2/pricing/haulage/container-sizes');
+}
+
+export async function fetchHaulageRateCardsAction(params: {
+  countryCode?: string;
+  portUnCode?: string;
+  areaId?: number;
+  containerSize?: string;
+  isActive?: boolean;
+  alertsOnly?: boolean;
+}): Promise<ActionResult<HaulageRateCard[]>> {
+  const sp = new URLSearchParams();
+  if (params.countryCode) sp.set('country_code', params.countryCode);
+  if (params.portUnCode) sp.set('port_un_code', params.portUnCode);
+  if (params.areaId) sp.set('area_id', String(params.areaId));
+  if (params.containerSize) sp.set('container_size', params.containerSize);
+  if (params.isActive !== undefined) sp.set('is_active', String(params.isActive));
+  if (params.alertsOnly) sp.set('alerts_only', 'true');
+  const qs = sp.toString();
+  return pricingFetch(`/api/v2/pricing/haulage/rate-cards${qs ? `?${qs}` : ''}`);
+}
+
+export async function fetchHaulageRateCardDetailAction(
+  cardId: number
+): Promise<ActionResult<HaulageRateCard>> {
+  return pricingFetch(`/api/v2/pricing/haulage/rate-cards/${cardId}`);
+}
+
+export async function createHaulageRateCardAction(
+  data: { port_un_code: string; area_id: number; container_size: string; include_depot_gate_fee?: boolean; side_loader_available?: boolean },
+): Promise<ActionResult<{ id: number }>> {
+  return pricingMutate('/api/v2/pricing/haulage/rate-cards', 'POST', data);
+}
+
+export async function updateHaulageRateCardAction(
+  cardId: number,
+  data: { include_depot_gate_fee?: boolean; side_loader_available?: boolean; is_active?: boolean },
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/haulage/rate-cards/${cardId}`, 'PATCH', data);
+}
+
+export async function fetchHaulageRatesAction(
+  cardId: number,
+  supplierId?: string,
+): Promise<ActionResult<HaulageRate[]>> {
+  const sp = new URLSearchParams();
+  if (supplierId !== undefined) sp.set('supplier_id', supplierId);
+  const qs = sp.toString();
+  return pricingFetch(`/api/v2/pricing/haulage/rate-cards/${cardId}/rates${qs ? `?${qs}` : ''}`);
+}
+
+export async function createHaulageRateAction(
+  cardId: number,
+  data: Record<string, unknown>,
+): Promise<ActionResult<{ id: number }>> {
+  return pricingMutate(`/api/v2/pricing/haulage/rate-cards/${cardId}/rates`, 'POST', data);
+}
+
+export async function updateHaulageRateAction(
+  rateId: number,
+  data: Record<string, unknown>,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/haulage/rates/${rateId}`, 'PATCH', data);
+}
+
+export async function publishHaulageRateAction(
+  rateId: number,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/haulage/rates/${rateId}/publish`, 'POST');
+}
+
+export async function rejectHaulageRateAction(
+  rateId: number,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/haulage/rates/${rateId}/reject`, 'POST');
+}
+
+export async function deleteHaulageRateAction(
+  rateId: number,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/haulage/rates/${rateId}`, 'DELETE');
+}
+
+// ---------------------------------------------------------------------------
+// Depot Gate Fees (DGF)
+// ---------------------------------------------------------------------------
+
+export interface DepotGateFee {
+  id: number;
+  port_un_code: string;
+  terminal_id: string | null;
+  effective_from: string;
+  effective_to: string | null;
+  rate_status: string;
+  currency: string;
+  fee_amount: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchDepotGateFeesAction(
+  portUnCode: string,
+  terminalId?: string,
+): Promise<ActionResult<DepotGateFee[]>> {
+  const sp = new URLSearchParams({ port_un_code: portUnCode });
+  if (terminalId) sp.set('terminal_id', terminalId);
+  return pricingFetch(`/api/v2/pricing/haulage/depot-gate-fees?${sp.toString()}`);
+}
+
+export async function fetchActiveDepotGateFeeAction(
+  portUnCode: string,
+  terminalId?: string,
+): Promise<ActionResult<DepotGateFee | null>> {
+  const sp = new URLSearchParams({ port_un_code: portUnCode });
+  if (terminalId) sp.set('terminal_id', terminalId);
+  return pricingFetch(`/api/v2/pricing/haulage/depot-gate-fees/active?${sp.toString()}`);
+}
+
+export async function createDepotGateFeeAction(
+  data: Record<string, unknown>,
+): Promise<ActionResult<{ id: number }>> {
+  return pricingMutate('/api/v2/pricing/haulage/depot-gate-fees', 'POST', data);
+}
+
+export async function updateDepotGateFeeAction(
+  feeId: number,
+  data: Record<string, unknown>,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/haulage/depot-gate-fees/${feeId}`, 'PATCH', data);
+}
+
+export async function deleteDepotGateFeeAction(
+  feeId: number,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/haulage/depot-gate-fees/${feeId}`, 'DELETE');
+}
+
+// ---------------------------------------------------------------------------
+// Haulage Supplier Rebates
+// ---------------------------------------------------------------------------
+
+export interface HaulageSupplierRebate {
+  id: number;
+  supplier_id: string;
+  container_size: string; // '20' | '40' | '40HC' | 'side_loader_20' | 'side_loader_40' | 'side_loader_40HC'
+  effective_from: string;
+  effective_to: string | null;
+  rate_status: string;
+  rebate_percent: number; // e.g. 0.075 = 7.5%
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchHaulageSupplierRebatesAction(
+  supplierId: string,
+): Promise<ActionResult<HaulageSupplierRebate[]>> {
+  const sp = new URLSearchParams({ supplier_id: supplierId });
+  return pricingFetch(`/api/v2/pricing/haulage/supplier-rebates?${sp.toString()}`);
+}
+
+export async function createHaulageSupplierRebateAction(
+  data: Record<string, unknown>,
+): Promise<ActionResult<HaulageSupplierRebate>> {
+  return pricingMutate('/api/v2/pricing/haulage/supplier-rebates', 'POST', data);
+}
+
+export async function updateHaulageSupplierRebateAction(
+  rebateId: number,
+  data: Record<string, unknown>,
+): Promise<ActionResult<HaulageSupplierRebate>> {
+  return pricingMutate(`/api/v2/pricing/haulage/supplier-rebates/${rebateId}`, 'PATCH', data);
+}
+
+export async function deleteHaulageSupplierRebateAction(
+  rebateId: number,
+): Promise<ActionResult<{ deleted: boolean }>> {
+  return pricingMutate(`/api/v2/pricing/haulage/supplier-rebates/${rebateId}`, 'DELETE');
+}
+
+// ---------------------------------------------------------------------------
+// Haulage FAF Rates
+// ---------------------------------------------------------------------------
+
+export interface FafPortRate {
+  port_un_code: string;
+  container_size: string; // '20' | '40' | '40HC' | 'wildcard'
+  faf_percent: number; // e.g. 0.05 = 5%
+}
+
+export interface HaulageFafRate {
+  id: number;
+  supplier_id: string;
+  effective_from: string;
+  effective_to: string | null;
+  rate_status: string;
+  port_rates: FafPortRate[];
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchHaulageFafRatesAction(
+  supplierId: string,
+): Promise<ActionResult<HaulageFafRate[]>> {
+  const sp = new URLSearchParams({ supplier_id: supplierId });
+  return pricingFetch(`/api/v2/pricing/haulage/faf-rates?${sp.toString()}`);
+}
+
+export async function createHaulageFafRateAction(
+  data: Record<string, unknown>,
+): Promise<ActionResult<HaulageFafRate>> {
+  return pricingMutate('/api/v2/pricing/haulage/faf-rates', 'POST', data);
+}
+
+export async function updateHaulageFafRateAction(
+  fafId: number,
+  data: Record<string, unknown>,
+): Promise<ActionResult<HaulageFafRate>> {
+  return pricingMutate(`/api/v2/pricing/haulage/faf-rates/${fafId}`, 'PATCH', data);
+}
+
+export async function deleteHaulageFafRateAction(
+  fafId: number,
+): Promise<ActionResult<{ deleted: boolean }>> {
+  return pricingMutate(`/api/v2/pricing/haulage/faf-rates/${fafId}`, 'DELETE');
+}

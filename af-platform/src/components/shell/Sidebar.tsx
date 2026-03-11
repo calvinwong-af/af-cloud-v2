@@ -70,8 +70,8 @@ const PRICING_SUB_ITEMS: PricingSubItem[] = [
   { label: 'Air Freight',    icon: Plane,     href: '/pricing/air',          locked: true  },
   { label: 'Local Charges',  icon: Warehouse, href: '/pricing/local-charges', locked: false },
   { label: 'Customs',        icon: FileCheck, href: '/pricing/customs',      locked: false },
-  { label: 'Haulage',        icon: Truck,     href: '/pricing/haulage',      locked: true  },
-  { label: 'Transportation', icon: Car,       href: '/pricing/transportation', locked: true },
+  { label: 'Haulage',        icon: Truck,     href: '/pricing/haulage',      locked: false },
+  { label: 'Transportation', icon: Car,       href: '/pricing/transportation', locked: false },
 ];
 
 function getNavSections(accountType: string | null): NavSection[] {

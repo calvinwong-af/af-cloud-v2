@@ -22,20 +22,23 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { MoreVertical, Pencil, Trash2, Loader2, AlertTriangle, ArrowRight } from 'lucide-react';
+import { MoreVertical, Pencil, Trash2, Loader2, AlertTriangle, ArrowRight, Tags } from 'lucide-react';
 import Link from 'next/link';
 import { deleteCompanyAction } from '@/app/actions/companies';
 import type { Company } from '@/lib/types';
+import { SupplierPricingModal } from './SupplierPricingModal';
 
 interface CompanyActionsMenuProps {
   company: Company;
   onEdit: (company: Company) => void;
   onRefresh: () => void;
+  userRole: string | null;
 }
 
-export function CompanyActionsMenu({ company, onEdit, onRefresh }: CompanyActionsMenuProps) {
+export function CompanyActionsMenu({ company, onEdit, onRefresh, userRole }: CompanyActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showPricingModal, setShowPricingModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
@@ -113,6 +116,15 @@ export function CompanyActionsMenu({ company, onEdit, onRefresh }: CompanyAction
             <Pencil className="w-4 h-4" />
             Edit
           </button>
+          {userRole === 'AFU-ADMIN' && (
+            <button
+              onClick={() => { setOpen(false); setShowPricingModal(true); }}
+              className="w-full flex items-center gap-2.5 px-4 py-2 text-left text-[var(--text)] hover:bg-[var(--surface)] transition-colors"
+            >
+              <Tags className="w-4 h-4" />
+              Supplier Pricing
+            </button>
+          )}
           <div className="my-1 border-t border-[var(--border)]" />
           <button
             onClick={() => { setShowConfirm(true); setOpen(false); setError(null); }}
@@ -124,6 +136,12 @@ export function CompanyActionsMenu({ company, onEdit, onRefresh }: CompanyAction
         </div>,
         document.body
       )}
+
+      <SupplierPricingModal
+        company={company}
+        open={showPricingModal}
+        onClose={() => setShowPricingModal(false)}
+      />
 
       {/* Delete confirmation modal */}
       {showConfirm && (

@@ -41,12 +41,13 @@ interface CompanyTableProps {
   loading: boolean;
   onRefresh: () => void;
   onEdit: (company: Company) => void;
+  userRole: string | null;
 }
 
 type SortKey = 'name' | 'company_id' | 'created' | 'updated';
 type SortDir = 'asc' | 'desc';
 
-export function CompanyTable({ companies, loading, onRefresh, onEdit }: CompanyTableProps) {
+export function CompanyTable({ companies, loading, onRefresh, onEdit, userRole }: CompanyTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
@@ -123,7 +124,7 @@ export function CompanyTable({ companies, loading, onRefresh, onEdit }: CompanyT
           </thead>
           <tbody className="divide-y divide-[var(--border)]">
             {sorted.map((company) => (
-              <CompanyRow key={company.company_id} company={company} onRefresh={onRefresh} onEdit={onEdit} />
+              <CompanyRow key={company.company_id} company={company} onRefresh={onRefresh} onEdit={onEdit} userRole={userRole} />
             ))}
           </tbody>
         </table>
@@ -147,7 +148,7 @@ function Th({ children, onClick, className }: { children: React.ReactNode; onCli
   );
 }
 
-function CompanyRow({ company, onRefresh, onEdit }: { company: Company; onRefresh: () => void; onEdit: (company: Company) => void }) {
+function CompanyRow({ company, onRefresh, onEdit, userRole }: { company: Company; onRefresh: () => void; onEdit: (company: Company) => void; userRole: string | null }) {
   const initials = company.short_name?.slice(0, 2).toUpperCase() ||
     company.name.slice(0, 2).toUpperCase();
 
@@ -244,7 +245,7 @@ function CompanyRow({ company, onRefresh, onEdit }: { company: Company; onRefres
 
       {/* Actions */}
       <td className="px-4 py-3">
-        <CompanyActionsMenu company={company} onEdit={onEdit} onRefresh={onRefresh} />
+        <CompanyActionsMenu company={company} onEdit={onEdit} onRefresh={onRefresh} userRole={userRole} />
       </td>
     </tr>
   );
