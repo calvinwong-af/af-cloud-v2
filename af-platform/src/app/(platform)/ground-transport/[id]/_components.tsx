@@ -265,7 +265,6 @@ export function AddStopModal({
         stop_type: stopType,
         address_line: address.address_line,
         area_id: address.area_id,
-        city_id: address.city_id,
         lat: address.lat,
         lng: address.lng,
         scheduled_arrival: scheduledArrival || null,
