@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import type { MonthBucket } from '../_types';
-import type { HaulageRateCard, HaulageRate, SurchargeItem, DepotGateFee } from '@/app/actions/pricing';
+import type { HaulageRateCard, HaulageRate, SurchargeItem, DepotGateFee, RateDetail } from '@/app/actions/pricing';
 import {
   updateHaulageRateAction,
   deleteHaulageRateAction,
@@ -220,29 +220,29 @@ export function HaulageExpandedPanel({
     return result;
   };
 
-  const buildEndDateMap = (rates: HaulageRate[]): Map<string, SparklineRate> => {
-    const map = new Map<string, SparklineRate>();
+  const buildEndDateMap = (rates: HaulageRate[]): Map<string, RateDetail> => {
+    const map = new Map<string, RateDetail>();
     for (const rate of rates) {
       if (rate.effective_to) {
         const mk = rate.effective_to.substring(0, 7);
         const existing = map.get(mk);
         if (!existing || (rate.effective_from ?? '') > (existing.effective_from ?? '')) {
-          map.set(mk, rate as SparklineRate);
+          map.set(mk, rate as unknown as RateDetail);
         }
       }
     }
     return map;
   };
 
-  const buildStartDateMap = (rates: HaulageRate[]): Map<string, SparklineRate> => {
+  const buildStartDateMap = (rates: HaulageRate[]): Map<string, RateDetail> => {
     const MIGRATION_FLOOR_MK = '2024-01';
-    const map = new Map<string, SparklineRate>();
+    const map = new Map<string, RateDetail>();
     for (const rate of rates) {
       if (rate.effective_from && rate.effective_from.substring(0, 7) > MIGRATION_FLOOR_MK) {
         const mk = rate.effective_from.substring(0, 7);
         const existing = map.get(mk);
         if (!existing || (rate.effective_from ?? '') > (existing.effective_from ?? '')) {
-          map.set(mk, rate as SparklineRate);
+          map.set(mk, rate as unknown as RateDetail);
         }
       }
     }
