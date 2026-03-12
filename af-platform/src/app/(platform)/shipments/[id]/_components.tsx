@@ -1394,6 +1394,10 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
       if (!result) { setError('No response from server'); setLoader(false); return; }
       if (result.success) {
         setHistoryEntries([]);
+        // If status reached End (4002), auto-complete the shipment
+        if (newStatus === 4002 && !order.completed) {
+          await updateCompletedFlagAction(order.quotation_id, true);
+        }
         onReload();
       } else {
         setError(result.error);
@@ -1408,7 +1412,7 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
     if (anyLoading || isTerminal || !isAfu) return;
     if (nodeGroup.steps.length === 1) {
       const target = nodeGroup.steps[0];
-      if (target === 5001 || target === -1) {
+      if (target === -1) {
         setConfirmAction({ status: target, label: SHIPMENT_STATUS_LABELS[target] ?? `${target}`, allowJump: true });
       } else {
         executeStatusChange(target, true);
@@ -1694,7 +1698,7 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
             </button>
           )}
 
-          {currentStatus >= 3002 && currentStatus !== 5001 && (
+          {currentStatus >= 3002 && (
             <div className="ml-auto flex items-center gap-2">
               {order.completed && order.completed_at && (
                 <span className="text-xs text-[var(--text-muted)]">

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  Package, Calendar, Upload,
+  Package, Calendar, Upload, X,
   FileText, AlertTriangle, Loader2, Hash,
   ClipboardList, Pencil, SlidersHorizontal,
 } from 'lucide-react';
@@ -11,7 +11,7 @@ import { fetchShipmentOrderDetailAction, fetchPortsAction } from '@/app/actions/
 import { patchShipmentCargoAction, fetchShipmentTasksAction } from '@/app/actions/shipments-write';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
 import { formatDate } from '@/lib/utils';
-import type { ShipmentOrder } from '@/lib/types';
+import type { ShipmentOrder, TypeDetailsFCL } from '@/lib/types';
 import type { Port } from '@/lib/ports';
 import { SHIPMENT_STATUS_LABELS, SHIPMENT_STATUS_COLOR, ORDER_TYPE_LABELS } from '@/lib/types';
 import ShipmentTasks from '@/components/shipments/ShipmentTasks';
@@ -20,6 +20,7 @@ import BLPartyDiffModal from '@/components/shipments/BLPartyDiffModal';
 import DocumentParseModal from '@/components/shipments/DocumentParseModal';
 import RouteNodeTimeline from '@/components/shipments/RouteNodeTimeline';
 import ScopeConfigDialog from '@/components/shipments/ScopeConfigDialog';
+import CreateQuotationModal from '@/components/shipments/CreateQuotationModal';
 import {
   STATUS_STYLES,
   SectionCard,
@@ -71,6 +72,8 @@ export default function ShipmentOrderDetailPage() {
   const [routePodAta, setRoutePodAta] = useState<string | null>(null);
   const [showScopeConfig, setShowScopeConfig] = useState(false);
   const [tasksRefreshKey, setTasksRefreshKey] = useState(0);
+  const [showCreateQuotation, setShowCreateQuotation] = useState(false);
+  const [latestQuotationRef, setLatestQuotationRef] = useState<string | null>(null);
 
   const loadOrder = useCallback(async () => {
     const result = await fetchShipmentOrderDetailAction(quotationId);
@@ -155,10 +158,34 @@ export default function ShipmentOrderDetailPage() {
   const voyageNumber: string | null =
     ((order as unknown as Record<string, unknown>).voyage_number as string) ?? (bk.voyage_number as string) ?? null;
 
+  const containerSizes: string[] = (() => {
+    const td = order.type_details;
+    if (order.order_type === 'SEA_FCL' && td && 'containers' in td) {
+      return Array.from(new Set(
+        (td as TypeDetailsFCL).containers.map(c => {
+          const s = c.container_size?.toUpperCase() ?? '';
+          if (s.startsWith('40') && s.includes('HC')) return '40HC';
+          if (s.startsWith('40')) return '40';
+          if (s.startsWith('20')) return '20';
+          return s;
+        })
+      ));
+    }
+    return [];
+  })();
+
   return (
     <div className="p-6 space-y-5 max-w-4xl">
 
-
+      {/* Quotation created success banner */}
+      {latestQuotationRef && (
+        <div className="flex items-center justify-between px-4 py-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-700">
+          <span>Quotation <strong>{latestQuotationRef}</strong> created successfully.</span>
+          <button onClick={() => setLatestQuotationRef(null)} className="text-emerald-500 hover:text-emerald-700">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Header */}
       <div className="bg-white border border-[var(--border)] rounded-xl p-5">
@@ -311,6 +338,15 @@ export default function ShipmentOrderDetailPage() {
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
               Configure Scope
+            </button>
+          )}
+          {accountType === 'AFU' && order.status !== -1 && (
+            <button
+              onClick={() => setShowCreateQuotation(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[var(--sky)] rounded-lg hover:opacity-90 transition-opacity"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Create Quotation
             </button>
           )}
           {accountType === 'AFU' && order.status !== -1 && (
@@ -657,6 +693,23 @@ export default function ShipmentOrderDetailPage() {
             setShowScopeConfig(false);
             setRouteTimelineRefreshKey(k => k + 1);
             setTasksRefreshKey(k => k + 1);
+          }}
+        />
+      )}
+
+      {/* Create Quotation modal */}
+      {showCreateQuotation && (
+        <CreateQuotationModal
+          shipmentId={order.quotation_id}
+          orderType={order.order_type}
+          incoterm={order.incoterm_code ?? ''}
+          transactionType={order.transaction_type}
+          containerSizes={containerSizes}
+          onClose={() => setShowCreateQuotation(false)}
+          onCreated={(ref) => {
+            setLatestQuotationRef(ref);
+            setShowCreateQuotation(false);
+            loadOrder();
           }}
         />
       )}

@@ -76,3 +76,22 @@
   4. For files with dynamic clause builders (doc_apply.py, route_nodes.py), bindparam lists are built alongside clauses and unpacked at execution.
 - **Files Modified:** `core.py`, `bl.py`, `doc_apply.py`, `route_nodes.py`, `status.py`, `scope.py`, `tasks.py`, `_status_helpers.py` (all in `af-server/routers/shipments/`)
 - **Notes:** All 8 files + main.py pass py_compile. Fix uses `CAST(:param AS jsonb)` + `.bindparams(bindparam("param", type_=String()))` — the `::jsonb` shorthand broke SQLAlchemy's text() parameter parser (`KeyError` on bind param name), so reverted to CAST syntax with bindparam type annotation which is the actual pg8000 fix.
+
+### [2026-03-12 15:00 UTC] — v6.31: Shipment Status — Remove 5001 from Pipeline + Auto-complete on End
+- **Status:** Completed
+- **Tasks:**
+  1. Removed `5001` from `STATUS_PATH_A` and `STATUS_PATH_B` in `lib/types.ts` — `4002` (Arrived) is now the terminal pipeline node.
+  2. Removed `5001` special case from `handleFutureNodeClick` — only `-1` (Cancel) now triggers confirmation dialog.
+  3. Added auto-complete logic in `executeStatusChange` — when status advances to `4002`, automatically calls `updateCompletedFlagAction(quotation_id, true)` if not already completed.
+  4. Removed `currentStatus !== 5001` guard from "Mark Complete" button visibility — now shows for all statuses >= `3002`.
+- **Files Modified:** `af-platform/src/lib/types.ts`, `af-platform/src/app/(platform)/shipments/[id]/_components.tsx`
+- **Notes:** SQL data fix (`UPDATE orders SET completed = TRUE WHERE status = 'completed' AND completed = FALSE`) needs to be run manually against prod — not executed here. `5001` retained in `ShipmentOrderStatus` type, labels, and colors for legacy display of historical records.
+
+### [2026-03-12 15:30 UTC] — v6.32: Quotation Module — Backend Foundation (Migration + API)
+- **Status:** Completed
+- **Tasks:**
+  1. Created migration `af-server/migrations/039_quotations.sql` — `quotations` table with UUID PK, `quotation_ref` (AFQ- + 8-digit seq), FK to `orders`, JSONB `scope_snapshot` + `transport_details`, indexes, `updated_at` trigger, and sequence.
+  2. Created router `af-server/routers/quotations.py` — 3 endpoints: `POST /quotations` (create with revision tracking, vehicle type validation, JSONB bindparam for pg8000), `GET /quotations?shipment_id=` (list by shipment, revision DESC), `GET /quotations/{quotation_ref}` (single).
+  3. Registered router in `main.py` under `/api/v2` prefix.
+- **Files Modified:** `af-server/migrations/039_quotations.sql` (new), `af-server/routers/quotations.py` (new), `af-server/main.py`
+- **Notes:** All files pass py_compile. Uses `CAST(:param AS jsonb)` + `bindparam(type_=String())` pattern for pg8000 Cloud Run compat. No line items/pricing — deferred per prompt.

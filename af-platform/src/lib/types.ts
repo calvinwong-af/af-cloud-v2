@@ -245,10 +245,10 @@ export interface ShipmentException {
 // ---------------------------------------------------------------------------
 
 /** Path A: AF owns freight booking (includes booking nodes) */
-export const STATUS_PATH_A: ShipmentOrderStatus[] = [1001, 1002, 2001, 3001, 3002, 4001, 4002, 5001];
+export const STATUS_PATH_A: ShipmentOrderStatus[] = [1001, 1002, 2001, 3001, 3002, 4001, 4002];
 
 /** Path B: AF does NOT own freight booking (skips booking nodes) */
-export const STATUS_PATH_B: ShipmentOrderStatus[] = [1001, 1002, 2001, 4001, 4002, 5001];
+export const STATUS_PATH_B: ShipmentOrderStatus[] = [1001, 1002, 2001, 4001, 4002];
 
 /** Incoterm + transaction_type combos that use Path A (AF owns booking) */
 const _PATH_A_COMBOS = new Set([

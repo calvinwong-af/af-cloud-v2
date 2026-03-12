@@ -26,6 +26,7 @@ import {
   Plane,
   Warehouse,
   FileCheck,
+  FileText,
   Car,
   Lock,
 } from "lucide-react";
@@ -105,6 +106,7 @@ function getNavSections(accountType: string | null): NavSection[] {
     sections.push({
       title: 'SYSTEM',
       items: [
+        { label: 'Quotations',     icon: FileText,   href: '/quotations' },
         { label: 'Geography',      icon: Globe,      href: '/geography' },
         { label: 'System Logs',    icon: ScrollText, href: '/logs' },
       ],
