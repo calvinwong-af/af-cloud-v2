@@ -277,7 +277,7 @@ export function AirTimeSeriesRateList({
                       <div className="text-xs font-bold text-[var(--text)] flex items-center gap-1.5">
                         {group.origin} &rarr; {group.dest}
                         {(() => {
-                          const dgCodes = [...new Set(group.cards.map(c => c.dg_class_code).filter(c => c !== 'NON-DG'))];
+                          const dgCodes = Array.from(new Set(group.cards.map(c => c.dg_class_code).filter(c => c !== 'NON-DG')));
                           return dgCodes.map(code => (
                             <span key={code} className="text-[9px] px-1 py-0.5 rounded bg-orange-50 text-orange-600 border border-orange-200 font-medium">
                               {code}
