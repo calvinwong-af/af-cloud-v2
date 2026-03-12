@@ -175,7 +175,7 @@ export default function CreateQuotationModal({
         if (result.success && result.data) {
           const loaded: Record<string, ScopeMode> = {};
           for (const key of eligibleKeys) {
-            loaded[key] = (result.data as Record<string, string>)[key] as ScopeMode ?? 'IGNORED';
+            loaded[key] = (result.data as unknown as Record<string, string>)[key] as ScopeMode ?? 'IGNORED';
           }
           setScope(loaded);
 
