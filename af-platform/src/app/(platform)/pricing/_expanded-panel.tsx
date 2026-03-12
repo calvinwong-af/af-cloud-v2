@@ -126,10 +126,8 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
     const upperBound = monthStart;
     const dominantRate = sorted.find(r => (r.effective_from ?? '') <= upperBound) ?? null;
     if (!dominantRate) return null;
-    const effToMonth = dominantRate.effective_to
-      ? dominantRate.effective_to.substring(0, 7)
-      : null;
-    if (effToMonth !== null && effToMonth < monthKey) return null;
+    const effTo = dominantRate.effective_to ?? null;
+    if (effTo !== null && effTo < monthStart) return null;
     return dominantRate;
   };
 
@@ -151,12 +149,7 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
         if (exactRate && (exactRate.effective_to === null || exactRate.effective_to >= monthStart)) {
           result.set(m.month_key, { value: exactRate[valueKey] ?? null, isDraft: exactRate.rate_status === 'DRAFT' });
         } else {
-          // Carry forward the latest open-ended rate into future months
-          const dominant = getDominantRate(sorted, m.month_key, monthStart);
-          result.set(m.month_key, dominant
-            ? { value: dominant[valueKey] ?? null, isDraft: dominant.rate_status === 'DRAFT' }
-            : { value: null, isDraft: false }
-          );
+          result.set(m.month_key, { value: null, isDraft: false });
         }
         continue;
       }
@@ -189,9 +182,7 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
         if (exactRate && (exactRate.effective_to === null || exactRate.effective_to >= monthStart)) {
           result.set(m.month_key, exactRate.surcharges ?? null);
         } else {
-          // Carry forward surcharges from latest open-ended rate
-          const dominant = getDominantRate(sorted, m.month_key, monthStart);
-          result.set(m.month_key, dominant?.surcharges ?? null);
+          result.set(m.month_key, null);
         }
         continue;
       }

@@ -130,11 +130,7 @@ export function AirExpandedPanel({
         if (exactRate && (exactRate.effective_to === null || exactRate.effective_to >= monthStart)) {
           result.set(m.month_key, { value: exactRate[valueKey] ?? null, isDraft: exactRate.rate_status === 'DRAFT' });
         } else {
-          const dominant = getDominantRate(sorted, m.month_key, monthStart);
-          result.set(m.month_key, dominant
-            ? { value: dominant[valueKey] ?? null, isDraft: dominant.rate_status === 'DRAFT' }
-            : { value: null, isDraft: false }
-          );
+          result.set(m.month_key, { value: null, isDraft: false });
         }
         continue;
       }
@@ -166,8 +162,7 @@ export function AirExpandedPanel({
         if (exactRate && (exactRate.effective_to === null || exactRate.effective_to >= monthStart)) {
           result.set(m.month_key, exactRate.surcharges ?? null);
         } else {
-          const dominant = getDominantRate(sorted, m.month_key, monthStart);
-          result.set(m.month_key, dominant?.surcharges ?? null);
+          result.set(m.month_key, null);
         }
         continue;
       }

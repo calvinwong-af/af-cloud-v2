@@ -1,11 +1,11 @@
 ## Prompt Log — v6.11 to v6.20
 
-### [2026-03-12 13:00 UTC] — v6.14: Air Freight UI (Sparkline) + l45→p100 + Sparkline Clip Fix
+### [2026-03-12 13:30 UTC] — v6.14: Air Freight UI (Sparkline) + l45→p100 + Sparkline Future-Month Clip
 - **Status:** Completed
 - **Tasks:**
   1. Fix A: Replaced breakpoint grid in `_air-expanded-panel.tsx` with CostSparkline pattern matching `_expanded-panel.tsx`. Used `p100_list_price`/`p100_cost` as value keys.
   2. Fix B: Swapped `l45_list_price`/`l45_cost` → `p100_list_price`/`p100_cost` in `_air-rate-list.tsx` summary cells and `getAirAlertLevel`. Also added `p100_list_price`/`p100_cost` to backend time series and `AirTimeSeries` type.
-  3. Fix C: Fixed sparkline carry-forward in `_expanded-panel.tsx` — `getDominantRate` now compares `effective_to` at month-key level, stopping the line at the correct month boundary.
+  3. Fix C: Removed carry-forward fallback from future-month branch in `buildMonthMap` and `buildSurchargesMap` in `_expanded-panel.tsx` and `_air-expanded-panel.tsx`. Sparkline now stops at current month for open-ended rates, matching backend time_series behaviour.
 - **Files Modified:** `_air-expanded-panel.tsx`, `_air-rate-list.tsx`, `_expanded-panel.tsx`, `af-server/routers/pricing/air.py`, `af-platform/src/app/actions/pricing.ts`
 - **Notes:** Backend also updated to include p100 fields in time series (required for Fix B). py_compile, tsc --noEmit, and lint all pass clean.
 
