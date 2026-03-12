@@ -16,7 +16,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import text, bindparam, String
 
 from core.auth import Claims, require_auth, require_afu, require_afu_admin
 from core.db import get_db
@@ -317,9 +317,11 @@ def _lazy_init_tasks_pg(conn, shipment_id: str, shipment_data: dict) -> list[dic
     else:
         scope = derive_scope_from_incoterm(incoterm, txn_type)
         # Persist derived scope to shipment_details
-        conn.execute(text("""
-            UPDATE shipment_details SET scope = CAST(:scope AS jsonb) WHERE order_id = :id
-        """), {"scope": json.dumps(scope), "id": shipment_id})
+        conn.execute(
+            text("UPDATE shipment_details SET scope = CAST(:scope AS jsonb) WHERE order_id = :id")
+            .bindparams(bindparam("scope", type_=String())),
+            {"scope": json.dumps(scope), "id": shipment_id},
+        )
 
     tasks = generate_incoterm_tasks(
         incoterm=incoterm,
@@ -559,7 +561,11 @@ async def create_shipment_manual(
             FALSE, CAST(:creator AS jsonb), :now, :now,
             FALSE, FALSE, :is_test
         )
-    """), {
+    """).bindparams(
+        bindparam("cargo", type_=String()),
+        bindparam("parties", type_=String()),
+        bindparam("creator", type_=String()),
+    ), {
         "id": shipment_id,
         "countid": new_countid,
         "company_id": body.company_id,
@@ -585,7 +591,10 @@ async def create_shipment_manual(
             CAST(:type_details AS jsonb), NULL, NULL, NULL,
             CAST(:status_history AS jsonb), :cargo_ready_date
         )
-    """), {
+    """).bindparams(
+        bindparam("type_details", type_=String()),
+        bindparam("status_history", type_=String()),
+    ), {
         "id": shipment_id,
         "incoterm_code": body.incoterm_code,
         "transaction_type": body.transaction_type,
@@ -640,7 +649,10 @@ async def create_shipment_manual(
             :order_id, CAST(:status_history AS jsonb), CAST(:workflow_tasks AS jsonb),
             FALSE, :now, :now
         )
-    """), {
+    """).bindparams(
+        bindparam("status_history", type_=String()),
+        bindparam("workflow_tasks", type_=String()),
+    ), {
         "order_id": shipment_id,
         "status_history": json.dumps(wf_history),
         "workflow_tasks": json.dumps(tasks),
@@ -769,7 +781,8 @@ async def update_shipment_port(
                 changed = True
         if changed:
             conn.execute(
-                text("UPDATE shipment_details SET route_nodes = CAST(:rn AS jsonb) WHERE order_id = :id"),
+                text("UPDATE shipment_details SET route_nodes = CAST(:rn AS jsonb) WHERE order_id = :id")
+                .bindparams(bindparam("rn", type_=String())),
                 {"rn": json.dumps(nodes), "id": shipment_id},
             )
 
@@ -881,10 +894,11 @@ async def update_booking(
                 booking[key] = None
             else:
                 booking[key] = val
-        conn.execute(text("""
-            UPDATE shipment_details SET booking = CAST(:booking AS jsonb)
-            WHERE order_id = :id
-        """), {"booking": json.dumps(booking), "id": shipment_id})
+        conn.execute(
+            text("UPDATE shipment_details SET booking = CAST(:booking AS jsonb) WHERE order_id = :id")
+            .bindparams(bindparam("booking", type_=String())),
+            {"booking": json.dumps(booking), "id": shipment_id},
+        )
 
     # 3. Update air flat columns (on shipment_details)
     flat_col_map = {
@@ -913,6 +927,74 @@ async def update_booking(
     # 4. Log + commit
     _log_system_action_pg(conn, "BOOKING_UPDATED", shipment_id, claims.uid, claims.email)
     return {"status": "OK", "msg": "Booking updated"}
+
+
+# ---------------------------------------------------------------------------
+# PATCH /shipments/{shipment_id}/type-details — Update container/seal numbers
+# ---------------------------------------------------------------------------
+
+class PatchTypeDetailsRequest(BaseModel):
+    # FCL: update container_numbers and seal_numbers per container index
+    containers: list[dict] | None = None
+    # LCL: update single container_number and seal_number
+    container_number: str | None = None
+    seal_number: str | None = None
+
+
+@router.patch("/{shipment_id}/type-details")
+async def update_type_details(
+    shipment_id: str,
+    body: PatchTypeDetailsRequest,
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    """Update container/seal numbers in type_details JSONB. AFU only."""
+    row = conn.execute(text("""
+        SELECT sd.order_id, sd.type_details FROM shipment_details sd
+        JOIN orders o ON o.order_id = sd.order_id
+        WHERE sd.order_id = :id AND o.trash = FALSE
+    """), {"id": shipment_id}).fetchone()
+    if not row:
+        raise NotFoundError(f"Shipment {shipment_id} not found")
+
+    type_details = _parse_jsonb(row[1]) or {}
+    if not isinstance(type_details, dict):
+        type_details = {}
+
+    td_type = type_details.get("type", "")
+
+    # Infer FCL if type field missing but containers array exists in DB
+    is_fcl = td_type == "SEA_FCL" or (not td_type and isinstance(type_details.get("containers"), list))
+    if is_fcl and body.containers is not None:
+        existing = type_details.get("containers", [])
+        for idx, update in enumerate(body.containers):
+            if idx < len(existing):
+                if "container_numbers" in update:
+                    existing[idx]["container_numbers"] = update["container_numbers"]
+                if "seal_numbers" in update:
+                    existing[idx]["seal_numbers"] = update["seal_numbers"]
+        type_details["containers"] = existing
+
+    elif td_type == "SEA_LCL" or (not td_type and not isinstance(type_details.get("containers"), list)):
+        sent = body.__fields_set__
+        if "container_number" in sent:
+            type_details["container_number"] = body.container_number
+        if "seal_number" in sent:
+            type_details["seal_number"] = body.seal_number
+
+    conn.execute(
+        text("UPDATE shipment_details SET type_details = CAST(:type_details AS jsonb) WHERE order_id = :id")
+        .bindparams(bindparam("type_details", type_=String())),
+        {"type_details": json.dumps(type_details), "id": shipment_id},
+    )
+
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(text("""
+        UPDATE orders SET updated_at = :now WHERE order_id = :id
+    """), {"now": now, "id": shipment_id})
+
+    _log_system_action_pg(conn, "TYPE_DETAILS_UPDATED", shipment_id, claims.uid, claims.email)
+    return {"status": "OK"}
 
 
 # ---------------------------------------------------------------------------

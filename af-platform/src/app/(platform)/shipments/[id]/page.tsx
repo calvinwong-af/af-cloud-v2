@@ -526,7 +526,7 @@ export default function ShipmentOrderDetailPage() {
         </SectionCard>
 
         {/* Type details — containers or packages */}
-        <TypeDetailsCard order={order} orderType={order.order_type} />
+        <TypeDetailsCard order={order} isAFU={accountType === 'AFU'} onSaved={loadOrder} />
 
         {/* Parties */}
         <PartiesCard

@@ -26,8 +26,10 @@ const INCOTERM_TASK_RULES: Record<string, Record<string, string[]>> = {
     DOMESTIC: ['first_mile', 'import_clearance', 'last_mile'],
   },
   FCA: {
+    // Seller delivers to named place already cleared for export — exporter only scopes export_clearance
+    // Importer scope = EXW import minus export_clearance (seller already handled it)
     EXPORT: ['export_clearance'],
-    IMPORT: ['first_mile', 'export_clearance', 'import_clearance', 'last_mile'],
+    IMPORT: ['first_mile', 'import_clearance', 'last_mile'],
     DOMESTIC: ['last_mile'],
   },
   FOB: {

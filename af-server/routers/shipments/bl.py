@@ -13,7 +13,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import text, bindparam, String
 
 from core.auth import Claims, require_afu
 from core.db import get_db
@@ -415,7 +415,11 @@ async def create_from_bl(
             FALSE, CAST(:creator AS jsonb), :now, :now,
             FALSE, FALSE
         )
-    """), {
+    """).bindparams(
+        bindparam("cargo", type_=String()),
+        bindparam("parties", type_=String()),
+        bindparam("creator", type_=String()),
+    ), {
         "id": shipment_id,
         "countid": new_countid,
         "company_id": body.company_id or "",
@@ -444,7 +448,11 @@ async def create_from_bl(
             :hawb_number, :mawb_number, :awb_type,
             NULL
         )
-    """), {
+    """).bindparams(
+        bindparam("type_details", type_=String()),
+        bindparam("booking", type_=String()),
+        bindparam("status_history", type_=String()),
+    ), {
         "id": shipment_id,
         "incoterm_code": body.incoterm_code,
         "transaction_type": body.transaction_type,
@@ -526,7 +534,10 @@ async def create_from_bl(
             :order_id, CAST(:status_history AS jsonb), CAST(:workflow_tasks AS jsonb),
             FALSE, :now, :now
         )
-    """), {
+    """).bindparams(
+        bindparam("status_history", type_=String()),
+        bindparam("workflow_tasks", type_=String()),
+    ), {
         "order_id": shipment_id,
         "status_history": json.dumps(wf_history),
         "workflow_tasks": json.dumps(tasks),
@@ -823,10 +834,17 @@ async def update_from_bl(
     try:
         conn.execute(text(f"""
             UPDATE orders SET {', '.join(orders_clauses)} WHERE order_id = :id
-        """), params)
+        """).bindparams(
+            bindparam("parties", type_=String()),
+            bindparam("cargo", type_=String()),
+        ), params)
         conn.execute(text(f"""
             UPDATE shipment_details SET {', '.join(sd_clauses)} WHERE order_id = :id
-        """), params)
+        """).bindparams(
+            bindparam("booking", type_=String()),
+            bindparam("bl_document", type_=String()),
+            bindparam("type_details", type_=String()),
+        ), params)
     except Exception as e:
         logger.error("[bl_update] Failed to write shipment %s: %s", shipment_id, str(e))
         raise HTTPException(status_code=500, detail=f"Failed to save shipment: {str(e)}")
@@ -866,7 +884,9 @@ async def update_from_bl(
                     UPDATE shipment_workflows
                     SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
                     WHERE order_id = :id
-                """), {"tasks": json.dumps(wf_tasks), "now": now, "id": shipment_id})
+                """).bindparams(
+                    bindparam("tasks", type_=String()),
+                ), {"tasks": json.dumps(wf_tasks), "now": now, "id": shipment_id})
 
     # Sync route node timings — BL SOB date = actual departure (ATD)
     if etd:
@@ -1003,7 +1023,9 @@ async def update_parties(
 
     conn.execute(text("""
         UPDATE orders SET parties = CAST(:parties AS jsonb), updated_at = :now WHERE order_id = :id
-    """), {"parties": json.dumps(parties), "now": now, "id": shipment_id})
+    """).bindparams(
+        bindparam("parties", type_=String()),
+    ), {"parties": json.dumps(parties), "now": now, "id": shipment_id})
 
     _log_system_action_pg(conn, "PARTIES_UPDATED", shipment_id, claims.uid, claims.email)
 
@@ -1053,7 +1075,9 @@ async def clear_parsed_diff(
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(text("""
         UPDATE shipment_details SET bl_document = CAST(:bl_document AS jsonb) WHERE order_id = :id
-    """), {"bl_document": json.dumps(bl_doc) if bl_doc else None, "id": shipment_id})
+    """).bindparams(
+        bindparam("bl_document", type_=String()),
+    ), {"bl_document": json.dumps(bl_doc) if bl_doc else None, "id": shipment_id})
     conn.execute(text("""
         UPDATE orders SET updated_at = :now WHERE order_id = :id
     """), {"now": now, "id": shipment_id})

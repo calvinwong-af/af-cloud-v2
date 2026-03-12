@@ -6,7 +6,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import text
+from sqlalchemy import text, bindparam, String
 
 from core.constants import STATUS_DEPARTED, STATUS_LABELS, NUMERIC_TO_STRING_STATUS
 from logic.incoterm_tasks import (
@@ -91,7 +91,7 @@ def _check_atd_advancement_pg(
         UPDATE shipment_details
         SET status_history = CAST(:history AS jsonb)
         WHERE order_id = :id
-    """), {
+    """).bindparams(bindparam("history", type_=String())), {
         "history": json.dumps(history),
         "id": shipment_id,
     })
@@ -136,7 +136,7 @@ def _maybe_unblock_export_clearance_pg(conn, shipment_id: str, user_id: str):
             UPDATE shipment_workflows
             SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
             WHERE order_id = :id
-        """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
+        """).bindparams(bindparam("tasks", type_=String())), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
         logger.info("EXPORT_CLEARANCE unblocked for %s", shipment_id)
 
 
@@ -239,4 +239,4 @@ def _sync_route_node_timings(
             UPDATE shipment_details
             SET route_nodes = CAST(:nodes AS jsonb)
             WHERE order_id = :id
-        """), {"nodes": json.dumps(nodes), "id": shipment_id})
+        """).bindparams(bindparam("nodes", type_=String())), {"nodes": json.dumps(nodes), "id": shipment_id})

@@ -91,17 +91,6 @@ export function HaulageExpandedPanel({
     }
   };
 
-  const handleDelete = async (rateId: number) => {
-    setSaving(true);
-    try {
-      await deleteHaulageRateAction(rateId);
-      setConfirmDeleteId(null);
-      onRatesChanged();
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleDgfDelete = async (feeId: number) => {
     setSaving(true);
     try {
@@ -249,6 +238,19 @@ export function HaulageExpandedPanel({
     return map;
   };
 
+  const buildDominantRateMap = (rates: HaulageRate[]): Map<string, RateDetail> => {
+    const sorted = [...rates].sort(
+      (a, b) => (b.effective_from ?? '').localeCompare(a.effective_from ?? ''),
+    ) as SparklineRate[];
+    const map = new Map<string, RateDetail>();
+    for (const m of months) {
+      const monthStart = `${m.month_key}-01`;
+      const dominant = getDominantRate(sorted, monthStart);
+      if (dominant) map.set(m.month_key, dominant as unknown as RateDetail);
+    }
+    return map;
+  };
+
   const priceRefRates = (detail.rates_by_supplier?.['null'] ?? []) as HaulageRate[];
   const supplierEntries = Object.entries(detail.rates_by_supplier ?? {});
   const supplierRows = supplierEntries
@@ -262,6 +264,11 @@ export function HaulageExpandedPanel({
       const nameB = companiesMap[idB] ?? idB;
       return nameA.localeCompare(nameB);
     });
+
+  const isLatestRateId = (rateId: number): boolean => {
+    if (priceRefRates[0]?.id === rateId) return true;
+    return supplierRows.some(([, rawRates]) => (rawRates as HaulageRate[])[0]?.id === rateId);
+  };
 
   const priceRefMap = buildMonthMap(priceRefRates, 'list_price');
   const priceRefSurchargesMap = buildSurchargesMap(priceRefRates);
@@ -307,18 +314,8 @@ export function HaulageExpandedPanel({
                   </>
                 )}
                 {latestPriceRef.rate_status === 'DRAFT' && (
-                  <>
-                    <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestPriceRef.id, initial: latestPriceRef as unknown as Record<string, unknown> })}
-                      className={btnClass}>Edit</button>
-                    {confirmDeleteId === latestPriceRef.id ? (
-                      <span className="text-[10px] text-red-600 flex items-center gap-1">
-                        Sure? <button onClick={() => handleDelete(latestPriceRef.id)} className={dangerBtnClass} disabled={saving}>Yes</button>
-                        <button onClick={() => setConfirmDeleteId(null)} className={btnClass}>No</button>
-                      </span>
-                    ) : (
-                      <button onClick={() => setConfirmDeleteId(latestPriceRef.id)} className={dangerBtnClass}>Delete</button>
-                    )}
-                  </>
+                  <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestPriceRef.id, initial: latestPriceRef as unknown as Record<string, unknown> })}
+                    className={btnClass}>Edit</button>
                 )}
               </div>
             )}
@@ -331,6 +328,7 @@ export function HaulageExpandedPanel({
               surchargesMap={priceRefSurchargesMap}
               endDateMap={priceRefEndDateMap}
               startDateMap={buildStartDateMap(priceRefRates)}
+              dominantRateMap={buildDominantRateMap(priceRefRates)}
               onNodeClick={(rate) => setModalState({ open: true, mode: 'edit', rateId: rate.id, initial: rate as unknown as Record<string, unknown> })}
             />
           </div>
@@ -401,18 +399,8 @@ export function HaulageExpandedPanel({
                         </>
                       )}
                       {latestRate.rate_status === 'DRAFT' && (
-                        <>
-                          <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestRate.id, initial: latestRate as unknown as Record<string, unknown> })}
-                            className={btnClass}>Edit</button>
-                          {confirmDeleteId === latestRate.id ? (
-                            <span className="text-[10px] text-red-600 flex items-center gap-1">
-                              Sure? <button onClick={() => handleDelete(latestRate.id)} className={dangerBtnClass} disabled={saving}>Yes</button>
-                              <button onClick={() => setConfirmDeleteId(null)} className={btnClass}>No</button>
-                            </span>
-                          ) : (
-                            <button onClick={() => setConfirmDeleteId(latestRate.id)} className={dangerBtnClass}>Delete</button>
-                          )}
-                        </>
+                        <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestRate.id, initial: latestRate as unknown as Record<string, unknown> })}
+                          className={btnClass}>Edit</button>
                       )}
                     </div>
                   )}
@@ -424,6 +412,7 @@ export function HaulageExpandedPanel({
                     surchargesMap={costSurchargesMap}
                     endDateMap={supplierEndDateMap}
                     startDateMap={buildStartDateMap(rates)}
+                    dominantRateMap={buildDominantRateMap(rates)}
                     onNodeClick={(rate) => setModalState({ open: true, mode: 'edit', rateId: rate.id, initial: rate as unknown as Record<string, unknown> })}
                   />
                 </div>
@@ -553,6 +542,13 @@ export function HaulageExpandedPanel({
         companiesList={companiesList}
         onSaved={onRatesChanged}
         onClose={() => setModalState({ open: false })}
+        onDelete={modalState.open && modalState.mode === 'edit' ? async (rateId) => {
+          await deleteHaulageRateAction(rateId);
+          onRatesChanged();
+        } : undefined}
+        isLatestRate={modalState.open && modalState.mode === 'edit'
+          ? isLatestRateId(modalState.rateId)
+          : undefined}
       />
 
       <DepotGateFeeModal

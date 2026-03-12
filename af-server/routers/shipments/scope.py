@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import text, bindparam, String
 
 from core.auth import Claims, require_afu
 from core.db import get_db
@@ -124,7 +124,7 @@ async def update_scope(
     # Save scope to shipment_details
     conn.execute(text("""
         UPDATE shipment_details SET scope = CAST(:scope AS jsonb) WHERE order_id = :id
-    """), {"scope": json.dumps(current_scope), "id": shipment_id})
+    """).bindparams(bindparam("scope", type_=String())), {"scope": json.dumps(current_scope), "id": shipment_id})
 
     # Apply scope to workflow tasks
     wf_row = conn.execute(text("""
@@ -139,7 +139,7 @@ async def update_scope(
                 UPDATE shipment_workflows
                 SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
                 WHERE order_id = :id
-            """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
+            """).bindparams(bindparam("tasks", type_=String())), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
 
     conn.execute(text("""
         UPDATE orders SET updated_at = :now WHERE order_id = :id

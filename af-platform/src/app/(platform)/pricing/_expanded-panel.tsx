@@ -37,7 +37,6 @@ interface ExpandedRatePanelProps {
 export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, cardMode, cardId, companiesList, onRatesChanged }: ExpandedRatePanelProps) {
   const [panelMode, setPanelMode] = useState<PanelMode>({ type: 'view' });
   const [saving, setSaving] = useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [modalState, setModalState] = useState<ModalState>({ open: false });
   const [formTerminateDate, setFormTerminateDate] = useState('');
 
@@ -49,18 +48,6 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
       await action(panelMode.rateId, { effective_to: formTerminateDate });
       setFormTerminateDate('');
       setPanelMode({ type: 'view' });
-      onRatesChanged();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDelete = async (rateId: number) => {
-    setSaving(true);
-    try {
-      const action = cardMode === 'fcl' ? deleteFCLRateAction : deleteLCLRateAction;
-      await action(rateId);
-      setConfirmDeleteId(null);
       onRatesChanged();
     } finally {
       setSaving(false);
@@ -222,13 +209,30 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
     return map;
   };
 
+  const buildDominantRateMap = (rates: RateDetail[]): Map<string, RateDetail> => {
+    const sorted = [...rates].sort(
+      (a, b) => (b.effective_from ?? '').localeCompare(a.effective_from ?? ''),
+    );
+    const map = new Map<string, RateDetail>();
+    for (const m of months) {
+      const monthStart = `${m.month_key}-01`;
+      const dominant = getDominantRate(sorted, m.month_key, monthStart);
+      if (dominant) map.set(m.month_key, dominant);
+    }
+    return map;
+  };
+
+  const isLatestRateId = (rateId: number): boolean => {
+    if (priceRefRates[0]?.id === rateId) return true;
+    return supplierRows.some(([, rates]) => rates[0]?.id === rateId);
+  };
+
   const priceRefMap = buildMonthMap(priceRefRates, 'list_price');
   const priceRefSurchargesMap = buildSurchargesMap(priceRefRates);
   const priceRefEndDateMap = buildEndDateMap(priceRefRates);
   const latestPriceRef = priceRefRates[0] ?? null;
 
   const btnClass = "text-[10px] px-1.5 py-0.5 rounded border border-[var(--border)] hover:bg-[var(--surface)] transition-colors";
-  const dangerBtnClass = "text-[10px] px-1.5 py-0.5 rounded border border-red-200 text-red-600 hover:bg-red-50 transition-colors";
   const inputClass = "h-7 px-2 text-xs rounded border border-[var(--border)] bg-white text-[var(--text)] focus:outline-none focus:ring-1 focus:ring-[var(--sky)] focus:border-[var(--sky)]";
 
   return (
@@ -266,18 +270,8 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
                   </>
                 )}
                 {latestPriceRef.rate_status === 'DRAFT' && (
-                  <>
-                    <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestPriceRef.id, initial: latestPriceRef })}
-                      className={btnClass}>Edit</button>
-                    {confirmDeleteId === latestPriceRef.id ? (
-                      <span className="text-[10px] text-red-600 flex items-center gap-1">
-                        Sure? <button onClick={() => handleDelete(latestPriceRef.id)} className={dangerBtnClass} disabled={saving}>Yes</button>
-                        <button onClick={() => setConfirmDeleteId(null)} className={btnClass}>No</button>
-                      </span>
-                    ) : (
-                      <button onClick={() => setConfirmDeleteId(latestPriceRef.id)} className={dangerBtnClass}>Delete</button>
-                    )}
-                  </>
+                  <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestPriceRef.id, initial: latestPriceRef })}
+                    className={btnClass}>Edit</button>
                 )}
               </div>
             )}
@@ -290,6 +284,7 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
               surchargesMap={priceRefSurchargesMap}
               endDateMap={priceRefEndDateMap}
               startDateMap={buildStartDateMap(priceRefRates)}
+              dominantRateMap={buildDominantRateMap(priceRefRates)}
               onNodeClick={(rate) => setModalState({ open: true, mode: 'edit', rateId: rate.id, initial: rate })}
             />
           </div>
@@ -359,18 +354,8 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
                         </>
                       )}
                       {latestRate.rate_status === 'DRAFT' && (
-                        <>
-                          <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestRate.id, initial: latestRate })}
-                            className={btnClass}>Edit</button>
-                          {confirmDeleteId === latestRate.id ? (
-                            <span className="text-[10px] text-red-600 flex items-center gap-1">
-                              Sure? <button onClick={() => handleDelete(latestRate.id)} className={dangerBtnClass} disabled={saving}>Yes</button>
-                              <button onClick={() => setConfirmDeleteId(null)} className={btnClass}>No</button>
-                            </span>
-                          ) : (
-                            <button onClick={() => setConfirmDeleteId(latestRate.id)} className={dangerBtnClass}>Delete</button>
-                          )}
-                        </>
+                        <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestRate.id, initial: latestRate })}
+                          className={btnClass}>Edit</button>
                       )}
                     </div>
                   )}
@@ -382,6 +367,7 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
                     surchargesMap={costSurchargesMap}
                     endDateMap={supplierEndDateMap}
                     startDateMap={buildStartDateMap(rates)}
+                    dominantRateMap={buildDominantRateMap(rates)}
                     onNodeClick={(rate) => setModalState({ open: true, mode: 'edit', rateId: rate.id, initial: rate })}
                   />
                 </div>
@@ -418,6 +404,14 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
         companiesList={companiesList}
         onSaved={onRatesChanged}
         onClose={() => setModalState({ open: false })}
+        onDelete={modalState.open && modalState.mode === 'edit' ? async (rateId) => {
+          const action = cardMode === 'fcl' ? deleteFCLRateAction : deleteLCLRateAction;
+          await action(rateId);
+          onRatesChanged();
+        } : undefined}
+        isLatestRate={modalState.open && modalState.mode === 'edit'
+          ? isLatestRateId(modalState.rateId)
+          : undefined}
       />
     </>
   );

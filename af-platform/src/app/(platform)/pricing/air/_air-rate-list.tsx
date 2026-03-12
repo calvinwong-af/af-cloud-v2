@@ -1,41 +1,61 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { AirRateCard } from '@/app/actions/pricing';
 import { fetchAirRateCardDetailAction } from '@/app/actions/pricing';
 import { useMonthBuckets, formatCompact } from '../_helpers';
 import type { AlertLevel } from '../_helpers';
-import { AirExpandedPanel } from './_air-expanded-panel';
+import { AirODExpandedPanel, AirExpandedPanel } from './_air-expanded-panel';
 
-function getAirAlertLevel(
-  timeSeries: AirRateCard['time_series'],
-  latestCostFrom?: string | null,
-  latestListPriceFrom?: string | null,
-): AlertLevel {
-  if (!timeSeries) return null;
+/** Compute O/D-level alert from all cards in a group */
+function getODAlertLevel(groupCards: AirRateCard[]): AlertLevel {
+  if (groupCards.length === 0) return null;
   const today = new Date();
   const currentKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-  const bucket = timeSeries.find(b => b.month_key === currentKey);
-  if (!bucket) return null;
 
-  const cost = bucket.p100_cost ?? null;
-  const list = bucket.p100_list_price ?? null;
-  const costTotal = cost != null ? cost + (bucket.cost_surcharge_total ?? 0) : null;
-  const listTotal = list != null ? list + (bucket.list_surcharge_total ?? 0) : null;
+  const firstTs = groupCards[0].time_series ?? [];
+  const firstBucket = firstTs.find(b => b.month_key === currentKey);
+  const listPrice = firstBucket?.p100_list_price ?? null;
+  const listSurcharge = firstBucket?.list_surcharge_total ?? 0;
+  const listTotal = listPrice != null ? listPrice + listSurcharge : null;
 
-  if (costTotal != null && listTotal != null && costTotal > listTotal) return 'cost_exceeds_price';
-  if (listTotal != null && costTotal == null) return 'no_active_cost';
-  if (costTotal != null && listTotal == null) return 'no_list_price';
+  let bestCostTotal: number | null = null;
+  for (const card of groupCards) {
+    const ts = card.time_series ?? [];
+    const bucket = ts.find(b => b.month_key === currentKey);
+    if (bucket?.p100_cost != null) {
+      const total = bucket.p100_cost + (bucket.cost_surcharge_total ?? 0);
+      if (bestCostTotal === null || total < bestCostTotal) bestCostTotal = total;
+    }
+  }
 
-  if (
-    latestCostFrom != null &&
-    latestListPriceFrom != null &&
-    latestCostFrom > latestListPriceFrom
-  ) return 'price_review_needed';
+  if (bestCostTotal != null && listTotal != null && bestCostTotal > listTotal) return 'cost_exceeds_price';
+  if (listTotal != null && bestCostTotal == null) return 'no_active_cost';
+  if (bestCostTotal != null && listTotal == null) return 'no_list_price';
+
+  const latestListFrom = groupCards[0]?.latest_list_price_from ?? null;
+  let latestCostFrom: string | null = null;
+  for (const card of groupCards) {
+    if (card.latest_cost_from && (latestCostFrom === null || card.latest_cost_from > latestCostFrom)) {
+      latestCostFrom = card.latest_cost_from;
+    }
+  }
+  if (latestCostFrom != null && latestListFrom != null && latestCostFrom > latestListFrom) {
+    return 'price_review_needed';
+  }
 
   return null;
 }
+
+type ODGroup = {
+  key: string;
+  origin: string;
+  dest: string;
+  cards: AirRateCard[];
+  alert: AlertLevel;
+  monthListPrices: Map<string, number | null>;
+};
 
 interface AirTimeSeriesRateListProps {
   cards: AirRateCard[];
@@ -49,20 +69,25 @@ interface AirTimeSeriesRateListProps {
 export function AirTimeSeriesRateList({
   cards,
   loading,
-  portsMap,
   companiesMap,
   companiesList,
   onCardsRefresh,
 }: AirTimeSeriesRateListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [historicalCount, setHistoricalCount] = useState(6);
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [expandedDetail, setExpandedDetail] = useState<AirRateCard | null>(null);
+
+  // O/D expand state — clicking an O/D row fetches detail and shows list price panel
+  const [expandedODKey, setExpandedODKey] = useState<string | null>(null);
+  const [expandedODCardId, setExpandedODCardId] = useState<number | null>(null);
+  const [expandedODDetail, setExpandedODDetail] = useState<AirRateCard | null>(null);
+
+  // Airline sub-row expand state — clicking an airline row fetches detail for supplier costs
+  const [expandedAirlineId, setExpandedAirlineId] = useState<number | null>(null);
+  const [expandedAirlineDetail, setExpandedAirlineDetail] = useState<AirRateCard | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-
     const observer = new ResizeObserver(entries => {
       const width = entries[0]?.contentRect.width ?? 0;
       if (width === 0) return;
@@ -70,7 +95,6 @@ export function AirTimeSeriesRateList({
       const historical = Math.min(9, Math.max(1, Math.floor((available - 240) / 80)));
       setHistoricalCount(historical);
     });
-
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
@@ -78,12 +102,59 @@ export function AirTimeSeriesRateList({
   const months = useMonthBuckets(historicalCount);
   const totalWidth = 280 + months.length * 80;
 
-  useEffect(() => {
-    if (expandedId == null) { setExpandedDetail(null); return; }
-    fetchAirRateCardDetailAction(expandedId).then(r => {
-      if (r?.success) setExpandedDetail(r.data);
+  const groups = useMemo<ODGroup[]>(() => {
+    const map = new Map<string, AirRateCard[]>();
+    for (const card of cards) {
+      const key = `${card.origin_port_code}\u2192${card.destination_port_code}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(card);
+    }
+    return Array.from(map.entries()).map(([key, groupCards]) => {
+      const [origin, dest] = key.split('\u2192');
+      const alert = getODAlertLevel(groupCards);
+      const monthListPrices = new Map<string, number | null>();
+      for (const m of months) {
+        let lowestList: number | null = null;
+        for (const card of groupCards) {
+          const bucket = (card.time_series ?? []).find(b => b.month_key === m.month_key);
+          if (bucket?.p100_list_price != null) {
+            const total = bucket.p100_list_price + (bucket.list_surcharge_total ?? 0);
+            if (lowestList === null || total < lowestList) lowestList = total;
+          }
+        }
+        monthListPrices.set(m.month_key, lowestList);
+      }
+      return { key, origin, dest, cards: groupCards, alert, monthListPrices };
     });
-  }, [expandedId]);
+  }, [cards, months]);
+
+  // Fetch detail when an O/D row is expanded
+  useEffect(() => {
+    if (expandedODKey == null || expandedODCardId == null) {
+      setExpandedODDetail(null);
+      return;
+    }
+    let cancelled = false;
+    setExpandedODDetail(null);
+    fetchAirRateCardDetailAction(expandedODCardId).then(r => {
+      if (!cancelled && r?.success) setExpandedODDetail(r.data);
+    });
+    return () => { cancelled = true; };
+  }, [expandedODKey, expandedODCardId]);
+
+  // Fetch detail when an airline sub-row is expanded
+  useEffect(() => {
+    if (expandedAirlineId == null) {
+      setExpandedAirlineDetail(null);
+      return;
+    }
+    let cancelled = false;
+    setExpandedAirlineDetail(null);
+    fetchAirRateCardDetailAction(expandedAirlineId).then(r => {
+      if (!cancelled && r?.success) setExpandedAirlineDetail(r.data);
+    });
+    return () => { cancelled = true; };
+  }, [expandedAirlineId]);
 
   if (loading) {
     return (
@@ -140,6 +211,26 @@ export function AirTimeSeriesRateList({
     );
   };
 
+  const handleODClick = (group: ODGroup) => {
+    const isExpanded = expandedODKey === group.key;
+    if (isExpanded) {
+      setExpandedODKey(null);
+      setExpandedODCardId(null);
+    } else {
+      const cardId = group.cards[0]?.id ?? null;
+      setExpandedODKey(group.key);
+      setExpandedODCardId(cardId);
+    }
+  };
+
+  const handleAirlineClick = (cardId: number) => {
+    if (expandedAirlineId === cardId) {
+      setExpandedAirlineId(null);
+    } else {
+      setExpandedAirlineId(cardId);
+    }
+  };
+
   return (
     <div
       ref={containerRef}
@@ -149,7 +240,7 @@ export function AirTimeSeriesRateList({
       <div className="overflow-x-auto shrink-0 border-b border-[var(--border)] bg-[var(--surface)]/50">
         <div className="flex" style={{ minWidth: `${totalWidth}px` }}>
           <div className="w-[280px] shrink-0 px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-            Route / Airline
+            O/D Group
           </div>
           <div className="flex flex-1">
             {months.map(m => (
@@ -169,99 +260,55 @@ export function AirTimeSeriesRateList({
       {/* Scrollable body */}
       <div className="overflow-auto flex-1">
         <div style={{ minWidth: `${totalWidth}px` }}>
-          {cards.map(card => {
-            const isExpanded = expandedId === card.id;
-            const ts = card.time_series ?? [];
-            const alert = getAirAlertLevel(
-              ts,
-              card.latest_cost_from,
-              card.latest_list_price_from,
-            );
-
-            const originName = portsMap[card.origin_port_code]?.name;
-            const destName = portsMap[card.destination_port_code]?.name;
-            const originLabel = originName ? `${originName} (${card.origin_port_code})` : card.origin_port_code;
-            const destLabel = destName ? `${destName} (${card.destination_port_code})` : card.destination_port_code;
-
+          {groups.map(group => {
+            const isODExpanded = expandedODKey === group.key;
             return (
-              <div key={card.id}>
+              <div key={group.key}>
+                {/* O/D group header row — click to expand list price panel */}
                 <div
-                  className={`flex border-b border-[var(--border)] hover:bg-[var(--surface)]/30 cursor-pointer transition-colors ${
-                    alert ? 'border-l-2 border-l-red-400' : ''
+                  className={`flex border-b border-[var(--border)] cursor-pointer hover:bg-[var(--surface)]/40 transition-colors select-none ${
+                    group.alert ? 'border-l-2 border-l-amber-400' : ''
                   }`}
                   style={{ minWidth: `${totalWidth}px` }}
-                  onClick={() => setExpandedId(isExpanded ? null : card.id)}
+                  onClick={() => handleODClick(group)}
                 >
-                  {/* Identity */}
                   <div className="w-[280px] shrink-0 px-3 py-2.5 flex items-center gap-2">
                     <div className="flex-1 min-w-0">
-                      <div className="text-xs font-semibold text-[var(--text)] truncate" title={`${originLabel} → ${destLabel}`}>
-                        {card.origin_port_code} → {card.destination_port_code}
+                      <div className="text-xs font-bold text-[var(--text)] flex items-center gap-1.5">
+                        {group.origin} &rarr; {group.dest}
+                        {(() => {
+                          const dgCodes = [...new Set(group.cards.map(c => c.dg_class_code).filter(c => c !== 'NON-DG'))];
+                          return dgCodes.map(code => (
+                            <span key={code} className="text-[9px] px-1 py-0.5 rounded bg-orange-50 text-orange-600 border border-orange-200 font-medium">
+                              {code}
+                            </span>
+                          ));
+                        })()}
                       </div>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-medium">
-                          {card.airline_code}
-                        </span>
-                        {card.dg_class_code !== 'NON-DG' && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-50 text-orange-600 font-medium">
-                            {card.dg_class_code}
-                          </span>
-                        )}
-                        {card.dg_class_code === 'NON-DG' && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
-                            NON-DG
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        {alertBadge(alert)}
+                      <div className="text-[10px] text-[var(--text-muted)] mt-0.5 flex items-center gap-2">
+                        <span>{group.cards.length} airline{group.cards.length !== 1 ? 's' : ''}</span>
+                        {alertBadge(group.alert)}
                       </div>
                     </div>
-                    {isExpanded ? <ChevronUp size={14} className="text-[var(--text-muted)]" /> : <ChevronDown size={14} className="text-[var(--text-muted)]" />}
+                    {isODExpanded
+                      ? <ChevronUp size={14} className="text-[var(--sky)]" />
+                      : <ChevronDown size={14} className="text-[var(--text-muted)]" />}
                   </div>
-
-                  {/* Time series cells */}
+                  {/* Month cells with list price */}
                   <div className="flex flex-1">
                     {months.map(m => {
-                      const bucket = ts.find(b => b.month_key === m.month_key);
-                      const hasData = bucket && (bucket.p100_list_price != null || bucket.p100_cost != null);
-                      const isDraft = bucket?.rate_status === 'DRAFT';
-
+                      const listPrice = group.monthListPrices.get(m.month_key);
                       return (
                         <div
                           key={m.month_key}
                           className={`w-[80px] shrink-0 px-1 py-2.5 text-center ${
-                            m.isCurrentMonth && !alert ? 'bg-[var(--sky-mist)]/40' : ''
+                            m.isCurrentMonth ? 'bg-[var(--sky-mist)]/40' : ''
                           }`}
                         >
-                          {hasData ? (
-                            <>
-                              <div className={`text-xs font-medium ${
-                                isDraft ? 'text-amber-600' : alert === 'cost_exceeds_price' ? 'text-red-700 font-semibold' : alert === 'no_list_price' ? 'text-amber-700 font-semibold' : alert === 'no_active_cost' ? 'text-red-600 font-semibold' : 'text-[var(--text)]'
-                              }`}>
-                                {bucket.p100_list_price != null
-                                  ? <span className="relative">
-                                      {formatCompact(bucket.p100_list_price + (bucket.list_surcharge_total ?? 0))}
-                                      {bucket.has_surcharges && <span className="absolute -top-0.5 -right-1.5 w-1 h-1 rounded-full bg-amber-400" title="Includes surcharges" />}
-                                    </span>
-                                  : <span className="text-[var(--text-muted)]/50">N/A</span>
-                                }
-                              </div>
-                              <div className="text-[10px] text-[var(--text-muted)]">
-                                {bucket.p100_cost != null
-                                  ? <span className="relative">
-                                      {formatCompact(bucket.p100_cost + (bucket.cost_surcharge_total ?? 0))}
-                                      {bucket.has_surcharges && <span className="absolute -top-0.5 -right-1.5 w-1 h-1 rounded-full bg-amber-400" title="Includes surcharges" />}
-                                    </span>
-                                  : <span className="text-[var(--text-muted)]/50">N/A</span>
-                                }
-                              </div>
-                              {bucket.currency && (
-                                <div className="text-[9px] text-[var(--text-muted)]/60 text-center mt-0.5">
-                                  {bucket.currency}
-                                </div>
-                              )}
-                            </>
+                          {listPrice != null ? (
+                            <div className="text-xs font-medium text-[var(--text)]">
+                              {formatCompact(listPrice)}
+                            </div>
                           ) : (
                             <div className="text-xs text-[var(--text-muted)]/40">&mdash;</div>
                           )}
@@ -271,30 +318,118 @@ export function AirTimeSeriesRateList({
                   </div>
                 </div>
 
-                {/* Expanded detail panel */}
-                {isExpanded && (
-                  <div className="border-b-2 border-[var(--border)] bg-slate-50/80">
-                    {!expandedDetail ? (
-                      <div className="px-4 py-3 flex items-center gap-2 text-xs text-[var(--text-muted)]">
-                        <div className="w-3 h-3 border border-[var(--text-muted)] border-t-transparent rounded-full animate-spin" />
-                        Loading rate details…
-                      </div>
-                    ) : (
-                      <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
-                        <AirExpandedPanel
-                          detail={expandedDetail}
-                          companiesMap={companiesMap}
-                          cardId={card.id}
+                {/* Expanded section: list price panel + airline sub-rows */}
+                {isODExpanded && (
+                  <div className="border-l-2 border-l-[var(--sky)]/30">
+                    {/* O/D-level list price panel */}
+                    <div className="border-b border-[var(--border)] bg-blue-50/30">
+                      {!expandedODDetail ? (
+                        <div className="px-4 py-3 flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                          <div className="w-3 h-3 border border-[var(--text-muted)] border-t-transparent rounded-full animate-spin" />
+                          Loading list price…
+                        </div>
+                      ) : (
+                        <AirODExpandedPanel
+                          listPriceRates={expandedODDetail.list_price_rates ?? []}
+                          listPriceCardId={expandedODDetail.list_price_card_id ?? null}
+                          originPortCode={group.origin}
+                          destPortCode={group.dest}
+                          dgClassCode={group.cards[0]?.dg_class_code ?? 'NON-DG'}
+                          months={months}
                           companiesList={companiesList}
                           onRatesChanged={() => {
                             onCardsRefresh();
-                            fetchAirRateCardDetailAction(card.id).then(r => {
-                              if (r?.success) setExpandedDetail(r.data);
-                            });
+                            if (expandedODCardId) {
+                              fetchAirRateCardDetailAction(expandedODCardId).then(r => {
+                                if (r?.success) setExpandedODDetail(r.data);
+                              });
+                            }
                           }}
                         />
-                      </div>
-                    )}
+                      )}
+                    </div>
+
+                    {/* Airline sub-rows */}
+                    {group.cards.map(card => {
+                      const isAirlineExpanded = expandedAirlineId === card.id;
+                      return (
+                        <div key={card.id}>
+                          <div
+                            className="flex border-b border-[var(--border)]/60 bg-[var(--surface)]/20 cursor-pointer hover:bg-[var(--surface)]/50 transition-colors select-none"
+                            style={{ minWidth: `${totalWidth}px` }}
+                            onClick={() => handleAirlineClick(card.id)}
+                          >
+                            <div className="w-[280px] shrink-0 px-3 py-2 pl-6 flex items-center gap-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[11px] font-medium text-[var(--text)]">
+                                  {card.airline_code}
+                                  {card.dg_class_code !== 'NON-DG' && (
+                                    <span className="ml-1.5 text-[9px] px-1 py-0.5 rounded bg-orange-50 text-orange-600 border border-orange-200 font-medium">
+                                      {card.dg_class_code}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-[var(--text-muted)] truncate">{card.description}</div>
+                              </div>
+                              {isAirlineExpanded
+                                ? <ChevronUp size={12} className="text-[var(--sky)]" />
+                                : <ChevronDown size={12} className="text-[var(--text-muted)]" />}
+                            </div>
+                            {/* Month cells — cost per airline */}
+                            <div className="flex flex-1">
+                              {months.map(m => {
+                                const bucket = (card.time_series ?? []).find(b => b.month_key === m.month_key);
+                                const cost = bucket?.p100_cost ?? null;
+                                const costSurcharge = bucket?.cost_surcharge_total ?? 0;
+                                const costTotal = cost != null ? cost + costSurcharge : null;
+                                return (
+                                  <div
+                                    key={m.month_key}
+                                    className={`w-[80px] shrink-0 px-1 py-2 text-center ${
+                                      m.isCurrentMonth ? 'bg-[var(--sky-mist)]/40' : ''
+                                    }`}
+                                  >
+                                    {costTotal != null ? (
+                                      <div className="text-[11px] text-[var(--text-muted)]">
+                                        {formatCompact(costTotal)}
+                                      </div>
+                                    ) : (
+                                      <div className="text-[11px] text-[var(--text-muted)]/30">&mdash;</div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Airline expanded panel — supplier costs */}
+                          {isAirlineExpanded && (
+                            <div className="border-b border-[var(--border)] bg-slate-50/50">
+                              {!expandedAirlineDetail || expandedAirlineDetail.id !== card.id ? (
+                                <div className="px-4 py-3 flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                                  <div className="w-3 h-3 border border-[var(--text-muted)] border-t-transparent rounded-full animate-spin" />
+                                  Loading supplier costs…
+                                </div>
+                              ) : (
+                                <AirExpandedPanel
+                                  detail={expandedAirlineDetail}
+                                  companiesMap={companiesMap}
+                                  cardId={card.id}
+                                  companiesList={companiesList}
+                                  months={months}
+                                  onRatesChanged={() => {
+                                    onCardsRefresh();
+                                    fetchAirRateCardDetailAction(card.id).then(r => {
+                                      if (r?.success) setExpandedAirlineDetail(r.data);
+                                    });
+                                  }}
+                                />
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

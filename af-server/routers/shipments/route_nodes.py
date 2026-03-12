@@ -12,7 +12,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import text, bindparam, String
 
 from core.auth import Claims, require_auth
 from core.db import get_db
@@ -236,6 +236,7 @@ async def save_route_nodes(
 
     sd_clauses = ["route_nodes = CAST(:route_nodes AS jsonb)"]
     params: dict = {"route_nodes": json.dumps(node_dicts), "now": now, "id": shipment_id}
+    bind_params = [bindparam("route_nodes", type_=String())]
 
     if flat_etd is not None:
         sd_clauses.append("etd = :etd")
@@ -246,7 +247,7 @@ async def save_route_nodes(
 
     conn.execute(text(f"""
         UPDATE shipment_details SET {', '.join(sd_clauses)} WHERE order_id = :id
-    """), params)
+    """).bindparams(*bind_params), params)
     conn.execute(text("""
         UPDATE orders SET updated_at = :now WHERE order_id = :id
     """), params)
@@ -322,6 +323,7 @@ async def update_route_node_timing(
     # Build update
     sd_clauses = ["route_nodes = CAST(:route_nodes AS jsonb)"]
     params: dict = {"route_nodes": json.dumps(nodes), "now": datetime.now(timezone.utc).isoformat(), "id": shipment_id}
+    bind_params = [bindparam("route_nodes", type_=String())]
 
     # Sync flat fields if ORIGIN or DESTINATION
     if target.get("role") == "ORIGIN" and body.scheduled_etd is not None:
@@ -333,7 +335,7 @@ async def update_route_node_timing(
 
     conn.execute(text(f"""
         UPDATE shipment_details SET {', '.join(sd_clauses)} WHERE order_id = :id
-    """), params)
+    """).bindparams(*bind_params), params)
     conn.execute(text("""
         UPDATE orders SET updated_at = :now WHERE order_id = :id
     """), params)
@@ -373,7 +375,7 @@ async def update_route_node_timing(
                 UPDATE shipment_details
                 SET status_history = CAST(:history AS jsonb)
                 WHERE order_id = :id
-            """), {"history": json.dumps(history), "id": shipment_id})
+            """).bindparams(bindparam("history", type_=String())), {"history": json.dumps(history), "id": shipment_id})
             _log_system_action_pg(conn, "AUTO_STATUS_DEPARTED", shipment_id, claims.uid, claims.email)
             auto_status_changed = True
             logger.info("[route-nodes] Auto-advanced %s to Departed (4001)", shipment_id)
@@ -409,7 +411,7 @@ async def update_route_node_timing(
                 UPDATE shipment_details
                 SET status_history = CAST(:history AS jsonb)
                 WHERE order_id = :id
-            """), {"history": json.dumps(history), "id": shipment_id})
+            """).bindparams(bindparam("history", type_=String())), {"history": json.dumps(history), "id": shipment_id})
             _log_system_action_pg(conn, "AUTO_STATUS_ARRIVED", shipment_id, claims.uid, claims.email)
             auto_status_changed = True
             logger.info("[route-nodes] Auto-advanced %s to Arrived (4002)", shipment_id)

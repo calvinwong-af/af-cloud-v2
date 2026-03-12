@@ -8,8 +8,8 @@ import {
 } from 'lucide-react';
 import { fetchStatusHistoryAction, fetchCompaniesForShipmentAction, reassignShipmentCompanyAction } from '@/app/actions/shipments';
 import type { StatusHistoryEntry } from '@/app/actions/shipments';
-import { updateShipmentStatusAction, updateInvoicedStatusAction, updateCompletedFlagAction, updatePartiesAction, updateShipmentPortAction, updateIncotermAction, updateBookingAction } from '@/app/actions/shipments-write';
-import type { UpdateBookingPayload } from '@/app/actions/shipments-write';
+import { updateShipmentStatusAction, updateInvoicedStatusAction, updateCompletedFlagAction, updatePartiesAction, updateShipmentPortAction, updateIncotermAction, updateBookingAction, updateTypeDetailsAction } from '@/app/actions/shipments-write';
+import type { UpdateBookingPayload, UpdateTypeDetailsPayload } from '@/app/actions/shipments-write';
 import { reconcileShipmentGroundTransportAction } from '@/app/actions/ground-transport';
 import type { ScopeFlags, ReconcileResult, GroundTransportOrder } from '@/app/actions/ground-transport';
 import { formatDate } from '@/lib/utils';
@@ -106,7 +106,6 @@ function PortEditModal({
 
   function handleSelectPort(code: string) {
     setSelected(code);
-    // Auto-select default terminal if port has terminals
     const port = ports.find(p => p.un_code === code);
     if (port?.has_terminals && port.terminals.length > 0) {
       const def = port.terminals.find(t => t.is_default);
@@ -179,7 +178,6 @@ function PortEditModal({
             )}
           </div>
 
-          {/* Terminal selection — shown when selected port has terminals */}
           {showTerminals && (
             <div className="mt-3">
               <p className="text-xs font-medium text-[var(--text-mid)] mb-2">Select Terminal</p>
@@ -404,7 +402,6 @@ export function RouteCard({ order, accountType, polEta, polEtd, polAta, polAtd, 
         ) : undefined}
       />
 
-      {/* Port edit modal — rendered outside the relative div for full-screen overlay */}
       {editingPort === 'origin' && onPortUpdated && (
         <PortEditModal
           currentCode={order.origin?.port_un_code ?? ''}
@@ -462,8 +459,145 @@ function normaliseContainerSize(raw: string | null | undefined): string {
   return size + "' " + canonicalType;
 }
 
-export function TypeDetailsCard({ order, orderType }: { order: ShipmentOrder; orderType: string }) {
+// FCL draft: one slot per individual container (quantity expanded).
+// typeIdx = which containers[] entry; slotIdx = which slot within that type.
+interface FclDraftSlot {
+  typeIdx: number;
+  slotIdx: number;
+  containerNum: string;
+  sealNum: string;
+}
+
+export function TypeDetailsCard({
+  order,
+  isAFU,
+  onSaved,
+}: {
+  order: ShipmentOrder;
+  isAFU: boolean;
+  onSaved: () => void;
+}) {
   const td = order.type_details;
+  const orderType = order.order_type;
+  const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // FCL: flat array of individual container slots (expanded by quantity)
+  const [draftSlots, setDraftSlots] = useState<FclDraftSlot[]>([]);
+
+  // LCL draft state
+  const [draftContainerNumber, setDraftContainerNumber] = useState('');
+  const [draftSealNumber, setDraftSealNumber] = useState('');
+
+  const startEditing = () => {
+    setError(null);
+    if (orderType === 'SEA_FCL' && td) {
+      const fcl = td as TypeDetailsFCL;
+      // Expand each container type by its quantity into individual slots.
+      // Existing saved values are stored as container_numbers[] / seal_numbers[] arrays.
+      const slots: FclDraftSlot[] = [];
+      (fcl.containers ?? []).forEach((c, typeIdx) => {
+        const qty = c.quantity ?? 1;
+        // Merge singular and array fields for pre-population
+        const existingNums: string[] = c.container_numbers?.length
+          ? c.container_numbers
+          : c.container_number ? [c.container_number] : [];
+        const existingSeals: string[] = c.seal_numbers?.length
+          ? c.seal_numbers
+          : c.seal_number ? [c.seal_number] : [];
+        for (let q = 0; q < qty; q++) {
+          slots.push({
+            typeIdx,
+            slotIdx: q,
+            containerNum: existingNums[q] ?? '',
+            sealNum: existingSeals[q] ?? '',
+          });
+        }
+      });
+      setDraftSlots(slots);
+    } else if (orderType === 'SEA_LCL' && td) {
+      const lcl = td as TypeDetailsLCL;
+      setDraftContainerNumber(lcl.container_number ?? '');
+      setDraftSealNumber(lcl.seal_number ?? '');
+    }
+    setIsEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setIsEditing(false);
+    setError(null);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      let payload: UpdateTypeDetailsPayload;
+      if (orderType === 'SEA_FCL') {
+        // Collapse flat slots back to per-type arrays for the backend.
+        const fcl = td as TypeDetailsFCL;
+        const perType = (fcl.containers ?? []).map((_, typeIdx) => {
+          const typeSlots = draftSlots.filter(s => s.typeIdx === typeIdx);
+          return {
+            container_numbers: typeSlots.map(s => s.containerNum),
+            seal_numbers: typeSlots.map(s => s.sealNum),
+          };
+        });
+        payload = { containers: perType };
+      } else {
+        payload = {
+          container_number: draftContainerNumber || null,
+          seal_number: draftSealNumber || null,
+        };
+      }
+      const result = await updateTypeDetailsAction(order.quotation_id, payload);
+      if (!result) {
+        setError('No response from server');
+      } else if (!result.success) {
+        setError(result.error);
+      } else {
+        setIsEditing(false);
+        onSaved();
+      }
+    } catch {
+      setError('Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const editPencil = isAFU ? (
+    <button
+      onClick={startEditing}
+      className="p-1 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--text)]"
+      title="Edit container/seal numbers"
+    >
+      <Pencil className="w-3.5 h-3.5" />
+    </button>
+  ) : undefined;
+
+  const saveCancel = (
+    <div className="flex items-center gap-2 mt-3">
+      {error && <span className="text-xs text-red-600 mr-auto">{error}</span>}
+      <div className="flex items-center gap-2 ml-auto">
+        <button
+          onClick={cancelEditing}
+          disabled={saving}
+          className="px-3 py-1 text-xs rounded border border-[var(--border)] text-[var(--text-mid)] hover:bg-[var(--surface)]"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="px-3 py-1 text-xs rounded bg-[var(--sky)] text-white hover:opacity-90 disabled:opacity-50"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
 
   if (!td) {
     return (
@@ -475,60 +609,128 @@ export function TypeDetailsCard({ order, orderType }: { order: ShipmentOrder; or
 
   if (orderType === 'SEA_FCL') {
     const fcl = td as TypeDetailsFCL;
+
+    // Check whether any container number has been saved (singular or array form)
+    const hasAnySavedNumbers = (fcl.containers ?? []).some(c =>
+      c.container_number || (c.container_numbers && c.container_numbers.some(n => n))
+    );
+
     return (
-      <SectionCard title="Containers" icon={<Container className="w-4 h-4" />}>
+      <SectionCard title="Containers" icon={<Container className="w-4 h-4" />} action={!isEditing ? editPencil : undefined}>
         {(fcl.containers?.length ?? 0) === 0
           ? <EmptyState message="No containers recorded" />
           : (
             <div className="space-y-2">
-              {fcl.containers.map((c, i) => {
-                const containerNum = c.container_number ?? null;
-                const sealNum = c.seal_number ?? null;
-                const legacyNums = c.container_numbers ?? [];
-                const legacySeals = c.seal_numbers ?? [];
-                return (
-                  <div key={i} className="py-2 border-b border-[var(--border)] last:border-0">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {c.container_size && (
-                          <span className="px-2 py-0.5 bg-[var(--surface)] border border-[var(--border)] rounded text-xs font-mono font-semibold text-[var(--text-mid)]">
-                            {normaliseContainerSize(c.container_size)}
-                          </span>
-                        )}
-                        <span className="text-sm text-[var(--text-mid)]">{c.container_type}</span>
+              {isEditing ? (
+                // Edit mode: render one row per individual container slot
+                draftSlots.map((slot, flatIdx) => {
+                  // Show container type header at the first slot of each typeIdx
+                  const c = fcl.containers[slot.typeIdx];
+                  const isFirstOfType = flatIdx === 0 || draftSlots[flatIdx - 1].typeIdx !== slot.typeIdx;
+                  const qty = c.quantity ?? 1;
+                  return (
+                    <div key={flatIdx} className="py-2 border-b border-[var(--border)] last:border-0">
+                      {isFirstOfType && (
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            {c.container_size && (
+                              <span className="px-2 py-0.5 bg-[var(--surface)] border border-[var(--border)] rounded text-xs font-mono font-semibold text-[var(--text-mid)]">
+                                {normaliseContainerSize(c.container_size)}
+                              </span>
+                            )}
+                            <span className="text-sm text-[var(--text-mid)]">{c.container_type}</span>
+                          </div>
+                          {qty > 1 && <span className="text-sm font-semibold text-[var(--text)]">x {qty}</span>}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-[10px] text-[var(--text-muted)] font-medium">
+                          Container {qty > 1 ? `#${slot.slotIdx + 1}` : ''}
+                        </span>
                       </div>
-                      {c.quantity && <span className="text-sm font-semibold text-[var(--text)]">x {c.quantity}</span>}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] text-[var(--text-muted)]">Container No.</label>
+                          <input
+                            type="text"
+                            value={slot.containerNum}
+                            onChange={(e) => {
+                              const next = [...draftSlots];
+                              next[flatIdx] = { ...next[flatIdx], containerNum: e.target.value };
+                              setDraftSlots(next);
+                            }}
+                            className="w-full h-7 px-2 text-xs rounded border border-[var(--border)] bg-white focus:outline-none focus:ring-1 focus:ring-[var(--sky)]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-[var(--text-muted)]">Seal No.</label>
+                          <input
+                            type="text"
+                            value={slot.sealNum}
+                            onChange={(e) => {
+                              const next = [...draftSlots];
+                              next[flatIdx] = { ...next[flatIdx], sealNum: e.target.value };
+                              setDraftSlots(next);
+                            }}
+                            className="w-full h-7 px-2 text-xs rounded border border-[var(--border)] bg-white focus:outline-none focus:ring-1 focus:ring-[var(--sky)]"
+                          />
+                        </div>
+                      </div>
                     </div>
-                    {containerNum && (
-                      <div className="mt-1.5 flex items-center justify-between text-xs">
-                        <span className="text-[var(--text-muted)]">Container No.</span>
-                        <span className="font-mono text-[var(--text)]">{containerNum}</span>
+                  );
+                })
+              ) : (
+                // Display mode: render per container type, listing all saved numbers
+                fcl.containers.map((c, i) => {
+                  const qty = c.quantity ?? 1;
+                  // Combine singular and array sources
+                  const allNums: string[] = c.container_numbers?.length
+                    ? c.container_numbers
+                    : c.container_number ? [c.container_number] : [];
+                  const allSeals: string[] = c.seal_numbers?.length
+                    ? c.seal_numbers
+                    : c.seal_number ? [c.seal_number] : [];
+
+                  return (
+                    <div key={i} className="py-2 border-b border-[var(--border)] last:border-0">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {c.container_size && (
+                            <span className="px-2 py-0.5 bg-[var(--surface)] border border-[var(--border)] rounded text-xs font-mono font-semibold text-[var(--text-mid)]">
+                              {normaliseContainerSize(c.container_size)}
+                            </span>
+                          )}
+                          <span className="text-sm text-[var(--text-mid)]">{c.container_type}</span>
+                        </div>
+                        {qty > 1 && <span className="text-sm font-semibold text-[var(--text)]">x {qty}</span>}
                       </div>
-                    )}
-                    {sealNum && (
-                      <div className="mt-0.5 flex items-center justify-between text-xs">
-                        <span className="text-[var(--text-muted)]">Seal No.</span>
-                        <span className="font-mono text-[var(--text)]">{sealNum}</span>
-                      </div>
-                    )}
-                    {legacyNums.map((n, j) => (
-                      <div key={j} className="mt-1.5 flex items-center justify-between text-xs">
-                        <span className="text-[var(--text-muted)]">Container No.</span>
-                        <span className="font-mono text-[var(--text)]">{n}</span>
-                      </div>
-                    ))}
-                    {legacySeals.map((s, j) => (
-                      <div key={j} className="mt-0.5 flex items-center justify-between text-xs">
-                        <span className="text-[var(--text-muted)]">Seal No.</span>
-                        <span className="font-mono text-[var(--text)]">{s}</span>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
+                      {allNums.map((n, j) => n ? (
+                        <div key={j} className="mt-1.5 space-y-0.5">
+                          {qty > 1 && (
+                            <div className="text-[10px] text-[var(--text-muted)] font-medium mt-1">
+                              Container #{j + 1}
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-[var(--text-muted)]">Container No.</span>
+                            <span className="font-mono text-[var(--text)]">{n}</span>
+                          </div>
+                          {allSeals[j] && (
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-[var(--text-muted)]">Seal No.</span>
+                              <span className="font-mono text-[var(--text)]">{allSeals[j]}</span>
+                            </div>
+                          )}
+                        </div>
+                      ) : null)}
+                    </div>
+                  );
+                })
+              )}
             </div>
           )}
-        {fcl.containers.every(c => !c.container_number && (!c.container_numbers || c.container_numbers.length === 0)) && (
+        {isEditing && saveCancel}
+        {!isEditing && !hasAnySavedNumbers && (
           <p className="text-xs text-[var(--text-muted)] mt-3">Container and seal numbers assigned at booking.</p>
         )}
       </SectionCard>
@@ -542,7 +744,11 @@ export function TypeDetailsCard({ order, orderType }: { order: ShipmentOrder; or
     const totalVolume = (lcl.packages ?? []).reduce((sum, p) => sum + (p.volume_cbm ?? 0), 0);
 
     return (
-      <SectionCard title="Packages" icon={<Package className="w-4 h-4" />}>
+      <SectionCard
+        title="Packages"
+        icon={<Package className="w-4 h-4" />}
+        action={orderType === 'SEA_LCL' && !isEditing ? editPencil : undefined}
+      >
         {(lcl.packages?.length ?? 0) === 0
           ? <EmptyState message="No packages recorded" />
           : (
@@ -562,7 +768,6 @@ export function TypeDetailsCard({ order, orderType }: { order: ShipmentOrder; or
             </div>
           )}
 
-        {/* Totals row */}
         {(totalWeight > 0 || totalVolume > 0) && (
           <div className="flex items-center gap-4 pt-3 border-t border-[var(--border)]">
             <span className="text-xs text-[var(--text-muted)] mr-auto">Totals</span>
@@ -580,7 +785,6 @@ export function TypeDetailsCard({ order, orderType }: { order: ShipmentOrder; or
           </div>
         )}
 
-        {/* AIR-specific: chargeable weight + pieces */}
         {orderType === 'AIR' && (airTd.chargeable_weight != null || airTd.pieces != null) && (
           <div className="flex items-center gap-4 pt-3 border-t border-[var(--border)]">
             {airTd.pieces != null && (
@@ -598,25 +802,53 @@ export function TypeDetailsCard({ order, orderType }: { order: ShipmentOrder; or
           </div>
         )}
 
-        {/* LCL Container Reference */}
-        {orderType === 'SEA_LCL' && (lcl.container_number || lcl.seal_number) && (
-          <div className="mt-3 pt-3 border-t border-[var(--border)]">
-            <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">
-              Container Reference
-            </p>
-            {lcl.container_number && (
-              <div className="flex items-center justify-between py-1 text-xs">
-                <span className="text-[var(--text-muted)]">Container No.</span>
-                <span className="font-mono text-[var(--text)]">{lcl.container_number}</span>
+        {orderType === 'SEA_LCL' && (
+          isEditing ? (
+            <div className="mt-3 pt-3 border-t border-[var(--border)]">
+              <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">
+                Container Reference
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-[var(--text-muted)]">Container No.</label>
+                  <input
+                    type="text"
+                    value={draftContainerNumber}
+                    onChange={(e) => setDraftContainerNumber(e.target.value)}
+                    className="w-full h-7 px-2 text-xs rounded border border-[var(--border)] bg-white focus:outline-none focus:ring-1 focus:ring-[var(--sky)]"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-[var(--text-muted)]">Seal No.</label>
+                  <input
+                    type="text"
+                    value={draftSealNumber}
+                    onChange={(e) => setDraftSealNumber(e.target.value)}
+                    className="w-full h-7 px-2 text-xs rounded border border-[var(--border)] bg-white focus:outline-none focus:ring-1 focus:ring-[var(--sky)]"
+                  />
+                </div>
               </div>
-            )}
-            {lcl.seal_number && (
-              <div className="flex items-center justify-between py-1 text-xs border-t border-[var(--border)]">
-                <span className="text-[var(--text-muted)]">Seal No.</span>
-                <span className="font-mono text-[var(--text)]">{lcl.seal_number}</span>
-              </div>
-            )}
-          </div>
+              {saveCancel}
+            </div>
+          ) : (lcl.container_number || lcl.seal_number) ? (
+            <div className="mt-3 pt-3 border-t border-[var(--border)]">
+              <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">
+                Container Reference
+              </p>
+              {lcl.container_number && (
+                <div className="flex items-center justify-between py-1 text-xs">
+                  <span className="text-[var(--text-muted)]">Container No.</span>
+                  <span className="font-mono text-[var(--text)]">{lcl.container_number}</span>
+                </div>
+              )}
+              {lcl.seal_number && (
+                <div className="flex items-center justify-between py-1 text-xs border-t border-[var(--border)]">
+                  <span className="text-[var(--text-muted)]">Seal No.</span>
+                  <span className="font-mono text-[var(--text)]">{lcl.seal_number}</span>
+                </div>
+              )}
+            </div>
+          ) : null
         )}
       </SectionCard>
     );
@@ -689,7 +921,6 @@ export function EditPartiesModal({
         </div>
 
         <div className="overflow-y-auto flex-1 p-4 space-y-4">
-          {/* Shipper */}
           <div>
             <label className="text-xs font-semibold text-[var(--text-muted)] uppercase block mb-2">Shipper</label>
             <div className="space-y-2">
@@ -704,7 +935,6 @@ export function EditPartiesModal({
             </div>
           </div>
 
-          {/* Consignee */}
           <div>
             <label className="text-xs font-semibold text-[var(--text-muted)] uppercase block mb-2">Consignee</label>
             <div className="space-y-2">
@@ -719,7 +949,6 @@ export function EditPartiesModal({
             </div>
           </div>
 
-          {/* Notify Party */}
           <div>
             <label className="text-xs font-semibold text-[var(--text-muted)] uppercase block mb-2">Notify Party</label>
             <div className="space-y-2">
@@ -872,13 +1101,11 @@ export function TransportEditModal({
   const isAir = order.order_type === 'AIR';
   const bk = (order.booking ?? {}) as Record<string, unknown>;
 
-  // Sea fields
   const [bookingRef, setBookingRef] = useState((bk.booking_reference as string) ?? '');
   const [vessel, setVessel] = useState((bk.vessel_name as string) ?? '');
   const [voyage, setVoyage] = useState((bk.voyage_number as string) ?? '');
   const [carrier, setCarrier] = useState((bk.carrier_agent as string) ?? '');
 
-  // Air fields
   const [mawb, setMawb] = useState(order.mawb_number ?? '');
   const [hawb, setHawb] = useState(order.hawb_number ?? '');
   const [awbType, setAwbType] = useState(order.awb_type ?? '');
@@ -1125,23 +1352,14 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
   const isAfu = accountType === 'AFU';
   const [completedLoading, setCompletedLoading] = useState(false);
 
-  // Determine path from incoterm + transaction_type
   const pathList = getStatusPathList(order.incoterm_code, order.transaction_type);
-
-  // Find current position in path
   const currentIdx = pathList.indexOf(currentStatus);
   const displayIdx = currentIdx >= 0 ? currentIdx : 0;
 
-  // Exception flag state
   const exceptionFlagged = order.exception?.flagged === true;
-
-  // Can cancel from any non-terminal status
   const canCancel = !isTerminal;
-
-  // Any mutation in progress — disables all action buttons
   const anyLoading = advanceLoading || revertLoading || cancelLoading || exceptionLoading || completedLoading;
 
-  // Group steps by node (thousands digit)
   const nodes = (() => {
     const grouped: { node: number; label: string; steps: ShipmentOrderStatus[] }[] = [];
     let lastNode = -1;
@@ -1157,10 +1375,8 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
     return grouped;
   })();
 
-  // Determine node state: 'past' | 'current' | 'future'
   function getNodeState(nodeGroup: { steps: ShipmentOrderStatus[] }): 'past' | 'current' | 'future' {
     const hasCurrent = nodeGroup.steps.includes(currentStatus);
-    // Terminal statuses (Completed, Cancelled) show as past/done, not current
     if (hasCurrent && currentStatus === -1) return 'past';
     if (hasCurrent) return 'current';
     const firstIdx = pathList.indexOf(nodeGroup.steps[0]);
@@ -1169,7 +1385,6 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
 
   async function executeStatusChange(newStatus: ShipmentOrderStatus, allowJump?: boolean, reverted?: boolean) {
     setError(null);
-    // Set per-action loading state
     const setLoader = newStatus === -1 ? setCancelLoading : reverted ? setRevertLoading : setAdvanceLoading;
     setLoader(true);
     setConfirmAction(null);
@@ -1189,11 +1404,9 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
     setLoader(false);
   }
 
-  // Clicking a FUTURE node
   function handleFutureNodeClick(nodeGroup: { node: number; label: string; steps: ShipmentOrderStatus[] }) {
     if (anyLoading || isTerminal || !isAfu) return;
     if (nodeGroup.steps.length === 1) {
-      // Single-step node (Confirmed, Completed) → advance directly
       const target = nodeGroup.steps[0];
       if (target === 5001 || target === -1) {
         setConfirmAction({ status: target, label: SHIPMENT_STATUS_LABELS[target] ?? `${target}`, allowJump: true });
@@ -1201,7 +1414,6 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
         executeStatusChange(target, true);
       }
     } else {
-      // Multi-step node (Booking, In Transit) → sub-step dialog
       setSubStepDialog({
         nodeLabel: nodeGroup.label,
         steps: nodeGroup.steps.map(s => ({ status: s, label: SHIPMENT_STATUS_LABELS[s] ?? `${s}` })),
@@ -1210,7 +1422,6 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
     }
   }
 
-  // Clicking a PAST node or sub-step
   function handlePastClick(targetStatus: ShipmentOrderStatus) {
     if (anyLoading || !isAfu) return;
     const targetIdx = pathList.indexOf(targetStatus);
@@ -1298,7 +1509,6 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
 
   return (
     <SectionCard title="Shipment Status" icon={<Activity className="w-4 h-4" />}>
-      {/* Exception banner */}
       {exceptionFlagged && (
         <div className="mb-4 px-3 py-2 bg-amber-50 border border-amber-300 rounded-lg flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
@@ -1311,24 +1521,20 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
         </div>
       )}
 
-      {/* Node-based Status Timeline — label-based, no numbers, no path label */}
       <div className="flex items-start justify-between overflow-x-auto pb-2 mb-4">
         {nodes.map((nodeGroup, ni) => {
           const state = getNodeState(nodeGroup);
           const isLastNode = ni === nodes.length - 1;
           const hasSubSteps = nodeGroup.steps.length > 1;
 
-          // Are all sub-steps within this node complete?
           const currentSubsComplete = state === 'current' && (() => {
             const lastStep = nodeGroup.steps[nodeGroup.steps.length - 1];
             const lastIdx = pathList.indexOf(lastStep);
             return lastIdx <= displayIdx;
           })();
 
-          // Current node: clickable if multi-step with incomplete sub-steps
           const currentIncomplete = state === 'current' && hasSubSteps && !currentSubsComplete;
 
-          // Circle styles — 4 states
           const circleClass =
             state === 'past' ? 'bg-[var(--sky)] border-[var(--sky)] text-white' :
             state === 'current' ? 'bg-[var(--sky-pale)] border-[var(--sky)] text-[var(--sky)]' :
@@ -1336,20 +1542,17 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
 
           const circleBorder = state === 'current' ? 'border-[2.5px]' : 'border-2';
 
-          // Cursor
           const nodeCursor =
             state === 'future' && isAfu ? 'cursor-pointer' :
             state === 'past' && isAfu ? 'cursor-pointer' :
             currentIncomplete && isAfu ? 'cursor-pointer' :
             'cursor-default';
 
-          // Label styles
           const labelClass =
             state === 'current' ? 'text-[var(--sky)] font-semibold' :
             state === 'past' ? 'text-[var(--text-mid)]' :
             'text-[var(--text-muted)]';
 
-          // Node click handler
           function handleNodeClick() {
             if (state === 'future') handleFutureNodeClick(nodeGroup);
             else if (state === 'past') {
@@ -1362,9 +1565,7 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
           return (
             <div key={nodeGroup.node} className="flex items-start flex-1 min-w-0">
               <div className="flex flex-col items-center w-full">
-                {/* Main node circle + connector row */}
                 <div className="flex items-center w-full">
-                  {/* Left connector */}
                   {ni > 0 && (
                     <div className={`flex-1 h-0.5 ${
                       state === 'past' || state === 'current' ? 'bg-[var(--sky)]' : 'border-t border-dashed border-gray-300'
@@ -1372,7 +1573,6 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
                   )}
                   {ni === 0 && <div className="flex-1" />}
 
-                  {/* Node circle */}
                   <div
                     onClick={handleNodeClick}
                     className={`w-7 h-7 rounded-full ${circleBorder} flex items-center justify-center flex-shrink-0 transition-colors ${circleClass} ${nodeCursor}`}
@@ -1388,7 +1588,6 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
                     )}
                   </div>
 
-                  {/* Right connector */}
                   {!isLastNode && (
                     <div className={`flex-1 h-0.5 ${
                       state === 'past' ? 'bg-[var(--sky)]' : 'border-t border-dashed border-gray-300'
@@ -1397,7 +1596,6 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
                   {isLastNode && <div className="flex-1" />}
                 </div>
 
-                {/* Counter badge — below circle, above label — only multi-step nodes */}
                 {hasSubSteps && (() => {
                   const total = nodeGroup.steps.length;
                   const completed = nodeGroup.steps.filter(s => {
@@ -1415,12 +1613,10 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
                   );
                 })()}
 
-                {/* Node label */}
                 <span className={`text-[11px] ${hasSubSteps ? 'mt-0.5' : 'mt-1.5'} whitespace-nowrap text-center ${labelClass} ${nodeCursor}`} onClick={handleNodeClick}>
                   {nodeGroup.label}
                 </span>
 
-                {/* Current sub-step label — only on active multi-step node */}
                 {hasSubSteps && state === 'current' && (() => {
                   const currentSub = SUB_LABELS[currentStatus] ?? SHIPMENT_STATUS_LABELS[currentStatus] ?? '';
                   return currentSub ? (
@@ -1433,7 +1629,6 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
             </div>
           );
         })}
-        {/* Cancelled indicator */}
         {currentStatus === -1 && (
           <div className="flex flex-col items-center flex-shrink-0 ml-2">
             <div className="w-7 h-7 rounded-full bg-red-500 border-2 border-red-500 flex items-center justify-center text-white">
@@ -1444,7 +1639,6 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
         )}
       </div>
 
-      {/* Current status + last updated */}
       <div className="flex items-center justify-between mb-4">
         <div>
           <span className="text-xs text-[var(--text-muted)] mr-2">Current status</span>
@@ -1468,10 +1662,8 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
         ) : null}
       </div>
 
-      {/* Action Buttons — AFU only */}
       {isAfu && !isTerminal && (
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Exception flag/clear button */}
           <button
             onClick={handleExceptionToggle}
             disabled={anyLoading}
@@ -1488,7 +1680,6 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
             )}
           </button>
 
-          {/* Cancel button */}
           {canCancel && (
             <button
               onClick={handleCancelClick}
@@ -1503,7 +1694,6 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
             </button>
           )}
 
-          {/* Mark Complete — right-aligned, status >= 3002 */}
           {currentStatus >= 3002 && currentStatus !== 5001 && (
             <div className="ml-auto flex items-center gap-2">
               {order.completed && order.completed_at && (
@@ -1541,14 +1731,12 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
         </div>
       )}
 
-      {/* Inline error */}
       {error && (
         <div className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
           {error}
         </div>
       )}
 
-      {/* Status change confirmation / revert modal */}
       {confirmAction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl shadow-lg p-6 max-w-sm w-full mx-4">
@@ -1600,7 +1788,6 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
         </div>
       )}
 
-      {/* Sub-step selection dialog */}
       {subStepDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl shadow-lg p-6 max-w-sm w-full mx-4">
@@ -1639,7 +1826,6 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
         </div>
       )}
 
-      {/* Exception flag modal */}
       {showExceptionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl shadow-lg p-6 max-w-sm w-full mx-4">
@@ -1670,7 +1856,6 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
         </div>
       )}
 
-      {/* Invoiced Toggle — AFU only */}
       {isAfu && (
         <div className="mt-4 pt-4 border-t border-[var(--border)] flex items-center justify-between">
           <div>
@@ -1701,7 +1886,6 @@ export function StatusCard({ order, onReload, accountType }: { order: ShipmentOr
         </div>
       )}
 
-      {/* Status History */}
       <div className="mt-4 pt-4 border-t border-[var(--border)]">
         <button
           onClick={toggleHistory}

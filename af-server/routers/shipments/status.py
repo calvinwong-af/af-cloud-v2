@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import text, bindparam, String
 
 from core.auth import Claims, require_afu, require_auth
 from core.db import get_db
@@ -176,7 +176,7 @@ async def update_shipment_status(
         UPDATE shipment_details
         SET status_history = CAST(:history AS jsonb)
         WHERE order_id = :id
-    """), {
+    """).bindparams(bindparam("history", type_=String())), {
         "history": json.dumps(new_q_history),
         "id": shipment_id,
     })
@@ -204,7 +204,7 @@ async def update_shipment_status(
             UPDATE shipment_workflows
             SET status_history = CAST(:history AS jsonb), updated_at = :now
             WHERE order_id = :id
-        """), {"history": json.dumps(new_wf_history), "now": now, "id": shipment_id})
+        """).bindparams(bindparam("history", type_=String())), {"history": json.dumps(new_wf_history), "now": now, "id": shipment_id})
 
     logger.info(
         "Status updated %s: %s -> %s (path %s) by %s",
@@ -292,7 +292,7 @@ async def update_completed_flag(
         UPDATE shipment_details
         SET status_history = CAST(:history AS jsonb)
         WHERE order_id = :id
-    """), {"history": json.dumps(new_q_history), "id": shipment_id})
+    """).bindparams(bindparam("history", type_=String())), {"history": json.dumps(new_q_history), "id": shipment_id})
 
     logger.info(
         "Completed flag %s on %s by %s",
@@ -408,7 +408,7 @@ async def update_exception_flag(
         UPDATE shipment_details
         SET exception_data = CAST(:exception AS jsonb)
         WHERE order_id = :id
-    """), {"exception": json.dumps(exception_data), "id": shipment_id})
+    """).bindparams(bindparam("exception", type_=String())), {"exception": json.dumps(exception_data), "id": shipment_id})
     conn.execute(text("""
         UPDATE orders SET updated_at = :now WHERE order_id = :id
     """), {"now": now, "id": shipment_id})

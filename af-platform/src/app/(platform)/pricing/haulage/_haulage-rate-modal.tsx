@@ -15,12 +15,16 @@ interface HaulageRateModalProps {
   companiesList: { company_id: string; name: string }[];
   onSaved: () => void;
   onClose: () => void;
+  onDelete?: (rateId: number) => Promise<void>;
+  isLatestRate?: boolean;
 }
 
 const inputClass = "h-8 px-2 text-xs rounded border border-[var(--border)] bg-white text-[var(--text)] focus:outline-none focus:ring-1 focus:ring-[var(--sky)] focus:border-[var(--sky)] w-full";
 
-export function HaulageRateModal({ open, mode, rateId, initial, cardId, companiesList, onSaved, onClose }: HaulageRateModalProps) {
+export function HaulageRateModal({ open, mode, rateId, initial, cardId, companiesList, onSaved, onClose, onDelete, isLatestRate }: HaulageRateModalProps) {
   const [saving, setSaving] = useState(false);
+  const [deletePhase, setDeletePhase] = useState<'idle' | 'confirm'>('idle');
+  const [deleting, setDeleting] = useState(false);
   const [supplier, setSupplier] = useState('');
   const [effFrom, setEffFrom] = useState('');
   const [effTo, setEffTo] = useState('');
@@ -36,6 +40,8 @@ export function HaulageRateModal({ open, mode, rateId, initial, cardId, companie
 
   useEffect(() => {
     if (!open) return;
+    setDeletePhase('idle');
+    setDeleting(false);
     if ((mode === 'edit' || mode === 'update') && initial) {
       setSupplier((initial.supplier_id as string) ?? '');
       if (mode === 'update') {
@@ -95,6 +101,17 @@ export function HaulageRateModal({ open, mode, rateId, initial, cardId, companie
       .filter(s => s.code.trim() && s.amount.trim())
       .map(s => ({ code: s.code.trim().toUpperCase(), description: s.description.trim(), amount: parseFloat(s.amount) }));
     return valid.length > 0 ? valid : null;
+  };
+
+  const handleDelete = async () => {
+    if (!onDelete || rateId == null) return;
+    setDeleting(true);
+    try {
+      await onDelete(rateId);
+      onClose();
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleSave = async () => {
@@ -310,17 +327,66 @@ export function HaulageRateModal({ open, mode, rateId, initial, cardId, companie
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-2 px-5 py-3 border-t border-[var(--border)]">
-          <button onClick={onClose}
-            className="h-8 px-4 text-xs rounded border border-[var(--border)] hover:bg-[var(--surface)] transition-colors">
-            Cancel
-          </button>
-          <button onClick={handleSave} disabled={saving || !effFrom}
-            className="h-8 px-4 text-xs rounded bg-[var(--sky)] text-white hover:bg-[var(--sky)]/90 disabled:opacity-50 transition-colors flex items-center gap-1.5">
-            {saving && <span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />}
-            Save
-          </button>
-        </div>
+        {deletePhase === 'confirm' ? (
+          <div className="px-5 py-4 border-t border-[var(--border)]">
+            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-xs text-red-700 mb-3">
+              <p className="font-semibold mb-1">Delete this rate?</p>
+              <p>
+                This will permanently delete rate #{rateId}
+                {isLatestRate === false && ' (a historical rate node)'}.
+                {' '}Deleting a published rate may create a gap in the rate timeline.
+                This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setDeletePhase('idle')}
+                className="h-8 px-4 text-xs rounded border border-[var(--border)] hover:bg-[var(--surface)] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="h-8 px-4 text-xs rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+              >
+                {deleting && <span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />}
+                Yes, delete
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between px-5 py-3 border-t border-[var(--border)]">
+            {mode === 'edit' && onDelete != null ? (
+              <button
+                onClick={() => {
+                  if ((initial?.rate_status as string) === 'DRAFT') {
+                    handleDelete();
+                  } else {
+                    setDeletePhase('confirm');
+                  }
+                }}
+                disabled={deleting}
+                className="h-8 px-3 text-xs rounded border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
+              >
+                Delete rate
+              </button>
+            ) : (
+              <div />
+            )}
+            <div className="flex gap-2">
+              <button onClick={onClose}
+                className="h-8 px-4 text-xs rounded border border-[var(--border)] hover:bg-[var(--surface)] transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleSave} disabled={saving || !effFrom}
+                className="h-8 px-4 text-xs rounded bg-[var(--sky)] text-white hover:bg-[var(--sky)]/90 disabled:opacity-50 transition-colors flex items-center gap-1.5">
+                {saving && <span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />}
+                Save
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

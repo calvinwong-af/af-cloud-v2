@@ -12,6 +12,7 @@ export function CostSparkline({
   surchargesMap,
   endDateMap,
   startDateMap,
+  dominantRateMap,
   onNodeClick,
 }: {
   monthMap: Map<string, { value: number | null; isDraft: boolean }>;
@@ -20,6 +21,7 @@ export function CostSparkline({
   surchargesMap?: Map<string, SurchargeItem[] | null>;
   endDateMap?: Map<string, RateDetail>;
   startDateMap?: Map<string, RateDetail>;
+  dominantRateMap?: Map<string, RateDetail>;
   onNodeClick?: (rate: RateDetail) => void;
 }) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
@@ -145,13 +147,17 @@ export function CostSparkline({
               }}
               onMouseLeave={() => { setHoveredIdx(null); setTooltipCoords(null); }}
               onClick={() => {
-                if (hasEndDate && onNodeClick) {
+                if (!onNodeClick) return;
+                if (hasEndDate) {
                   onNodeClick(endDateRate);
-                } else if (hasStartDate && onNodeClick) {
+                } else if (hasStartDate) {
                   onNodeClick(startDateRate!);
+                } else {
+                  const dominant = dominantRateMap?.get(months[p.monthIdx].month_key);
+                  if (dominant) onNodeClick(dominant);
                 }
               }}
-              style={{ cursor: (hasEndDate || hasStartDate) ? 'pointer' : 'default' }}
+              style={{ cursor: onNodeClick ? 'pointer' : 'default' }}
             >
               <circle cx={p.x} cy={p.y} r={10} fill="transparent" />
               <circle cx={p.x} cy={p.y} r={p.isCurrent ? 4 : isHovered ? 3.5 : 2.5} fill={color} />
@@ -264,6 +270,14 @@ export function CostSparkline({
               <div className="border-t border-[var(--border)] mt-0.5 pt-0.5 text-amber-500 font-medium">
                 Starts {formatDate(startDateMap.get(months[p.monthIdx].month_key)!.effective_from!)}
                 {' · '}Click to edit
+              </div>
+            )}
+            {!endDateMap?.get(months[p.monthIdx].month_key) &&
+             !startDateMap?.get(months[p.monthIdx].month_key) &&
+             dominantRateMap?.get(months[p.monthIdx].month_key) &&
+             onNodeClick && (
+              <div className="border-t border-[var(--border)] mt-0.5 pt-0.5 text-[var(--text-muted)]">
+                Click to edit
               </div>
             )}
           </div>

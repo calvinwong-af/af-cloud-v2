@@ -1057,8 +1057,11 @@ export interface AirRateCard {
   pending_draft_count?: number;
   time_series?: AirTimeSeries[];
   rates_by_supplier?: Record<string, AirRate[]>;
+  list_price_card_id?: number | null;
+  list_price_rates?: AirListPriceRate[];
   latest_list_price_from?: string | null;
   latest_cost_from?: string | null;
+  latest_cost_supplier_id?: string | null;
 }
 
 export interface AirTimeSeries {
@@ -1101,6 +1104,26 @@ export interface AirRate {
   surcharges: SurchargeItem[] | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface AirListPriceRate {
+  id: number;
+  rate_card_id: number;
+  effective_from: string | null;
+  effective_to: string | null;
+  rate_status: string;
+  currency: string;
+  l45_list_price: number | null;
+  p45_list_price: number | null;
+  p100_list_price: number | null;
+  p250_list_price: number | null;
+  p300_list_price: number | null;
+  p500_list_price: number | null;
+  p1000_list_price: number | null;
+  min_list_price: number | null;
+  surcharges: SurchargeItem[] | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface AirResolveResult {
@@ -1228,6 +1251,42 @@ export async function rejectAirRateAction(
   rateId: number,
 ): Promise<ActionResult<{ msg: string }>> {
   return pricingMutate(`/api/v2/pricing/air/rates/${rateId}/reject`, 'POST');
+}
+
+// ---------------------------------------------------------------------------
+// Air List Price Rate CRUD
+// ---------------------------------------------------------------------------
+
+export async function createAirListPriceCardAction(
+  data: { origin_port_code: string; destination_port_code: string; dg_class_code: string },
+): Promise<ActionResult<{ id: number; rate_card_key: string }>> {
+  return pricingMutate('/api/v2/pricing/air/list-price-cards', 'POST', data);
+}
+
+export async function createAirListPriceRateAction(
+  cardId: number,
+  data: Record<string, unknown>,
+): Promise<ActionResult<{ id: number }>> {
+  return pricingMutate(`/api/v2/pricing/air/list-price-cards/${cardId}/rates`, 'POST', data);
+}
+
+export async function updateAirListPriceRateAction(
+  rateId: number,
+  data: Record<string, unknown>,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/air/list-price-rates/${rateId}`, 'PATCH', data);
+}
+
+export async function deleteAirListPriceRateAction(
+  rateId: number,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/air/list-price-rates/${rateId}`, 'DELETE');
+}
+
+export async function publishAirListPriceRateAction(
+  rateId: number,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/air/list-price-rates/${rateId}/publish`, 'POST');
 }
 
 export async function resolveAirRateAction(

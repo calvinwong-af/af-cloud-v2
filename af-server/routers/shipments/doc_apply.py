@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import text, bindparam, String
 
 from core.auth import Claims, require_afu
 from core.db import get_db
@@ -131,9 +131,14 @@ async def apply_booking_confirmation(
         params["bl_document"] = json.dumps(bl_doc)
 
     if sd_clauses:
+        # Build bindparams for JSONB columns
+        sd_binds = []
+        for col in ("booking", "type_details", "bl_document"):
+            if col in params:
+                sd_binds.append(bindparam(col, type_=String()))
         conn.execute(text(f"""
             UPDATE shipment_details SET {', '.join(sd_clauses)} WHERE order_id = :id
-        """), params)
+        """).bindparams(*sd_binds), params)
     conn.execute(text("""
         UPDATE orders SET updated_at = :now WHERE order_id = :id
     """), params)
@@ -172,7 +177,8 @@ async def apply_booking_confirmation(
                 UPDATE shipment_workflows
                 SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
                 WHERE order_id = :id
-            """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
+            """).bindparams(bindparam("tasks", type_=String())),
+            {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
 
     # Sync route node timings — BC provides ETD POL, ETA POD, ETA POL (fallback)
     _sync_route_node_timings(
@@ -341,13 +347,23 @@ async def apply_awb(
     sd_clauses.append("bl_document = CAST(:bl_document AS jsonb)")
     params["bl_document"] = json.dumps(bl_doc) if bl_doc else None
 
+    # Build bindparams for JSONB columns on orders table
+    orders_binds = []
+    for col in ("parties", "cargo"):
+        if col in params:
+            orders_binds.append(bindparam(col, type_=String()))
     conn.execute(text(f"""
         UPDATE orders SET {', '.join(orders_clauses)} WHERE order_id = :id
-    """), params)
+    """).bindparams(*orders_binds), params)
     if sd_clauses:
+        # Build bindparams for JSONB columns on shipment_details table
+        sd_binds = []
+        for col in ("booking", "type_details", "bl_document"):
+            if col in params:
+                sd_binds.append(bindparam(col, type_=String()))
         conn.execute(text(f"""
             UPDATE shipment_details SET {', '.join(sd_clauses)} WHERE order_id = :id
-        """), params)
+        """).bindparams(*sd_binds), params)
 
     # Sync flight_date to TRACKED POL task actual_end (AWB = already-flown document)
     # Also seed scheduled_end if blank
@@ -370,7 +386,8 @@ async def apply_awb(
                     UPDATE shipment_workflows
                     SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
                     WHERE order_id = :id
-                """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
+                """).bindparams(bindparam("tasks", type_=String())),
+                {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
 
     # Sync route node timings — AWB is post-flight, actual only
     # Do NOT write scheduled_etd — that belongs to BC (planning document)

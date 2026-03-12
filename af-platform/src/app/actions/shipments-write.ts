@@ -1230,3 +1230,59 @@ export async function applyAWBAction(
     return { success: false, error: 'Failed to apply AWB data' };
   }
 }
+
+// ─── Update Type Details (container/seal numbers) ────────────────────────────
+
+export interface UpdateTypeDetailsPayload {
+  // FCL
+  containers?: Array<{
+    container_numbers: string[];
+    seal_numbers: string[];
+  }>;
+  // LCL
+  container_number?: string | null;
+  seal_number?: string | null;
+}
+
+export async function updateTypeDetailsAction(
+  shipmentId: string,
+  payload: UpdateTypeDetailsPayload,
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) return { success: false, error: 'No session token' };
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) return { success: false, error: 'Server URL not configured' };
+
+    const url = new URL(
+      `/api/v2/shipments/${encodeURIComponent(shipmentId)}/type-details`,
+      serverUrl,
+    );
+    const res = await fetch(url.toString(), {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const msg = json?.detail ?? `Server responded ${res.status}`;
+      return { success: false, error: msg };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error('[updateTypeDetailsAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to update type details' };
+  }
+}

@@ -96,6 +96,52 @@ class AirResolveRequest(BaseModel):
     reference_date: Optional[str] = None
 
 
+class AirListPriceCardCreate(BaseModel):
+    origin_port_code: str
+    destination_port_code: str
+    dg_class_code: str = "NON-DG"
+    code: str = "FR-AIR"
+    description: str = ""
+
+
+class AirListPriceCardUpdate(BaseModel):
+    code: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class AirListPriceRateCreate(BaseModel):
+    effective_from: date
+    effective_to: Optional[date] = None
+    rate_status: str = "PUBLISHED"
+    currency: str
+    l45_list_price: Optional[float] = None
+    p45_list_price: Optional[float] = None
+    p100_list_price: Optional[float] = None
+    p250_list_price: Optional[float] = None
+    p300_list_price: Optional[float] = None
+    p500_list_price: Optional[float] = None
+    p1000_list_price: Optional[float] = None
+    min_list_price: Optional[float] = None
+    surcharges: Optional[list] = None
+
+
+class AirListPriceRateUpdate(BaseModel):
+    effective_from: Optional[date] = None
+    effective_to: Optional[date] = None
+    rate_status: Optional[str] = None
+    currency: Optional[str] = None
+    l45_list_price: Optional[float] = None
+    p45_list_price: Optional[float] = None
+    p100_list_price: Optional[float] = None
+    p250_list_price: Optional[float] = None
+    p300_list_price: Optional[float] = None
+    p500_list_price: Optional[float] = None
+    p1000_list_price: Optional[float] = None
+    min_list_price: Optional[float] = None
+    surcharges: Optional[list] = None
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -164,6 +210,38 @@ def _surcharge_total(surcharges) -> float:
     if not surcharges:
         return 0.0
     return sum(float(s.get('amount', 0) or 0) for s in surcharges)
+
+
+_LIST_PRICE_RATE_SELECT = """
+    SELECT id, rate_card_id, effective_from,
+           rate_status::text, currency,
+           l45_list_price, p45_list_price, p100_list_price, p250_list_price,
+           p300_list_price, p500_list_price, p1000_list_price, min_list_price,
+           surcharges, created_at, updated_at, effective_to
+    FROM air_list_price_rates
+"""
+
+
+def _row_to_list_price_rate(r) -> dict:
+    return {
+        "id": r[0],
+        "rate_card_id": r[1],
+        "effective_from": str(r[2]) if r[2] else None,
+        "rate_status": r[3],
+        "currency": r[4],
+        "l45_list_price": float(r[5]) if r[5] is not None else None,
+        "p45_list_price": float(r[6]) if r[6] is not None else None,
+        "p100_list_price": float(r[7]) if r[7] is not None else None,
+        "p250_list_price": float(r[8]) if r[8] is not None else None,
+        "p300_list_price": float(r[9]) if r[9] is not None else None,
+        "p500_list_price": float(r[10]) if r[10] is not None else None,
+        "p1000_list_price": float(r[11]) if r[11] is not None else None,
+        "min_list_price": float(r[12]) if r[12] is not None else None,
+        "surcharges": r[13] if r[13] is not None else None,
+        "created_at": str(r[14]) if r[14] else None,
+        "updated_at": str(r[15]) if r[15] else None,
+        "effective_to": str(r[16]) if r[16] else None,
+    }
 
 
 _VALID_RATE_STATUSES = {"PUBLISHED", "ON_REQUEST", "DRAFT", "REJECTED"}
@@ -275,24 +353,91 @@ async def list_air_rate_cards(
     if alerts_only:
         where.append("""(
             (
-                EXISTS (SELECT 1 FROM air_freight_rates r WHERE r.rate_card_id = rc.id AND r.supplier_id IS NOT NULL AND r.rate_status = 'PUBLISHED' AND r.effective_from <= CURRENT_DATE AND (r.effective_to IS NULL OR r.effective_to >= CURRENT_DATE))
-                AND (SELECT MIN(r2.l45_cost) FROM air_freight_rates r2 WHERE r2.rate_card_id = rc.id AND r2.supplier_id IS NOT NULL AND r2.rate_status = 'PUBLISHED' AND r2.effective_from <= CURRENT_DATE AND (r2.effective_to IS NULL OR r2.effective_to >= CURRENT_DATE) AND r2.l45_cost IS NOT NULL)
-                    > (SELECT r3.l45_list_price FROM air_freight_rates r3 WHERE r3.rate_card_id = rc.id AND r3.supplier_id IS NULL AND r3.rate_status = 'PUBLISHED' AND r3.effective_from <= CURRENT_DATE AND (r3.effective_to IS NULL OR r3.effective_to >= CURRENT_DATE) ORDER BY r3.effective_from DESC LIMIT 1)
+                EXISTS (
+                    SELECT 1 FROM air_freight_rates r
+                    WHERE r.rate_card_id = rc.id
+                      AND r.supplier_id IS NOT NULL
+                      AND r.rate_status = 'PUBLISHED'
+                      AND r.effective_from <= CURRENT_DATE
+                      AND (r.effective_to IS NULL OR r.effective_to >= CURRENT_DATE)
+                )
+                AND (
+                    SELECT MIN(r2.l45_cost)
+                    FROM air_freight_rates r2
+                    WHERE r2.rate_card_id = rc.id
+                      AND r2.supplier_id IS NOT NULL
+                      AND r2.rate_status = 'PUBLISHED'
+                      AND r2.effective_from <= CURRENT_DATE
+                      AND (r2.effective_to IS NULL OR r2.effective_to >= CURRENT_DATE)
+                      AND r2.l45_cost IS NOT NULL
+                ) > (
+                    SELECT lpr.l45_list_price
+                    FROM air_list_price_rates lpr
+                    JOIN air_list_price_rate_cards lprc
+                      ON lprc.id = lpr.rate_card_id
+                    WHERE lprc.rate_card_key = rc.origin_port_code || ':' || rc.destination_port_code || ':' || rc.dg_class_code
+                      AND lpr.rate_status = 'PUBLISHED'
+                      AND lpr.effective_from <= CURRENT_DATE
+                      AND (lpr.effective_to IS NULL OR lpr.effective_to >= CURRENT_DATE)
+                    ORDER BY lpr.effective_from DESC LIMIT 1
+                )
             )
             OR
             (
-                EXISTS (SELECT 1 FROM air_freight_rates r WHERE r.rate_card_id = rc.id AND r.supplier_id IS NOT NULL AND r.rate_status = 'PUBLISHED' AND r.effective_from <= CURRENT_DATE AND (r.effective_to IS NULL OR r.effective_to >= CURRENT_DATE) AND r.l45_cost IS NOT NULL)
-                AND NOT EXISTS (SELECT 1 FROM air_freight_rates r WHERE r.rate_card_id = rc.id AND r.supplier_id IS NULL AND r.rate_status = 'PUBLISHED' AND r.effective_from <= CURRENT_DATE AND (r.effective_to IS NULL OR r.effective_to >= CURRENT_DATE) AND r.l45_list_price IS NOT NULL)
+                EXISTS (
+                    SELECT 1 FROM air_freight_rates r
+                    WHERE r.rate_card_id = rc.id
+                      AND r.supplier_id IS NOT NULL
+                      AND r.rate_status = 'PUBLISHED'
+                      AND r.effective_from <= CURRENT_DATE
+                      AND (r.effective_to IS NULL OR r.effective_to >= CURRENT_DATE)
+                      AND r.l45_cost IS NOT NULL
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM air_list_price_rates lpr
+                    JOIN air_list_price_rate_cards lprc ON lprc.id = lpr.rate_card_id
+                    WHERE lprc.rate_card_key = rc.origin_port_code || ':' || rc.destination_port_code || ':' || rc.dg_class_code
+                      AND lpr.rate_status = 'PUBLISHED'
+                      AND lpr.effective_from <= CURRENT_DATE
+                      AND (lpr.effective_to IS NULL OR lpr.effective_to >= CURRENT_DATE)
+                      AND lpr.l45_list_price IS NOT NULL
+                )
             )
             OR
             (
-                (SELECT MAX(r.effective_from) FROM air_freight_rates r WHERE r.rate_card_id = rc.id AND r.supplier_id IS NOT NULL AND r.rate_status = 'PUBLISHED')
-                > (SELECT MAX(r.effective_from) FROM air_freight_rates r WHERE r.rate_card_id = rc.id AND r.supplier_id IS NULL AND r.rate_status = 'PUBLISHED')
+                (
+                    SELECT MAX(r.effective_from) FROM air_freight_rates r
+                    WHERE r.rate_card_id = rc.id AND r.supplier_id IS NOT NULL AND r.rate_status = 'PUBLISHED'
+                ) > (
+                    SELECT MAX(lpr.effective_from)
+                    FROM air_list_price_rates lpr
+                    JOIN air_list_price_rate_cards lprc ON lprc.id = lpr.rate_card_id
+                    WHERE lprc.rate_card_key = rc.origin_port_code || ':' || rc.destination_port_code || ':' || rc.dg_class_code
+                      AND lpr.rate_status = 'PUBLISHED'
+                )
             )
             OR
             (
-                EXISTS (SELECT 1 FROM air_freight_rates r WHERE r.rate_card_id = rc.id AND r.supplier_id IS NULL AND r.rate_status = 'PUBLISHED' AND r.effective_from <= CURRENT_DATE AND (r.effective_to IS NULL OR r.effective_to >= CURRENT_DATE) AND r.l45_list_price IS NOT NULL)
-                AND NOT EXISTS (SELECT 1 FROM air_freight_rates r WHERE r.rate_card_id = rc.id AND r.supplier_id IS NOT NULL AND r.rate_status = 'PUBLISHED' AND r.effective_from <= CURRENT_DATE AND (r.effective_to IS NULL OR r.effective_to >= CURRENT_DATE) AND r.l45_cost IS NOT NULL)
+                EXISTS (
+                    SELECT 1
+                    FROM air_list_price_rates lpr
+                    JOIN air_list_price_rate_cards lprc ON lprc.id = lpr.rate_card_id
+                    WHERE lprc.rate_card_key = rc.origin_port_code || ':' || rc.destination_port_code || ':' || rc.dg_class_code
+                      AND lpr.rate_status = 'PUBLISHED'
+                      AND lpr.effective_from <= CURRENT_DATE
+                      AND (lpr.effective_to IS NULL OR lpr.effective_to >= CURRENT_DATE)
+                      AND lpr.l45_list_price IS NOT NULL
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM air_freight_rates r
+                    WHERE r.rate_card_id = rc.id
+                      AND r.supplier_id IS NOT NULL
+                      AND r.rate_status = 'PUBLISHED'
+                      AND r.effective_from <= CURRENT_DATE
+                      AND (r.effective_to IS NULL OR r.effective_to >= CURRENT_DATE)
+                      AND r.l45_cost IS NOT NULL
+                )
             )
         )""")
 
@@ -311,23 +456,39 @@ async def list_air_rate_cards(
     if cards:
         card_ids = [c["id"] for c in cards]
 
-        # Latest price reference (l45_list_price as representative value)
-        price_rows = conn.execute(text("""
+        # O/D+DG keys for list price card lookups
+        od_dg_keys = list({
+            f"{c['origin_port_code']}:{c['destination_port_code']}:{c['dg_class_code']}"
+            for c in cards
+        })
+
+        lp_card_rows = conn.execute(text("""
+            SELECT rate_card_key, id
+            FROM air_list_price_rate_cards
+            WHERE rate_card_key = ANY(:keys)
+        """), {"keys": od_dg_keys}).fetchall()
+        lp_card_map = {r[0]: r[1] for r in lp_card_rows}
+        lp_card_ids = list(lp_card_map.values())
+
+        # Latest price reference from list price table
+        lp_latest_rows = conn.execute(text("""
             SELECT DISTINCT ON (rate_card_id)
                    rate_card_id, l45_list_price, currency, effective_from
-            FROM air_freight_rates
-            WHERE rate_card_id = ANY(:ids) AND supplier_id IS NULL
+            FROM air_list_price_rates
+            WHERE rate_card_id = ANY(:ids) AND rate_status = 'PUBLISHED'
             ORDER BY rate_card_id, effective_from DESC
-        """), {"ids": card_ids}).fetchall()
+        """), {"ids": lp_card_ids}).fetchall() if lp_card_ids else []
 
-        price_map = {r[0]: {
+        lp_latest_map = {r[0]: {
             "l45_list_price": float(r[1]) if r[1] is not None else None,
             "currency": r[2],
             "effective_from": str(r[3]) if r[3] else None,
-        } for r in price_rows}
+        } for r in lp_latest_rows}
 
         for c in cards:
-            c["latest_price_ref"] = price_map.get(c["id"])
+            lp_key = f"{c['origin_port_code']}:{c['destination_port_code']}:{c['dg_class_code']}"
+            lp_cid = lp_card_map.get(lp_key)
+            c["latest_price_ref"] = lp_latest_map.get(lp_cid) if lp_cid else None
 
         # Pending draft count
         draft_rows = conn.execute(text("""
@@ -347,30 +508,44 @@ async def list_air_rate_cards(
         month_start = months[0]
         month_end = (months[-1] + relativedelta(months=1))
 
+        # Cost time series from air_freight_rates (supplier rows only)
         ts_rows = conn.execute(text("""
             SELECT id, rate_card_id, supplier_id, effective_from,
                    rate_status::text, currency,
-                   l45_list_price, l45_cost,
-                   p100_list_price, p100_cost,
+                   l45_cost,
+                   p100_cost,
                    effective_to, surcharges
             FROM air_freight_rates
             WHERE rate_card_id = ANY(:ids)
+              AND supplier_id IS NOT NULL
               AND effective_from < :m_end
               AND (effective_to IS NULL OR effective_to >= :m_start)
               AND rate_status IN ('PUBLISHED', 'DRAFT')
         """), {"ids": card_ids, "m_start": month_start, "m_end": month_end}).fetchall()
 
-        # Seed carry-forward
-        seed_price_rows = conn.execute(text("""
+        # List price time series from air_list_price_rates
+        lp_ts_rows = conn.execute(text("""
+            SELECT id, rate_card_id, effective_from,
+                   rate_status::text, currency,
+                   l45_list_price, p100_list_price,
+                   effective_to, surcharges
+            FROM air_list_price_rates
+            WHERE rate_card_id = ANY(:ids)
+              AND effective_from < :m_end
+              AND (effective_to IS NULL OR effective_to >= :m_start)
+              AND rate_status IN ('PUBLISHED', 'DRAFT')
+        """), {"ids": lp_card_ids, "m_start": month_start, "m_end": month_end}).fetchall() if lp_card_ids else []
+
+        # Seed carry-forward for list prices
+        seed_lp_rows = conn.execute(text("""
             SELECT DISTINCT ON (rate_card_id)
                    rate_card_id, l45_list_price, p100_list_price, currency, rate_status::text, effective_to, surcharges
-            FROM air_freight_rates
+            FROM air_list_price_rates
             WHERE rate_card_id = ANY(:ids)
-              AND supplier_id IS NULL
               AND effective_from < :m_start
               AND rate_status IN ('PUBLISHED', 'DRAFT')
             ORDER BY rate_card_id, effective_from DESC
-        """), {"ids": card_ids, "m_start": month_start}).fetchall()
+        """), {"ids": lp_card_ids, "m_start": month_start}).fetchall() if lp_card_ids else []
 
         seed_cost_rows = conn.execute(text("""
             SELECT DISTINCT ON (rate_card_id, supplier_id)
@@ -392,7 +567,7 @@ async def list_air_rate_cards(
             "_eff": None,
             "_eff_to": r[5],
             "_surcharges": r[6],
-        } for r in seed_price_rows}
+        } for r in seed_lp_rows}
 
         seed_supplier_costs: dict[int, dict[str, dict]] = {}
         for r in seed_cost_rows:
@@ -407,43 +582,50 @@ async def list_air_rate_cards(
             }
 
         from collections import defaultdict
+        # price_ref_map keyed by (lp_card_id, month_key)
         price_ref_map: dict[tuple[int, str], dict] = {}
         cost_map: dict[tuple[int, str], list[tuple[float, list | None]]] = defaultdict(list)
         cost_map_by_supplier: dict[tuple[int, str], dict[str, tuple]] = defaultdict(dict)
 
+        # Process list price time series
+        for r in lp_ts_rows:
+            rid, lp_rc_id, eff_from, r_status, currency, lp, p100_lp, eff_to, surcharges_json = r
+            mk = f"{eff_from.year}-{eff_from.month:02d}"
+            key = (lp_rc_id, mk)
+            existing = price_ref_map.get(key)
+            if existing is None or eff_from > existing["_eff"]:
+                price_ref_map[key] = {
+                    "l45_list_price": float(lp) if lp is not None else None,
+                    "p100_list_price": float(p100_lp) if p100_lp is not None else None,
+                    "currency": currency,
+                    "rate_status": r_status,
+                    "_eff": eff_from,
+                    "_eff_to": eff_to,
+                    "_surcharges": surcharges_json,
+                }
+
+        # Process cost time series (supplier rows only)
         for r in ts_rows:
-            rid, rc_id, supplier_id, eff_from, r_status, currency, lp, cost_val, p100_lp, p100_cost_val, eff_to, surcharges_json = r
+            rid, rc_id, supplier_id, eff_from, r_status, currency, cost_val, p100_cost_val, eff_to, surcharges_json = r
             mk = f"{eff_from.year}-{eff_from.month:02d}"
             key = (rc_id, mk)
-
-            if supplier_id is None:
-                existing = price_ref_map.get(key)
-                if existing is None or eff_from > existing["_eff"]:
-                    price_ref_map[key] = {
-                        "l45_list_price": float(lp) if lp is not None else None,
-                        "p100_list_price": float(p100_lp) if p100_lp is not None else None,
-                        "currency": currency,
-                        "rate_status": r_status,
-                        "_eff": eff_from,
-                        "_eff_to": eff_to,
-                        "_surcharges": surcharges_json,
-                    }
-            elif r_status == "PUBLISHED":
-                if cost_val is not None:
-                    cost_map[key].append((float(cost_val), surcharges_json, float(p100_cost_val) if p100_cost_val is not None else None))
-                    cost_map_by_supplier[key][supplier_id] = (float(cost_val), float(p100_cost_val) if p100_cost_val is not None else None, eff_to, surcharges_json)
+            if r_status == "PUBLISHED" and cost_val is not None:
+                cost_map[key].append((float(cost_val), surcharges_json, float(p100_cost_val) if p100_cost_val is not None else None))
+                cost_map_by_supplier[key][supplier_id] = (float(cost_val), float(p100_cost_val) if p100_cost_val is not None else None, eff_to, surcharges_json)
 
         current_month_key = f"{today.year}-{today.month:02d}"
         month_keys = [f"{m.year}-{m.month:02d}" for m in months]
         for c in cards:
             cid = c["id"]
+            lp_key = f"{c['origin_port_code']}:{c['destination_port_code']}:{c['dg_class_code']}"
+            lp_cid = lp_card_map.get(lp_key)
             ts = []
-            last_pr: dict | None = seed_price_map.get(cid)
+            last_pr: dict | None = seed_price_map.get(lp_cid) if lp_cid else None
             active_supplier_costs: dict[str, dict] = dict(seed_supplier_costs.get(cid, {}))
             last_p100_cost = None
             for mk in month_keys:
                 key = (cid, mk)
-                pr = price_ref_map.get(key)
+                pr = price_ref_map.get((lp_cid, mk)) if lp_cid else None
                 cost_entries = cost_map.get(key)
                 is_future = mk > current_month_key
 
@@ -529,23 +711,55 @@ async def list_air_rate_cards(
                     })
             c["time_series"] = ts
 
-        # Latest effective_from per supplier type
-        date_meta_rows = conn.execute(text("""
-            SELECT
-                rate_card_id,
-                MAX(CASE WHEN supplier_id IS NULL THEN effective_from END) AS latest_list_price_from,
-                MAX(CASE WHEN supplier_id IS NOT NULL AND rate_status = 'PUBLISHED' THEN effective_from END) AS latest_cost_from
+        # Latest effective_from for cost (from air_freight_rates, supplier rows only)
+        cost_date_rows = conn.execute(text("""
+            SELECT rate_card_id,
+                   MAX(effective_from) AS latest_cost_from
             FROM air_freight_rates
             WHERE rate_card_id = ANY(:ids)
-              AND rate_status IN ('PUBLISHED', 'DRAFT')
+              AND supplier_id IS NOT NULL
+              AND rate_status = 'PUBLISHED'
             GROUP BY rate_card_id
         """), {"ids": card_ids}).fetchall()
 
-        date_meta_map = {r[0]: {"latest_list_price_from": r[1], "latest_cost_from": r[2]} for r in date_meta_rows}
+        cost_date_map = {r[0]: r[1] for r in cost_date_rows}
         for c in cards:
-            meta = date_meta_map.get(c["id"], {})
-            c["latest_list_price_from"] = str(meta["latest_list_price_from"]) if meta.get("latest_list_price_from") else None
-            c["latest_cost_from"] = str(meta["latest_cost_from"]) if meta.get("latest_cost_from") else None
+            c["latest_cost_from"] = str(cost_date_map[c["id"]]) if cost_date_map.get(c["id"]) else None
+
+        # Latest list price date per O/D+DG key (from air_list_price_rates)
+        lp_date_rows = conn.execute(text("""
+            SELECT lp.rate_card_key,
+                   MAX(r.effective_from) AS latest_list_price_from
+            FROM air_list_price_rates r
+            JOIN air_list_price_rate_cards lp ON lp.id = r.rate_card_id
+            WHERE lp.rate_card_key = ANY(:keys)
+              AND r.rate_status IN ('PUBLISHED', 'DRAFT')
+            GROUP BY lp.rate_card_key
+        """), {"keys": od_dg_keys}).fetchall() if od_dg_keys else []
+
+        lp_date_map = {r[0]: r[1] for r in lp_date_rows}
+        for c in cards:
+            lp_key = f"{c['origin_port_code']}:{c['destination_port_code']}:{c['dg_class_code']}"
+            c["latest_list_price_from"] = str(lp_date_map[lp_key]) if lp_date_map.get(lp_key) else None
+
+        # Supplier that provides lowest current p100_cost per card
+        best_supplier_rows = conn.execute(text("""
+            SELECT DISTINCT ON (r.rate_card_id)
+                   r.rate_card_id,
+                   r.supplier_id
+            FROM air_freight_rates r
+            WHERE r.rate_card_id = ANY(:ids)
+              AND r.supplier_id IS NOT NULL
+              AND r.rate_status = 'PUBLISHED'
+              AND r.effective_from <= CURRENT_DATE
+              AND (r.effective_to IS NULL OR r.effective_to >= CURRENT_DATE)
+              AND r.p100_cost IS NOT NULL
+            ORDER BY r.rate_card_id, r.p100_cost ASC
+        """), {"ids": card_ids}).fetchall()
+
+        best_supplier_map = {r[0]: r[1] for r in best_supplier_rows}
+        for c in cards:
+            c["latest_cost_supplier_id"] = best_supplier_map.get(c["id"])
 
     return {"status": "OK", "data": cards}
 
@@ -571,11 +785,13 @@ async def get_air_rate_card(
 
     MIGRATION_FLOOR = date(2024, 1, 1)
 
+    # Supplier cost rows from air_freight_rates
     window_rows = conn.execute(text(f"""
         {_RATE_SELECT}
         WHERE rate_card_id = :id
+          AND supplier_id IS NOT NULL
           AND effective_from >= :floor
-        ORDER BY supplier_id NULLS FIRST, effective_from DESC
+        ORDER BY supplier_id, effective_from DESC
     """), {"id": card_id, "floor": MIGRATION_FLOOR}).fetchall()
 
     seed_rows = conn.execute(text(f"""
@@ -590,32 +806,81 @@ async def get_air_rate_card(
             created_at, updated_at, effective_to
         FROM air_freight_rates
         WHERE rate_card_id = :id
+          AND supplier_id IS NOT NULL
           AND effective_from < :floor
           AND rate_status IN ('PUBLISHED', 'DRAFT')
-        ORDER BY supplier_id NULLS FIRST, effective_from DESC
+        ORDER BY supplier_id, effective_from DESC
     """), {"id": card_id, "floor": MIGRATION_FLOOR}).fetchall()
 
     rate_rows = list(window_rows) + list(seed_rows)
 
-    rates_by_supplier: dict[str | None, list] = {}
+    rates_by_supplier: dict[str, list] = {}
     for rr in rate_rows:
         rate = _row_to_rate(rr)
         key = rate["supplier_id"]
+        if key is None:
+            continue
         if key not in rates_by_supplier:
             rates_by_supplier[key] = []
         rates_by_supplier[key].append(rate)
 
     card["rates_by_supplier"] = rates_by_supplier
 
-    date_meta = conn.execute(text("""
-        SELECT
-            MAX(CASE WHEN supplier_id IS NULL THEN effective_from END),
-            MAX(CASE WHEN supplier_id IS NOT NULL AND rate_status = 'PUBLISHED' THEN effective_from END)
+    # List price from air_list_price_rates
+    lp_key = f"{card['origin_port_code']}:{card['destination_port_code']}:{card['dg_class_code']}"
+    lp_card_row = conn.execute(text("""
+        SELECT id FROM air_list_price_rate_cards WHERE rate_card_key = :key
+    """), {"key": lp_key}).fetchone()
+    lp_card_id = lp_card_row[0] if lp_card_row else None
+
+    if lp_card_id:
+        lp_rate_rows = conn.execute(text(f"""
+            {_LIST_PRICE_RATE_SELECT}
+            WHERE rate_card_id = :id
+              AND effective_from >= :floor
+            ORDER BY effective_from DESC
+        """), {"id": lp_card_id, "floor": MIGRATION_FLOOR}).fetchall()
+
+        lp_seed_row = conn.execute(text(f"""
+            SELECT DISTINCT ON (rate_card_id)
+                id, rate_card_id, effective_from,
+                rate_status::text, currency,
+                l45_list_price, p45_list_price, p100_list_price, p250_list_price,
+                p300_list_price, p500_list_price, p1000_list_price, min_list_price,
+                surcharges, created_at, updated_at, effective_to
+            FROM air_list_price_rates
+            WHERE rate_card_id = :id
+              AND effective_from < :floor
+              AND rate_status IN ('PUBLISHED', 'DRAFT')
+            ORDER BY rate_card_id, effective_from DESC
+        """), {"id": lp_card_id, "floor": MIGRATION_FLOOR}).fetchone()
+
+        list_price_rates = [_row_to_list_price_rate(r) for r in lp_rate_rows]
+        if lp_seed_row:
+            list_price_rates.append(_row_to_list_price_rate(lp_seed_row))
+    else:
+        list_price_rates = []
+
+    card["list_price_card_id"] = lp_card_id
+    card["list_price_rates"] = list_price_rates
+
+    # Date metadata
+    cost_date = conn.execute(text("""
+        SELECT MAX(effective_from)
         FROM air_freight_rates
-        WHERE rate_card_id = :id
+        WHERE rate_card_id = :id AND supplier_id IS NOT NULL AND rate_status = 'PUBLISHED'
     """), {"id": card_id}).fetchone()
-    card["latest_list_price_from"] = str(date_meta[0]) if date_meta and date_meta[0] else None
-    card["latest_cost_from"] = str(date_meta[1]) if date_meta and date_meta[1] else None
+    card["latest_cost_from"] = str(cost_date[0]) if cost_date and cost_date[0] else None
+
+    lp_date = None
+    if lp_card_id:
+        lp_date_row = conn.execute(text("""
+            SELECT MAX(effective_from)
+            FROM air_list_price_rates
+            WHERE rate_card_id = :id
+        """), {"id": lp_card_id}).fetchone()
+        lp_date = lp_date_row[0] if lp_date_row else None
+    card["latest_list_price_from"] = str(lp_date) if lp_date else None
 
     return {"status": "OK", "data": card}
 
@@ -920,6 +1185,289 @@ async def delete_air_rate(
     conn.execute(text("DELETE FROM air_freight_rates WHERE id = :id"), {"id": rate_id})
 
     return {"status": "OK", "msg": "Rate deleted"}
+
+
+# ---------------------------------------------------------------------------
+# List Price Card endpoints (O/D+DG level)
+# ---------------------------------------------------------------------------
+
+@router.get("/list-price-cards")
+async def list_air_list_price_cards(
+    origin_port_code: Optional[str] = Query(default=None),
+    destination_port_code: Optional[str] = Query(default=None),
+    dg_class_code: Optional[str] = Query(default=None),
+    is_active: bool = Query(default=True),
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    where = ["is_active = :active"]
+    params: dict = {"active": is_active}
+
+    if origin_port_code:
+        where.append("origin_port_code = :origin")
+        params["origin"] = origin_port_code
+    if destination_port_code:
+        where.append("destination_port_code = :dest")
+        params["dest"] = destination_port_code
+    if dg_class_code:
+        where.append("dg_class_code = :dg")
+        params["dg"] = dg_class_code
+
+    rows = conn.execute(text(f"""
+        SELECT id, rate_card_key, origin_port_code, destination_port_code,
+               dg_class_code, code, description, is_active, created_at, updated_at
+        FROM air_list_price_rate_cards
+        WHERE {' AND '.join(where)}
+        ORDER BY origin_port_code, destination_port_code
+    """), params).fetchall()
+
+    data = [{
+        "id": r[0], "rate_card_key": r[1],
+        "origin_port_code": r[2], "destination_port_code": r[3],
+        "dg_class_code": r[4], "code": r[5], "description": r[6],
+        "is_active": r[7], "created_at": str(r[8]) if r[8] else None,
+        "updated_at": str(r[9]) if r[9] else None,
+    } for r in rows]
+
+    return {"status": "OK", "data": data}
+
+
+@router.post("/list-price-cards")
+async def create_air_list_price_card(
+    body: AirListPriceCardCreate,
+    claims: Claims = Depends(require_afu_admin),
+    conn=Depends(get_db),
+):
+    origin = body.origin_port_code.strip().upper()
+    dest = body.destination_port_code.strip().upper()
+    dg = body.dg_class_code.strip().upper()
+    rate_card_key = f"{origin}:{dest}:{dg}"
+
+    existing = conn.execute(text(
+        "SELECT id FROM air_list_price_rate_cards WHERE rate_card_key = :key"
+    ), {"key": rate_card_key}).fetchone()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"List price card {rate_card_key} already exists")
+
+    row = conn.execute(text("""
+        INSERT INTO air_list_price_rate_cards
+            (rate_card_key, origin_port_code, destination_port_code,
+             dg_class_code, code, description)
+        VALUES (:key, :origin, :dest, :dg, :code, :desc)
+        RETURNING id, created_at
+    """), {
+        "key": rate_card_key, "origin": origin, "dest": dest,
+        "dg": dg, "code": body.code, "desc": body.description,
+    }).fetchone()
+
+    return {"status": "OK", "data": {
+        "id": row[0], "rate_card_key": rate_card_key,
+        "origin_port_code": origin, "destination_port_code": dest,
+        "dg_class_code": dg, "code": body.code, "description": body.description,
+        "is_active": True, "created_at": str(row[1]),
+    }}
+
+
+@router.patch("/list-price-cards/{card_id}")
+async def update_air_list_price_card(
+    card_id: int,
+    body: AirListPriceCardUpdate,
+    claims: Claims = Depends(require_afu_admin),
+    conn=Depends(get_db),
+):
+    existing = conn.execute(text("SELECT id FROM air_list_price_rate_cards WHERE id = :id"),
+                            {"id": card_id}).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"List price card {card_id} not found")
+
+    updates = []
+    params: dict = {"id": card_id}
+
+    if body.code is not None:
+        updates.append("code = :code")
+        params["code"] = body.code
+    if body.description is not None:
+        updates.append("description = :description")
+        params["description"] = body.description
+    if body.is_active is not None:
+        updates.append("is_active = :active")
+        params["active"] = body.is_active
+
+    if not updates:
+        return {"status": "OK", "msg": "No changes"}
+
+    updates.append("updated_at = NOW()")
+    conn.execute(text(f"UPDATE air_list_price_rate_cards SET {', '.join(updates)} WHERE id = :id"), params)
+
+    return {"status": "OK", "msg": "List price card updated"}
+
+
+@router.get("/list-price-cards/{card_id}/rates")
+async def list_air_list_price_rates(
+    card_id: int,
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    card = conn.execute(text("SELECT id FROM air_list_price_rate_cards WHERE id = :id"),
+                        {"id": card_id}).fetchone()
+    if not card:
+        raise HTTPException(status_code=404, detail=f"List price card {card_id} not found")
+
+    rows = conn.execute(text(f"""
+        {_LIST_PRICE_RATE_SELECT}
+        WHERE rate_card_id = :card_id
+        ORDER BY effective_from DESC
+    """), {"card_id": card_id}).fetchall()
+
+    return {"status": "OK", "data": [_row_to_list_price_rate(r) for r in rows]}
+
+
+@router.post("/list-price-cards/{card_id}/rates")
+async def create_air_list_price_rate(
+    card_id: int,
+    body: AirListPriceRateCreate,
+    claims: Claims = Depends(require_afu_admin),
+    conn=Depends(get_db),
+):
+    card = conn.execute(text("SELECT id FROM air_list_price_rate_cards WHERE id = :id"),
+                        {"id": card_id}).fetchone()
+    if not card:
+        raise HTTPException(status_code=404, detail=f"List price card {card_id} not found")
+
+    if body.rate_status not in _VALID_RATE_STATUSES:
+        raise HTTPException(status_code=400, detail=f"Invalid rate_status: {body.rate_status}")
+
+    row = conn.execute(text("""
+        INSERT INTO air_list_price_rates
+            (rate_card_id, effective_from, effective_to, rate_status, currency,
+             l45_list_price, p45_list_price, p100_list_price, p250_list_price,
+             p300_list_price, p500_list_price, p1000_list_price, min_list_price,
+             surcharges)
+        VALUES
+            (:card_id, :eff, :eff_to, CAST(:status AS rate_status), :currency,
+             :l45, :p45, :p100, :p250, :p300, :p500, :p1000, :min_lp, :surcharges)
+        RETURNING id, created_at
+    """), {
+        "card_id": card_id, "eff": body.effective_from, "eff_to": body.effective_to,
+        "status": body.rate_status, "currency": body.currency,
+        "l45": body.l45_list_price, "p45": body.p45_list_price,
+        "p100": body.p100_list_price, "p250": body.p250_list_price,
+        "p300": body.p300_list_price, "p500": body.p500_list_price,
+        "p1000": body.p1000_list_price, "min_lp": body.min_list_price,
+        "surcharges": json.dumps(body.surcharges) if body.surcharges else None,
+    }).fetchone()
+
+    return {"status": "OK", "data": {
+        "id": row[0], "rate_card_id": card_id, "created_at": str(row[1]),
+    }}
+
+
+@router.patch("/list-price-rates/{rate_id}")
+async def update_air_list_price_rate(
+    rate_id: int,
+    body: AirListPriceRateUpdate,
+    claims: Claims = Depends(require_afu_admin),
+    conn=Depends(get_db),
+):
+    existing = conn.execute(text("SELECT id FROM air_list_price_rates WHERE id = :id"),
+                            {"id": rate_id}).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"List price rate {rate_id} not found")
+
+    updates = []
+    params: dict = {"id": rate_id}
+
+    field_map = {
+        "effective_from": "effective_from",
+        "currency": "currency",
+        "l45_list_price": "l45_list_price",
+        "p45_list_price": "p45_list_price",
+        "p100_list_price": "p100_list_price",
+        "p250_list_price": "p250_list_price",
+        "p300_list_price": "p300_list_price",
+        "p500_list_price": "p500_list_price",
+        "p1000_list_price": "p1000_list_price",
+        "min_list_price": "min_list_price",
+    }
+
+    for field, col in field_map.items():
+        val = getattr(body, field, None)
+        if val is not None:
+            updates.append(f"{col} = :{field}")
+            params[field] = val
+
+    if "effective_to" in body.__fields_set__:
+        updates.append("effective_to = :effective_to")
+        params["effective_to"] = body.effective_to
+
+    if "effective_from" in body.__fields_set__ or "effective_to" in body.__fields_set__:
+        chk_from = params.get("effective_from")
+        chk_to = params.get("effective_to")
+        if "effective_from" not in body.__fields_set__ or "effective_to" not in body.__fields_set__:
+            row = conn.execute(text("SELECT effective_from, effective_to FROM air_list_price_rates WHERE id = :id"), {"id": rate_id}).fetchone()
+            if row:
+                if "effective_from" not in body.__fields_set__:
+                    chk_from = str(row[0]) if row[0] else None
+                if "effective_to" not in body.__fields_set__:
+                    chk_to = str(row[1]) if row[1] else None
+        if chk_from and chk_to and str(chk_to) < str(chk_from):
+            raise HTTPException(status_code=400, detail="effective_to cannot be before effective_from")
+
+    if body.rate_status is not None:
+        if body.rate_status not in _VALID_RATE_STATUSES:
+            raise HTTPException(status_code=400, detail=f"Invalid rate_status: {body.rate_status}")
+        updates.append("rate_status = CAST(:rate_status AS rate_status)")
+        params["rate_status"] = body.rate_status
+
+    if "surcharges" in body.__fields_set__:
+        updates.append("surcharges = :surcharges")
+        params["surcharges"] = json.dumps(body.surcharges) if body.surcharges else None
+
+    if not updates:
+        return {"status": "OK", "msg": "No changes"}
+
+    updates.append("updated_at = NOW()")
+    conn.execute(text(f"UPDATE air_list_price_rates SET {', '.join(updates)} WHERE id = :id"), params)
+
+    return {"status": "OK", "msg": "List price rate updated"}
+
+
+@router.delete("/list-price-rates/{rate_id}")
+async def delete_air_list_price_rate(
+    rate_id: int,
+    claims: Claims = Depends(require_afu_admin),
+    conn=Depends(get_db),
+):
+    existing = conn.execute(text("SELECT id FROM air_list_price_rates WHERE id = :id"),
+                            {"id": rate_id}).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"List price rate {rate_id} not found")
+
+    conn.execute(text("DELETE FROM air_list_price_rates WHERE id = :id"), {"id": rate_id})
+
+    return {"status": "OK", "msg": "List price rate deleted"}
+
+
+@router.post("/list-price-rates/{rate_id}/publish")
+async def publish_air_list_price_rate(
+    rate_id: int,
+    claims: Claims = Depends(require_afu_admin),
+    conn=Depends(get_db),
+):
+    row = conn.execute(text(
+        "SELECT id, rate_status::text FROM air_list_price_rates WHERE id = :id"
+    ), {"id": rate_id}).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"List price rate {rate_id} not found")
+    if row[1] != "DRAFT":
+        raise HTTPException(status_code=400, detail=f"Rate is not in DRAFT status (current: {row[1]})")
+
+    conn.execute(text(
+        "UPDATE air_list_price_rates SET rate_status = 'PUBLISHED'::rate_status, updated_at = NOW() WHERE id = :id"
+    ), {"id": rate_id})
+
+    return {"status": "OK", "msg": "List price rate published"}
 
 
 # ---------------------------------------------------------------------------

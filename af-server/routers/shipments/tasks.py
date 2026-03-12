@@ -11,7 +11,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import text, bindparam, String
 
 from core.auth import Claims, require_auth
 from core.db import get_db
@@ -253,7 +253,7 @@ async def update_shipment_task(
         UPDATE shipment_workflows
         SET workflow_tasks = CAST(:tasks AS jsonb), updated_at = :now
         WHERE order_id = :id
-    """), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
+    """).bindparams(bindparam("tasks", type_=String())), {"tasks": json.dumps(tasks), "now": now, "id": shipment_id})
 
     # --- Sync route node timings for TRACKED POL actual_start (ATA) ---
     # Use task["actual_start"] (final value) — covers both manual edits AND
@@ -302,7 +302,7 @@ async def update_shipment_task(
                     UPDATE shipment_details
                     SET status_history = CAST(:history AS jsonb)
                     WHERE order_id = :id
-                """), {"history": json.dumps(history), "id": shipment_id})
+                """).bindparams(bindparam("history", type_=String())), {"history": json.dumps(history), "id": shipment_id})
                 logger.info("[tasks] Auto-advanced %s to Departed (4001) from POL ATD", shipment_id)
 
         elif task_type == "POD" and body.actual_start is not None:
@@ -336,7 +336,7 @@ async def update_shipment_task(
                     UPDATE shipment_details
                     SET status_history = CAST(:history AS jsonb)
                     WHERE order_id = :id
-                """), {"history": json.dumps(history), "id": shipment_id})
+                """).bindparams(bindparam("history", type_=String())), {"history": json.dumps(history), "id": shipment_id})
                 logger.info("[tasks] Auto-advanced %s to Arrived (4002) from POD ATA", shipment_id)
 
     logger.info("Task %s updated on %s by %s", task_id, shipment_id, claims.uid)
