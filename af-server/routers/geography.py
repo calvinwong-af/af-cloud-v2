@@ -449,6 +449,50 @@ async def get_state(
 # Areas (renamed from Haulage Areas)
 # ---------------------------------------------------------------------------
 
+@router.get("/haulage-areas")
+async def list_haulage_areas(
+    port_un_code: str = Query(...),
+    container_sizes: str | None = Query(default=None),
+    claims: Claims = Depends(require_auth),
+    conn=Depends(get_db),
+):
+    """Return areas that have at least one active haulage rate card for the given port."""
+    where_clauses = [
+        "hrc.port_un_code = :port",
+        "hrc.is_active = TRUE",
+        "a.is_active = TRUE",
+    ]
+    params: dict = {"port": port_un_code}
+
+    if container_sizes:
+        sizes = [s.strip() for s in container_sizes.split(",") if s.strip()]
+        if sizes:
+            where_clauses.append("(hrc.container_size = ANY(:sizes) OR hrc.container_size = 'wildcard')")
+            params["sizes"] = sizes
+
+    where = " AND ".join(where_clauses)
+    rows = conn.execute(text(f"""
+        SELECT DISTINCT
+            a.area_id, a.area_code, a.area_name,
+            a.state_code, a.lat, a.lng
+        FROM areas a
+        JOIN haulage_rate_cards hrc ON hrc.area_id = a.area_id
+        WHERE {where}
+        ORDER BY a.area_name
+    """), params).fetchall()
+
+    data = [
+        {
+            "area_id": r[0], "area_code": r[1], "area_name": r[2],
+            "state_code": r[3],
+            "lat": float(r[4]) if r[4] is not None else None,
+            "lng": float(r[5]) if r[5] is not None else None,
+        }
+        for r in rows
+    ]
+    return {"status": "OK", "data": data}
+
+
 @router.get("/areas")
 async def list_areas(
     state_code: str | None = Query(default=None),

@@ -90,6 +90,7 @@ function getNavSections(accountType: string | null): NavSection[] {
         { label: 'Freight Shipments', icon: Ship,       href: '/orders/shipments' },
         { label: 'Deliveries',        icon: Truck,      href: '/orders/deliveries' },
         { label: 'Haulage',           icon: Container,  href: '/orders/haulage' },
+        { label: 'Quotations',        icon: FileText,   href: '/quotations' },
       ],
     },
   ];
@@ -106,7 +107,6 @@ function getNavSections(accountType: string | null): NavSection[] {
     sections.push({
       title: 'SYSTEM',
       items: [
-        { label: 'Quotations',     icon: FileText,   href: '/quotations' },
         { label: 'Geography',      icon: Globe,      href: '/geography' },
         { label: 'System Logs',    icon: ScrollText, href: '/logs' },
       ],

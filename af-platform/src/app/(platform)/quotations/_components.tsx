@@ -89,7 +89,7 @@ export function QuotationsList() {
               <tr key={q.id} className="border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--surface)]/50 transition-colors">
                 <td className="px-4 py-3">
                   <Link
-                    href={`/shipments/${q.shipment_id}`}
+                    href={`/quotations/${q.quotation_ref}`}
                     className="font-mono text-xs font-medium text-[var(--sky)] hover:underline"
                   >
                     {q.quotation_ref}

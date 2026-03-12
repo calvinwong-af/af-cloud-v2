@@ -8,8 +8,9 @@ import { verifySessionAndRole } from '@/lib/auth-server';
 
 export interface QuotationTransportDetail {
   leg: 'first_mile' | 'last_mile';
-  vehicle_type_id: string;
+  vehicle_type_id: string | null;
   address: string;
+  area_id?: number | null;
 }
 
 export interface CreateQuotationPayload {
@@ -31,6 +32,73 @@ export interface Quotation {
   created_by: string;
   created_at: string;
   updated_at: string;
+  scope_changed?: boolean;
+  currency?: string;
+}
+
+export interface QuotationLineItem {
+  id: number;
+  quotation_id: string;
+  component_type: string;
+  charge_code: string;
+  description: string;
+  uom: string;
+  quantity: number;
+  price_per_unit: number;
+  min_price: number;
+  price_currency: string;
+  price_conversion: number;
+  cost_per_unit: number;
+  min_cost: number;
+  cost_currency: string;
+  cost_conversion: number;
+  source_table: string | null;
+  source_rate_id: number | null;
+  is_manual_override: boolean;
+  sort_order: number;
+  effective_price: number;
+  effective_cost: number;
+  margin_percent: number | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface LineItemTotals {
+  total_price: number;
+  total_cost: number;
+  margin_percent: number | null;
+  currency: string;
+}
+
+export interface CalculateResult {
+  quotation_ref: string;
+  currency: string;
+  line_items: QuotationLineItem[];
+  warnings: Array<{ component_type: string; message: string }>;
+}
+
+export interface ManualLineItemPayload {
+  component_type: string;
+  charge_code: string;
+  description: string;
+  uom: string;
+  quantity: number;
+  price_per_unit: number;
+  cost_per_unit: number;
+  price_currency: string;
+  cost_currency: string;
+  min_price: number;
+  min_cost: number;
+}
+
+export interface LineItemUpdatePayload {
+  price_per_unit?: number;
+  cost_per_unit?: number;
+  quantity?: number;
+  description?: string;
+  charge_code?: string;
+  min_price?: number;
+  min_cost?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -45,6 +113,16 @@ async function getAuthHeaders(): Promise<{ token: string; serverUrl: string } | 
   const serverUrl = process.env.AF_SERVER_URL;
   if (!serverUrl) return null;
   return { token: idToken, serverUrl };
+}
+
+function extractErrorMessage(detail: unknown): string {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    // Pydantic validation error array: [{loc, msg, type}]
+    return detail.map((e: { msg?: string }) => e?.msg ?? JSON.stringify(e)).join('; ');
+  }
+  if (detail && typeof detail === 'object') return JSON.stringify(detail);
+  return 'Unknown error';
 }
 
 // ---------------------------------------------------------------------------
@@ -70,7 +148,7 @@ export async function createQuotationAction(
 
     if (!res.ok) {
       const json = await res.json().catch(() => null);
-      return { success: false, error: json?.detail ?? `Server responded ${res.status}` };
+      return { success: false, error: extractErrorMessage(json?.detail) ?? `Server responded ${res.status}` };
     }
 
     const json = await res.json();
@@ -102,7 +180,7 @@ export async function listQuotationsAction(
 
     if (!res.ok) {
       const json = await res.json().catch(() => null);
-      return { success: false, error: json?.detail ?? `Server responded ${res.status}` };
+      return { success: false, error: extractErrorMessage(json?.detail) ?? `Server responded ${res.status}` };
     }
 
     const json = await res.json();
@@ -110,6 +188,38 @@ export async function listQuotationsAction(
   } catch (err) {
     console.error('[listQuotationsAction]', err instanceof Error ? err.message : err);
     return { success: false, error: 'Failed to list quotations' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Get Single Quotation
+// ---------------------------------------------------------------------------
+
+export async function getQuotationAction(
+  ref: string,
+): Promise<{ success: true; data: Quotation } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const auth = await getAuthHeaders();
+    if (!auth) return { success: false, error: 'No session token or server URL' };
+
+    const res = await fetch(`${auth.serverUrl}/api/v2/quotations/${encodeURIComponent(ref)}`, {
+      headers: { Authorization: `Bearer ${auth.token}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: extractErrorMessage(json?.detail) ?? `Server responded ${res.status}` };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data };
+  } catch (err) {
+    console.error('[getQuotationAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to load quotation' };
   }
 }
 
@@ -134,7 +244,7 @@ export async function listAllQuotationsAction(): Promise<
 
     if (!res.ok) {
       const json = await res.json().catch(() => null);
-      return { success: false, error: json?.detail ?? `Server responded ${res.status}` };
+      return { success: false, error: extractErrorMessage(json?.detail) ?? `Server responded ${res.status}` };
     }
 
     const json = await res.json();
@@ -142,5 +252,175 @@ export async function listAllQuotationsAction(): Promise<
   } catch (err) {
     console.error('[listAllQuotationsAction]', err instanceof Error ? err.message : err);
     return { success: false, error: 'Failed to list quotations' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Calculate Quotation Pricing
+// ---------------------------------------------------------------------------
+
+export async function calculateQuotationAction(
+  ref: string,
+): Promise<{ success: true; data: CalculateResult } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const auth = await getAuthHeaders();
+    if (!auth) return { success: false, error: 'No session token or server URL' };
+
+    const res = await fetch(`${auth.serverUrl}/api/v2/quotations/${encodeURIComponent(ref)}/calculate`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${auth.token}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: extractErrorMessage(json?.detail) ?? `Server responded ${res.status}` };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data };
+  } catch (err) {
+    console.error('[calculateQuotationAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to calculate pricing' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// List Line Items
+// ---------------------------------------------------------------------------
+
+export async function listLineItemsAction(
+  ref: string,
+): Promise<{ success: true; data: { line_items: QuotationLineItem[]; totals: LineItemTotals } } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const auth = await getAuthHeaders();
+    if (!auth) return { success: false, error: 'No session token or server URL' };
+
+    const res = await fetch(`${auth.serverUrl}/api/v2/quotations/${encodeURIComponent(ref)}/line-items`, {
+      headers: { Authorization: `Bearer ${auth.token}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: extractErrorMessage(json?.detail) ?? `Server responded ${res.status}` };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data };
+  } catch (err) {
+    console.error('[listLineItemsAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to load line items' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Add Manual Line Item
+// ---------------------------------------------------------------------------
+
+export async function addManualLineItemAction(
+  ref: string,
+  payload: ManualLineItemPayload,
+): Promise<{ success: true; data: { message: string } } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const auth = await getAuthHeaders();
+    if (!auth) return { success: false, error: 'No session token or server URL' };
+
+    const res = await fetch(`${auth.serverUrl}/api/v2/quotations/${encodeURIComponent(ref)}/line-items`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: extractErrorMessage(json?.detail) ?? `Server responded ${res.status}` };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data };
+  } catch (err) {
+    console.error('[addManualLineItemAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to add line item' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Update Line Item
+// ---------------------------------------------------------------------------
+
+export async function updateLineItemAction(
+  ref: string,
+  itemId: number,
+  payload: LineItemUpdatePayload,
+): Promise<{ success: true; data: { message: string } } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const auth = await getAuthHeaders();
+    if (!auth) return { success: false, error: 'No session token or server URL' };
+
+    const res = await fetch(`${auth.serverUrl}/api/v2/quotations/${encodeURIComponent(ref)}/line-items/${itemId}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: extractErrorMessage(json?.detail) ?? `Server responded ${res.status}` };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data };
+  } catch (err) {
+    console.error('[updateLineItemAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to update line item' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Delete Line Item
+// ---------------------------------------------------------------------------
+
+export async function deleteLineItemAction(
+  ref: string,
+  itemId: number,
+): Promise<{ success: true; data: { message: string } } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const auth = await getAuthHeaders();
+    if (!auth) return { success: false, error: 'No session token or server URL' };
+
+    const res = await fetch(`${auth.serverUrl}/api/v2/quotations/${encodeURIComponent(ref)}/line-items/${itemId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${auth.token}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: extractErrorMessage(json?.detail) ?? `Server responded ${res.status}` };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data };
+  } catch (err) {
+    console.error('[deleteLineItemAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to delete line item' };
   }
 }

@@ -174,6 +174,24 @@ export default function ShipmentOrderDetailPage() {
     return [];
   })();
 
+  // Human-readable container summary e.g. "2 × 20ft, 1 × 40HC"
+  const containerSummary: string | null = (() => {
+    const td = order.type_details;
+    if (order.order_type !== 'SEA_FCL' || !td || !('containers' in td)) return null;
+    const counts: Record<string, number> = {};
+    for (const c of (td as TypeDetailsFCL).containers) {
+      const s = c.container_size?.toUpperCase() ?? '';
+      let norm = s;
+      if (s.startsWith('40') && s.includes('HC')) norm = '40HC';
+      else if (s.startsWith('40')) norm = '40';
+      else if (s.startsWith('20')) norm = '20';
+      counts[norm] = (counts[norm] ?? 0) + (c.quantity ?? 1);
+    }
+    return Object.entries(counts)
+      .map(([size, qty]) => `${qty} × ${size}ft`)
+      .join(', ') || null;
+  })();
+
   return (
     <div className="p-6 space-y-5 max-w-4xl">
 
@@ -331,15 +349,6 @@ export default function ShipmentOrderDetailPage() {
         </div>
         {/* Contextual actions — right side */}
         <div className="flex items-center gap-2 pb-1">
-          {accountType === 'AFU' && (
-            <button
-              onClick={() => setShowScopeConfig(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--text-mid)] border border-[var(--border)] rounded-lg hover:bg-[var(--surface)] transition-colors"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              Configure Scope
-            </button>
-          )}
           {accountType === 'AFU' && order.status !== -1 && (
             <button
               onClick={() => setShowCreateQuotation(true)}
@@ -347,6 +356,15 @@ export default function ShipmentOrderDetailPage() {
             >
               <FileText className="w-3.5 h-3.5" />
               Create Quotation
+            </button>
+          )}
+          {accountType === 'AFU' && (
+            <button
+              onClick={() => setShowScopeConfig(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--text-mid)] border border-[var(--border)] rounded-lg hover:bg-[var(--surface)] transition-colors"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              Configure Scope
             </button>
           )}
           {accountType === 'AFU' && order.status !== -1 && (
@@ -705,6 +723,9 @@ export default function ShipmentOrderDetailPage() {
           incoterm={order.incoterm_code ?? ''}
           transactionType={order.transaction_type}
           containerSizes={containerSizes}
+          containerSummary={containerSummary}
+          originPortCode={order.origin?.port_un_code ?? null}
+          destinationPortCode={order.destination?.port_un_code ?? null}
           onClose={() => setShowCreateQuotation(false)}
           onCreated={(ref) => {
             setLatestQuotationRef(ref);

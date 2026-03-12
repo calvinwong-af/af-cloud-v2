@@ -62,7 +62,7 @@ export async function fetchAreasAction(
   filters?: { port_un_code?: string; state_code?: string }
 ): Promise<ActionResult<Area[]>> {
   try {
-    const session = await verifySessionAndRole(['AFC-ADMIN', 'AFC-M', 'AFU-ADMIN']);
+    const session = await verifySessionAndRole(['AFC-ADMIN', 'AFC-M', 'AFU-ADMIN', 'AFU-STAFF']);
     if (!session.valid) return { success: false, error: 'Unauthorised' };
     const token = await getToken();
     if (!token) return { success: false, error: 'No session token' };
@@ -70,6 +70,50 @@ export async function fetchAreasAction(
     return { success: true, data };
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : 'Failed to fetch areas' };
+  }
+}
+
+export interface HaulageArea {
+  area_id: number;
+  area_code: string;
+  area_name: string;
+  state_code: string | null;
+  lat: number | null;
+  lng: number | null;
+}
+
+export async function fetchHaulageAreasAction(
+  portUnCode: string,
+  containerSizes?: string[],
+): Promise<{ success: true; data: HaulageArea[] } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFC-ADMIN', 'AFC-M', 'AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+    const token = await getToken();
+    if (!token) return { success: false, error: 'No session token' };
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) return { success: false, error: 'Server URL not configured' };
+
+    let url = `${serverUrl}/api/v2/geography/haulage-areas?port_un_code=${encodeURIComponent(portUnCode)}`;
+    if (containerSizes && containerSizes.length > 0) {
+      url += `&container_sizes=${encodeURIComponent(containerSizes.join(','))}`;
+    }
+
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: json?.detail ?? `Server responded ${res.status}` };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data ?? [] };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'Failed to fetch haulage areas' };
   }
 }
 

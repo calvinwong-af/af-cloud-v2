@@ -66,17 +66,14 @@ export function CompanyTable({ companies, loading, onRefresh, onEdit, userRole, 
     let cmp = 0;
 
     if (sortKey === 'updated' || sortKey === 'created') {
-      // Date comparison — parse to timestamps, nulls sort last
       const at = a[sortKey] ? new Date(a[sortKey]!).getTime() : 0;
       const bt = b[sortKey] ? new Date(b[sortKey]!).getTime() : 0;
       cmp = at - bt;
     } else if (sortKey === 'company_id') {
-      // Numeric sort on the trailing number e.g. AFC-0592 → 592
       const an = parseInt(a.company_id?.replace(/\D/g, '') ?? '0', 10);
       const bn = parseInt(b.company_id?.replace(/\D/g, '') ?? '0', 10);
       cmp = an - bn;
     } else {
-      // String sort — case-insensitive
       const av = (a[sortKey] ?? '').toString().toLowerCase();
       const bv = (b[sortKey] ?? '').toString().toLowerCase();
       cmp = av.localeCompare(bv);
@@ -104,29 +101,41 @@ export function CompanyTable({ companies, loading, onRefresh, onEdit, userRole, 
   }
 
   return (
-    <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
+    // min-w-0 is critical — without it the flex/grid ancestor won't allow
+    // the inner overflow-x-auto to scroll; it just clips instead.
+    <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden min-w-0">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-max text-sm">
+        {/* Fixed min-width replaces min-w-max so the table can scroll horizontally
+            rather than forcing the wrapper to grow beyond the viewport. */}
+        <table className="w-full text-sm" style={{ minWidth: '820px' }}>
           <thead>
             <tr className="bg-[var(--surface)] border-b border-[var(--border)]">
-              <Th onClick={() => handleSort('name')} className="w-[45%]">
+              <Th onClick={() => handleSort('name')} className="w-[40%]">
                 Company <SortIcon col="name" />
               </Th>
-              <Th>Currency</Th>
-              <Th>Approved</Th>
-              <Th>Portal Access</Th>
-              <Th>Xero</Th>
-              <Th onClick={() => handleSort('updated')}>
+              <Th className="w-24">Currency</Th>
+              <Th className="w-24">Approved</Th>
+              <Th className="w-32">Portal Access</Th>
+              <Th className="w-20">Xero</Th>
+              <Th onClick={() => handleSort('updated')} className="w-32">
                 Updated <SortIcon col="updated" />
               </Th>
-              <Th>
+              {/* Fixed-width actions column so it is never squeezed off-screen */}
+              <Th className="w-12">
                 <span className="sr-only">Actions</span>
               </Th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border)]">
             {sorted.map((company) => (
-              <CompanyRow key={company.company_id} company={company} onRefresh={onRefresh} onEdit={onEdit} userRole={userRole} ports={ports} />
+              <CompanyRow
+                key={company.company_id}
+                company={company}
+                onRefresh={onRefresh}
+                onEdit={onEdit}
+                userRole={userRole}
+                ports={ports}
+              />
             ))}
           </tbody>
         </table>
@@ -138,7 +147,15 @@ export function CompanyTable({ companies, loading, onRefresh, onEdit, userRole, 
   );
 }
 
-function Th({ children, onClick, className }: { children: React.ReactNode; onClick?: () => void; className?: string }) {
+function Th({
+  children,
+  onClick,
+  className,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  className?: string;
+}) {
   return (
     <th
       onClick={onClick}
@@ -150,8 +167,21 @@ function Th({ children, onClick, className }: { children: React.ReactNode; onCli
   );
 }
 
-function CompanyRow({ company, onRefresh, onEdit, userRole, ports }: { company: Company; onRefresh: () => void; onEdit: (company: Company) => void; userRole: string | null; ports: Port[] }) {
-  const initials = company.short_name?.slice(0, 2).toUpperCase() ||
+function CompanyRow({
+  company,
+  onRefresh,
+  onEdit,
+  userRole,
+  ports,
+}: {
+  company: Company;
+  onRefresh: () => void;
+  onEdit: (company: Company) => void;
+  userRole: string | null;
+  ports: Port[];
+}) {
+  const initials =
+    company.short_name?.slice(0, 2).toUpperCase() ||
     company.name.slice(0, 2).toUpperCase();
 
   return (
@@ -159,12 +189,14 @@ function CompanyRow({ company, onRefresh, onEdit, userRole, ports }: { company: 
       {/* Company name + ID badge + country */}
       <td className="px-4 py-3">
         <div className="flex items-start gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[var(--sky-pale)] text-[var(--sky)] font-semibold text-xs
-                          flex items-center justify-center flex-shrink-0 mt-0.5">
+          <div
+            className="w-8 h-8 rounded-lg bg-[var(--sky-pale)] text-[var(--sky)] font-semibold text-xs
+                        flex items-center justify-center flex-shrink-0 mt-0.5"
+          >
             {initials}
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Link
                 href={`/companies/${company.company_id}`}
                 className="font-semibold text-sm hover:text-[var(--sky)] hover:underline transition-colors"
@@ -172,33 +204,40 @@ function CompanyRow({ company, onRefresh, onEdit, userRole, ports }: { company: 
               >
                 {company.name}
               </Link>
-              <span className="font-mono text-[11px] px-1.5 py-0.5 rounded border"
-                style={{ background: 'var(--surface)', color: 'var(--text-mid)', borderColor: 'var(--border)' }}>
+              <span
+                className="font-mono text-[11px] px-1.5 py-0.5 rounded border"
+                style={{
+                  background: 'var(--surface)',
+                  color: 'var(--text-mid)',
+                  borderColor: 'var(--border)',
+                }}
+              >
                 {company.company_id}
               </span>
             </div>
-            {company.address?.country && (() => {
-              const code = getCountryCode(company.address.country);
-              return (
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  {code ? (
-                    <img
-                      src={`https://flagcdn.com/16x12/${code}.png`}
-                      srcSet={`https://flagcdn.com/32x24/${code}.png 2x`}
-                      width={16}
-                      height={12}
-                      alt={company.address.country}
-                      className="inline-block rounded-[2px]"
-                    />
-                  ) : (
-                    <span className="text-[12px]">🌐</span>
-                  )}
-                  <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                    {company.address.country}
-                  </span>
-                </div>
-              );
-            })()}
+            {company.address?.country &&
+              (() => {
+                const code = getCountryCode(company.address.country);
+                return (
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    {code ? (
+                      <img
+                        src={`https://flagcdn.com/16x12/${code}.png`}
+                        srcSet={`https://flagcdn.com/32x24/${code}.png 2x`}
+                        width={16}
+                        height={12}
+                        alt={company.address.country}
+                        className="inline-block rounded-[2px]"
+                      />
+                    ) : (
+                      <span className="text-[12px]">🌐</span>
+                    )}
+                    <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      {company.address.country}
+                    </span>
+                  </div>
+                );
+              })()}
           </div>
         </div>
       </td>
@@ -212,32 +251,40 @@ function CompanyRow({ company, onRefresh, onEdit, userRole, ports }: { company: 
 
       {/* Approved */}
       <td className="px-4 py-3">
-        {company.approved
-          ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-          : <XCircle className="w-4 h-4 text-[var(--border)]" />}
+        {company.approved ? (
+          <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+        ) : (
+          <XCircle className="w-4 h-4 text-[var(--border)]" />
+        )}
       </td>
 
       {/* Portal Access */}
       <td className="px-4 py-3">
-        {company.allow_access
-          ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-700">Active</span>
-          : <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">None</span>}
+        {company.allow_access ? (
+          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-700">
+            Active
+          </span>
+        ) : (
+          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+            None
+          </span>
+        )}
       </td>
 
       {/* Xero */}
       <td className="px-4 py-3">
-        {company.xero_id
-          ? (
-            <div className="flex items-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-              {company.xero_sync_required && (
-                <span title="Sync required">
-                  <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
-                </span>
-              )}
-            </div>
-          )
-          : <XCircle className="w-4 h-4 text-[var(--border)]" />}
+        {company.xero_id ? (
+          <div className="flex items-center gap-1">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+            {company.xero_sync_required && (
+              <span title="Sync required">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
+              </span>
+            )}
+          </div>
+        ) : (
+          <XCircle className="w-4 h-4 text-[var(--border)]" />
+        )}
       </td>
 
       {/* Updated date */}
@@ -245,9 +292,15 @@ function CompanyRow({ company, onRefresh, onEdit, userRole, ports }: { company: 
         {formatDate(company.updated)}
       </td>
 
-      {/* Actions */}
-      <td className="px-4 py-3">
-        <CompanyActionsMenu company={company} onEdit={onEdit} onRefresh={onRefresh} userRole={userRole} ports={ports} />
+      {/* Actions — whitespace-nowrap ensures the menu button is never clipped */}
+      <td className="px-4 py-3 whitespace-nowrap">
+        <CompanyActionsMenu
+          company={company}
+          onEdit={onEdit}
+          onRefresh={onRefresh}
+          userRole={userRole}
+          ports={ports}
+        />
       </td>
     </tr>
   );
@@ -255,18 +308,19 @@ function CompanyRow({ company, onRefresh, onEdit, userRole, ports }: { company: 
 
 function CompanyTableSkeleton() {
   return (
-    <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
+    <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden min-w-0">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-max text-sm">
+        <table className="w-full text-sm" style={{ minWidth: '820px' }}>
           <thead>
             <tr className="bg-[var(--surface)] border-b border-[var(--border)]">
-              {['Company', 'Currency', 'Approved', 'Portal', 'Xero', 'Updated', ''].map(
-                (h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium text-[var(--text-mid)] uppercase tracking-wide">
-                    {h}
-                  </th>
-                )
-              )}
+              {['Company', 'Currency', 'Approved', 'Portal', 'Xero', 'Updated', ''].map((h) => (
+                <th
+                  key={h}
+                  className="px-4 py-3 text-left text-xs font-medium text-[var(--text-mid)] uppercase tracking-wide"
+                >
+                  {h}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border)]">
@@ -274,7 +328,9 @@ function CompanyTableSkeleton() {
               <tr key={i}>
                 {Array.from({ length: 7 }).map((_, j) => (
                   <td key={j} className="px-4 py-3">
-                    <div className={`h-4 bg-gray-100 rounded animate-pulse ${j === 0 ? 'w-44' : 'w-16'}`} />
+                    <div
+                      className={`h-4 bg-gray-100 rounded animate-pulse ${j === 0 ? 'w-44' : 'w-16'}`}
+                    />
                   </td>
                 ))}
               </tr>
@@ -285,4 +341,3 @@ function CompanyTableSkeleton() {
     </div>
   );
 }
-
