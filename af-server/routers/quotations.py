@@ -95,6 +95,11 @@ def _serialise_quotation(row) -> dict:
         "created_by": row[8],
         "created_at": row[9].isoformat() if row[9] else None,
         "updated_at": row[10].isoformat() if row[10] else None,
+        "company_name": row[11] or None,
+        "order_type": row[12] or None,
+        "tlx_release": bool(row[13]) if len(row) > 13 else False,
+        "incoterm": row[14] or None if len(row) > 14 else None,
+        "transaction_type": row[15] or None if len(row) > 15 else None,
     }
 
 
@@ -173,10 +178,11 @@ def _load_shipment_data(conn, shipment_id: str) -> dict:
     cargo = row[2] if isinstance(row[2], dict) else {}
     type_details = row[7] if isinstance(row[7], dict) else {}
 
-    # Extract DG class
-    dg_class_code = "NON-DG"
-    if cargo.get("is_dg") or cargo.get("dg_class"):
-        dg_class_code = cargo.get("dg_class") or "NON-DG"
+    # Extract DG class — try new key first, fall back to legacy key
+    dg_class_code = cargo.get("dg_class_code") or cargo.get("dg_class") or "NON-DG"
+    if dg_class_code == "NON-DG" and cargo.get("is_dg"):
+        import logging
+        logging.warning(f"Shipment {shipment_id}: is_dg=True but no dg_class_code — pricing as NON-DG")
 
     # Extract container info for FCL
     containers = type_details.get("containers", [])
@@ -185,6 +191,15 @@ def _load_shipment_data(conn, shipment_id: str) -> dict:
     chargeable_weight = _dec(type_details.get("chargeable_weight"))
     weight_kg = _dec(type_details.get("weight_kg") or cargo.get("weight_kg"))
     cbm = _dec(type_details.get("cbm") or type_details.get("volume_cbm") or cargo.get("volume_cbm"))
+
+    # Determine domestic vs international shipment
+    origin_country = _get_port_country(conn, row[4])   # origin_port
+    dest_country = _get_port_country(conn, row[5])     # dest_port
+    is_domestic_shipment = (
+        origin_country is not None and
+        dest_country is not None and
+        origin_country == dest_country
+    )
 
     return {
         "order_id": row[0],
@@ -198,6 +213,7 @@ def _load_shipment_data(conn, shipment_id: str) -> dict:
         "chargeable_weight": chargeable_weight,
         "weight_kg": weight_kg,
         "cbm": cbm,
+        "is_domestic_shipment": is_domestic_shipment,
     }
 
 
@@ -213,6 +229,121 @@ def _get_port_country(conn, port_code: str) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
+# Helpers — tax application
+# ---------------------------------------------------------------------------
+
+def _compute_effective_price(item: dict) -> float:
+    """Compute effective price in quotation currency for a line item dict."""
+    qty = float(item.get("quantity", 0))
+    ppu = float(item.get("price_per_unit", 0))
+    mprice = float(item.get("min_price", 0))
+    p_conv = float(item.get("price_conversion", 1.0))
+    raw = qty * ppu
+    effective = max(raw, mprice) if raw > 0 else 0
+    return round(effective * p_conv, 6)
+
+
+def _apply_tax(conn, all_items: list, shipment: dict, ref_date) -> None:
+    """
+    Resolve and stamp tax onto each line item in place.
+
+    Logic:
+    - export_* component types → origin port country
+    - import_* component types → destination port country
+    - 'other' → origin port country (conservative default)
+    - ocean_freight, air_freight → no tax (international freight exempt)
+
+    Loads active tax rules per country, caches per country_code to avoid
+    redundant DB hits. Stamps tax_code, tax_rate, tax_amount on each item.
+    """
+    origin_country = _get_port_country(conn, shipment["origin_port"])
+    dest_country = _get_port_country(conn, shipment["dest_port"])
+
+    # Cache: country_code → list of active tax rule dicts
+    tax_cache: dict = {}
+
+    def _get_tax_rules(country_code: str) -> list:
+        if country_code in tax_cache:
+            return tax_cache[country_code]
+        if not country_code:
+            tax_cache[country_code] = []
+            return []
+        rows = conn.execute(
+            text("""
+                SELECT tax_code, tax_name, rate, applies_to
+                FROM tax_rules
+                WHERE country_code = :cc
+                  AND is_active = TRUE
+                  AND effective_from <= :rd
+                  AND (effective_to IS NULL OR effective_to >= :rd)
+                ORDER BY effective_from DESC
+            """),
+            {"cc": country_code, "rd": ref_date},
+        ).fetchall()
+        rules = [{"tax_code": r[0], "tax_name": r[1], "rate": float(r[2]), "applies_to": r[3]} for r in rows]
+        tax_cache[country_code] = rules
+        return rules
+
+    # Determine which country applies per component_type prefix
+    EXPORT_TYPES = {
+        "export_local", "export_customs", "export_haulage",
+        "export_transport", "export_dg",
+    }
+    IMPORT_TYPES = {
+        "import_local", "import_customs", "import_haulage",
+        "import_transport", "import_dg",
+    }
+    EXEMPT_TYPES = {"ocean_freight", "air_freight"}
+
+    for item in all_items:
+        ctype = item.get("component_type", "")
+
+        if ctype in EXEMPT_TYPES:
+            # International freight — no tax
+            item["tax_code"] = None
+            item["tax_rate"] = 0
+            item["tax_amount"] = 0
+            continue
+
+        if ctype in EXPORT_TYPES:
+            country = origin_country
+        elif ctype in IMPORT_TYPES:
+            country = dest_country
+        else:
+            # 'other' or unknown — use origin country (conservative)
+            country = origin_country
+
+        if not country:
+            item["tax_code"] = None
+            item["tax_rate"] = 0
+            item["tax_amount"] = 0
+            continue
+
+        rules = _get_tax_rules(country)
+
+        # Find first matching rule for this component_type
+        matched_rule = None
+        for rule in rules:
+            if ctype in rule["applies_to"]:
+                matched_rule = rule
+                break
+
+        if not matched_rule:
+            item["tax_code"] = None
+            item["tax_rate"] = 0
+            item["tax_amount"] = 0
+            continue
+
+        # Compute tax_amount against effective price in quotation currency
+        eff_price = _compute_effective_price(item)
+        tax_amount = round(eff_price * matched_rule["rate"], 2)
+
+        item["tax_code"] = matched_rule["tax_code"]
+        item["tax_rate"] = matched_rule["rate"]
+        item["tax_amount"] = tax_amount
+
+
+# ---------------------------------------------------------------------------
 # Helpers — line item insertion
 # ---------------------------------------------------------------------------
 
@@ -224,12 +355,14 @@ def _insert_line_item(conn, quotation_id: str, item: dict):
                 quotation_id, component_type, charge_code, description, uom, quantity,
                 price_per_unit, min_price, price_currency, price_conversion,
                 cost_per_unit, min_cost, cost_currency, cost_conversion,
-                source_table, source_rate_id, is_manual_override, sort_order
+                source_table, source_rate_id, is_manual_override, sort_order,
+                tax_code, tax_rate, tax_amount
             ) VALUES (
                 CAST(:qid AS uuid), :comp, :code, :desc, :uom, :qty,
                 :ppu, :mprice, :pcur, :pconv,
                 :cpu, :mcost, :ccur, :cconv,
-                :stbl, :srid, :manual, :sort
+                :stbl, :srid, :manual, :sort,
+                :tax_code, :tax_rate, :tax_amount
             )
         """),
         {
@@ -251,6 +384,9 @@ def _insert_line_item(conn, quotation_id: str, item: dict):
             "srid": item.get("source_rate_id"),
             "manual": item.get("is_manual_override", False),
             "sort": item.get("sort_order", 0),
+            "tax_code": item.get("tax_code"),
+            "tax_rate": item.get("tax_rate", 0),
+            "tax_amount": item.get("tax_amount", 0),
         },
     )
 
@@ -271,8 +407,29 @@ def _resolve_fcl_freight(conn, shipment: dict, quotation_currency: str, ref_date
     dg = shipment["dg_class_code"]
 
     for ctr in containers:
-        size = ctr.get("container_size", "")
-        ctype = ctr.get("container_type", "GP")
+        raw_size = ctr.get("container_size", "") or ""
+        ctype = ctr.get("container_type") or ""
+
+        # Normalise: FCL rate cards use '20', '40', '40HC'
+        # '20GP' → size='20' ctype='GP', '40HC' → size='40HC' (no change), etc.
+        if raw_size.endswith("GP") and not raw_size.startswith("40H"):
+            size = raw_size[:-2] or raw_size  # strip GP suffix
+            if not ctype:
+                ctype = "GP"
+        elif raw_size.endswith("HC"):
+            size = raw_size  # 40HC stays as-is for FCL
+            if not ctype:
+                ctype = "HC"
+        elif raw_size.endswith("RF"):
+            size = raw_size[:-2] or raw_size
+            if not ctype:
+                ctype = "RF"
+        else:
+            size = raw_size
+
+        if not ctype:
+            ctype = "GP"
+
         qty = int(ctr.get("quantity", 1))
 
         # Find rate card
@@ -670,30 +827,42 @@ def _resolve_air_freight(conn, shipment: dict, quotation_currency: str, ref_date
 # ---------------------------------------------------------------------------
 
 def _resolve_local_charges(conn, shipment: dict, direction: str, quotation_currency: str,
-                           ref_date: date, warnings: list) -> list:
+                           ref_date: date, warnings: list, tlx_release: bool = False) -> list:
     items = []
     component_type = f"{direction.lower()}_local"
     port = shipment["origin_port"] if direction == "EXPORT" else shipment["dest_port"]
     order_type = shipment["order_type"]
 
-    # Map order_type_detail to shipment_type for local_charges
     stype_map = {"SEA_FCL": "FCL", "SEA_LCL": "LCL", "AIR": "AIR"}
     stype = stype_map.get(order_type, "ALL")
 
+    dg = shipment["dg_class_code"]
+
     rows = conn.execute(
         text("""
-            SELECT id, charge_code, description, price, cost, currency, uom,
-                   container_size, container_type, paid_with_freight
-            FROM local_charges
-            WHERE port_code = :port
-              AND trade_direction = :direction
-              AND shipment_type IN (:stype, 'ALL')
-              AND is_active = TRUE
-              AND effective_from <= :rd
-              AND (effective_to IS NULL OR effective_to >= :rd)
-            ORDER BY charge_code, container_size, container_type, effective_from DESC
+            SELECT lc.id, lcc.charge_code, lcc.description, lc.price, lc.cost,
+                   lcc.currency, lcc.uom, lcc.container_size, lcc.container_type
+            FROM local_charge_cards lcc
+            JOIN local_charges lc ON lc.rate_card_id = lcc.id
+            WHERE lcc.port_code = :port
+              AND lcc.trade_direction = :direction
+              AND lcc.shipment_type IN (:stype, 'ALL')
+              AND lcc.dg_class_code IN (:dg, 'ALL')
+              AND lcc.is_active = TRUE
+              AND lc.effective_from <= :rd
+              AND (lc.effective_to IS NULL OR lc.effective_to >= :rd)
+              AND (
+                  (lcc.is_international = TRUE AND :is_international_shipment = TRUE)
+                  OR
+                  (lcc.is_domestic = TRUE AND :is_domestic_shipment = TRUE)
+              )
+            ORDER BY lcc.charge_code, lcc.container_size, lcc.container_type,
+                     CASE WHEN lcc.dg_class_code = :dg THEN 0 ELSE 1 END,
+                     lc.effective_from DESC
         """),
-        {"port": port, "direction": direction, "stype": stype, "rd": ref_date},
+        {"port": port, "direction": direction, "stype": stype, "dg": dg, "rd": ref_date,
+         "is_international_shipment": not shipment["is_domestic_shipment"],
+         "is_domestic_shipment": shipment["is_domestic_shipment"]},
     ).fetchall()
 
     if not rows:
@@ -701,11 +870,13 @@ def _resolve_local_charges(conn, shipment: dict, direction: str, quotation_curre
                          "message": f"No local charges found for {port} {direction} {stype}"})
         return items
 
-    # Deduplicate: latest per (charge_code, container_size, container_type)
+    # Deduplicate: one row per (charge_code, container_size, container_type).
+    # dg_class_code is intentionally excluded from the key — the ORDER BY CASE above
+    # ensures the exact DG match wins over 'ALL' when both exist for the same charge.
     seen = set()
     deduped = []
     for r in rows:
-        key = (r[1], r[7], r[8])  # charge_code, container_size, container_type
+        key = (r[1], r[7], r[8])
         if key not in seen:
             seen.add(key)
             deduped.append(r)
@@ -716,6 +887,11 @@ def _resolve_local_charges(conn, shipment: dict, direction: str, quotation_curre
 
     for r in deduped:
         charge_code = r[1]
+
+        # Skip LC-TLX unless tlx_release is enabled on the quotation
+        if charge_code == 'LC-TLX' and not tlx_release:
+            continue
+
         desc = r[2]
         price = _dec(r[3])
         cost = _dec(r[4])
@@ -723,27 +899,48 @@ def _resolve_local_charges(conn, shipment: dict, direction: str, quotation_curre
         uom = r[6]
         lc_csize = r[7] or "ALL"
         lc_ctype = r[8] or "ALL"
-        paid_with_freight = r[9]
 
-        if paid_with_freight:
-            continue
+        qty = None  # will be set below; None means skip
 
-        # Determine quantity based on UOM and order type
-        qty = 1.0
         if order_type == "SEA_FCL":
             if uom == "CONTAINER":
-                # Match container_size/type or ALL
+                # Sum quantities across all containers that match this charge's size/type
+                matched_qty = 0
                 for ctr in containers:
-                    cs = ctr.get("container_size", "")
-                    ct = ctr.get("container_type", "GP")
+                    raw_size = ctr.get("container_size", "") or ""
+                    ct = ctr.get("container_type") or ""
+
+                    # Normalise container_size: '20GP' → '20', '40HC' → '40', '40' → '40'
+                    # local_charges only stores '20', '40', or 'ALL'
+                    if raw_size.startswith("20"):
+                        cs = "20"
+                        # If container_type not explicitly set, infer from suffix
+                        if not ct and len(raw_size) > 2:
+                            ct = raw_size[2:]  # e.g. '20GP' → 'GP', '20RF' → 'RF'
+                    elif raw_size.startswith("40"):
+                        cs = "40"
+                        if not ct and len(raw_size) > 2:
+                            ct = raw_size[2:]  # e.g. '40HC' → 'HC'
+                    else:
+                        cs = raw_size  # already '20', '40', or something else
+
+                    # Default container_type to GP if still empty
+                    if not ct:
+                        ct = "GP"
+
                     cq = int(ctr.get("quantity", 1))
                     size_match = (lc_csize == "ALL" or lc_csize == cs)
                     type_match = (lc_ctype == "ALL" or lc_ctype == ct)
                     if size_match and type_match:
-                        qty = cq
-                        break
+                        matched_qty += cq
+                if matched_qty == 0:
+                    # No matching container — skip this charge entirely
+                    continue
+                qty = float(matched_qty)
             else:
+                # SET, BL, etc. — per shipment, not per container
                 qty = 1.0
+
         elif order_type == "SEA_LCL":
             if uom == "CBM":
                 qty = shipment["cbm"] or 1.0
@@ -751,6 +948,9 @@ def _resolve_local_charges(conn, shipment: dict, direction: str, quotation_curre
                 qty = max(shipment["cbm"], shipment["weight_kg"] / 1000.0) or 1.0
             elif uom == "KG":
                 qty = shipment["weight_kg"] or 1.0
+            else:
+                qty = 1.0
+
         elif order_type == "AIR":
             if uom == "CW_KG":
                 qty = shipment["chargeable_weight"] or 1.0
@@ -758,6 +958,14 @@ def _resolve_local_charges(conn, shipment: dict, direction: str, quotation_curre
                 qty = shipment["weight_kg"] or 1.0
             elif uom == "CBM":
                 qty = shipment["cbm"] or 1.0
+            else:
+                qty = 1.0
+
+        else:
+            qty = 1.0
+
+        if qty is None:
+            continue
 
         p_conv = _get_conversion_factor(conn, cur, quotation_currency, ref_date)
         c_conv = _get_conversion_factor(conn, cur, quotation_currency, ref_date)
@@ -786,6 +994,167 @@ def _resolve_local_charges(conn, shipment: dict, direction: str, quotation_curre
 
 
 # ---------------------------------------------------------------------------
+# Rate resolution — DG Class Charges
+# ---------------------------------------------------------------------------
+
+def _resolve_dg_class_charges(conn, shipment: dict, direction: str, quotation_currency: str,
+                               ref_date: date, warnings: list) -> list:
+    """Resolve DG-specific port charges (inspection, documentation, hazmat handling).
+    Only fires for DG shipments. Always exact dg_class_code match — no ALL fallback.
+    """
+    items = []
+    dg = shipment["dg_class_code"]
+
+    # Only applies to DG shipments
+    if dg == "NON-DG":
+        return items
+
+    component_type = f"{direction.lower()}_dg"
+    port = shipment["origin_port"] if direction == "EXPORT" else shipment["dest_port"]
+    order_type = shipment["order_type"]
+
+    stype_map = {"SEA_FCL": "FCL", "SEA_LCL": "LCL", "AIR": "AIR"}
+    stype = stype_map.get(order_type, "ALL")
+
+    rows = conn.execute(
+        text("""
+            SELECT dc.id, dcc.charge_code, dcc.description, dc.price, dc.cost,
+                   dcc.currency, dcc.uom, dcc.container_size, dcc.container_type
+            FROM dg_class_charge_cards dcc
+            JOIN dg_class_charges dc ON dc.rate_card_id = dcc.id
+            WHERE dcc.port_code = :port
+              AND dcc.trade_direction = :direction
+              AND dcc.shipment_type IN (:stype, 'ALL')
+              AND dcc.dg_class_code = :dg
+              AND dcc.is_active = TRUE
+              AND dc.effective_from <= :rd
+              AND (dc.effective_to IS NULL OR dc.effective_to >= :rd)
+              AND (
+                  (dcc.is_international = TRUE AND :is_international_shipment = TRUE)
+                  OR
+                  (dcc.is_domestic = TRUE AND :is_domestic_shipment = TRUE)
+              )
+            ORDER BY dcc.charge_code, dcc.container_size, dcc.container_type,
+                     dc.effective_from DESC
+        """),
+        {"port": port, "direction": direction, "stype": stype, "dg": dg, "rd": ref_date,
+         "is_international_shipment": not shipment["is_domestic_shipment"],
+         "is_domestic_shipment": shipment["is_domestic_shipment"]},
+    ).fetchall()
+
+    if not rows:
+        warnings.append({"component_type": component_type,
+                         "message": f"No DG class charges found for {port} {direction} {stype} {dg}"})
+        return items
+
+    # Deduplicate: latest per (charge_code, container_size, container_type)
+    seen = set()
+    deduped = []
+    for r in rows:
+        key = (r[1], r[7], r[8])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(r)
+
+    containers = shipment["containers"]
+    base_sort = 22 if direction == "EXPORT" else 23
+    sort_offset = 0
+
+    for r in deduped:
+        charge_code = r[1]
+        desc = r[2]
+        price = _dec(r[3])
+        cost = _dec(r[4])
+        cur = r[5]
+        uom = r[6]
+        lc_csize = r[7] or "ALL"
+        lc_ctype = r[8] or "ALL"
+
+        qty = None
+
+        if order_type == "SEA_FCL":
+            if uom == "CONTAINER":
+                matched_qty = 0
+                for ctr in containers:
+                    raw_size = ctr.get("container_size", "") or ""
+                    ct = ctr.get("container_type") or ""
+
+                    if raw_size.startswith("20"):
+                        cs = "20"
+                        if not ct and len(raw_size) > 2:
+                            ct = raw_size[2:]
+                    elif raw_size.startswith("40"):
+                        cs = "40"
+                        if not ct and len(raw_size) > 2:
+                            ct = raw_size[2:]
+                    else:
+                        cs = raw_size
+
+                    if not ct:
+                        ct = "GP"
+
+                    cq = int(ctr.get("quantity", 1))
+                    size_match = (lc_csize == "ALL" or lc_csize == cs)
+                    type_match = (lc_ctype == "ALL" or lc_ctype == ct)
+                    if size_match and type_match:
+                        matched_qty += cq
+                if matched_qty == 0:
+                    continue
+                qty = float(matched_qty)
+            else:
+                qty = 1.0
+
+        elif order_type == "SEA_LCL":
+            if uom == "CBM":
+                qty = shipment["cbm"] or 1.0
+            elif uom == "W/M":
+                qty = max(shipment["cbm"], shipment["weight_kg"] / 1000.0) or 1.0
+            elif uom == "KG":
+                qty = shipment["weight_kg"] or 1.0
+            else:
+                qty = 1.0
+
+        elif order_type == "AIR":
+            if uom == "KG":
+                qty = shipment["weight_kg"] or 1.0
+            elif uom == "CBM":
+                qty = shipment["cbm"] or 1.0
+            else:
+                qty = 1.0
+
+        else:
+            qty = 1.0
+
+        if qty is None:
+            continue
+
+        p_conv = _get_conversion_factor(conn, cur, quotation_currency, ref_date)
+        c_conv = _get_conversion_factor(conn, cur, quotation_currency, ref_date)
+
+        items.append({
+            "component_type": component_type,
+            "charge_code": charge_code,
+            "description": desc,
+            "uom": uom,
+            "quantity": qty,
+            "price_per_unit": price,
+            "min_price": 0,
+            "price_currency": cur,
+            "price_conversion": p_conv,
+            "cost_per_unit": cost,
+            "min_cost": 0,
+            "cost_currency": cur,
+            "cost_conversion": c_conv,
+            "source_table": "dg_class_charges",
+            "source_rate_id": r[0],
+            "sort_order": base_sort + sort_offset,
+        })
+        sort_offset += 1
+
+    return items
+
+
+# ---------------------------------------------------------------------------
 # Rate resolution — Customs charges
 # ---------------------------------------------------------------------------
 
@@ -798,20 +1167,30 @@ def _resolve_customs(conn, shipment: dict, direction: str, quotation_currency: s
     stype_map = {"SEA_FCL": "FCL", "SEA_LCL": "LCL", "AIR": "AIR"}
     stype = stype_map.get(order_type, "ALL")
 
-    # customs_rates uses port_code (not country_code)
     rows = conn.execute(
         text("""
-            SELECT id, charge_code, description, price, cost, currency, uom
-            FROM customs_rates
-            WHERE port_code = :port
-              AND trade_direction = :direction
-              AND shipment_type IN (:stype, 'ALL')
-              AND is_active = TRUE
-              AND effective_from <= :rd
-              AND (effective_to IS NULL OR effective_to >= :rd)
-            ORDER BY charge_code, effective_from DESC
+            SELECT cr.id, crc.charge_code, crc.description, cr.price, cr.cost,
+                   crc.currency, crc.uom, crc.shipment_type
+            FROM customs_rate_cards crc
+            JOIN customs_rates cr ON cr.rate_card_id = crc.id
+            WHERE crc.port_code = :port
+              AND crc.trade_direction = :direction
+              AND crc.shipment_type IN (:stype, 'ALL')
+              AND crc.is_active = TRUE
+              AND cr.effective_from <= :rd
+              AND (cr.effective_to IS NULL OR cr.effective_to >= :rd)
+              AND (
+                  (crc.is_international = TRUE AND :is_international_shipment = TRUE)
+                  OR
+                  (crc.is_domestic = TRUE AND :is_domestic_shipment = TRUE)
+              )
+            ORDER BY crc.charge_code,
+                     CASE WHEN crc.shipment_type = :stype THEN 0 ELSE 1 END,
+                     cr.effective_from DESC
         """),
-        {"port": port, "direction": direction, "stype": stype, "rd": ref_date},
+        {"port": port, "direction": direction, "stype": stype, "rd": ref_date,
+         "is_international_shipment": not shipment["is_domestic_shipment"],
+         "is_domestic_shipment": shipment["is_domestic_shipment"]},
     ).fetchall()
 
     if not rows:
@@ -819,7 +1198,7 @@ def _resolve_customs(conn, shipment: dict, direction: str, quotation_currency: s
                          "message": f"No customs rates found for {port} {direction} {stype}"})
         return items
 
-    # Deduplicate: latest per charge_code
+    # Deduplicate by charge_code — first row wins (most specific due to ORDER BY above)
     seen = set()
     base_sort = 30 if direction == "EXPORT" else 31
     sort_offset = 0
@@ -889,7 +1268,15 @@ def _resolve_haulage(conn, shipment: dict, transport_details: list, direction: s
     base_sort = 40 if direction == "EXPORT" else 41
 
     for ctr in containers:
-        size = ctr.get("container_size", "")
+        raw_size = ctr.get("container_size", "") or ""
+        # Normalise: haulage_rate_cards uses '20', '40', '40HC' — strip GP suffix only
+        # '20GP' → '20', '40HC' stays '40HC' (haulage distinguishes HC), '40' stays '40'
+        if raw_size == "20GP":
+            size = "20"
+        elif raw_size == "40GP":
+            size = "40"
+        else:
+            size = raw_size
         qty = int(ctr.get("quantity", 1))
 
         # Find rate card — try exact size first, fallback to wildcard
@@ -1209,6 +1596,9 @@ def _serialise_line_item(r) -> dict:
         "margin_percent": margin_pct,
         "created_at": r[18].isoformat() if r[18] else None,
         "updated_at": r[20].isoformat() if len(r) > 20 and r[20] else None,
+        "tax_code": r[21] if len(r) > 21 else None,
+        "tax_rate": float(r[22]) if len(r) > 22 and r[22] else 0,
+        "tax_amount": float(r[23]) if len(r) > 23 and r[23] else 0,
     }
 
 
@@ -1217,7 +1607,8 @@ _LINE_ITEM_SELECT = """
            quantity, price_per_unit, min_price, price_currency, price_conversion,
            cost_per_unit, min_cost, cost_currency, cost_conversion,
            source_table, source_rate_id, is_manual_override, sort_order,
-           created_at, uom, updated_at
+           created_at, uom, updated_at,
+           tax_code, tax_rate, tax_amount
     FROM quotation_line_items
 """
 
@@ -1251,8 +1642,7 @@ async def create_quotation(
     next_revision = rev_row[0]
 
     # 3. Generate quotation_ref
-    seq_row = conn.execute(text("SELECT nextval('quotation_ref_seq')")).fetchone()
-    quotation_ref = f"AFQ-{str(seq_row[0]).zfill(8)}"
+    quotation_ref = f"{body.shipment_id}-Q{next_revision}"
 
     # 4. Resolve currency from company's preferred_currency
     company_row = conn.execute(
@@ -1311,23 +1701,39 @@ async def list_quotations(
     if shipment_id:
         rows = conn.execute(
             text("""
-                SELECT id, quotation_ref, shipment_id, status, revision,
-                       scope_snapshot, transport_details, notes, created_by,
-                       created_at, updated_at
-                FROM quotations
-                WHERE shipment_id = :sid
-                ORDER BY revision DESC
+                SELECT q.id, q.quotation_ref, q.shipment_id, q.status, q.revision,
+                       q.scope_snapshot, q.transport_details, q.notes, q.created_by,
+                       q.created_at, q.updated_at,
+                       c.name AS company_name,
+                       sd.order_type_detail,
+                       q.tlx_release,
+                       sd.incoterm_code,
+                       sd.transaction_type
+                FROM quotations q
+                LEFT JOIN orders o ON o.order_id = q.shipment_id
+                LEFT JOIN companies c ON c.id = o.company_id
+                LEFT JOIN shipment_details sd ON sd.order_id = q.shipment_id
+                WHERE q.shipment_id = :sid
+                ORDER BY q.revision DESC
             """),
             {"sid": shipment_id},
         ).fetchall()
     else:
         rows = conn.execute(
             text("""
-                SELECT id, quotation_ref, shipment_id, status, revision,
-                       scope_snapshot, transport_details, notes, created_by,
-                       created_at, updated_at
-                FROM quotations
-                ORDER BY created_at DESC
+                SELECT q.id, q.quotation_ref, q.shipment_id, q.status, q.revision,
+                       q.scope_snapshot, q.transport_details, q.notes, q.created_by,
+                       q.created_at, q.updated_at,
+                       c.name AS company_name,
+                       sd.order_type_detail,
+                       q.tlx_release,
+                       sd.incoterm_code,
+                       sd.transaction_type
+                FROM quotations q
+                LEFT JOIN orders o ON o.order_id = q.shipment_id
+                LEFT JOIN companies c ON c.id = o.company_id
+                LEFT JOIN shipment_details sd ON sd.order_id = q.shipment_id
+                ORDER BY q.created_at DESC
                 LIMIT 200
             """),
         ).fetchall()
@@ -1347,11 +1753,19 @@ async def get_quotation(
 ):
     row = conn.execute(
         text("""
-            SELECT id, quotation_ref, shipment_id, status, revision,
-                   scope_snapshot, transport_details, notes, created_by,
-                   created_at, updated_at
-            FROM quotations
-            WHERE quotation_ref = :ref
+            SELECT q.id, q.quotation_ref, q.shipment_id, q.status, q.revision,
+                   q.scope_snapshot, q.transport_details, q.notes, q.created_by,
+                   q.created_at, q.updated_at,
+                   c.name AS company_name,
+                   sd.order_type_detail,
+                   q.tlx_release,
+                   sd.incoterm_code,
+                   sd.transaction_type
+            FROM quotations q
+            LEFT JOIN orders o ON o.order_id = q.shipment_id
+            LEFT JOIN companies c ON c.id = o.company_id
+            LEFT JOIN shipment_details sd ON sd.order_id = q.shipment_id
+            WHERE q.quotation_ref = :ref
         """),
         {"ref": quotation_ref},
     ).fetchone()
@@ -1375,7 +1789,7 @@ async def calculate_quotation(
     # 1. Fetch quotation
     q = conn.execute(
         text("""
-            SELECT id, quotation_ref, shipment_id, scope_snapshot, transport_details, currency
+            SELECT id, quotation_ref, shipment_id, scope_snapshot, transport_details, currency, tlx_release
             FROM quotations WHERE quotation_ref = :ref
         """),
         {"ref": quotation_ref},
@@ -1389,11 +1803,12 @@ async def calculate_quotation(
     scope = q[3] if isinstance(q[3], dict) else {}
     transport_details = q[4] if isinstance(q[4], list) else []
     quotation_currency = q[5] or "MYR"
+    tlx_release = bool(q[6])
 
     # 2. Load shipment data
     shipment = _load_shipment_data(conn, shipment_id)
     order_type = shipment["order_type"]  # SEA_FCL | SEA_LCL | AIR
-    ref_date = date.today()
+    ref_date = shipment["cargo_ready_date"] or date.today()
 
     # 3. Delete existing non-manual line items
     conn.execute(
@@ -1405,19 +1820,34 @@ async def calculate_quotation(
     warnings: list = []
     all_items: list = []
 
-    # A/B. Ocean freight (FCL or LCL)
-    if order_type == "SEA_FCL":
-        all_items.extend(_resolve_fcl_freight(conn, shipment, quotation_currency, ref_date, warnings))
-    elif order_type == "SEA_LCL":
-        all_items.extend(_resolve_lcl_freight(conn, shipment, quotation_currency, ref_date, warnings))
+    # A/B. Ocean freight — only if freight is in scope
+    if scope.get("freight") == "ASSIGNED":
+        if order_type == "SEA_FCL":
+            all_items.extend(_resolve_fcl_freight(conn, shipment, quotation_currency, ref_date, warnings))
+        elif order_type == "SEA_LCL":
+            all_items.extend(_resolve_lcl_freight(conn, shipment, quotation_currency, ref_date, warnings))
 
-    # C. Air freight
-    if order_type == "AIR":
+    # C. Air freight — only if freight is in scope
+    if scope.get("freight") == "ASSIGNED" and order_type == "AIR":
         all_items.extend(_resolve_air_freight(conn, shipment, quotation_currency, ref_date, warnings))
 
-    # D. Local charges — always for both directions if applicable
-    all_items.extend(_resolve_local_charges(conn, shipment, "EXPORT", quotation_currency, ref_date, warnings))
-    all_items.extend(_resolve_local_charges(conn, shipment, "IMPORT", quotation_currency, ref_date, warnings))
+    # Scope gating for directional charges
+    export_scope_keys = {'first_mile', 'export_clearance'}
+    import_scope_keys = {'last_mile', 'import_clearance'}
+    has_export_scope = any(scope.get(k) == 'ASSIGNED' for k in export_scope_keys)
+    has_import_scope = any(scope.get(k) == 'ASSIGNED' for k in import_scope_keys)
+
+    # D. Local charges — gated by scope
+    if has_export_scope:
+        all_items.extend(_resolve_local_charges(conn, shipment, "EXPORT", quotation_currency, ref_date, warnings, tlx_release=tlx_release))
+    if has_import_scope:
+        all_items.extend(_resolve_local_charges(conn, shipment, "IMPORT", quotation_currency, ref_date, warnings))
+
+    # D2. DG class charges — only for DG shipments, gated by scope
+    if has_export_scope:
+        all_items.extend(_resolve_dg_class_charges(conn, shipment, "EXPORT", quotation_currency, ref_date, warnings))
+    if has_import_scope:
+        all_items.extend(_resolve_dg_class_charges(conn, shipment, "IMPORT", quotation_currency, ref_date, warnings))
 
     # E. Customs
     if scope.get("export_clearance") == "ASSIGNED":
@@ -1442,6 +1872,9 @@ async def calculate_quotation(
         if scope.get("last_mile") == "ASSIGNED":
             all_items.extend(_resolve_ground_transport(conn, shipment, transport_details, "IMPORT",
                                                        quotation_currency, ref_date, warnings))
+
+    # 4b. Apply tax rules to all resolved items
+    _apply_tax(conn, all_items, shipment, ref_date)
 
     # 5. Insert all resolved items
     for item in all_items:
@@ -1507,6 +1940,7 @@ async def list_line_items(
 
     total_price = sum(li["effective_price"] for li in line_items)
     total_cost = sum(li["effective_cost"] for li in line_items)
+    total_tax = sum(float(li.get("tax_amount", 0)) if isinstance(li, dict) else 0 for li in line_items)
     margin_pct = round((total_price - total_cost) / total_price * 100, 2) if total_price > 0 else None
 
     return {
@@ -1516,6 +1950,7 @@ async def list_line_items(
             "totals": {
                 "total_price": round(total_price, 2),
                 "total_cost": round(total_cost, 2),
+                "total_tax": round(total_tax, 2),
                 "margin_percent": margin_pct,
                 "currency": quotation_currency,
             },
@@ -1662,3 +2097,73 @@ async def delete_line_item(
 
     logger.info("[quotations] Line item %d deleted from %s by %s", item_id, quotation_ref, claims.email)
     return {"status": "OK", "data": {"message": "Line item deleted"}}
+
+
+# ---------------------------------------------------------------------------
+# PATCH /quotations/{quotation_ref}/tlx-release — Toggle TLX release
+# ---------------------------------------------------------------------------
+
+class TlxReleaseRequest(BaseModel):
+    tlx_release: bool
+
+
+@router.patch("/quotations/{quotation_ref}/tlx-release")
+async def set_tlx_release(
+    quotation_ref: str,
+    body: TlxReleaseRequest,
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    q = conn.execute(
+        text("SELECT id FROM quotations WHERE quotation_ref = :ref"),
+        {"ref": quotation_ref},
+    ).fetchone()
+    if not q:
+        raise HTTPException(status_code=404, detail=f"Quotation {quotation_ref} not found")
+
+    conn.execute(
+        text("""
+            UPDATE quotations
+            SET tlx_release = :tlx, scope_changed = TRUE, updated_at = NOW()
+            WHERE quotation_ref = :ref
+        """),
+        {"tlx": body.tlx_release, "ref": quotation_ref},
+    )
+
+    logger.info("[quotations] tlx_release=%s on %s by %s", body.tlx_release, quotation_ref, claims.email)
+    return {"status": "OK", "data": {"tlx_release": body.tlx_release, "scope_changed": True}}
+
+
+# ---------------------------------------------------------------------------
+# PATCH /quotations/{quotation_ref}/scope-snapshot — Update scope snapshot
+# ---------------------------------------------------------------------------
+
+class ScopeSnapshotUpdate(BaseModel):
+    scope_snapshot: dict
+
+
+@router.patch("/quotations/{quotation_ref}/scope-snapshot")
+async def update_scope_snapshot(
+    quotation_ref: str,
+    body: ScopeSnapshotUpdate,
+    claims: Claims = Depends(require_afu),
+    conn=Depends(get_db),
+):
+    q = conn.execute(
+        text("SELECT id FROM quotations WHERE quotation_ref = :ref"),
+        {"ref": quotation_ref},
+    ).fetchone()
+    if not q:
+        raise HTTPException(status_code=404, detail=f"Quotation {quotation_ref} not found")
+
+    conn.execute(
+        text("""
+            UPDATE quotations
+            SET scope_snapshot = CAST(:snapshot AS jsonb), scope_changed = TRUE, updated_at = NOW()
+            WHERE quotation_ref = :ref
+        """),
+        {"snapshot": json.dumps(body.scope_snapshot), "ref": quotation_ref},
+    )
+
+    logger.info("[quotations] scope_snapshot updated on %s by %s", quotation_ref, claims.email)
+    return {"status": "OK", "data": {"quotation_ref": quotation_ref}}

@@ -1,9 +1,12 @@
 """
-routers/pricing/customs.py — Customs Clearance rate endpoints.
+routers/pricing/customs.py — Customs Clearance rate endpoints (two-tier schema).
+
+Tables:
+  customs_rate_cards  — card identity (port, direction, type, charge_code, etc.)
+  customs_rates       — rate rows (price, cost, effective_from/to) with rate_card_id FK
 """
 
 import calendar
-from collections import defaultdict
 from datetime import date, datetime, timezone
 from typing import Optional
 
@@ -29,70 +32,98 @@ _VALID_UOMS = {"CONTAINER", "CBM", "KG", "W/M", "CW_KG", "SET", "BL"}
 # Pydantic models
 # ---------------------------------------------------------------------------
 
-class CustomsRateCreate(BaseModel):
-    port_code: str
-    trade_direction: str
-    shipment_type: str
-    charge_code: str
-    description: str
-    price: float
-    cost: float = 0.0
-    currency: str = "MYR"
-    uom: str
-    is_domestic: bool = False
-    effective_from: str
-    effective_to: Optional[str] = None
-    is_active: bool = True
-    close_previous: bool = True
-
-
-class CustomsRateUpdate(BaseModel):
+class CustomsCardUpdate(BaseModel):
     port_code: Optional[str] = None
     trade_direction: Optional[str] = None
     shipment_type: Optional[str] = None
     charge_code: Optional[str] = None
     description: Optional[str] = None
-    price: Optional[float] = None
-    cost: Optional[float] = None
     currency: Optional[str] = None
     uom: Optional[str] = None
     is_domestic: Optional[bool] = None
+    is_international: Optional[bool] = None
+    is_active: Optional[bool] = None
+
+
+class CustomsRateCreate(BaseModel):
+    # Card identity (used to find-or-create card)
+    port_code: str
+    trade_direction: str
+    shipment_type: str
+    charge_code: str
+    description: str
+    currency: str = "MYR"
+    uom: str
+    is_domestic: bool = False
+    is_international: bool = True
+    # Rate fields
+    price: float
+    cost: float = 0.0
+    effective_from: str
+    effective_to: Optional[str] = None
+    close_previous: bool = True
+
+
+class CustomsRateUpdate(BaseModel):
+    price: Optional[float] = None
+    cost: Optional[float] = None
     effective_from: Optional[str] = None
     effective_to: Optional[str] = None
-    is_active: Optional[bool] = None
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _row_to_dict(r) -> dict:
+_CARD_SELECT = """
+    SELECT id, rate_card_key, port_code, trade_direction, shipment_type,
+           charge_code, description, currency, uom, is_domestic, is_international,
+           is_active, created_at, updated_at
+    FROM customs_rate_cards
+"""
+
+_RATE_SELECT = """
+    SELECT id, rate_card_id, price, cost, effective_from, effective_to,
+           created_at, updated_at
+    FROM customs_rates
+"""
+
+
+def _card_to_dict(r) -> dict:
     return {
         "id": r[0],
-        "port_code": r[1],
-        "trade_direction": r[2],
-        "shipment_type": r[3],
-        "charge_code": r[4],
-        "description": r[5],
-        "price": float(r[6]) if r[6] is not None else None,
-        "cost": float(r[7]) if r[7] is not None else None,
-        "currency": r[8],
-        "uom": r[9],
-        "is_domestic": r[10],
-        "effective_from": str(r[11]) if r[11] else None,
-        "effective_to": str(r[12]) if r[12] else None,
-        "is_active": r[13],
-        "created_at": r[14].isoformat() if r[14] else None,
-        "updated_at": r[15].isoformat() if r[15] else None,
+        "rate_card_key": r[1],
+        "port_code": r[2],
+        "trade_direction": r[3],
+        "shipment_type": r[4],
+        "charge_code": r[5],
+        "description": r[6],
+        "currency": r[7],
+        "uom": r[8],
+        "is_domestic": r[9],
+        "is_international": r[10],
+        "is_active": r[11],
+        "created_at": r[12].isoformat() if r[12] else None,
+        "updated_at": r[13].isoformat() if r[13] else None,
     }
 
 
-_SELECT = """
-    SELECT id, port_code, trade_direction, shipment_type,
-           charge_code, description, price, cost, currency, uom,
-           is_domestic, effective_from, effective_to, is_active, created_at, updated_at
-    FROM customs_rates
-"""
+def _rate_to_dict(r) -> dict:
+    return {
+        "id": r[0],
+        "rate_card_id": r[1],
+        "price": float(r[2]) if r[2] is not None else None,
+        "cost": float(r[3]) if r[3] is not None else None,
+        "effective_from": str(r[4]) if r[4] else None,
+        "effective_to": str(r[5]) if r[5] else None,
+        "created_at": r[6].isoformat() if r[6] else None,
+        "updated_at": r[7].isoformat() if r[7] else None,
+    }
+
+
+def _build_card_key(port_code: str, trade_direction: str, shipment_type: str,
+                    charge_code: str, is_domestic: bool, is_international: bool) -> str:
+    return f"{port_code}|{trade_direction}|{shipment_type}|{charge_code}|{str(is_domestic).lower()}|{str(is_international).lower()}"
 
 
 # ---------------------------------------------------------------------------
@@ -105,19 +136,19 @@ async def list_customs_ports(
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
 ):
-    """Return distinct port_code values from customs_rates, optionally filtered by country."""
+    """Return distinct port_code values from customs_rate_cards, optionally filtered by country."""
     params: dict = {}
-    where = "cr.is_active = TRUE"
+    where = "crc.is_active = TRUE"
     if country_code:
         where += " AND p.country_code = :cc"
         params["cc"] = country_code.upper()
 
     rows = conn.execute(text(f"""
-        SELECT DISTINCT cr.port_code
-        FROM customs_rates cr
-        JOIN ports p ON p.un_code = cr.port_code
+        SELECT DISTINCT crc.port_code
+        FROM customs_rate_cards crc
+        JOIN ports p ON p.un_code = crc.port_code
         WHERE {where}
-        ORDER BY cr.port_code
+        ORDER BY crc.port_code
     """), params).fetchall()
 
     return {"status": "OK", "data": [r[0] for r in rows]}
@@ -132,7 +163,7 @@ async def list_customs_cards(
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
 ):
-    """Return customs rates grouped as virtual card objects with time_series."""
+    """Return customs rate cards with time_series built from rate rows."""
     if not port_code:
         raise HTTPException(status_code=400, detail="port_code is required")
 
@@ -141,25 +172,42 @@ async def list_customs_cards(
     if shipment_type and shipment_type not in _VALID_SHIPMENT_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid shipment_type: {shipment_type}")
 
-    where = ["port_code = :port"]
+    # Fetch cards
+    card_where = ["port_code = :port"]
     params: dict = {"port": port_code}
 
     if is_active:
-        where.append("is_active = :active")
-        params["active"] = True
+        card_where.append("is_active = TRUE")
 
     if trade_direction:
-        where.append("trade_direction = :direction")
+        card_where.append("trade_direction = :direction")
         params["direction"] = trade_direction
     if shipment_type:
-        where.append("shipment_type = :stype")
+        card_where.append("shipment_type = :stype")
         params["stype"] = shipment_type
 
-    rows = conn.execute(text(f"""
-        {_SELECT}
-        WHERE {' AND '.join(where)}
-        ORDER BY trade_direction, shipment_type, charge_code, effective_from DESC
+    card_rows = conn.execute(text(f"""
+        {_CARD_SELECT}
+        WHERE {' AND '.join(card_where)}
+        ORDER BY trade_direction, shipment_type, charge_code
     """), params).fetchall()
+
+    if not card_rows:
+        return {"status": "OK", "data": []}
+
+    card_ids = [r[0] for r in card_rows]
+
+    # Fetch all rate rows for these cards
+    rate_rows = conn.execute(text(f"""
+        {_RATE_SELECT}
+        WHERE rate_card_id = ANY(:card_ids)
+        ORDER BY rate_card_id, effective_from DESC
+    """), {"card_ids": card_ids}).fetchall()
+
+    # Group rate rows by card_id
+    rates_by_card: dict = {}
+    for r in rate_rows:
+        rates_by_card.setdefault(r[1], []).append(_rate_to_dict(r))
 
     # Generate month buckets: 9 historical + current + 2 future = 12
     today = date.today()
@@ -182,16 +230,10 @@ async def list_customs_cards(
             "last": last,
         })
 
-    # Group rows into cards
-    cards_map: dict = defaultdict(list)
-    for r in rows:
-        row = _row_to_dict(r)
-        card_key = f"{row['port_code']}|{row['trade_direction']}|{row['shipment_type']}|{row['charge_code']}|{str(row['is_domestic']).lower()}"
-        cards_map[card_key].append(row)
-
     result = []
-    for card_key, rate_rows in cards_map.items():
-        latest = rate_rows[0]  # sorted by effective_from DESC
+    for cr in card_rows:
+        card = _card_to_dict(cr)
+        card_rate_rows = rates_by_card.get(card["id"], [])
 
         # Build time_series
         ts = []
@@ -199,7 +241,7 @@ async def list_customs_cards(
             mb_first = mb["first"]
             mb_last = mb["last"]
             active_rows = []
-            for rr in rate_rows:
+            for rr in card_rate_rows:
                 eff_from = date.fromisoformat(rr["effective_from"]) if rr["effective_from"] else None
                 eff_to = date.fromisoformat(rr["effective_to"]) if rr["effective_to"] else None
                 if eff_from is None:
@@ -219,58 +261,28 @@ async def list_customs_cards(
                 "rate_id": best["id"],
             })
 
+        # Find latest rate for effective_from/to display
+        latest_rate = card_rate_rows[0] if card_rate_rows else None
+
         result.append({
-            "card_key": card_key,
-            "port_code": latest["port_code"],
-            "trade_direction": latest["trade_direction"],
-            "shipment_type": latest["shipment_type"],
-            "charge_code": latest["charge_code"],
-            "description": latest["description"],
-            "uom": latest["uom"],
-            "currency": latest["currency"],
-            "is_domestic": latest["is_domestic"],
-            "is_active": latest["is_active"],
+            "card_id": card["id"],
+            "card_key": card["rate_card_key"],
+            "port_code": card["port_code"],
+            "trade_direction": card["trade_direction"],
+            "shipment_type": card["shipment_type"],
+            "charge_code": card["charge_code"],
+            "description": card["description"],
+            "uom": card["uom"],
+            "currency": card["currency"],
+            "is_domestic": card["is_domestic"],
+            "is_international": card["is_international"],
+            "is_active": card["is_active"],
             "time_series": ts,
-            "latest_effective_from": latest["effective_from"],
-            "latest_effective_to": latest["effective_to"],
+            "latest_effective_from": latest_rate["effective_from"] if latest_rate else None,
+            "latest_effective_to": latest_rate["effective_to"] if latest_rate else None,
         })
 
     return {"status": "OK", "data": result}
-
-
-@router.get("/rates")
-async def list_customs_rates(
-    port_code: Optional[str] = Query(default=None),
-    trade_direction: Optional[str] = Query(default=None),
-    shipment_type: Optional[str] = Query(default=None),
-    is_active: bool = Query(default=True),
-    claims: Claims = Depends(require_afu),
-    conn=Depends(get_db),
-):
-    where = ["is_active = :active"]
-    params: dict = {"active": is_active}
-
-    if port_code:
-        where.append("port_code = :port")
-        params["port"] = port_code
-    if trade_direction:
-        if trade_direction not in _VALID_TRADE_DIRECTIONS:
-            raise HTTPException(status_code=400, detail=f"Invalid trade_direction: {trade_direction}")
-        where.append("trade_direction = :direction")
-        params["direction"] = trade_direction
-    if shipment_type:
-        if shipment_type not in _VALID_SHIPMENT_TYPES:
-            raise HTTPException(status_code=400, detail=f"Invalid shipment_type: {shipment_type}")
-        where.append("shipment_type = :stype")
-        params["stype"] = shipment_type
-
-    rows = conn.execute(text(f"""
-        {_SELECT}
-        WHERE {' AND '.join(where)}
-        ORDER BY port_code, trade_direction, shipment_type, charge_code
-    """), params).fetchall()
-
-    return {"status": "OK", "data": [_row_to_dict(r) for r in rows]}
 
 
 @router.get("/rates/{rate_id}")
@@ -279,15 +291,41 @@ async def get_customs_rate(
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
 ):
-    row = conn.execute(text(f"""
-        {_SELECT}
-        WHERE id = :id
+    """Fetch a single rate row joined with its card."""
+    row = conn.execute(text("""
+        SELECT cr.id, cr.rate_card_id, cr.price, cr.cost,
+               cr.effective_from, cr.effective_to, cr.created_at, cr.updated_at,
+               crc.port_code, crc.trade_direction, crc.shipment_type,
+               crc.charge_code, crc.description, crc.currency, crc.uom,
+               crc.is_domestic, crc.is_international, crc.is_active
+        FROM customs_rates cr
+        JOIN customs_rate_cards crc ON crc.id = cr.rate_card_id
+        WHERE cr.id = :id
     """), {"id": rate_id}).fetchone()
 
     if not row:
         raise HTTPException(status_code=404, detail="Customs rate not found")
 
-    return {"status": "OK", "data": _row_to_dict(row)}
+    return {"status": "OK", "data": {
+        "id": row[0],
+        "rate_card_id": row[1],
+        "price": float(row[2]) if row[2] is not None else None,
+        "cost": float(row[3]) if row[3] is not None else None,
+        "effective_from": str(row[4]) if row[4] else None,
+        "effective_to": str(row[5]) if row[5] else None,
+        "created_at": row[6].isoformat() if row[6] else None,
+        "updated_at": row[7].isoformat() if row[7] else None,
+        "port_code": row[8],
+        "trade_direction": row[9],
+        "shipment_type": row[10],
+        "charge_code": row[11],
+        "description": row[12],
+        "currency": row[13],
+        "uom": row[14],
+        "is_domestic": row[15],
+        "is_international": row[16],
+        "is_active": row[17],
+    }}
 
 
 @router.post("/rates")
@@ -303,83 +341,152 @@ async def create_customs_rate(
     if body.uom not in _VALID_UOMS:
         raise HTTPException(status_code=400, detail=f"Invalid uom: {body.uom}")
 
-    # Date range sanity check
     if body.effective_to and body.effective_to < body.effective_from:
         raise HTTPException(status_code=400, detail="effective_to cannot be before effective_from")
 
-    # Check uniqueness
+    now = datetime.now(timezone.utc).isoformat()
+    card_key = _build_card_key(body.port_code, body.trade_direction, body.shipment_type,
+                               body.charge_code, body.is_domestic, body.is_international)
+
+    # Find or create card
+    card_row = conn.execute(text(
+        "SELECT id FROM customs_rate_cards WHERE rate_card_key = :key"
+    ), {"key": card_key}).fetchone()
+
+    if card_row:
+        card_id = card_row[0]
+        # Update card-level fields if they differ
+        conn.execute(text("""
+            UPDATE customs_rate_cards
+            SET description = :desc, currency = :cur, uom = :uom,
+                is_international = :is_intl, updated_at = :now
+            WHERE id = :id
+        """), {"desc": body.description, "cur": body.currency, "uom": body.uom,
+               "is_intl": body.is_international, "now": now, "id": card_id})
+    else:
+        card_row = conn.execute(text("""
+            INSERT INTO customs_rate_cards (
+                rate_card_key, port_code, trade_direction, shipment_type,
+                charge_code, description, currency, uom, is_domestic,
+                is_international, is_active, created_at, updated_at
+            ) VALUES (
+                :key, :port, :direction, :stype,
+                :charge, :desc, :cur, :uom, :domestic,
+                :is_intl, TRUE, :now, :now
+            ) RETURNING id
+        """), {
+            "key": card_key, "port": body.port_code, "direction": body.trade_direction,
+            "stype": body.shipment_type, "charge": body.charge_code,
+            "desc": body.description, "cur": body.currency, "uom": body.uom,
+            "domestic": body.is_domestic, "is_intl": body.is_international, "now": now,
+        }).fetchone()
+        card_id = card_row[0]
+
+    # Check for duplicate rate row
     existing = conn.execute(text("""
         SELECT id FROM customs_rates
-        WHERE port_code = :port AND trade_direction = :direction
-          AND shipment_type = :stype AND charge_code = :charge
-          AND is_domestic = :domestic AND effective_from = :eff_from
-    """), {
-        "port": body.port_code,
-        "direction": body.trade_direction,
-        "stype": body.shipment_type,
-        "charge": body.charge_code,
-        "domestic": body.is_domestic,
-        "eff_from": body.effective_from,
-    }).fetchone()
+        WHERE rate_card_id = :card_id AND effective_from = :eff_from
+    """), {"card_id": card_id, "eff_from": body.effective_from}).fetchone()
 
     if existing:
         raise HTTPException(status_code=409, detail="Duplicate customs rate entry")
 
-    now = datetime.now(timezone.utc).isoformat()
+    # Insert rate row
     result = conn.execute(text("""
-        INSERT INTO customs_rates (port_code, trade_direction, shipment_type,
-                                   charge_code, description, price, cost, currency, uom,
-                                   is_domestic, effective_from, effective_to, is_active,
+        INSERT INTO customs_rates (rate_card_id, price, cost,
+                                   effective_from, effective_to,
                                    created_at, updated_at)
-        VALUES (:port, :direction, :stype,
-                :charge, :description, :price, :cost, :currency, :uom,
-                :domestic, :eff_from, :eff_to, :active, :now, :now)
+        VALUES (:card_id, :price, :cost, :eff_from, :eff_to, :now, :now)
         RETURNING id
     """), {
-        "port": body.port_code,
-        "direction": body.trade_direction,
-        "stype": body.shipment_type,
-        "charge": body.charge_code,
-        "description": body.description,
-        "price": body.price,
-        "cost": body.cost,
-        "currency": body.currency,
-        "uom": body.uom,
-        "domestic": body.is_domestic,
-        "eff_from": body.effective_from,
-        "eff_to": body.effective_to,
-        "active": body.is_active,
+        "card_id": card_id,
+        "price": body.price, "cost": body.cost,
+        "eff_from": body.effective_from, "eff_to": body.effective_to,
         "now": now,
     })
     new_id = result.fetchone()[0]
 
-    # Auto-close previous open-ended row for the same card key
+    # Auto-close previous open-ended rate rows for the same card
     if body.close_previous:
         conn.execute(text("""
             UPDATE customs_rates
             SET effective_to = (CAST(:eff_from AS date) - INTERVAL '1 day')::date,
                 updated_at = :now
-            WHERE port_code = :port
-              AND trade_direction = :direction
-              AND shipment_type = :stype
-              AND charge_code = :charge
-              AND is_domestic = :domestic
+            WHERE rate_card_id = :card_id
               AND effective_to IS NULL
               AND id != :new_id
         """), {
-            "eff_from": body.effective_from,
-            "now": now,
-            "port": body.port_code,
-            "direction": body.trade_direction,
-            "stype": body.shipment_type,
-            "charge": body.charge_code,
-            "domestic": body.is_domestic,
-            "new_id": new_id,
+            "eff_from": body.effective_from, "now": now,
+            "card_id": card_id, "new_id": new_id,
         })
 
     conn.commit()
 
     return {"status": "OK", "data": {"id": new_id}}
+
+
+@router.patch("/cards/{card_id}")
+async def update_customs_card(
+    card_id: int,
+    body: CustomsCardUpdate,
+    claims: Claims = Depends(require_afu_admin),
+    conn=Depends(get_db),
+):
+    """Update card-level fields on a customs_rate_cards row."""
+    existing = conn.execute(text(
+        "SELECT id, port_code, trade_direction, shipment_type, charge_code, is_domestic, is_international "
+        "FROM customs_rate_cards WHERE id = :id"
+    ), {"id": card_id}).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Customs rate card not found")
+
+    _VALIDATORS = {
+        "trade_direction": (_VALID_TRADE_DIRECTIONS, "Invalid trade_direction"),
+        "shipment_type": (_VALID_SHIPMENT_TYPES, "Invalid shipment_type"),
+        "uom": (_VALID_UOMS, "Invalid uom"),
+    }
+
+    provided = body.__fields_set__
+    updates = []
+    params: dict = {"id": card_id}
+
+    for field in provided:
+        val = getattr(body, field)
+        if field in _VALIDATORS:
+            valid_set, msg = _VALIDATORS[field]
+            if val is not None and val not in valid_set:
+                raise HTTPException(status_code=400, detail=f"{msg}: {val}")
+        updates.append(f"{field} = :{field}")
+        params[field] = val
+
+    if not updates:
+        return {"status": "OK", "data": {"msg": "No fields to update"}}
+
+    # Rebuild rate_card_key if any key-forming field changed
+    _KEY_FIELDS = {"port_code", "trade_direction", "shipment_type", "charge_code", "is_domestic", "is_international"}
+    if provided & _KEY_FIELDS:
+        # Resolve final values for key
+        key_vals = {
+            "port_code": params.get("port_code", existing[1]),
+            "trade_direction": params.get("trade_direction", existing[2]),
+            "shipment_type": params.get("shipment_type", existing[3]),
+            "charge_code": params.get("charge_code", existing[4]),
+            "is_domestic": params.get("is_domestic", existing[5]),
+            "is_international": params.get("is_international", existing[6]),
+        }
+        new_key = _build_card_key(**key_vals)
+        updates.append("rate_card_key = :new_key")
+        params["new_key"] = new_key
+
+    updates.append("updated_at = :now")
+    params["now"] = datetime.now(timezone.utc).isoformat()
+
+    conn.execute(text(
+        f"UPDATE customs_rate_cards SET {', '.join(updates)} WHERE id = :id"
+    ), params)
+    conn.commit()
+
+    return {"status": "OK", "data": {"msg": "Updated"}}
 
 
 @router.patch("/rates/{rate_id}")
@@ -389,50 +496,32 @@ async def update_customs_rate(
     claims: Claims = Depends(require_afu_admin),
     conn=Depends(get_db),
 ):
-    existing = conn.execute(text("SELECT id FROM customs_rates WHERE id = :id"), {"id": rate_id}).fetchone()
+    """Update rate-level fields on a customs_rates row."""
+    existing = conn.execute(text(
+        "SELECT id FROM customs_rates WHERE id = :id"
+    ), {"id": rate_id}).fetchone()
     if not existing:
         raise HTTPException(status_code=404, detail="Customs rate not found")
 
-    field_map = {
-        "port_code": "port_code",
-        "trade_direction": "trade_direction",
-        "shipment_type": "shipment_type",
-        "charge_code": "charge_code",
-        "description": "description",
-        "price": "price",
-        "cost": "cost",
-        "currency": "currency",
-        "uom": "uom",
-        "is_domestic": "is_domestic",
-        "effective_from": "effective_from",
-        "effective_to": "effective_to",
-        "is_active": "is_active",
-    }
-
+    provided = body.__fields_set__
     updates = []
     params: dict = {"id": rate_id}
-    provided = body.__fields_set__
 
-    for field, col in field_map.items():
-        if field in provided:
-            val = getattr(body, field)
-            if field == "trade_direction" and val is not None and val not in _VALID_TRADE_DIRECTIONS:
-                raise HTTPException(status_code=400, detail=f"Invalid trade_direction: {val}")
-            if field == "shipment_type" and val is not None and val not in _VALID_SHIPMENT_TYPES:
-                raise HTTPException(status_code=400, detail=f"Invalid shipment_type: {val}")
-            if field == "uom" and val is not None and val not in _VALID_UOMS:
-                raise HTTPException(status_code=400, detail=f"Invalid uom: {val}")
-            updates.append(f"{col} = :{field}")
-            params[field] = val
+    for field in provided:
+        val = getattr(body, field)
+        updates.append(f"{field} = :{field}")
+        params[field] = val
 
     if not updates:
         return {"status": "OK", "data": {"msg": "No fields to update"}}
 
-    # Date range sanity check — resolve final effective_from/to across provided + existing values
+    # Date range sanity check
     eff_from_final = params.get("effective_from")
     eff_to_final = params.get("effective_to")
     if "effective_from" not in provided or "effective_to" not in provided:
-        row = conn.execute(text("SELECT effective_from, effective_to FROM customs_rates WHERE id = :id"), {"id": rate_id}).fetchone()
+        row = conn.execute(text(
+            "SELECT effective_from, effective_to FROM customs_rates WHERE id = :id"
+        ), {"id": rate_id}).fetchone()
         if row:
             if "effective_from" not in provided:
                 eff_from_final = str(row[0]) if row[0] else None
@@ -444,7 +533,9 @@ async def update_customs_rate(
     updates.append("updated_at = :now")
     params["now"] = datetime.now(timezone.utc).isoformat()
 
-    conn.execute(text(f"UPDATE customs_rates SET {', '.join(updates)} WHERE id = :id"), params)
+    conn.execute(text(
+        f"UPDATE customs_rates SET {', '.join(updates)} WHERE id = :id"
+    ), params)
     conn.commit()
 
     return {"status": "OK", "data": {"msg": "Updated"}}
@@ -464,3 +555,34 @@ async def delete_customs_rate(
     conn.commit()
 
     return {"status": "OK", "data": {"msg": "Deleted"}}
+
+
+@router.delete("/rates/card/{card_key}")
+async def delete_customs_card(
+    card_key: str,
+    claims: Claims = Depends(require_afu_admin),
+    conn=Depends(get_db),
+):
+    """Delete all rate rows for a card, then delete the card row itself."""
+    card_row = conn.execute(text(
+        "SELECT id FROM customs_rate_cards WHERE rate_card_key = :key"
+    ), {"key": card_key}).fetchone()
+
+    if not card_row:
+        raise HTTPException(status_code=404, detail="No card found for this key")
+
+    card_id = card_row[0]
+
+    # Delete all rate rows first (FK constraint)
+    result = conn.execute(text(
+        "DELETE FROM customs_rates WHERE rate_card_id = :card_id"
+    ), {"card_id": card_id})
+    rate_count = result.rowcount
+
+    # Delete the card row
+    conn.execute(text(
+        "DELETE FROM customs_rate_cards WHERE id = :card_id"
+    ), {"card_id": card_id})
+    conn.commit()
+
+    return {"status": "OK", "data": {"msg": f"Deleted card and {rate_count} rate(s)"}}

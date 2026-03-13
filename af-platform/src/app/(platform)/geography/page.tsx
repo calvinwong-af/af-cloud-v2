@@ -1,7 +1,7 @@
 /**
  * /geography — Admin Geography Management
  *
- * Tabs: States | Cities | Areas | Ports
+ * Tabs: Countries | States | Areas | Ports
  * AFU only — sidebar already restricts visibility.
  */
 
@@ -9,9 +9,9 @@
 
 import { useState } from 'react';
 import { Globe } from 'lucide-react';
-import { StatesTab, CitiesTab, AreasTab, PortsTab, CountriesTab } from './_components';
+import { StatesTab, AreasTab, PortsTab, CountriesTab } from './_components';
 
-const TABS = ['Countries', 'States', 'Cities', 'Areas', 'Ports'] as const;
+const TABS = ['Countries', 'States', 'Areas', 'Ports'] as const;
 type Tab = (typeof TABS)[number];
 
 export default function GeographyPage() {
@@ -26,7 +26,7 @@ export default function GeographyPage() {
           <h1 className="text-2xl font-semibold text-[var(--text)]">Geography</h1>
         </div>
         <p className="text-sm text-[var(--text-muted)] mt-0.5">
-          Manage countries, states, cities, areas, and ports
+          Manage countries, states, areas, and ports
         </p>
       </div>
 
@@ -49,7 +49,6 @@ export default function GeographyPage() {
 
       {/* Tab content */}
       {tab === 'States' && <StatesTab />}
-      {tab === 'Cities' && <CitiesTab />}
       {tab === 'Areas' && <AreasTab />}
       {tab === 'Ports' && <PortsTab />}
       {tab === 'Countries' && <CountriesTab />}

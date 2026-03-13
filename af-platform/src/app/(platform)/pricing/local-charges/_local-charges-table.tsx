@@ -1,20 +1,24 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { ChevronDown, ChevronRight, Pencil, Plus, Warehouse } from 'lucide-react';
+import { ChevronDown, ChevronRight, Pencil, Plus, Info, Trash2, Warehouse } from 'lucide-react';
 import {
   fetchPricingCountriesAction,
   fetchLocalChargeCardsAction,
   fetchLocalChargePortsAction,
   createLocalChargeAction,
   updateLocalChargeAction,
+  updateLocalChargeCardAction,
+  deleteLocalChargeAction,
+  deleteLocalChargeCardAction,
 } from '@/app/actions/pricing';
-import type { PricingCountry, LocalChargeCard, LocalCharge } from '@/app/actions/pricing';
+import type { PricingCountry, LocalChargeCard } from '@/app/actions/pricing';
 import { fetchPortsAction } from '@/app/actions/shipments';
 import { PortCombobox } from '@/components/shared/PortCombobox';
 import { ToggleSwitch } from '../_components';
 import { useMonthBuckets, formatCompact, formatDate } from '../_helpers';
 import { LocalChargesModal } from './_local-charges-modal';
+import type { LocalChargeModalSeed } from './_local-charges-modal';
 
 const SHIPMENT_TYPE_OPTIONS = [
   { value: '', label: 'All Types' },
@@ -27,13 +31,13 @@ const SHIPMENT_TYPE_OPTIONS = [
 const UOM_TOOLTIPS: Record<string, string> = {
   CONTAINER: 'Per container (FCL)',
   CBM: 'Per cubic metre (LCL)',
-  KG: 'Per kilogram — gross weight',
-  'W/M': 'W/M — Weight or Measurement (revenue tonne)',
-  CW_KG: 'CW — Chargeable weight in kg (AIR)',
-  SET: 'Per set — fixed fee, qty 1',
+  KG: 'Per kilogram \u2014 gross weight',
+  'W/M': 'W/M \u2014 Weight or Measurement (revenue tonne)',
+  CW_KG: 'CW \u2014 Chargeable weight in kg (AIR)',
+  SET: 'Per set \u2014 fixed fee, qty 1',
   BL: 'Per Bill of Lading',
   QTL: 'Per quintal (100 kg)',
-  RAIL_3KG: 'Rail volumetric — 1:3 ratio per kg',
+  RAIL_3KG: 'Rail volumetric \u2014 1:3 ratio per kg',
 };
 
 const CONTAINER_TYPE_TOOLTIPS: Record<string, string> = {
@@ -48,8 +52,8 @@ const CONTAINER_TYPE_TOOLTIPS: Record<string, string> = {
 };
 
 const DIRECTION_TOOLTIPS: Record<string, string> = {
-  IMPORT: 'Import — inbound shipment',
-  EXPORT: 'Export — outbound shipment',
+  IMPORT: 'Import \u2014 inbound shipment',
+  EXPORT: 'Export \u2014 outbound shipment',
 };
 
 const DIRECTION_LABELS: Record<string, string> = {
@@ -63,11 +67,11 @@ const directionBadge = (d: string) => {
 };
 
 const TYPE_TOOLTIPS: Record<string, string> = {
-  FCL: 'FCL — Full Container Load',
-  LCL: 'LCL — Less than Container Load',
-  AIR: 'AIR — Air freight',
-  CB: 'CB — Cross-border',
-  ALL: 'ALL — Applies to all shipment types',
+  FCL: 'FCL \u2014 Full Container Load',
+  LCL: 'LCL \u2014 Less than Container Load',
+  AIR: 'AIR \u2014 Air freight',
+  CB: 'CB \u2014 Cross-border',
+  ALL: 'ALL \u2014 Applies to all shipment types',
 };
 
 const typeBadge = (t: string) => {
@@ -80,6 +84,26 @@ const typeBadge = (t: string) => {
   };
   return <span title={TYPE_TOOLTIPS[t] ?? t} className={`text-[10px] font-medium px-1.5 py-0.5 rounded cursor-help ${colors[t] ?? 'bg-slate-100 text-slate-600'}`}>{t}</span>;
 };
+
+function buildCardSeed(card: LocalChargeCard): Omit<LocalChargeModalSeed, 'rate_id' | 'price' | 'cost' | 'effective_from' | 'effective_to'> {
+  return {
+    card_id: card.card_id,
+    card_key: card.card_key,
+    port_code: card.port_code,
+    trade_direction: card.trade_direction,
+    shipment_type: card.shipment_type,
+    container_size: card.container_size,
+    container_type: card.container_type,
+    dg_class_code: card.dg_class_code ?? 'NON-DG',
+    charge_code: card.charge_code,
+    description: card.description,
+    currency: card.currency,
+    uom: card.uom,
+    is_domestic: card.is_domestic,
+    is_international: card.is_international ?? true,
+    is_active: card.is_active,
+  };
+}
 
 function getLocalChargeAlertLevel(card: LocalChargeCard): 'cost_exceeds_price' | 'no_active_cost' | null {
   const today = new Date();
@@ -105,9 +129,8 @@ export function LocalChargesTab({ countryCode, alertFilter }: { countryCode?: st
   const [loading, setLoading] = useState(false);
   const [portsMap, setPortsMap] = useState<Record<string, { name: string; country_name: string }>>({});
   const [modalOpen, setModalOpen] = useState(false);
-  const [editRate, setEditRate] = useState<LocalCharge | null>(null);
-  const [editRateId, setEditRateId] = useState<number | null>(null);
-  const [modalMode, setModalMode] = useState<'edit' | 'new-rate'>('edit');
+  const [modalMode, setModalMode] = useState<'new' | 'edit-rate' | 'edit-card'>('new');
+  const [modalSeed, setModalSeed] = useState<LocalChargeModalSeed | null>(null);
   const [showIssuesOnly, setShowIssuesOnly] = useState(!!alertFilter);
 
   useEffect(() => {
@@ -149,17 +172,6 @@ export function LocalChargesTab({ countryCode, alertFilter }: { countryCode?: st
 
   useEffect(() => { fetchCards(); }, [fetchCards]);
 
-  const handleSave = async (data: Omit<LocalCharge, 'id' | 'created_at' | 'updated_at'> & { close_previous?: boolean }) => {
-    if (editRate && modalMode === 'edit') {
-      if (editRateId) {
-        await updateLocalChargeAction(editRateId, data);
-      }
-    } else {
-      await createLocalChargeAction(data);
-    }
-    fetchCards();
-  };
-
   const filteredCards = useMemo(() => {
     let result = cards;
     if (showIssuesOnly) {
@@ -181,11 +193,16 @@ export function LocalChargesTab({ countryCode, alertFilter }: { countryCode?: st
     ...portOptions.map(code => ({ value: code, label: code, sublabel: portsMap[code]?.name ?? '' })),
   ];
 
+  const modalPortOptions = useMemo(() =>
+    Object.entries(portsMap).map(([code, p]) => ({ value: code, label: p.name, sublabel: p.country_name })),
+    [portsMap],
+  );
+
   const countryOptions = [
     { value: '', label: 'All Countries' },
     ...countries.filter(c => c.country_code && c.country_name).map(c => ({
       value: c.country_code,
-      label: `${c.country_code} — ${c.country_name}`,
+      label: `${c.country_code} \u2014 ${c.country_name}`,
     })),
   ];
 
@@ -215,7 +232,7 @@ export function LocalChargesTab({ countryCode, alertFilter }: { countryCode?: st
         </button>
         <div className="flex-1" />
         <button
-          onClick={() => { setEditRate(null); setEditRateId(null); setModalMode('edit'); setModalOpen(true); }}
+          onClick={() => { setModalSeed(null); setModalMode('new'); setModalOpen(true); }}
           className="h-9 px-3 text-sm rounded-lg bg-[var(--sky)] text-white font-medium hover:bg-[var(--sky)]/90 transition-colors flex items-center gap-1.5"
         >
           <Plus size={14} /> Add Rate
@@ -235,7 +252,7 @@ export function LocalChargesTab({ countryCode, alertFilter }: { countryCode?: st
             className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
             aria-label="Clear filter"
           >
-            ×
+            &times;
           </button>
         )}
       </div>
@@ -250,30 +267,14 @@ export function LocalChargesTab({ countryCode, alertFilter }: { countryCode?: st
           <LocalChargeCardList
             cards={filteredCards}
             loading={loading}
-            onAction={(card, rateId, price, cost, actionMode) => {
-              setEditRateId(rateId);
-              setModalMode(actionMode);
-              setEditRate({
-                id: rateId,
-                port_code: card.port_code,
-                trade_direction: card.trade_direction,
-                shipment_type: card.shipment_type,
-                container_size: card.container_size,
-                container_type: card.container_type,
-                charge_code: card.charge_code,
-                description: card.description,
-                price: price ?? 0,
-                cost: cost ?? 0,
-                currency: card.currency,
-                uom: card.uom,
-                is_domestic: card.is_domestic,
-                paid_with_freight: card.paid_with_freight,
-                effective_from: card.latest_effective_from ?? '',
-                effective_to: card.latest_effective_to ?? null,
-                is_active: card.is_active,
-                created_at: '',
-                updated_at: '',
-              });
+            onDeleteCard={async (cardKey) => {
+              const result = await deleteLocalChargeCardAction(cardKey);
+              if (!result.success) throw new Error(result.error ?? 'Delete failed');
+              fetchCards();
+            }}
+            onAction={(seed, mode) => {
+              setModalSeed(seed);
+              setModalMode(mode);
               setModalOpen(true);
             }}
           />
@@ -288,10 +289,28 @@ export function LocalChargesTab({ countryCode, alertFilter }: { countryCode?: st
 
       <LocalChargesModal
         open={modalOpen}
-        onClose={() => { setModalOpen(false); setEditRate(null); setEditRateId(null); }}
-        onSave={handleSave}
-        editRate={editRate}
+        onClose={() => { setModalOpen(false); setModalSeed(null); }}
         mode={modalMode}
+        seed={modalSeed ?? undefined}
+        portOptions={modalPortOptions}
+        onSave={async (payload) => {
+          if (payload.mode === 'new') {
+            const result = await createLocalChargeAction(payload.data);
+            if (!result.success) throw new Error(result.error ?? 'Create failed');
+          } else if (payload.mode === 'edit-rate') {
+            const result = await updateLocalChargeAction(payload.rateId, payload.data);
+            if (!result.success) throw new Error(result.error ?? 'Update failed');
+          } else if (payload.mode === 'edit-card') {
+            const result = await updateLocalChargeCardAction(payload.cardId, payload.data);
+            if (!result.success) throw new Error(result.error ?? 'Update failed');
+          }
+          fetchCards();
+        }}
+        onDelete={modalMode === 'edit-rate' && modalSeed?.rate_id != null ? async () => {
+          const result = await deleteLocalChargeAction(modalSeed!.rate_id!);
+          if (!result.success) throw new Error(result.error ?? 'Delete failed');
+          fetchCards();
+        } : undefined}
       />
     </div>
   );
@@ -305,14 +324,18 @@ function LocalChargeCardList({
   cards,
   loading,
   onAction,
+  onDeleteCard,
 }: {
   cards: LocalChargeCard[];
   loading: boolean;
-  onAction: (card: LocalChargeCard, rateId: number, price: number | null, cost: number | null, mode: 'edit' | 'new-rate') => void;
+  onAction: (seed: LocalChargeModalSeed, mode: 'new' | 'edit-rate' | 'edit-card') => void;
+  onDeleteCard: (cardKey: string) => Promise<void>;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [historicalCount, setHistoricalCount] = useState(6);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [confirmDeleteCard, setConfirmDeleteCard] = useState<string | null>(null);
+  const [deletingCard, setDeletingCard] = useState(false);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -461,11 +484,14 @@ function LocalChargeCardList({
                           ) : (
                             <span title="Applies to all container sizes and types" className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium cursor-help">ALL</span>
                           )}
-                          {card.is_domestic && (
-                            <span title="DOM — Domestic (local delivery component)" className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 cursor-help">DOM</span>
+                          {card.dg_class_code && card.dg_class_code !== 'NON-DG' && (
+                            <span title={`DG Class: ${card.dg_class_code}`} className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 cursor-help">{card.dg_class_code}</span>
                           )}
-                          {card.paid_with_freight && (
-                            <span title="PWF — Paid with freight" className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 cursor-help">PWF</span>
+                          {card.is_international && (
+                            <span title="INTL \u2014 International" className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 cursor-help">INTL</span>
+                          )}
+                          {card.is_domestic && (
+                            <span title="DOM \u2014 Domestic (local delivery component)" className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 cursor-help">DOM</span>
                           )}
                           <span title={UOM_TOOLTIPS[card.uom] ?? card.uom} className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 cursor-help">{card.uom}</span>
                           {alertLevel === 'cost_exceeds_price' && (
@@ -485,38 +511,97 @@ function LocalChargeCardList({
                             : '\u2014'}
                         </span>
                         <div className="absolute top-2 right-2 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+                          {/* Edit rate (pencil) */}
                           <button
                             onClick={e => {
                               e.stopPropagation();
-                              // Edit: use the LATEST rate entry (highest month_key) so the
-                              // rate_id, price and cost all correspond to the same row.
                               const tsList = card.time_series ?? [];
                               const latest = tsList.length > 0
                                 ? tsList.reduce((a, b) => b.month_key > a.month_key ? b : a)
                                 : null;
-                              onAction(card, latest?.rate_id ?? 0, latest?.price ?? null, latest?.cost ?? null, 'edit');
+                              onAction({
+                                ...buildCardSeed(card),
+                                rate_id: latest?.rate_id ?? null,
+                                price: latest?.price ?? null,
+                                cost: latest?.cost ?? null,
+                                effective_from: card.latest_effective_from,
+                                effective_to: card.latest_effective_to,
+                              }, 'edit-rate');
                             }}
                             className="p-1 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--text)]"
                             title="Edit rate"
                           >
                             <Pencil size={12} />
                           </button>
+                          {/* Edit card details (info) */}
                           <button
                             onClick={e => {
                               e.stopPropagation();
-                              // New rate: also seed from the latest rate's values.
-                              const tsList = card.time_series ?? [];
-                              const latest = tsList.length > 0
-                                ? tsList.reduce((a, b) => b.month_key > a.month_key ? b : a)
-                                : null;
-                              onAction(card, latest?.rate_id ?? 0, latest?.price ?? null, latest?.cost ?? null, 'new-rate');
+                              onAction({
+                                ...buildCardSeed(card),
+                                rate_id: null, price: null, cost: null,
+                                effective_from: null, effective_to: null,
+                              }, 'edit-card');
+                            }}
+                            className="p-1 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-amber-500"
+                            title="Edit charge details"
+                          >
+                            <Info size={12} />
+                          </button>
+                          {/* New rate (plus) */}
+                          <button
+                            onClick={e => {
+                              e.stopPropagation();
+                              const now = new Date();
+                              const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+                              const nextMonth = next.toISOString().slice(0, 10);
+                              onAction({
+                                ...buildCardSeed(card),
+                                rate_id: null, price: null, cost: null,
+                                effective_from: nextMonth, effective_to: null,
+                              }, 'new');
                             }}
                             className="p-1 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--sky)]"
                             title="New rate"
                           >
                             <Plus size={12} />
                           </button>
+                          {/* Delete card (trash) */}
+                          <button
+                            onClick={e => { e.stopPropagation(); setConfirmDeleteCard(card.card_key); }}
+                            className="p-1 rounded hover:bg-red-50 text-[var(--text-muted)] hover:text-red-500"
+                            title="Delete card"
+                          >
+                            <Trash2 size={12} />
+                          </button>
                         </div>
+                        {confirmDeleteCard === card.card_key && (
+                          <div className="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-white/95 rounded-lg">
+                            <span className="text-xs text-red-600 font-medium">Delete all rates for this charge?</span>
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                setDeletingCard(true);
+                                try {
+                                  await onDeleteCard(card.card_key);
+                                } catch { /* error handled by caller */ }
+                                setDeletingCard(false);
+                                setConfirmDeleteCard(null);
+                              }}
+                              disabled={deletingCard}
+                              className="h-6 px-2 text-xs rounded bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50"
+                            >
+                              {deletingCard ? 'Deleting...' : 'Confirm'}
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setConfirmDeleteCard(null); }}
+                              disabled={deletingCard}
+                              className="h-6 px-2 text-xs rounded border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)]"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       {/* Right: time-series cells */}
@@ -525,34 +610,61 @@ function LocalChargeCardList({
                           const bucket = tsMap.get(m.month_key);
                           const hasData = bucket && (bucket.price != null || bucket.cost != null);
 
+                          if (hasData) {
+                            return (
+                              <div
+                                key={m.month_key}
+                                onClick={() => onAction({
+                                  ...buildCardSeed(card),
+                                  rate_id: bucket.rate_id,
+                                  price: bucket.price,
+                                  cost: bucket.cost,
+                                  effective_from: card.latest_effective_from,
+                                  effective_to: card.latest_effective_to,
+                                }, 'edit-rate')}
+                                className={`w-[80px] shrink-0 px-1 py-2.5 text-center cursor-pointer group/cell transition-colors ${
+                                  m.isCurrentMonth ? 'bg-[var(--sky-mist)]/40 hover:bg-[var(--sky-mist)]/70' : 'hover:bg-[var(--sky-mist)]/30'
+                                }`}
+                              >
+                                <div className={`text-xs font-medium ${
+                                  m.isCurrentMonth && alertLevel === 'cost_exceeds_price' ? 'text-red-700 font-semibold' :
+                                  m.isCurrentMonth && alertLevel === 'no_active_cost' ? 'text-red-600 font-semibold' :
+                                  'text-[var(--text)]'
+                                }`}>
+                                  {formatCompact(bucket.price)}
+                                </div>
+                                <div className="text-[10px] text-[var(--text-muted)]">
+                                  {formatCompact(bucket.cost)}
+                                </div>
+                                {card.currency && (
+                                  <div className="text-[9px] text-[var(--text-muted)]/60 text-center mt-0.5">
+                                    {card.currency}
+                                  </div>
+                                )}
+                                <div className="mt-0.5 flex justify-center opacity-0 group-hover/cell:opacity-100 transition-opacity">
+                                  <span className="w-1 h-1 rounded-full bg-[var(--sky)]/50" />
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          const [year, month] = m.month_key.split('-');
+                          const overrideDate = `${year}-${month}-01`;
+
                           return (
                             <div
                               key={m.month_key}
-                              className={`w-[80px] shrink-0 px-1 py-2.5 text-center ${
-                                m.isCurrentMonth ? 'bg-[var(--sky-mist)]/40' : ''
+                              onClick={() => onAction({
+                                ...buildCardSeed(card),
+                                rate_id: null, price: null, cost: null,
+                                effective_from: overrideDate, effective_to: null,
+                              }, 'new')}
+                              className={`w-[80px] shrink-0 px-1 py-2.5 text-center cursor-pointer group/cell transition-colors ${
+                                m.isCurrentMonth ? 'bg-[var(--sky-mist)]/40 hover:bg-[var(--sky-mist)]/70' : 'hover:bg-slate-50'
                               }`}
                             >
-                              {hasData ? (
-                                <>
-                                  <div className={`text-xs font-medium ${
-                                    m.isCurrentMonth && alertLevel === 'cost_exceeds_price' ? 'text-red-700 font-semibold' :
-                                    m.isCurrentMonth && alertLevel === 'no_active_cost' ? 'text-red-600 font-semibold' :
-                                    'text-[var(--text)]'
-                                  }`}>
-                                    {formatCompact(bucket.price)}
-                                  </div>
-                                  <div className="text-[10px] text-[var(--text-muted)]">
-                                    {formatCompact(bucket.cost)}
-                                  </div>
-                                  {card.currency && (
-                                    <div className="text-[9px] text-[var(--text-muted)]/60 text-center mt-0.5">
-                                      {card.currency}
-                                    </div>
-                                  )}
-                                </>
-                              ) : (
-                                <div className="text-xs text-[var(--text-muted)]/40">{'\u2014'}</div>
-                              )}
+                              <div className="text-xs text-[var(--text-muted)]/40 group-hover/cell:hidden">{'\u2014'}</div>
+                              <div className="hidden group-hover/cell:block text-[10px] text-[var(--sky)]/60 font-medium">+</div>
                             </div>
                           );
                         })}

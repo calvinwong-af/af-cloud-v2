@@ -194,7 +194,7 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
   // Step 3: Cargo
   const [cargoDesc, setCargoDesc] = useState('');
   const [cargoHsCode, setCargoHsCode] = useState('');
-  const [cargoDg, setCargoDg] = useState(false);
+  const [cargoDgClass, setCargoDgClass] = useState<string | null>(null);
 
   // Step 4: Containers (SEA_FCL)
   const [containers, setContainers] = useState<ContainerRow[]>([
@@ -302,7 +302,8 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
       incoterm_code: incoterm || null,
       cargo_description: cargoDesc.trim() || '',
       cargo_hs_code: cargoHsCode.trim() || null,
-      cargo_is_dg: cargoDg,
+      cargo_is_dg: cargoDgClass !== null,
+      cargo_dg_class_code: cargoDgClass,
       containers: orderType === 'SEA_FCL' ? containers.map(c => ({
         container_size: c.container_size,
         container_type: c.container_type,
@@ -379,8 +380,8 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
             setCargoDescription={setCargoDesc}
             cargoHsCode={cargoHsCode}
             setCargoHsCode={setCargoHsCode}
-            cargoDg={cargoDg}
-            setCargoDg={setCargoDg}
+            cargoDgClass={cargoDgClass}
+            setCargoDgClass={setCargoDgClass}
             packageRows={packages}
             setPackageRows={setPackages}
             orderType={orderType}
@@ -403,8 +404,8 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
             setCargoDescription={setCargoDesc}
             cargoHsCode={cargoHsCode}
             setCargoHsCode={setCargoHsCode}
-            cargoDg={cargoDg}
-            setCargoDg={setCargoDg}
+            cargoDgClass={cargoDgClass}
+            setCargoDgClass={setCargoDgClass}
             packageRows={packages}
             setPackageRows={setPackages}
             orderType={orderType}
@@ -424,7 +425,7 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
             destTerminalId={destTerminalId}
             cargoDescription={cargoDesc}
             cargoHsCode={cargoHsCode}
-            cargoDg={cargoDg}
+            cargoDgClass={cargoDgClass}
             cargoReadyDate={cargoReadyDate}
             packageRows={packages}
             containerRows={containers}

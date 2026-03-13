@@ -3,14 +3,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Plus, Search, Loader2, MapPin, X, Pencil, Trash2, Sparkles } from 'lucide-react';
 import {
-  fetchStatesAction, fetchCitiesAction, fetchAreasAction,
-  fetchGeoPortsAction, createCityAction, updateCityAction,
+  fetchStatesAction, fetchAreasAction,
+  fetchGeoPortsAction,
   createAreaAction, updateAreaAction, deleteAreaAction,
   updatePortCoordinatesAction, resolvePortAction, confirmPortAction,
   fetchCountriesAction, updateCountryAction,
 } from '@/app/actions/geography';
 import type { Country } from '@/app/actions/geography';
-import type { State, City, Area } from '@/lib/types';
+import type { State, Area } from '@/lib/types';
 import type { Port } from '@/lib/ports';
 
 // ---------------------------------------------------------------------------
@@ -265,27 +265,30 @@ export function StatesTab() {
 }
 
 // ---------------------------------------------------------------------------
-// Cities Tab
+// Areas Tab
 // ---------------------------------------------------------------------------
 
-export function CitiesTab() {
-  const [cities, setCities] = useState<City[]>([]);
+export function AreasTab() {
+  const [areas, setAreas] = useState<Area[]>([]);
   const [states, setStates] = useState<State[]>([]);
   const [countryMap, setCountryMap] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [filterCountry, setFilterCountry] = useState('');
   const [filterState, setFilterState] = useState('');
+  const [filterText, setFilterText] = useState('');
   const [showAdd, setShowAdd] = useState(false);
-  const [editCity, setEditCity] = useState<City | null>(null);
+  const [editArea, setEditArea] = useState<Area | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [citiesRes, statesRes, countriesRes] = await Promise.all([
-      fetchCitiesAction(filterState || undefined),
+    const filters: { state_code?: string } = {};
+    if (filterState) filters.state_code = filterState;
+    const [areasRes, statesRes, countriesRes] = await Promise.all([
+      fetchAreasAction(filters),
       fetchStatesAction(),
       fetchCountriesAction(),
     ]);
-    if (citiesRes.success) setCities(citiesRes.data);
+    if (areasRes.success) setAreas(areasRes.data);
     if (statesRes.success) setStates(statesRes.data);
     if (countriesRes.success) setCountryMap(new Map(countriesRes.data.map(c => [c.country_code, c.name])));
     setLoading(false);
@@ -295,9 +298,14 @@ export function CitiesTab() {
 
   const countryOptions = Array.from(
     new Map(
-      states
-        .filter(s => !!s.country_code)
-        .map(s => [s.country_code, { value: s.country_code, label: `${s.country_code} — ${countryMap.get(s.country_code) ?? s.country_code}` }])
+      areas
+        .filter(a => !!a.state_code)
+        .map(a => {
+          const cc = a.state_code.split('-')[0];
+          const name = countryMap.get(cc);
+          const label = name ? `${cc} — ${name}` : cc;
+          return [cc, { value: cc, label }];
+        })
     ).values()
   ).sort((a, b) => a.value.localeCompare(b.value));
 
@@ -306,220 +314,15 @@ export function CitiesTab() {
     : states
   ).map(s => ({ value: s.state_code, label: s.name }));
 
-  const filteredCities = filterCountry
-    ? cities.filter(c => c.state_code.startsWith(filterCountry + '-'))
-    : cities;
-
-  return (
-    <>
-      {/* Toolbar */}
-      <div className="flex items-center gap-3 mb-4">
-        <FilterCombobox
-          value={filterCountry}
-          onChange={(v) => { setFilterCountry(v); setFilterState(''); }}
-          options={countryOptions}
-          placeholder="All countries"
-        />
-        <FilterCombobox
-          value={filterState}
-          onChange={setFilterState}
-          options={stateOptions}
-          placeholder="All states"
-        />
-        <button onClick={() => setShowAdd(true)} className={btnPrimary}>
-          <Plus className="w-4 h-4 inline mr-1" />Add City
-        </button>
-      </div>
-
-      <TableShell>
-        <thead className="bg-[var(--surface)]">
-          <tr>
-            <th className={thCls}>Name</th>
-            <th className={thCls}>State</th>
-            <th className={thCls}>Coordinates</th>
-            <th className={thCls}>Active</th>
-            <th className={thCls}></th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-[var(--border)]">
-          {loading ? (
-            <tr><td colSpan={5} className="py-8 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-[var(--text-muted)]" /></td></tr>
-          ) : filteredCities.length === 0 ? (
-            <EmptyRow cols={5} message="No cities found" />
-          ) : (
-            filteredCities.map((c) => (
-              <tr key={c.city_id} className="hover:bg-[var(--surface)]/50">
-                <td className={tdCls}>{c.name}</td>
-                <td className={`${tdCls} text-[var(--text-muted)]`}>{c.state_name || c.state_code}</td>
-                <td className={`${tdCls} font-mono text-xs`}>
-                  {c.lat != null && c.lng != null ? `${c.lat}, ${c.lng}` : '—'}
-                </td>
-                <td className={tdCls}>
-                  <span className={`inline-block w-2 h-2 rounded-full ${c.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
-                </td>
-                <td className={tdCls}>
-                  <button onClick={() => setEditCity(c)} className="text-[var(--text-muted)] hover:text-[var(--text)]">
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </TableShell>
-
-      {/* Add City Modal */}
-      {showAdd && (
-        <CityFormModal
-          states={states}
-          onClose={() => setShowAdd(false)}
-          onSaved={() => { setShowAdd(false); load(); }}
-        />
-      )}
-
-      {/* Edit City Modal */}
-      {editCity && (
-        <CityFormModal
-          city={editCity}
-          states={states}
-          onClose={() => setEditCity(null)}
-          onSaved={() => { setEditCity(null); load(); }}
-        />
-      )}
-    </>
-  );
-}
-
-function CityFormModal({ city, states, onClose, onSaved }: {
-  city?: City;
-  states: State[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const isEdit = !!city;
-  const [name, setName] = useState(city?.name ?? '');
-  const [stateCode, setStateCode] = useState(city?.state_code ?? '');
-  const [lat, setLat] = useState(city?.lat?.toString() ?? '');
-  const [lng, setLng] = useState(city?.lng?.toString() ?? '');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleSave = async () => {
-    if (!name.trim()) { setError('Name is required'); return; }
-    if (!isEdit && !stateCode) { setError('State is required'); return; }
-    setSaving(true);
-    setError('');
-
-    const latNum = lat ? parseFloat(lat) : null;
-    const lngNum = lng ? parseFloat(lng) : null;
-
-    const result = isEdit
-      ? await updateCityAction(city!.city_id, { name: name.trim(), lat: latNum, lng: lngNum })
-      : await createCityAction({ name: name.trim(), state_code: stateCode, lat: latNum, lng: lngNum });
-
-    if (!result) { setError('No response'); setSaving(false); return; }
-    if (!result.success) { setError(result.error); setSaving(false); return; }
-    onSaved();
-  };
-
-  return (
-    <ModalOverlay onClose={onClose}>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-[var(--text)]">{isEdit ? 'Edit City' : 'Add City'}</h3>
-        <button onClick={onClose}><X className="w-5 h-5 text-[var(--text-muted)]" /></button>
-      </div>
-      <div className="space-y-3">
-        <Field label="Name">
-          <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} />
-        </Field>
-        {!isEdit && (
-          <Field label="State">
-            <select className={inputCls} value={stateCode} onChange={(e) => setStateCode(e.target.value)}>
-              <option value="">Select state...</option>
-              {states.map((s) => <option key={s.state_code} value={s.state_code}>{s.name}</option>)}
-            </select>
-          </Field>
-        )}
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Latitude">
-            <input className={inputCls} value={lat} onChange={(e) => setLat(e.target.value)} placeholder="e.g. 3.1578" />
-          </Field>
-          <Field label="Longitude">
-            <input className={inputCls} value={lng} onChange={(e) => setLng(e.target.value)} placeholder="e.g. 101.7117" />
-          </Field>
-        </div>
-        <MiniMapPreview lat={lat ? parseFloat(lat) : null} lng={lng ? parseFloat(lng) : null} />
-        {error && <p className="text-sm text-red-600">{error}</p>}
-      </div>
-      <div className="flex justify-end gap-2 mt-5">
-        <button onClick={onClose} className={btnSecondary}>Cancel</button>
-        <button onClick={handleSave} disabled={saving} className={btnPrimary}>
-          {saving && <Loader2 className="w-4 h-4 animate-spin inline mr-1" />}
-          {isEdit ? 'Save' : 'Add City'}
-        </button>
-      </div>
-    </ModalOverlay>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Areas Tab
-// ---------------------------------------------------------------------------
-
-export function AreasTab() {
-  const [areas, setAreas] = useState<Area[]>([]);
-  const [states, setStates] = useState<State[]>([]);
-  const [ports, setPorts] = useState<Port[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filterCountry, setFilterCountry] = useState('');
-  const [filterPort, setFilterPort] = useState('');
-  const [filterState, setFilterState] = useState('');
-  const [showAdd, setShowAdd] = useState(false);
-  const [editArea, setEditArea] = useState<Area | null>(null);
-
-  const seaPorts = ports.filter((p) => p.port_type === 'SEA');
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    const filters: { port_un_code?: string; state_code?: string } = {};
-    if (filterPort) filters.port_un_code = filterPort;
-    if (filterState) filters.state_code = filterState;
-
-    const [areasRes, statesRes, portsRes] = await Promise.all([
-      fetchAreasAction(filters),
-      fetchStatesAction(),
-      fetchGeoPortsAction(),
-    ]);
-    let areaData = areasRes.success ? areasRes.data : [];
-    if (filterCountry && portsRes.success) {
-      const portsInCountry = new Set(
-        portsRes.data.filter(p => p.country_code === filterCountry).map(p => p.un_code)
-      );
-      areaData = areaData.filter(a => portsInCountry.has(a.port_un_code));
+  const displayed = areas.filter(a => {
+    if (filterCountry && !a.state_code?.startsWith(filterCountry + '-')) return false;
+    if (filterState && a.state_code !== filterState) return false;
+    if (filterText) {
+      const q = filterText.toLowerCase();
+      return a.area_code.toLowerCase().includes(q) || a.area_name.toLowerCase().includes(q);
     }
-    setAreas(areaData);
-    if (statesRes.success) setStates(statesRes.data);
-    if (portsRes.success) setPorts(portsRes.data);
-    setLoading(false);
-  }, [filterPort, filterState, filterCountry]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const portsInAreas = new Set(areas.map(a => a.port_un_code));
-  const countryOptions = Array.from(
-    new Map(
-      ports
-        .filter(p => portsInAreas.has(p.un_code) && !!p.country_code)
-        .map(p => [p.country_code, { value: p.country_code, label: `${p.country_code} — ${p.country_name}` }])
-    ).values()
-  ).sort((a, b) => a.value.localeCompare(b.value));
-
-  const portOptions = (filterCountry
-    ? seaPorts.filter(p => p.country_code === filterCountry)
-    : seaPorts
-  ).map(p => ({ value: p.un_code, label: `${p.name} (${p.un_code})` }));
-
-  const stateOptions = states.map(s => ({ value: s.state_code, label: s.name }));
+    return true;
+  });
 
   const handleDelete = async (area: Area) => {
     if (!confirm(`Deactivate "${area.area_name}"?`)) return;
@@ -532,15 +335,9 @@ export function AreasTab() {
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <FilterCombobox
           value={filterCountry}
-          onChange={(v) => { setFilterCountry(v); setFilterPort(''); setFilterState(''); }}
+          onChange={(v) => { setFilterCountry(v); setFilterState(''); setFilterText(''); }}
           options={countryOptions}
           placeholder="All countries"
-        />
-        <FilterCombobox
-          value={filterPort}
-          onChange={setFilterPort}
-          options={portOptions}
-          placeholder="All ports"
         />
         <FilterCombobox
           value={filterState}
@@ -548,6 +345,15 @@ export function AreasTab() {
           options={stateOptions}
           placeholder="All states"
         />
+        <div className="relative flex-1 max-w-[260px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+          <input
+            className={`${inputCls} pl-9`}
+            placeholder="Search areas..."
+            value={filterText}
+            onChange={(e) => setFilterText(e.target.value)}
+          />
+        </div>
         <button onClick={() => setShowAdd(true)} className={btnPrimary}>
           <Plus className="w-4 h-4 inline mr-1" />Add Area
         </button>
@@ -567,10 +373,10 @@ export function AreasTab() {
         <tbody className="divide-y divide-[var(--border)]">
           {loading ? (
             <tr><td colSpan={6} className="py-8 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-[var(--text-muted)]" /></td></tr>
-          ) : areas.length === 0 ? (
+          ) : displayed.length === 0 ? (
             <EmptyRow cols={6} message="No areas found" />
           ) : (
-            areas.map((a) => (
+            displayed.map((a) => (
               <tr key={a.area_id} className="hover:bg-[var(--surface)]/50">
                 <td className={`${tdCls} font-mono`}>{a.area_code}</td>
                 <td className={tdCls}>{a.area_name}</td>
@@ -595,14 +401,14 @@ export function AreasTab() {
 
       {showAdd && (
         <AreaFormModal
-          states={states} ports={seaPorts}
+          states={states}
           onClose={() => setShowAdd(false)}
           onSaved={() => { setShowAdd(false); load(); }}
         />
       )}
       {editArea && (
         <AreaFormModal
-          area={editArea} states={states} ports={seaPorts}
+          area={editArea} states={states}
           onClose={() => setEditArea(null)}
           onSaved={() => { setEditArea(null); load(); }}
         />
@@ -611,17 +417,15 @@ export function AreasTab() {
   );
 }
 
-function AreaFormModal({ area, states, ports, onClose, onSaved }: {
+function AreaFormModal({ area, states, onClose, onSaved }: {
   area?: Area;
   states: State[];
-  ports: Port[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const isEdit = !!area;
   const [areaCode, setAreaCode] = useState(area?.area_code ?? '');
   const [areaName, setAreaName] = useState(area?.area_name ?? '');
-  const [portUnCode, setPortUnCode] = useState(area?.port_un_code ?? '');
   const [stateCode, setStateCode] = useState(area?.state_code ?? '');
   const [lat, setLat] = useState(area?.lat?.toString() ?? '');
   const [lng, setLng] = useState(area?.lng?.toString() ?? '');
@@ -629,8 +433,8 @@ function AreaFormModal({ area, states, ports, onClose, onSaved }: {
   const [error, setError] = useState('');
 
   const handleSave = async () => {
-    if (!areaCode.trim() || !areaName.trim() || !portUnCode) {
-      setError('Code, name, and port are required');
+    if (!areaCode.trim() || !areaName.trim()) {
+      setError('Code and name are required');
       return;
     }
     setSaving(true);
@@ -642,12 +446,12 @@ function AreaFormModal({ area, states, ports, onClose, onSaved }: {
     const result = isEdit
       ? await updateAreaAction(area!.area_id, {
           area_code: areaCode.trim(), area_name: areaName.trim(),
-          port_un_code: portUnCode, state_code: stateCode || null,
+          state_code: stateCode || null,
           lat: latNum, lng: lngNum,
         })
       : await createAreaAction({
           area_code: areaCode.trim(), area_name: areaName.trim(),
-          port_un_code: portUnCode, state_code: stateCode || null,
+          state_code: stateCode || null,
           lat: latNum, lng: lngNum,
         });
 
@@ -671,12 +475,6 @@ function AreaFormModal({ area, states, ports, onClose, onSaved }: {
             <input className={inputCls} value={areaName} onChange={(e) => setAreaName(e.target.value)} placeholder="e.g. Klang Valley Zone 1" />
           </Field>
         </div>
-        <Field label="Port">
-          <select className={inputCls} value={portUnCode} onChange={(e) => setPortUnCode(e.target.value)}>
-            <option value="">Select port...</option>
-            {ports.map((p) => <option key={p.un_code} value={p.un_code}>{p.name} ({p.un_code})</option>)}
-          </select>
-        </Field>
         <Field label="State">
           <select className={inputCls} value={stateCode} onChange={(e) => setStateCode(e.target.value)}>
             <option value="">None</option>

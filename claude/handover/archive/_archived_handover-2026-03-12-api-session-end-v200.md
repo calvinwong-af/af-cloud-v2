@@ -1,0 +1,1 @@
+_archived_ — moved to archive/handover-2026-03-12-api-session-end-v200.md

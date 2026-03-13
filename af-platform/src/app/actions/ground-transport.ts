@@ -74,6 +74,7 @@ export interface ScopeFlags {
   export_clearance:  'ASSIGNED' | 'TRACKED' | 'IGNORED';
   import_clearance:  'ASSIGNED' | 'TRACKED' | 'IGNORED';
   last_mile:         'ASSIGNED' | 'TRACKED' | 'IGNORED';
+  freight:           'ASSIGNED' | 'TRACKED' | 'IGNORED';
 }
 
 export interface ReconcileResult {

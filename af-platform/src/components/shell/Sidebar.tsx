@@ -29,6 +29,7 @@ import {
   FileText,
   Car,
   Lock,
+  FlaskConical,
 } from "lucide-react";
 import { LogoMark } from "@/components/shared/Logo";
 import { signOut } from "@/lib/auth";
@@ -72,7 +73,8 @@ const PRICING_SUB_ITEMS: PricingSubItem[] = [
   { label: 'Local Charges',  icon: Warehouse, href: '/pricing/local-charges', locked: false },
   { label: 'Customs',        icon: FileCheck, href: '/pricing/customs',      locked: false },
   { label: 'Haulage',        icon: Truck,     href: '/pricing/haulage',      locked: false },
-  { label: 'Transportation', icon: Car,       href: '/pricing/transportation', locked: false },
+  { label: 'Transportation', icon: Car,          href: '/pricing/transportation',   locked: false },
+  { label: 'DG Class Charges', icon: FlaskConical, href: '/pricing/dg-class-charges', locked: false },
 ];
 
 function getNavSections(accountType: string | null): NavSection[] {
@@ -208,14 +210,12 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
 
       {/* ── Header ── */}
       <div className="relative z-10 flex items-center h-[56px] px-3 shrink-0">
-        <div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
-          <div className="shrink-0 flex items-center justify-center" style={{ width: 40, height: 40 }}>
-            <LogoMark size={28} />
-          </div>
-          <span
-            className="font-display text-[0.95rem] font-bold leading-none tracking-tight whitespace-nowrap"
-            style={{ opacity: isCollapsed ? 0 : 1, transition: "opacity 0.2s" }}
-          >
+        {/* Logo — always visible; text fades when collapsed */}
+        <div className="shrink-0 flex items-center justify-center" style={{ width: 40, height: 40 }}>
+          <LogoMark size={28} />
+        </div>
+        <div className="flex items-center gap-2.5 flex-1 overflow-hidden" style={{ opacity: isCollapsed ? 0 : 1, transition: 'opacity 0.2s' }}>
+          <span className="font-display text-[0.95rem] font-bold leading-none tracking-tight whitespace-nowrap ml-2.5">
             <span className="text-white">Accele</span>
             <span style={{ color: "var(--sky-light)" }}>Freight</span>
           </span>
@@ -229,6 +229,7 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
             <X size={16} className="text-white/50" />
           </button>
         ) : (
+          /* Collapse button — only shown when expanded */
           <button
             onClick={toggleCollapsed}
             className="relative z-10 shrink-0 items-center justify-center w-7 h-7 rounded-md transition-colors hover:bg-white/10 hidden lg:flex"
@@ -238,14 +239,22 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
               transition: "opacity 0.2s",
             }}
           >
-            <ChevronLeft
-              size={16}
-              className="text-white/50 transition-transform"
-              style={{ transform: isCollapsed ? "rotate(180deg)" : "rotate(0deg)" }}
-            />
+            <ChevronLeft size={16} className="text-white/50" />
           </button>
         )}
       </div>
+
+      {/* ── Expand button (collapsed state only, below header) ── */}
+      {!isMobileDrawer && isCollapsed && (
+        <div className="relative z-10 flex justify-center px-2 pb-1 shrink-0">
+          <button
+            onClick={toggleCollapsed}
+            className="flex items-center justify-center w-8 h-8 rounded-md transition-colors hover:bg-white/10 hidden lg:flex"
+          >
+            <ChevronLeft size={16} className="text-white/50" style={{ transform: "rotate(180deg)" }} />
+          </button>
+        </div>
+      )}
 
       {/* ── Nav sections ── */}
       <nav className="relative z-10 flex-1 overflow-y-auto overflow-x-hidden px-2 py-2 space-y-4">
@@ -403,15 +412,6 @@ export function Sidebar({ currentUser, isMobileDrawer, onMobileClose }: SidebarP
         className="relative z-10 shrink-0 border-t px-3 py-3"
         style={{ borderColor: "rgba(255,255,255,0.05)" }}
       >
-        {isCollapsed && !isMobileDrawer && (
-          <button
-            onClick={toggleCollapsed}
-            className="flex items-center justify-center w-full h-8 rounded-md transition-colors hover:bg-white/10 mb-2"
-          >
-            <ChevronLeft size={16} className="text-white/50" style={{ transform: "rotate(180deg)" }} />
-          </button>
-        )}
-
         <div className="flex items-center gap-2.5 overflow-hidden">
           <div
             className="shrink-0 flex items-center justify-center rounded-lg text-white text-xs font-semibold"

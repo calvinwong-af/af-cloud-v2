@@ -18,58 +18,58 @@ type ScopeMode = 'ASSIGNED' | 'TRACKED' | 'IGNORED';
 const INCOTERM_TASK_RULES: Record<string, Record<string, string[]>> = {
   EXW: {
     EXPORT: [],
-    IMPORT: ['first_mile', 'export_clearance', 'import_clearance', 'last_mile'],
-    DOMESTIC: ['first_mile', 'import_clearance', 'last_mile'],
+    IMPORT: ['first_mile', 'export_clearance', 'freight', 'import_clearance', 'last_mile'],
+    DOMESTIC: ['first_mile', 'freight', 'import_clearance', 'last_mile'],
   },
   FCA: {
     EXPORT: ['export_clearance'],
-    IMPORT: ['first_mile', 'import_clearance', 'last_mile'],
-    DOMESTIC: ['last_mile'],
+    IMPORT: ['first_mile', 'freight', 'import_clearance', 'last_mile'],
+    DOMESTIC: ['freight', 'last_mile'],
   },
   FOB: {
     EXPORT: ['first_mile', 'export_clearance'],
-    IMPORT: ['import_clearance', 'last_mile'],
-    DOMESTIC: ['first_mile', 'last_mile'],
+    IMPORT: ['freight', 'import_clearance', 'last_mile'],
+    DOMESTIC: ['first_mile', 'freight', 'last_mile'],
   },
   CFR: {
-    EXPORT: ['first_mile', 'export_clearance'],
+    EXPORT: ['first_mile', 'export_clearance', 'freight'],
     IMPORT: ['import_clearance', 'last_mile'],
-    DOMESTIC: ['first_mile', 'last_mile'],
+    DOMESTIC: ['first_mile', 'freight', 'last_mile'],
   },
   CIF: {
-    EXPORT: ['first_mile', 'export_clearance'],
+    EXPORT: ['first_mile', 'export_clearance', 'freight'],
     IMPORT: ['import_clearance', 'last_mile'],
-    DOMESTIC: ['first_mile', 'last_mile'],
+    DOMESTIC: ['first_mile', 'freight', 'last_mile'],
   },
   CNF: {
-    EXPORT: ['first_mile', 'export_clearance'],
+    EXPORT: ['first_mile', 'export_clearance', 'freight'],
     IMPORT: ['import_clearance', 'last_mile'],
-    DOMESTIC: ['first_mile', 'last_mile'],
+    DOMESTIC: ['first_mile', 'freight', 'last_mile'],
   },
   CPT: {
-    EXPORT: ['first_mile', 'export_clearance'],
+    EXPORT: ['first_mile', 'export_clearance', 'freight'],
     IMPORT: ['import_clearance', 'last_mile'],
-    DOMESTIC: ['first_mile', 'last_mile'],
+    DOMESTIC: ['first_mile', 'freight', 'last_mile'],
   },
   CIP: {
-    EXPORT: ['first_mile', 'export_clearance'],
+    EXPORT: ['first_mile', 'export_clearance', 'freight'],
     IMPORT: ['import_clearance', 'last_mile'],
-    DOMESTIC: ['first_mile', 'last_mile'],
+    DOMESTIC: ['first_mile', 'freight', 'last_mile'],
   },
   DAP: {
-    EXPORT: ['first_mile', 'export_clearance', 'import_clearance', 'last_mile'],
-    IMPORT: ['import_clearance', 'last_mile'],
-    DOMESTIC: ['first_mile', 'last_mile'],
+    EXPORT: ['first_mile', 'export_clearance', 'freight', 'import_clearance', 'last_mile'],
+    IMPORT: ['freight', 'import_clearance', 'last_mile'],
+    DOMESTIC: ['first_mile', 'freight', 'last_mile'],
   },
   DPU: {
-    EXPORT: ['first_mile', 'export_clearance', 'import_clearance', 'last_mile'],
-    IMPORT: ['import_clearance', 'last_mile'],
-    DOMESTIC: ['first_mile', 'last_mile'],
+    EXPORT: ['first_mile', 'export_clearance', 'freight', 'import_clearance', 'last_mile'],
+    IMPORT: ['freight', 'import_clearance', 'last_mile'],
+    DOMESTIC: ['first_mile', 'freight', 'last_mile'],
   },
   DDP: {
-    EXPORT: ['first_mile', 'export_clearance', 'import_clearance', 'last_mile'],
-    IMPORT: ['import_clearance', 'last_mile'],
-    DOMESTIC: ['first_mile', 'last_mile'],
+    EXPORT: ['first_mile', 'export_clearance', 'freight', 'import_clearance', 'last_mile'],
+    IMPORT: ['freight', 'import_clearance', 'last_mile'],
+    DOMESTIC: ['first_mile', 'freight', 'last_mile'],
   },
 };
 
@@ -114,6 +114,8 @@ function getScopeLabel(key: string, orderType: string): string {
       return orderType === 'SEA_FCL' ? 'First Mile Haulage' : 'First Mile Trucking';
     case 'export_clearance':
       return 'Export Clearance';
+    case 'freight':
+      return 'Freight';
     case 'import_clearance':
       return 'Import Clearance';
     case 'last_mile':
@@ -304,6 +306,7 @@ export default function CreateQuotationModal({
         export_clearance: (scope.export_clearance as ScopeMode) ?? 'IGNORED',
         import_clearance: (scope.import_clearance as ScopeMode) ?? 'IGNORED',
         last_mile: (scope.last_mile as ScopeMode) ?? 'IGNORED',
+        freight: (scope.freight as ScopeMode) ?? 'IGNORED',
       };
       const scopeResult = await updateShipmentScopeAction(shipmentId, scopePayload);
       if (!scopeResult) { setError('No response from scope save'); setSubmitting(false); return; }

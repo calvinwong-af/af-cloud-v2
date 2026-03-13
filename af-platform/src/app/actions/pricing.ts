@@ -344,6 +344,7 @@ export interface LocalCharge {
   shipment_type: 'FCL' | 'LCL' | 'AIR' | 'CB' | 'ALL';
   container_size: '20' | '40' | 'ALL';
   container_type: 'GP' | 'HC' | 'RF' | 'FF' | 'OT' | 'FR' | 'PL' | 'ALL';
+  dg_class_code: string;
   charge_code: string;
   description: string;
   price: number;
@@ -351,7 +352,7 @@ export interface LocalCharge {
   currency: string;
   uom: string;
   is_domestic: boolean;
-  paid_with_freight: boolean;
+  is_international: boolean;
   effective_from: string;
   effective_to: string | null;
   is_active: boolean;
@@ -367,18 +368,20 @@ export interface LocalChargeTimeSeries {
 }
 
 export interface LocalChargeCard {
+  card_id: number;
   card_key: string;
   port_code: string;
   trade_direction: 'IMPORT' | 'EXPORT';
   shipment_type: 'FCL' | 'LCL' | 'AIR' | 'CB' | 'ALL';
   container_size: '20' | '40' | 'ALL';
   container_type: 'GP' | 'HC' | 'RF' | 'FF' | 'OT' | 'FR' | 'PL' | 'ALL';
+  dg_class_code: string;
   charge_code: string;
   description: string;
   uom: string;
   currency: string;
   is_domestic: boolean;
-  paid_with_freight: boolean;
+  is_international: boolean;
   is_active: boolean;
   time_series: LocalChargeTimeSeries[];
   latest_effective_from: string | null;
@@ -432,15 +435,145 @@ export async function createLocalChargeAction(
 
 export async function updateLocalChargeAction(
   id: number,
-  data: Partial<LocalCharge>,
+  data: { price?: number; cost?: number; effective_from?: string; effective_to?: string | null },
 ): Promise<ActionResult<{ msg: string }>> {
   return pricingMutate(`/api/v2/pricing/local-charges/rates/${id}`, 'PATCH', data);
+}
+
+export async function updateLocalChargeCardAction(
+  cardId: number,
+  data: {
+    description?: string; currency?: string; uom?: string;
+    container_size?: string; container_type?: string; dg_class_code?: string;
+    is_domestic?: boolean; is_international?: boolean; is_active?: boolean;
+  },
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/local-charges/cards/${cardId}`, 'PATCH', data);
 }
 
 export async function deleteLocalChargeAction(
   id: number,
 ): Promise<ActionResult<{ msg: string }>> {
   return pricingMutate(`/api/v2/pricing/local-charges/rates/${id}`, 'DELETE');
+}
+
+export async function deleteLocalChargeCardAction(
+  cardKey: string,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/local-charges/rates/card/${cardKey}`, 'DELETE');
+}
+
+// ---------------------------------------------------------------------------
+// DG Class Charges
+// ---------------------------------------------------------------------------
+
+export interface DgClassCharge {
+  id: number;
+  port_code: string;
+  trade_direction: 'IMPORT' | 'EXPORT';
+  shipment_type: 'FCL' | 'LCL' | 'AIR' | 'CB' | 'ALL';
+  container_size: '20' | '40' | 'ALL';
+  container_type: 'GP' | 'HC' | 'RF' | 'FF' | 'OT' | 'FR' | 'PL' | 'ALL';
+  dg_class_code: 'DG-2' | 'DG-3';
+  charge_code: string;
+  description: string;
+  price: number;
+  cost: number;
+  currency: string;
+  uom: string;
+  is_domestic: boolean;
+  is_international: boolean;
+  effective_from: string;
+  effective_to: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DgClassChargeTimeSeries {
+  month_key: string;
+  price: number | null;
+  cost: number | null;
+  rate_id: number;
+}
+
+export interface DgClassChargeCard {
+  card_id: number;
+  card_key: string;
+  port_code: string;
+  trade_direction: 'IMPORT' | 'EXPORT';
+  shipment_type: 'FCL' | 'LCL' | 'AIR' | 'CB' | 'ALL';
+  container_size: '20' | '40' | 'ALL';
+  container_type: 'GP' | 'HC' | 'RF' | 'FF' | 'OT' | 'FR' | 'PL' | 'ALL';
+  dg_class_code: 'DG-2' | 'DG-3';
+  charge_code: string;
+  description: string;
+  uom: string;
+  currency: string;
+  is_domestic: boolean;
+  is_international: boolean;
+  is_active: boolean;
+  time_series: DgClassChargeTimeSeries[];
+  latest_effective_from: string | null;
+  latest_effective_to: string | null;
+}
+
+export async function fetchDgClassChargeCardsAction(params: {
+  portCode: string;
+  tradeDirection?: string;
+  shipmentType?: string;
+  isActive?: boolean;
+}): Promise<ActionResult<DgClassChargeCard[]>> {
+  const sp = new URLSearchParams();
+  sp.set('port_code', params.portCode);
+  if (params.tradeDirection) sp.set('trade_direction', params.tradeDirection);
+  if (params.shipmentType) sp.set('shipment_type', params.shipmentType);
+  if (params.isActive !== undefined) sp.set('is_active', String(params.isActive));
+  return pricingFetch(`/api/v2/pricing/dg-class-charges/cards?${sp.toString()}`);
+}
+
+export async function fetchDgClassChargePortsAction(
+  countryCode?: string
+): Promise<ActionResult<string[]>> {
+  const sp = new URLSearchParams();
+  if (countryCode) sp.set('country_code', countryCode);
+  return pricingFetch(`/api/v2/pricing/dg-class-charges/ports${sp.toString() ? `?${sp}` : ''}`);
+}
+
+export async function createDgClassChargeAction(
+  data: Omit<DgClassCharge, 'id' | 'created_at' | 'updated_at'> & { close_previous?: boolean },
+): Promise<ActionResult<{ id: number }>> {
+  return pricingMutate('/api/v2/pricing/dg-class-charges/rates', 'POST', data);
+}
+
+export async function updateDgClassChargeAction(
+  id: number,
+  data: { price?: number; cost?: number; effective_from?: string; effective_to?: string | null },
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/dg-class-charges/rates/${id}`, 'PATCH', data);
+}
+
+export async function updateDgClassChargeCardAction(
+  cardId: number,
+  data: {
+    description?: string; currency?: string; uom?: string;
+    container_size?: string; container_type?: string; dg_class_code?: string;
+    is_domestic?: boolean; is_international?: boolean; is_active?: boolean;
+  },
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/dg-class-charges/cards/${cardId}`, 'PATCH', data);
+}
+
+export async function deleteDgClassChargeAction(
+  id: number,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/dg-class-charges/rates/${id}`, 'DELETE');
+}
+
+export async function deleteDgClassChargeCardAction(
+  cardKey: string,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/dg-class-charges/rates/card/${cardKey}`, 'DELETE');
 }
 
 // ---------------------------------------------------------------------------
@@ -459,6 +592,7 @@ export interface CustomsRate {
   currency: string;
   uom: string;
   is_domestic: boolean;
+  is_international: boolean;
   effective_from: string;
   effective_to: string | null;
   is_active: boolean;
@@ -474,6 +608,7 @@ export interface CustomsRateTimeSeries {
 }
 
 export interface CustomsRateCard {
+  card_id: number;
   card_key: string;
   port_code: string;
   trade_direction: 'IMPORT' | 'EXPORT';
@@ -483,6 +618,7 @@ export interface CustomsRateCard {
   uom: string;
   currency: string;
   is_domestic: boolean;
+  is_international: boolean;
   is_active: boolean;
   latest_effective_from: string | null;
   latest_effective_to: string | null;
@@ -528,6 +664,20 @@ export async function fetchCustomsRatesAction(params: {
   return pricingFetch(`/api/v2/pricing/customs/rates${qs ? `?${qs}` : ''}`);
 }
 
+export async function updateCustomsCardAction(
+  cardId: number,
+  data: {
+    description?: string;
+    currency?: string;
+    uom?: string;
+    is_domestic?: boolean;
+    is_international?: boolean;
+    is_active?: boolean;
+  },
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/customs/cards/${cardId}`, 'PATCH', data);
+}
+
 export async function createCustomsRateAction(
   data: Omit<CustomsRate, 'id' | 'created_at' | 'updated_at'> & { close_previous?: boolean },
 ): Promise<ActionResult<{ id: number }>> {
@@ -536,7 +686,12 @@ export async function createCustomsRateAction(
 
 export async function updateCustomsRateAction(
   id: number,
-  data: Partial<CustomsRate>,
+  data: {
+    price?: number;
+    cost?: number;
+    effective_from?: string;
+    effective_to?: string | null;
+  },
 ): Promise<ActionResult<{ msg: string }>> {
   return pricingMutate(`/api/v2/pricing/customs/rates/${id}`, 'PATCH', data);
 }
@@ -545,6 +700,12 @@ export async function deleteCustomsRateAction(
   id: number,
 ): Promise<ActionResult<{ msg: string }>> {
   return pricingMutate(`/api/v2/pricing/customs/rates/${id}`, 'DELETE');
+}
+
+export async function deleteCustomsCardAction(
+  cardKey: string,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/customs/rates/card/${cardKey}`, 'DELETE');
 }
 
 // ---------------------------------------------------------------------------

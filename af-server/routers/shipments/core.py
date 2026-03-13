@@ -430,6 +430,7 @@ class CreateManualShipmentRequest(BaseModel):
     cargo_description: str = "General Cargo"
     cargo_hs_code: str | None = None
     cargo_is_dg: bool = False
+    cargo_dg_class_code: str | None = None  # "DG-2" | "DG-3" | None
     containers: list | None = None           # SEA_FCL: [{container_size, container_type, quantity}]
     packages: list | None = None             # SEA_LCL / AIR: [{packaging_type, quantity, gross_weight_kg, volume_cbm}]
     shipper: dict | None = None              # {name, address, contact_person, phone, email, company_id, company_contact_id}
@@ -464,6 +465,8 @@ async def create_shipment_manual(
         raise HTTPException(status_code=400, detail="destination_port_un_code is required")
     if not body.incoterm_code:
         raise HTTPException(status_code=400, detail="incoterm_code is required")
+    if body.cargo_dg_class_code is not None and body.cargo_dg_class_code not in ("DG-2", "DG-3"):
+        raise HTTPException(status_code=400, detail="cargo_dg_class_code must be DG-2 or DG-3")
 
     # 2. Validate company exists
     company_row = conn.execute(text("SELECT id FROM companies WHERE id = :id"), {"id": body.company_id}).fetchone()
@@ -499,8 +502,8 @@ async def create_shipment_manual(
     cargo = {
         "description": body.cargo_description or "General Cargo",
         "hs_code": body.cargo_hs_code,
-        "is_dg": body.cargo_is_dg,
-        "dg_class": None,
+        "is_dg": body.cargo_dg_class_code is not None,
+        "dg_class_code": body.cargo_dg_class_code,
         "dg_un_number": None,
     }
 
@@ -677,7 +680,7 @@ async def create_shipment_manual(
 # ---------------------------------------------------------------------------
 
 class PatchCargoRequest(BaseModel):
-    is_dg: bool
+    dg_class_code: Optional[str] = None  # "DG-2" | "DG-3" | None
     dg_description: Optional[str] = None
 
 
@@ -688,7 +691,10 @@ async def update_shipment_cargo(
     claims: Claims = Depends(require_afu_admin),
     conn=Depends(get_db),
 ):
-    """Update is_dg and dg_description on the shipment cargo JSON."""
+    """Update DG classification on the shipment cargo JSON."""
+    if body.dg_class_code is not None and body.dg_class_code not in ("DG-2", "DG-3"):
+        raise HTTPException(status_code=400, detail="dg_class_code must be DG-2 or DG-3")
+
     row = conn.execute(
         text("SELECT cargo FROM orders WHERE order_id = :id AND trash = FALSE"),
         {"id": shipment_id},
@@ -697,10 +703,11 @@ async def update_shipment_cargo(
         raise HTTPException(status_code=404, detail="Shipment not found")
 
     cargo = dict(row[0]) if row[0] else {}
-    cargo["is_dg"] = body.is_dg
+    cargo["dg_class_code"] = body.dg_class_code
+    cargo["is_dg"] = body.dg_class_code is not None
     if body.dg_description is not None:
         cargo["dg_description"] = body.dg_description
-    elif not body.is_dg:
+    elif body.dg_class_code is None:
         cargo.pop("dg_description", None)
 
     conn.execute(
@@ -708,7 +715,7 @@ async def update_shipment_cargo(
         {"cargo": json.dumps(cargo), "id": shipment_id},
     )
     conn.commit()
-    return {"status": "OK", "data": {"is_dg": body.is_dg}}
+    return {"status": "OK", "data": {"dg_class_code": body.dg_class_code, "is_dg": cargo["is_dg"]}}
 
 
 # ---------------------------------------------------------------------------

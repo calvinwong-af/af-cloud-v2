@@ -496,9 +496,28 @@ async def list_haulage_areas(
 @router.get("/areas")
 async def list_areas(
     state_code: str | None = Query(default=None),
+    ids: str | None = Query(default=None),
     claims: Claims = Depends(require_auth),
     conn=Depends(get_db),
 ):
+    # Bulk lookup by IDs — used by quotation detail to resolve area names.
+    # Pass id_list as a Python list; SQLAlchemy + psycopg2 binds it as a
+    # PostgreSQL integer array, which is compatible with = ANY(:ids).
+    if ids:
+        id_list = [int(x.strip()) for x in ids.split(",") if x.strip().isdigit()]
+        if not id_list:
+            return {"status": "OK", "data": []}
+        rows = conn.execute(text(
+            "SELECT a.area_id, a.area_name, a.state_code, s.name AS state_name "
+            "FROM areas a JOIN states s ON s.state_code = a.state_code "
+            "WHERE a.area_id = ANY(:ids) ORDER BY a.area_name"
+        ), {"ids": id_list}).fetchall()
+        data = [
+            {"area_id": r[0], "area_name": r[1], "state_code": r[2], "state_name": r[3]}
+            for r in rows
+        ]
+        return {"status": "OK", "data": data}
+
     where_clauses = ["a.is_active = TRUE"]
     params: dict = {}
     if state_code:

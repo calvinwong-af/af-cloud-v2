@@ -34,6 +34,11 @@ export interface Quotation {
   updated_at: string;
   scope_changed?: boolean;
   currency?: string;
+  company_name?: string | null;
+  order_type?: string | null;
+  tlx_release?: boolean;
+  incoterm?: string | null;
+  transaction_type?: string | null;
 }
 
 export interface QuotationLineItem {
@@ -59,6 +64,9 @@ export interface QuotationLineItem {
   effective_price: number;
   effective_cost: number;
   margin_percent: number | null;
+  tax_code: string | null;
+  tax_rate: number;
+  tax_amount: number;
   created_at: string;
   updated_at: string | null;
 }
@@ -66,6 +74,7 @@ export interface QuotationLineItem {
 export interface LineItemTotals {
   total_price: number;
   total_cost: number;
+  total_tax: number;
   margin_percent: number | null;
   currency: string;
 }
@@ -99,6 +108,7 @@ export interface LineItemUpdatePayload {
   charge_code?: string;
   min_price?: number;
   min_cost?: number;
+  uom?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -392,6 +402,47 @@ export async function updateLineItemAction(
 }
 
 // ---------------------------------------------------------------------------
+// Area Lookup
+// ---------------------------------------------------------------------------
+
+export interface AreaInfo {
+  area_id: number;
+  area_name: string;
+  state_code: string;
+  state_name: string;
+}
+
+export async function fetchAreasAction(
+  ids: number[],
+): Promise<{ success: true; data: AreaInfo[] } | { success: false; error: string }> {
+  try {
+    if (ids.length === 0) return { success: true, data: [] };
+
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const auth = await getAuthHeaders();
+    if (!auth) return { success: false, error: 'No session token or server URL' };
+
+    const res = await fetch(`${auth.serverUrl}/api/v2/geography/areas?ids=${ids.join(',')}`, {
+      headers: { Authorization: `Bearer ${auth.token}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: extractErrorMessage(json?.detail) ?? `Server responded ${res.status}` };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data };
+  } catch (err) {
+    console.error('[fetchAreasAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to fetch areas' };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Delete Line Item
 // ---------------------------------------------------------------------------
 
@@ -422,5 +473,75 @@ export async function deleteLineItemAction(
   } catch (err) {
     console.error('[deleteLineItemAction]', err instanceof Error ? err.message : err);
     return { success: false, error: 'Failed to delete line item' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Set TLX Release
+// ---------------------------------------------------------------------------
+
+export async function setTlxReleaseAction(
+  ref: string,
+  tlxRelease: boolean,
+): Promise<{ success: true; data: { tlx_release: boolean; scope_changed: boolean } } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const auth = await getAuthHeaders();
+    if (!auth) return { success: false, error: 'No session token or server URL' };
+
+    const res = await fetch(`${auth.serverUrl}/api/v2/quotations/${encodeURIComponent(ref)}/tlx-release`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tlx_release: tlxRelease }),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: extractErrorMessage(json?.detail) ?? `Server responded ${res.status}` };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data };
+  } catch (err) {
+    console.error('[setTlxReleaseAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to update telex release' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Update Quotation Scope Snapshot
+// ---------------------------------------------------------------------------
+
+export async function updateQuotationScopeSnapshotAction(
+  quotationRef: string,
+  scopeSnapshot: Record<string, string>,
+): Promise<{ success: true; data: { quotation_ref: string } } | { success: false; error: string }> {
+  try {
+    const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+    if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+    const auth = await getAuthHeaders();
+    if (!auth) return { success: false, error: 'No session token or server URL' };
+
+    const res = await fetch(`${auth.serverUrl}/api/v2/quotations/${encodeURIComponent(quotationRef)}/scope-snapshot`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope_snapshot: scopeSnapshot }),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: extractErrorMessage(json?.detail) ?? `Server responded ${res.status}` };
+    }
+
+    const json = await res.json();
+    return { success: true, data: json.data };
+  } catch (err) {
+    console.error('[updateQuotationScopeSnapshotAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to update scope snapshot' };
   }
 }

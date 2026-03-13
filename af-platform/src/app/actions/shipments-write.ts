@@ -24,6 +24,7 @@ export interface CreateShipmentOrderPayload {
   cargo_description: string;
   cargo_hs_code: string | null;
   cargo_is_dg: boolean;
+  cargo_dg_class_code: string | null;
   containers: Array<{
     container_size: string;
     container_type: string;
@@ -130,6 +131,7 @@ export async function createShipmentOrderAction(
         cargo_description: payload.cargo_description,
         cargo_hs_code: payload.cargo_hs_code,
         cargo_is_dg: payload.cargo_is_dg,
+        cargo_dg_class_code: payload.cargo_dg_class_code,
         containers: payload.containers,
         packages: payload.packages,
         shipper: payload.shipper,
@@ -334,7 +336,7 @@ export async function updateCompletedFlagAction(
 
 export async function patchShipmentCargoAction(
   shipmentId: string,
-  is_dg: boolean,
+  dg_class_code: string | null,
   dg_description: string | null,
 ): Promise<UpdateShipmentStatusResult> {
   const session = await verifySessionAndRole(['AFU-ADMIN']);
@@ -355,7 +357,7 @@ export async function patchShipmentCargoAction(
     const res = await fetch(url.toString(), {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_dg, dg_description }),
+      body: JSON.stringify({ dg_class_code, dg_description }),
       cache: 'no-store',
     });
 

@@ -61,7 +61,7 @@ export default function ShipmentOrderDetailPage() {
   const [filesRefreshKey, setFilesRefreshKey] = useState(0);
   const [routeTimelineRefreshKey, setRouteTimelineRefreshKey] = useState(0);
   const [isDgEditing, setIsDgEditing] = useState(false);
-  const [isDgValue, setIsDgValue] = useState(false);
+  const [dgClassValue, setDgClassValue] = useState<string | null>(null);
   const [dgDescription, setDgDescription] = useState('');
   const [isSavingDg, setIsSavingDg] = useState(false);
   const [routePolEta, setRoutePolEta] = useState<string | null>(null);
@@ -476,16 +476,27 @@ export default function ShipmentOrderDetailPage() {
                 {/* DG status */}
                 {isDgEditing ? (
                   <div className="mt-2 space-y-2">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={isDgValue}
-                        onChange={e => setIsDgValue(e.target.checked)}
-                        className="rounded border-[var(--border)]"
-                      />
-                      <span className="text-sm text-[var(--text)]">Dangerous Goods (DG)</span>
-                    </label>
-                    {isDgValue && (
+                    <div className="flex gap-1.5">
+                      {([
+                        { value: null, label: 'Not DG' },
+                        { value: 'DG-2', label: 'DG Class 2' },
+                        { value: 'DG-3', label: 'DG Class 3' },
+                      ] as const).map(opt => (
+                        <button
+                          key={opt.value ?? 'none'}
+                          type="button"
+                          onClick={() => setDgClassValue(opt.value)}
+                          className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                            dgClassValue === opt.value
+                              ? 'border-[var(--sky)] bg-[var(--sky-mist)] text-[var(--sky)] font-medium'
+                              : 'border-[var(--border)] bg-white text-[var(--text-muted)] hover:border-[var(--sky-pale)]'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    {dgClassValue && (
                       <textarea
                         value={dgDescription}
                         onChange={e => setDgDescription(e.target.value)}
@@ -500,8 +511,8 @@ export default function ShipmentOrderDetailPage() {
                           setIsSavingDg(true);
                           const res = await patchShipmentCargoAction(
                             order.quotation_id,
-                            isDgValue,
-                            isDgValue ? (dgDescription || null) : null,
+                            dgClassValue,
+                            dgClassValue ? (dgDescription || null) : null,
                           );
                           setIsSavingDg(false);
                           if (res.success) {
@@ -527,7 +538,7 @@ export default function ShipmentOrderDetailPage() {
                     <div className="flex items-center gap-2">
                       {order.cargo.is_dg ? (
                         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#fef3c7', color: '#92400e' }}>
-                          DG
+                          {order.cargo.dg_class_code ?? 'DG'}
                         </span>
                       ) : (
                         <span className="text-xs text-[var(--text-muted)]">Not DG</span>
@@ -539,7 +550,7 @@ export default function ShipmentOrderDetailPage() {
                     {accountType === 'AFU' && (
                       <button
                         onClick={() => {
-                          setIsDgValue(order.cargo?.is_dg ?? false);
+                          setDgClassValue(order.cargo?.dg_class_code ?? null);
                           setDgDescription(order.cargo?.dg_description ?? '');
                           setIsDgEditing(true);
                         }}

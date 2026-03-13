@@ -10,14 +10,22 @@ interface StepCargoProps {
   setCargoDescription: (s: string) => void;
   cargoHsCode: string;
   setCargoHsCode: (s: string) => void;
-  cargoDg: boolean;
-  setCargoDg: (b: boolean) => void;
+  cargoDgClass: string | null;
+  setCargoDgClass: (v: string | null) => void;
   packageRows: PackageRow[];
   setPackageRows: (rows: PackageRow[]) => void;
   orderType: OrderType;
   // When true, only the package table is shown (used for step 4 non-FCL)
   packagesOnly?: boolean;
 }
+
+// ─── DG options ──────────────────────────────────────────────────────────────
+
+const DG_OPTIONS: { value: string | null; label: string }[] = [
+  { value: null, label: 'Not DG' },
+  { value: 'DG-2', label: 'DG Class 2' },
+  { value: 'DG-3', label: 'DG Class 3' },
+];
 
 // ─── Shared UI ────────────────────────────────────────────────────────────────
 
@@ -36,8 +44,8 @@ export function StepCargo({
   setCargoDescription,
   cargoHsCode,
   setCargoHsCode,
-  cargoDg,
-  setCargoDg,
+  cargoDgClass,
+  setCargoDgClass,
   packageRows,
   setPackageRows,
   packagesOnly,
@@ -115,21 +123,28 @@ export function StepCargo({
           className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--sky)] focus:border-transparent"
         />
       </div>
-      <div className="flex items-center gap-3">
-        <input
-          type="checkbox"
-          id="dg-check"
-          checked={cargoDg}
-          onChange={e => setCargoDg(e.target.checked)}
-          className="w-4 h-4 accent-[var(--sky)]"
-        />
-        <label htmlFor="dg-check" className="text-sm text-[var(--text)]">
-          This shipment contains Dangerous Goods (DG)
-        </label>
+      <div>
+        <FieldLabel>DG Classification</FieldLabel>
+        <div className="flex gap-2">
+          {DG_OPTIONS.map(opt => (
+            <button
+              key={opt.value ?? 'none'}
+              type="button"
+              onClick={() => setCargoDgClass(opt.value)}
+              className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
+                cargoDgClass === opt.value
+                  ? 'border-[var(--sky)] bg-[var(--sky-mist)] text-[var(--sky)] font-medium'
+                  : 'border-[var(--border)] bg-white text-[var(--text-muted)] hover:border-[var(--sky-pale)]'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
-      {cargoDg && (
+      {cargoDgClass && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
-          DG classification details can be added after the shipment order is created.
+          DG charges will be priced using this classification.
         </div>
       )}
     </div>

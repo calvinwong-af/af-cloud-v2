@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
-  Ship, Package, Plane, Truck, Car, Lock, Warehouse, ClipboardList,
+  Ship, Package, Plane, Truck, Car, Lock, Warehouse, ClipboardList, FlaskConical,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -25,11 +25,12 @@ interface PricingComponent {
 const PRICING_COMPONENTS: PricingComponent[] = [
   { key: 'fcl',            label: 'FCL Ocean Freight',   icon: Ship,      href: '/pricing/fcl',              locked: false },
   { key: 'lcl',            label: 'LCL Ocean Freight',   icon: Package,   href: '/pricing/lcl',              locked: false },
-  { key: 'air',            label: 'Air Freight',          icon: Plane,     href: '/pricing/air',              locked: true  },
+  { key: 'air',            label: 'Air Freight',          icon: Plane,     href: '/pricing/air',              locked: false },
   { key: 'local-charges',  label: 'Local Charges',          icon: Warehouse,     href: '/pricing/local-charges',    locked: false },
   { key: 'customs',        label: 'Customs Clearance',    icon: ClipboardList, href: '/pricing/customs',          locked: false },
-  { key: 'haulage',        label: 'Haulage',              icon: Truck,     href: '/pricing/haulage',          locked: true  },
-  { key: 'port-transport', label: 'Transportation',        icon: Car,       href: '/pricing/transportation',   locked: false },
+  { key: 'haulage',        label: 'Haulage',              icon: Truck,     href: '/pricing/haulage',          locked: false },
+  { key: 'port-transport',   label: 'Transportation',     icon: Car,          href: '/pricing/transportation',   locked: false },
+  { key: 'dg-class-charges', label: 'DG Class Charges',   icon: FlaskConical, href: '/pricing/dg-class-charges', locked: false },
 ];
 
 export function PricingDashboard() {

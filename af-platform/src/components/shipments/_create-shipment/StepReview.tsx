@@ -15,7 +15,7 @@ interface StepReviewProps {
   destTerminalId: string;
   cargoDescription: string;
   cargoHsCode: string;
-  cargoDg: boolean;
+  cargoDgClass: string | null;
   cargoReadyDate: string;
   packageRows: PackageRow[];
   containerRows: ContainerRow[];
@@ -52,7 +52,7 @@ export function StepReview({
   destTerminalId,
   cargoDescription,
   cargoHsCode,
-  cargoDg,
+  cargoDgClass,
   cargoReadyDate,
   packageRows,
   containerRows,
@@ -93,11 +93,15 @@ export function StepReview({
         <ReviewRow label="Destination" value={`${destPort ? `${destPort.name} (${destPort.un_code})` : destCode}${destTerminalId ? ' · ' + (destPort?.terminals.find(t => t.terminal_id === destTerminalId)?.name ?? destTerminalId) : ''}`} />
         {incoterm && <ReviewRow label="Incoterm" value={incoterm} />}
       </div>
-      {(cargoDescription || cargoHsCode || cargoDg) && (
+      {(cargoDescription || cargoHsCode || cargoDgClass) && (
         <div className="bg-[var(--surface)] rounded-lg p-4 space-y-3">
           {cargoDescription && <ReviewRow label="Cargo" value={cargoDescription} />}
           {cargoHsCode && <ReviewRow label="HS Code" value={cargoHsCode} />}
-          {cargoDg && <ReviewRow label="DG" value="Yes — Dangerous Goods" />}
+          {cargoDgClass ? (
+            <ReviewRow label="DG" value={`Yes — ${cargoDgClass === 'DG-2' ? 'DG Class 2' : 'DG Class 3'}`} />
+          ) : (
+            <ReviewRow label="DG" value="Not DG" />
+          )}
         </div>
       )}
       {orderType === 'SEA_FCL' ? (
