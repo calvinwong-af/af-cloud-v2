@@ -730,9 +730,9 @@ export default function ShipmentOrderDetailPage() {
           containerSizes={containerSizes}
           containerNumbers={containerNumbers}
           originPortCode={order.origin?.port_un_code ?? null}
-          originPortName={order.origin?.port_name ?? null}
+          originPortName={order.origin?.label ?? null}
           destinationPortCode={order.destination?.port_un_code ?? null}
-          destinationPortName={order.destination?.port_name ?? null}
+          destinationPortName={order.destination?.label ?? null}
           mode="configure"
           onClose={() => setShowScopeConfig(false)}
           onSaved={() => {
@@ -754,9 +754,9 @@ export default function ShipmentOrderDetailPage() {
           containerSizes={containerSizes}
           containerNumbers={containerNumbers}
           originPortCode={order.origin?.port_un_code ?? null}
-          originPortName={order.origin?.port_name ?? null}
+          originPortName={order.origin?.label ?? null}
           destinationPortCode={order.destination?.port_un_code ?? null}
-          destinationPortName={order.destination?.port_name ?? null}
+          destinationPortName={order.destination?.label ?? null}
           onClose={() => setShowCreateQuotation(false)}
           onCreated={(ref) => {
             setLatestQuotationRef(ref);
