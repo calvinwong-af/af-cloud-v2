@@ -74,7 +74,10 @@ export interface ScopeFlags {
   export_clearance:  'ASSIGNED' | 'TRACKED' | 'IGNORED';
   import_clearance:  'ASSIGNED' | 'TRACKED' | 'IGNORED';
   last_mile:         'ASSIGNED' | 'TRACKED' | 'IGNORED';
-  freight:           'ASSIGNED' | 'TRACKED' | 'IGNORED';
+}
+
+export interface ScopeData extends ScopeFlags {
+  tlx_release: boolean;
 }
 
 export interface ReconcileResult {
@@ -495,7 +498,7 @@ export async function reconcileShipmentGroundTransportAction(
 
 export async function fetchShipmentScopeAction(
   shipmentId: string,
-): Promise<{ success: true; data: ScopeFlags } | { success: false; error: string }> {
+): Promise<{ success: true; data: ScopeData } | { success: false; error: string }> {
   try {
     const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
     if (!session.valid) return { success: false, error: 'Unauthorised' };
@@ -523,8 +526,8 @@ export async function fetchShipmentScopeAction(
 
 export async function updateShipmentScopeAction(
   shipmentId: string,
-  scope: Partial<ScopeFlags>,
-): Promise<{ success: true; data: ScopeFlags } | { success: false; error: string }> {
+  scope: Partial<ScopeFlags> & { tlx_release?: boolean },
+): Promise<{ success: true; data: ScopeData } | { success: false; error: string }> {
   try {
     const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
     if (!session.valid) return { success: false, error: 'Unauthorised' };
@@ -776,5 +779,80 @@ export async function fetchNearestAreasAction(
   } catch (err) {
     console.error('[fetchNearestAreasAction]', err instanceof Error ? err.message : err);
     return { success: false, error: 'Failed to fetch nearest areas' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Set Haulage Area — find-or-create GT order + update stop area_id
+// ---------------------------------------------------------------------------
+
+export interface SetHaulageAreaPayload {
+  shipmentId: string;
+  legKey: 'first_mile' | 'last_mile';
+  areaId: number;
+  orderType: string;
+  portUnCode?: string | null;
+  portName?: string | null;
+  containerNumbers?: string[];
+}
+
+export async function setHaulageAreaAction(
+  payload: SetHaulageAreaPayload,
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const taskRef = payload.legKey === 'first_mile' ? 'ORIGIN_HAULAGE' : 'DESTINATION_HAULAGE';
+    const stopType = payload.legKey === 'first_mile' ? 'pickup' : 'dropoff';
+    const transportType = payload.orderType === 'SEA_FCL' ? 'haulage' : 'port';
+
+    // 1. Try to find existing GT order
+    const existing = await fetchTransportOrderByTaskAction(payload.shipmentId, taskRef);
+
+    if (existing.success) {
+      // Find the relevant stop
+      const stop = existing.data.stops.find(s => s.stop_type === stopType);
+      if (stop) {
+        const result = await updateStopAction(existing.data.order_id, stop.stop_id, { area_id: payload.areaId });
+        if (!result.success) return { success: false, error: result.error };
+      } else {
+        const result = await addStopAction(existing.data.order_id, {
+          sequence: stopType === 'pickup' ? 1 : 2,
+          stop_type: stopType,
+          area_id: payload.areaId,
+        });
+        if (!result.success) return { success: false, error: result.error };
+      }
+    } else {
+      // Create minimal draft GT order
+      const customerStop: Partial<OrderStop> = {
+        sequence: payload.legKey === 'first_mile' ? 1 : 2,
+        stop_type: stopType,
+        area_id: payload.areaId,
+      };
+      const portStop: Partial<OrderStop> | null = payload.portUnCode ? {
+        sequence: payload.legKey === 'first_mile' ? 2 : 1,
+        stop_type: (payload.legKey === 'first_mile' ? 'dropoff' : 'pickup') as 'pickup' | 'dropoff',
+        address_line: payload.portName ?? payload.portUnCode,
+        area_id: null,
+      } : null;
+
+      const stops = portStop
+        ? (payload.legKey === 'first_mile' ? [customerStop, portStop] : [portStop, customerStop])
+        : [customerStop];
+
+      const result = await createGroundTransportOrderAction({
+        transport_type: transportType,
+        leg_type: payload.legKey,
+        parent_shipment_id: payload.shipmentId,
+        task_ref: taskRef,
+        container_numbers: payload.containerNumbers ?? [],
+        stops,
+      });
+      if (!result.success) return { success: false, error: result.error };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error('[setHaulageAreaAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to set haulage area' };
   }
 }

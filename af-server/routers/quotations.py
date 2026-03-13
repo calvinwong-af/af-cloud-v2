@@ -15,7 +15,7 @@ from datetime import date, datetime, timezone
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, validator
+from pydantic import BaseModel
 from sqlalchemy import text, bindparam, String
 
 from core.auth import Claims, require_afu
@@ -25,32 +25,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Quotations"])
 
-VALID_VEHICLE_TYPES = {"lorry_1t", "lorry_3t", "lorry_5t", "lorry_10t", "trailer_20", "trailer_40"}
-
-
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
 
-class TransportDetail(BaseModel):
-    leg: str
-    vehicle_type_id: Optional[str] = None  # None for FCL haulage (implied by container size)
-    address: Optional[str] = None
-    area_id: Optional[int] = None
-
-    @validator("vehicle_type_id")
-    def validate_vehicle_type(cls, v):
-        if v is None:
-            return v
-        if v not in VALID_VEHICLE_TYPES:
-            raise ValueError(f"Invalid vehicle_type_id: {v}. Must be one of {sorted(VALID_VEHICLE_TYPES)}")
-        return v
-
-
 class CreateQuotationRequest(BaseModel):
     shipment_id: str
     scope_snapshot: Dict[str, str]
-    transport_details: List[TransportDetail] = []
     notes: Optional[str] = None
 
 
@@ -90,16 +71,17 @@ def _serialise_quotation(row) -> dict:
         "status": row[3],
         "revision": row[4],
         "scope_snapshot": row[5] if isinstance(row[5], dict) else {},
-        "transport_details": row[6] if isinstance(row[6], list) else [],
-        "notes": row[7],
-        "created_by": row[8],
-        "created_at": row[9].isoformat() if row[9] else None,
-        "updated_at": row[10].isoformat() if row[10] else None,
-        "company_name": row[11] or None,
-        "order_type": row[12] or None,
-        "tlx_release": bool(row[13]) if len(row) > 13 else False,
-        "incoterm": row[14] or None if len(row) > 14 else None,
-        "transaction_type": row[15] or None if len(row) > 15 else None,
+        "notes": row[6],
+        "created_by": row[7],
+        "created_at": row[8].isoformat() if row[8] else None,
+        "updated_at": row[9].isoformat() if row[9] else None,
+        "company_name": row[10] or None,
+        "order_type": row[11] or None,
+        "tlx_release": bool(row[12]) if len(row) > 12 else False,
+        "incoterm": row[13] or None if len(row) > 13 else None,
+        "transaction_type": row[14] or None if len(row) > 14 else None,
+        "origin_port_code": row[15] or None if len(row) > 15 else None,
+        "dest_port_code": row[16] or None if len(row) > 16 else None,
     }
 
 
@@ -1209,14 +1191,51 @@ def _resolve_customs(conn, shipment: dict, direction: str, quotation_currency: s
         seen.add(r[1])
 
         cur = r[5]
+        uom = r[6]  # actual UOM from customs_rate_cards
         p_conv = _get_conversion_factor(conn, cur, quotation_currency, ref_date)
+
+        # UOM-aware quantity resolution
+        containers = shipment["containers"]
+        if order_type == "SEA_FCL":
+            if uom == "CONTAINER":
+                # Sum all containers — customs cards have no size/type dimension
+                total_qty = sum(int(ctr.get("quantity", 1)) for ctr in containers)
+                if total_qty == 0:
+                    total_qty = 1
+                qty = float(total_qty)
+            else:
+                # SET, BL, SHIPMENT, etc. — per shipment
+                qty = 1.0
+
+        elif order_type == "SEA_LCL":
+            if uom == "CBM":
+                qty = shipment["cbm"] or 1.0
+            elif uom == "W/M":
+                qty = max(shipment["cbm"], shipment["weight_kg"] / 1000.0) or 1.0
+            elif uom == "KG":
+                qty = shipment["weight_kg"] or 1.0
+            else:
+                qty = 1.0
+
+        elif order_type == "AIR":
+            if uom == "CW_KG":
+                qty = shipment["chargeable_weight"] or 1.0
+            elif uom == "KG":
+                qty = shipment["weight_kg"] or 1.0
+            elif uom == "CBM":
+                qty = shipment["cbm"] or 1.0
+            else:
+                qty = 1.0
+
+        else:
+            qty = 1.0
 
         items.append({
             "component_type": component_type,
             "charge_code": r[1],
             "description": r[2],
-            "uom": "SHIPMENT",
-            "quantity": 1,
+            "uom": uom,
+            "quantity": qty,
             "price_per_unit": _dec(r[3]),
             "min_price": 0,
             "price_currency": cur,
@@ -1235,30 +1254,66 @@ def _resolve_customs(conn, shipment: dict, direction: str, quotation_currency: s
 
 
 # ---------------------------------------------------------------------------
+# Helpers — GT order lookups for area and vehicle
+# ---------------------------------------------------------------------------
+
+def _get_gt_area_id(conn, shipment_id: str, leg_key: str) -> int | None:
+    """
+    Get area_id from the linked GT order stop for a given shipment leg.
+    leg_key: 'first_mile' or 'last_mile'
+    """
+    stop_type = 'pickup' if leg_key == 'first_mile' else 'dropoff'
+    row = conn.execute(text("""
+        SELECT os.area_id
+        FROM orders o
+        JOIN order_stops os ON os.order_id = o.order_id
+        WHERE o.parent_shipment_id = :sid
+          AND o.leg_type = :leg
+          AND o.order_type = 'transport'
+          AND o.trash = FALSE
+          AND o.status != 'cancelled'
+          AND os.stop_type = :stop_type
+        ORDER BY o.created_at DESC, os.sequence ASC
+        LIMIT 1
+    """), {"sid": shipment_id, "leg": leg_key, "stop_type": stop_type}).fetchone()
+    return int(row[0]) if row and row[0] else None
+
+
+def _get_gt_vehicle_type(conn, shipment_id: str, leg_key: str) -> str | None:
+    """
+    Get vehicle_type_id from the linked GT order for a given shipment leg.
+    Reads from the first leg's vehicle_type_id.
+    """
+    row = conn.execute(text("""
+        SELECT ol.vehicle_type_id
+        FROM orders o
+        JOIN order_legs ol ON ol.order_id = o.order_id
+        WHERE o.parent_shipment_id = :sid
+          AND o.leg_type = :leg
+          AND o.order_type = 'transport'
+          AND o.trash = FALSE
+          AND o.status != 'cancelled'
+        ORDER BY o.created_at DESC, ol.sequence ASC
+        LIMIT 1
+    """), {"sid": shipment_id, "leg": leg_key}).fetchone()
+    return row[0] if row and row[0] else None
+
+
+# ---------------------------------------------------------------------------
 # Rate resolution — Haulage (FCL only)
 # ---------------------------------------------------------------------------
 
-def _resolve_haulage(conn, shipment: dict, transport_details: list, direction: str,
+def _resolve_haulage(conn, shipment: dict, direction: str,
                      quotation_currency: str, ref_date: date, warnings: list) -> list:
     items = []
     component_type = f"{direction.lower()}_haulage"
     leg_key = "first_mile" if direction == "EXPORT" else "last_mile"
     port = shipment["origin_port"] if direction == "EXPORT" else shipment["dest_port"]
 
-    # Find matching transport detail
-    td = None
-    for t in transport_details:
-        t_leg = t.get("leg") if isinstance(t, dict) else getattr(t, "leg", None)
-        if t_leg == leg_key:
-            td = t if isinstance(t, dict) else t.dict() if hasattr(t, "dict") else t
-            break
-
-    if not td:
-        return items
-
-    area_id = td.get("area_id")
+    area_id = _get_gt_area_id(conn, shipment["order_id"], leg_key)
     if not area_id:
-        warnings.append({"component_type": component_type, "message": f"No area_id for {leg_key}"})
+        warnings.append({"component_type": component_type,
+                         "message": f"No GT order with area found for {leg_key} — haulage skipped"})
         return items
 
     containers = shipment["containers"]
@@ -1461,28 +1516,18 @@ def _resolve_haulage(conn, shipment: dict, transport_details: list, direction: s
 # Rate resolution — Ground transport (LCL / Air)
 # ---------------------------------------------------------------------------
 
-def _resolve_ground_transport(conn, shipment: dict, transport_details: list, direction: str,
+def _resolve_ground_transport(conn, shipment: dict, direction: str,
                               quotation_currency: str, ref_date: date, warnings: list) -> list:
     items = []
     component_type = f"{direction.lower()}_transport"
     leg_key = "first_mile" if direction == "EXPORT" else "last_mile"
     port = shipment["origin_port"] if direction == "EXPORT" else shipment["dest_port"]
 
-    td = None
-    for t in transport_details:
-        t_leg = t.get("leg") if isinstance(t, dict) else getattr(t, "leg", None)
-        if t_leg == leg_key:
-            td = t if isinstance(t, dict) else t.dict() if hasattr(t, "dict") else t
-            break
-
-    if not td:
-        return items
-
-    area_id = td.get("area_id")
-    vehicle_type_id = td.get("vehicle_type_id")
+    area_id = _get_gt_area_id(conn, shipment["order_id"], leg_key)
+    vehicle_type_id = _get_gt_vehicle_type(conn, shipment["order_id"], leg_key)
     if not area_id or not vehicle_type_id:
         warnings.append({"component_type": component_type,
-                         "message": f"Missing area_id or vehicle_type_id for {leg_key}"})
+                         "message": f"No GT order with area/vehicle found for {leg_key} — transport skipped"})
         return items
 
     base_sort = 42 if direction == "EXPORT" else 43
@@ -1658,24 +1703,21 @@ async def create_quotation(
 
     # 5. Insert
     scope_json = json.dumps(body.scope_snapshot)
-    transport_json = json.dumps([td.dict() for td in body.transport_details])
 
     conn.execute(
         text("""
             INSERT INTO quotations (quotation_ref, shipment_id, revision, scope_snapshot,
-                                    transport_details, notes, currency, created_by)
+                                    notes, currency, created_by)
             VALUES (:ref, :sid, :rev, CAST(:scope AS jsonb),
-                    CAST(:transport AS jsonb), :notes, :currency, :created_by)
+                    :notes, :currency, :created_by)
         """).bindparams(
             bindparam("scope", type_=String()),
-            bindparam("transport", type_=String()),
         ),
         {
             "ref": quotation_ref,
             "sid": body.shipment_id,
             "rev": next_revision,
             "scope": scope_json,
-            "transport": transport_json,
             "notes": body.notes,
             "currency": currency,
             "created_by": claims.email,
@@ -1702,13 +1744,15 @@ async def list_quotations(
         rows = conn.execute(
             text("""
                 SELECT q.id, q.quotation_ref, q.shipment_id, q.status, q.revision,
-                       q.scope_snapshot, q.transport_details, q.notes, q.created_by,
+                       q.scope_snapshot, q.notes, q.created_by,
                        q.created_at, q.updated_at,
                        c.name AS company_name,
                        sd.order_type_detail,
-                       q.tlx_release,
+                       sd.tlx_release,
                        sd.incoterm_code,
-                       sd.transaction_type
+                       sd.transaction_type,
+                       sd.origin_port,
+                       sd.dest_port
                 FROM quotations q
                 LEFT JOIN orders o ON o.order_id = q.shipment_id
                 LEFT JOIN companies c ON c.id = o.company_id
@@ -1722,13 +1766,15 @@ async def list_quotations(
         rows = conn.execute(
             text("""
                 SELECT q.id, q.quotation_ref, q.shipment_id, q.status, q.revision,
-                       q.scope_snapshot, q.transport_details, q.notes, q.created_by,
+                       q.scope_snapshot, q.notes, q.created_by,
                        q.created_at, q.updated_at,
                        c.name AS company_name,
                        sd.order_type_detail,
-                       q.tlx_release,
+                       sd.tlx_release,
                        sd.incoterm_code,
-                       sd.transaction_type
+                       sd.transaction_type,
+                       sd.origin_port,
+                       sd.dest_port
                 FROM quotations q
                 LEFT JOIN orders o ON o.order_id = q.shipment_id
                 LEFT JOIN companies c ON c.id = o.company_id
@@ -1754,13 +1800,18 @@ async def get_quotation(
     row = conn.execute(
         text("""
             SELECT q.id, q.quotation_ref, q.shipment_id, q.status, q.revision,
-                   q.scope_snapshot, q.transport_details, q.notes, q.created_by,
+                   q.scope_snapshot, q.notes, q.created_by,
                    q.created_at, q.updated_at,
                    c.name AS company_name,
                    sd.order_type_detail,
-                   q.tlx_release,
+                   sd.tlx_release,
                    sd.incoterm_code,
-                   sd.transaction_type
+                   sd.transaction_type,
+                   sd.origin_port,
+                   sd.dest_port,
+                   sd.cargo_ready_date,
+                   sd.type_details,
+                   o.cargo
             FROM quotations q
             LEFT JOIN orders o ON o.order_id = q.shipment_id
             LEFT JOIN companies c ON c.id = o.company_id
@@ -1773,7 +1824,16 @@ async def get_quotation(
     if not row:
         raise HTTPException(status_code=404, detail=f"Quotation {quotation_ref} not found")
 
-    return {"status": "OK", "data": _serialise_quotation(row)}
+    data = _serialise_quotation(row)
+    # Enrich single-get with shipment cargo/type details
+    if len(row) > 17:
+        data["cargo_ready_date"] = row[17].isoformat() if row[17] else None
+    if len(row) > 18:
+        data["type_details"] = row[18] if isinstance(row[18], dict) else {}
+    if len(row) > 19:
+        data["cargo"] = row[19] if isinstance(row[19], dict) else {}
+
+    return {"status": "OK", "data": data}
 
 
 # ---------------------------------------------------------------------------
@@ -1789,8 +1849,10 @@ async def calculate_quotation(
     # 1. Fetch quotation
     q = conn.execute(
         text("""
-            SELECT id, quotation_ref, shipment_id, scope_snapshot, transport_details, currency, tlx_release
-            FROM quotations WHERE quotation_ref = :ref
+            SELECT q.id, q.quotation_ref, q.shipment_id, q.scope_snapshot, q.currency, sd.tlx_release
+            FROM quotations q
+            LEFT JOIN shipment_details sd ON sd.order_id = q.shipment_id
+            WHERE q.quotation_ref = :ref
         """),
         {"ref": quotation_ref},
     ).fetchone()
@@ -1801,9 +1863,8 @@ async def calculate_quotation(
     quotation_id = str(q[0])
     shipment_id = q[2]
     scope = q[3] if isinstance(q[3], dict) else {}
-    transport_details = q[4] if isinstance(q[4], list) else []
-    quotation_currency = q[5] or "MYR"
-    tlx_release = bool(q[6])
+    quotation_currency = q[4] or "MYR"
+    tlx_release = bool(q[5])
 
     # 2. Load shipment data
     shipment = _load_shipment_data(conn, shipment_id)
@@ -1858,19 +1919,19 @@ async def calculate_quotation(
     # F. Haulage (FCL only) — first_mile = export, last_mile = import
     if order_type == "SEA_FCL":
         if scope.get("first_mile") == "ASSIGNED":
-            all_items.extend(_resolve_haulage(conn, shipment, transport_details, "EXPORT",
+            all_items.extend(_resolve_haulage(conn, shipment, "EXPORT",
                                               quotation_currency, ref_date, warnings))
         if scope.get("last_mile") == "ASSIGNED":
-            all_items.extend(_resolve_haulage(conn, shipment, transport_details, "IMPORT",
+            all_items.extend(_resolve_haulage(conn, shipment, "IMPORT",
                                               quotation_currency, ref_date, warnings))
 
     # G. Ground transport (LCL / Air)
     if order_type in ("SEA_LCL", "AIR"):
         if scope.get("first_mile") == "ASSIGNED":
-            all_items.extend(_resolve_ground_transport(conn, shipment, transport_details, "EXPORT",
+            all_items.extend(_resolve_ground_transport(conn, shipment, "EXPORT",
                                                        quotation_currency, ref_date, warnings))
         if scope.get("last_mile") == "ASSIGNED":
-            all_items.extend(_resolve_ground_transport(conn, shipment, transport_details, "IMPORT",
+            all_items.extend(_resolve_ground_transport(conn, shipment, "IMPORT",
                                                        quotation_currency, ref_date, warnings))
 
     # 4b. Apply tax rules to all resolved items
@@ -2115,19 +2176,26 @@ async def set_tlx_release(
     conn=Depends(get_db),
 ):
     q = conn.execute(
-        text("SELECT id FROM quotations WHERE quotation_ref = :ref"),
+        text("SELECT id, shipment_id FROM quotations WHERE quotation_ref = :ref"),
         {"ref": quotation_ref},
     ).fetchone()
     if not q:
         raise HTTPException(status_code=404, detail=f"Quotation {quotation_ref} not found")
 
+    # Update tlx_release on shipment_details (moved from quotations in migration 059)
     conn.execute(
         text("""
-            UPDATE quotations
-            SET tlx_release = :tlx, scope_changed = TRUE, updated_at = NOW()
-            WHERE quotation_ref = :ref
+            UPDATE shipment_details
+            SET tlx_release = :tlx
+            WHERE order_id = :sid
         """),
-        {"tlx": body.tlx_release, "ref": quotation_ref},
+        {"tlx": body.tlx_release, "sid": q[1]},
+    )
+
+    # Mark quotation as scope_changed so re-calculate picks up the change
+    conn.execute(
+        text("UPDATE quotations SET scope_changed = TRUE, updated_at = NOW() WHERE quotation_ref = :ref"),
+        {"ref": quotation_ref},
     )
 
     logger.info("[quotations] tlx_release=%s on %s by %s", body.tlx_release, quotation_ref, claims.email)

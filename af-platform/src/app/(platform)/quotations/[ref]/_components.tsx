@@ -3,11 +3,10 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Loader2, ArrowLeft, Calculator, Pencil, Trash2, Plus, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react';
-import { getQuotationAction, listLineItemsAction, calculateQuotationAction, addManualLineItemAction, updateLineItemAction, deleteLineItemAction, fetchAreasAction } from '@/app/actions/quotations';
-import type { Quotation, QuotationLineItem, LineItemTotals, ManualLineItemPayload, LineItemUpdatePayload, AreaInfo } from '@/app/actions/quotations';
-import { EditScopeModal } from '@/components/quotations/EditScopeModal';
-
-// TODO: add container summary (requires shipment data join)
+import { getQuotationAction, listLineItemsAction, calculateQuotationAction, addManualLineItemAction, updateLineItemAction, deleteLineItemAction } from '@/app/actions/quotations';
+import type { Quotation, QuotationLineItem, LineItemTotals, ManualLineItemPayload, LineItemUpdatePayload } from '@/app/actions/quotations';
+import ScopeConfigModal from '@/components/shared/ScopeConfigModal';
+import { fetchTransportOrderByTaskAction } from '@/app/actions/ground-transport';
 
 const STATUS_BADGE: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-600',
@@ -59,12 +58,6 @@ function getComponentLabel(type: string): string {
   return COMPONENT_LABELS[type] ?? type.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
-function getTransportLabel(leg: 'first_mile' | 'last_mile', orderType: string | null | undefined): string {
-  const isFCL = orderType === 'SEA_FCL';
-  const mileLabel = leg === 'first_mile' ? 'First Mile' : 'Last Mile';
-  const modeLabel = isFCL ? 'Haulage' : 'Transport';
-  return `${mileLabel} ${modeLabel}`;
-}
 
 function formatDate(iso: string | null): string {
   if (!iso) return '\u2014';
@@ -72,6 +65,63 @@ function formatDate(iso: string | null): string {
   if (isNaN(d.getTime())) return '\u2014';
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
     + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDateShort(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function buildContainerSummary(typeDetails: Record<string, unknown> | null | undefined, orderType: string | null | undefined): string | null {
+  if (!typeDetails) return null;
+  if (orderType === 'SEA_FCL') {
+    const containers = typeDetails.containers as Array<{ container_size?: string; quantity?: number }> | undefined;
+    if (!containers?.length) return null;
+    const counts: Record<string, number> = {};
+    for (const c of containers) {
+      const s = (c.container_size ?? '').toUpperCase();
+      let norm = s;
+      if (s.startsWith('40') && s.includes('HC')) norm = '40HC';
+      else if (s.startsWith('40')) norm = '40';
+      else if (s.startsWith('20')) norm = '20';
+      counts[norm] = (counts[norm] ?? 0) + (c.quantity ?? 1);
+    }
+    return Object.entries(counts).map(([size, qty]) => `${qty} \u00d7 ${size}ft`).join(', ') || null;
+  }
+  if (orderType === 'SEA_LCL') {
+    const cbm = (typeDetails.cbm as number | undefined) ?? (typeDetails.volume_cbm as number | undefined);
+    return cbm ? `${cbm} CBM` : null;
+  }
+  if (orderType === 'AIR') {
+    const cw = typeDetails.chargeable_weight as number | undefined;
+    return cw ? `${cw} kg CW` : null;
+  }
+  return null;
+}
+
+function SummaryRow({ label, value, mono = false, badge }: {
+  label: string;
+  value: string | null | undefined;
+  mono?: boolean;
+  badge?: 'amber' | 'green' | 'gray';
+}) {
+  if (!value) return null;
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1 border-b border-[var(--border)] last:border-0">
+      <span className="text-[11px] text-[var(--text-muted)] flex-shrink-0">{label}</span>
+      {badge ? (
+        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+          badge === 'amber' ? 'bg-amber-100 text-amber-800' :
+          badge === 'green' ? 'bg-emerald-100 text-emerald-700' :
+          'bg-gray-100 text-gray-600'
+        }`}>{value}</span>
+      ) : (
+        <span className={`text-xs text-[var(--text)] text-right ${mono ? 'font-mono' : ''}`}>{value}</span>
+      )}
+    </div>
+  );
 }
 
 function fmtNum(v: number | null | undefined, decimals = 2): string {
@@ -131,8 +181,8 @@ export function QuotationDetail({ quotationRef, accountType }: { quotationRef: s
   const [tlxRelease, setTlxRelease] = useState(false);
   const [editScopeOpen, setEditScopeOpen] = useState(false);
 
-  // Area resolution
-  const [areaMap, setAreaMap] = useState<Record<number, AreaInfo>>({});
+  // Haulage area state — keyed by leg ('first_mile' | 'last_mile')
+  const [haulageAreas, setHaulageAreas] = useState<Record<string, string | null>>({});
 
   // Other Charges group state
   const [showOtherForm, setShowOtherForm] = useState(false);
@@ -170,15 +220,28 @@ export function QuotationDetail({ quotationRef, accountType }: { quotationRef: s
           if (result.data.currency) setQuotationCurrency(result.data.currency);
           setManualPayload(defaultManualPayload(result.data.currency ?? 'MYR'));
 
-          // Resolve area names from transport details
-          const areaIds = (result.data.transport_details ?? [])
-            .map(td => td.area_id)
-            .filter((id): id is number => id != null);
-          if (areaIds.length > 0) {
-            const areaResult = await fetchAreasAction(areaIds);
-            if (areaResult && areaResult.success) {
-              setAreaMap(Object.fromEntries(areaResult.data.map(a => [a.area_id, a])));
-            }
+          // Fetch haulage areas from linked GT orders
+          const scopeSnap = result.data.scope_snapshot;
+          const haulageLegs: Array<{ leg: 'first_mile' | 'last_mile'; taskRef: string }> = [];
+          if (scopeSnap.first_mile === 'ASSIGNED') {
+            haulageLegs.push({ leg: 'first_mile', taskRef: 'ORIGIN_HAULAGE' });
+          }
+          if (scopeSnap.last_mile === 'ASSIGNED') {
+            haulageLegs.push({ leg: 'last_mile', taskRef: 'DESTINATION_HAULAGE' });
+          }
+          if (haulageLegs.length > 0) {
+            const areaMap: Record<string, string | null> = {};
+            await Promise.all(haulageLegs.map(async ({ leg, taskRef }) => {
+              const gtResult = await fetchTransportOrderByTaskAction(result.data.shipment_id, taskRef);
+              if (gtResult.success) {
+                const stopType = leg === 'first_mile' ? 'pickup' : 'dropoff';
+                const stop = gtResult.data.stops.find(s => s.stop_type === stopType);
+                areaMap[leg] = stop?.area_name ?? null;
+              } else {
+                areaMap[leg] = null;
+              }
+            }));
+            setHaulageAreas(areaMap);
           }
         } else {
           setError(result.error);
@@ -295,8 +358,6 @@ export function QuotationDetail({ quotationRef, accountType }: { quotationRef: s
   const assignedScopeKeys = Object.keys(quotation.scope_snapshot).filter(
     key => quotation.scope_snapshot[key] === 'ASSIGNED'
   );
-  const transportDetails = quotation.transport_details ?? [];
-
   // Group line items by component_type — separate 'other' items
   const otherItems = lineItems.filter(li => li.component_type === 'other');
   const grouped: Array<{ type: string; items: QuotationLineItem[] }> = [];
@@ -420,63 +481,116 @@ export function QuotationDetail({ quotationRef, accountType }: { quotationRef: s
         </div>
       )}
 
-      {/* Scope + Transport merged card */}
-      {(assignedScopeKeys.length > 0 || transportDetails.length > 0 || accountType === 'AFU') && (
+      {/* Shipment Overview card — scope + shipment info */}
+      {(assignedScopeKeys.length > 0 || accountType === 'AFU') && (
         <div className="bg-white border border-[var(--border)] rounded-xl p-5">
-          <div className={`grid ${transportDetails.length > 0 ? 'grid-cols-2' : 'grid-cols-1'} gap-6`}>
+          {/* Card header */}
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">
+              Shipment Overview
+            </h3>
+            {accountType === 'AFU' && (
+              <button
+                onClick={() => setEditScopeOpen(true)}
+                className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-[var(--sky)] border border-[var(--sky)]/30 rounded-md hover:bg-[var(--sky)]/5 transition-colors"
+              >
+                Configure Scope
+              </button>
+            )}
+          </div>
+
+          {/* Two-column grid */}
+          <div className="grid grid-cols-2 gap-6">
             {/* Left — Scope */}
             <div>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Scope</h3>
-                {accountType === 'AFU' && (
-                  <button
-                    onClick={() => setEditScopeOpen(true)}
-                    className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-[var(--sky)] border border-[var(--sky)]/30 rounded-md hover:bg-[var(--sky)]/5 transition-colors"
-                  >
-                    Edit Scope
-                  </button>
-                )}
+              <div className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">
+                Scope
               </div>
-              <div className="space-y-2">
-                {assignedScopeKeys.map(key => (
-                  <div key={key} className="text-sm text-[var(--text)]">{getScopeLabel(key)}</div>
-                ))}
-                {/* TLX Release — shown as plain label only when active */}
+              <div className="space-y-0">
+                {(['first_mile', 'export_clearance', 'import_clearance', 'last_mile'] as const).map(key => {
+                  const mode = quotation.scope_snapshot[key] as string | undefined;
+                  if (!mode) return null;
+                  const isHaulage = key === 'first_mile' || key === 'last_mile';
+                  const areaName = isHaulage ? haulageAreas[key] : null;
+                  return (
+                    <div key={key}>
+                      <div className="flex items-center justify-between py-1 border-b border-[var(--border)]">
+                        <span className="text-xs text-[var(--text)]">{getScopeLabel(key)}</span>
+                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                          mode === 'ASSIGNED' ? 'bg-emerald-100 text-emerald-700' :
+                          mode === 'TRACKED' ? 'bg-amber-100 text-amber-700' :
+                          'bg-gray-100 text-gray-500'
+                        }`}>
+                          {mode === 'IGNORED' ? 'Not in Scope' : mode.charAt(0) + mode.slice(1).toLowerCase()}
+                        </span>
+                      </div>
+                      {isHaulage && mode === 'ASSIGNED' && areaName && (
+                        <div className="pl-2 py-0.5 border-b border-[var(--border)] flex items-center gap-1">
+                          <span className="text-[var(--text-muted)] text-[10px]">{'\u2514'}</span>
+                          <span className="text-[11px] text-[var(--text-muted)]">{areaName}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {/* TLX release row */}
                 {tlxRelease && (
-                  <div className="text-sm text-[var(--text)]">Telex Release</div>
+                  <div className="flex items-center justify-between py-1 border-b border-[var(--border)] last:border-0">
+                    <span className="text-xs text-[var(--text)]">Telex Release</span>
+                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-sky-100 text-sky-700">Yes</span>
+                  </div>
                 )}
               </div>
             </div>
-            {/* Right — Transport */}
-            {transportDetails.length > 0 && (
-              <div>
-                <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-3">Transport</h3>
-                <div className="space-y-4">
-                  {transportDetails.map((td, i) => (
-                    <div key={i} className="space-y-1">
-                      <div className="text-sm font-medium text-[var(--text)]">
-                        {getTransportLabel(td.leg, quotation.order_type)}
-                      </div>
-                      {td.vehicle_type_id && (
-                        <div className="text-xs text-[var(--text-muted)]">
-                          {td.vehicle_type_id.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
-                        </div>
-                      )}
-                      {td.area_id != null && (
-                        <div className="text-xs text-[var(--text-muted)]">
-                          {areaMap[td.area_id]
-                            ? `${areaMap[td.area_id].area_name}, ${areaMap[td.area_id].state_name}`
-                            : `Area ${td.area_id}`}
-                        </div>
-                      )}
-                      {td.address && (
-                        <div className="text-xs text-[var(--text-muted)] whitespace-pre-wrap">{td.address}</div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+
+            {/* Right — Shipment info */}
+            <div>
+              <div className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">
+                Shipment
               </div>
-            )}
+              <div>
+                <SummaryRow label="Incoterm" value={quotation.incoterm ?? null} />
+                <SummaryRow label="Transaction" value={quotation.transaction_type ?? null} />
+                <SummaryRow
+                  label="Type"
+                  value={
+                    quotation.order_type === 'SEA_FCL' ? 'Sea FCL' :
+                    quotation.order_type === 'SEA_LCL' ? 'Sea LCL' :
+                    quotation.order_type === 'AIR' ? 'Air Freight' :
+                    quotation.order_type ?? null
+                  }
+                />
+                <SummaryRow
+                  label="Containers"
+                  value={buildContainerSummary(quotation.type_details, quotation.order_type)}
+                  mono
+                />
+                {quotation.cargo && Object.keys(quotation.cargo).length > 0 && (
+                  <SummaryRow
+                    label="DG Class"
+                    value={
+                      (quotation.cargo as Record<string, unknown>).is_dg
+                        ? ((quotation.cargo as Record<string, unknown>).dg_class_code as string ?? 'DG')
+                        : 'NON-DG'
+                    }
+                    badge={
+                      (quotation.cargo as Record<string, unknown>).is_dg ? 'amber' : 'gray'
+                    }
+                  />
+                )}
+                {quotation.origin_port_code && quotation.dest_port_code && (
+                  <SummaryRow
+                    label="Route"
+                    value={`${quotation.origin_port_code} \u2192 ${quotation.dest_port_code}`}
+                    mono
+                  />
+                )}
+                <SummaryRow
+                  label="Cargo Ready"
+                  value={formatDateShort(quotation.cargo_ready_date)}
+                />
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -857,16 +971,17 @@ export function QuotationDetail({ quotationRef, accountType }: { quotationRef: s
 
       {/* Edit Scope Modal */}
       {editScopeOpen && quotation && (
-        <EditScopeModal
-          quotationRef={quotationRef}
+        <ScopeConfigModal
           shipmentId={quotation.shipment_id}
+          orderType={quotation.order_type ?? ''}
           incoterm={quotation.incoterm ?? ''}
           transactionType={quotation.transaction_type ?? ''}
-          orderType={quotation.order_type ?? ''}
-          currentScope={quotation.scope_snapshot}
-          currentTlxRelease={tlxRelease}
+          originPortCode={quotation.origin_port_code ?? null}
+          destinationPortCode={quotation.dest_port_code ?? null}
+          mode="configure"
+          quotationRef={quotationRef}
           onClose={() => setEditScopeOpen(false)}
-          onSaved={(newScope, newTlxRelease) => {
+          onScopeUpdated={(newScope, newTlxRelease) => {
             setQuotation(prev => prev ? { ...prev, scope_snapshot: newScope } : prev);
             setTlxRelease(newTlxRelease);
             setScopeChanged(true);

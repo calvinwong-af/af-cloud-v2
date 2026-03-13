@@ -7,6 +7,7 @@ import { PortCombobox } from '@/components/shared/PortCombobox';
 const TRADE_DIRECTIONS = ['IMPORT', 'EXPORT'] as const;
 const SHIPMENT_TYPES = ['FCL', 'LCL', 'AIR', 'CB', 'ALL'] as const;
 const UOMS = ['CONTAINER', 'CBM', 'KG', 'W/M', 'CW_KG', 'SET', 'BL'] as const;
+const UOM_DISPLAY: Record<string, string> = { CONTAINER: 'CTR' };
 
 // ---------------------------------------------------------------------------
 // Exported types
@@ -145,13 +146,13 @@ export function CustomsModal({ open, onClose, onSave, onDelete, mode, seed, port
     : null;
 
   const title = mode === 'new'
-    ? 'Add Customs Rate'
+    ? (seed ? `New Rate \u2014 ${seed.charge_code}` : 'Add Customs Rate')
     : mode === 'edit-rate'
     ? `Edit Rate \u2014 ${effectiveFrom || '...'}`
     : 'Edit Charge Details';
 
   const canSave = mode === 'new'
-    ? !!(portCode && chargeCode && price && cost && effectiveFrom && !dateRangeError)
+    ? (seed ? !!(price && cost && effectiveFrom && !dateRangeError) : !!(portCode && chargeCode && price && cost && effectiveFrom && !dateRangeError))
     : mode === 'edit-rate'
     ? !dateRangeError
     : true;
@@ -165,15 +166,15 @@ export function CustomsModal({ open, onClose, onSave, onDelete, mode, seed, port
         await onSave({
           mode: 'new',
           data: {
-            port_code: portCode,
-            trade_direction: tradeDirection as 'IMPORT' | 'EXPORT',
-            shipment_type: shipmentType as 'FCL' | 'LCL' | 'AIR' | 'CB' | 'ALL',
-            charge_code: chargeCode,
-            description,
-            currency,
-            uom,
-            is_domestic: isDomestic,
-            is_international: isInternational,
+            port_code: seed?.port_code ?? portCode,
+            trade_direction: (seed?.trade_direction ?? tradeDirection) as 'IMPORT' | 'EXPORT',
+            shipment_type: (seed?.shipment_type ?? shipmentType) as 'FCL' | 'LCL' | 'AIR' | 'CB' | 'ALL',
+            charge_code: seed?.charge_code ?? chargeCode,
+            description: seed?.description ?? description,
+            currency: seed?.currency ?? currency,
+            uom: seed?.uom ?? uom,
+            is_domestic: seed?.is_domestic ?? isDomestic,
+            is_international: seed?.is_international ?? isInternational,
             is_active: true,
             price: parseFloat(price),
             cost: parseFloat(cost),
@@ -263,8 +264,25 @@ export function CustomsModal({ open, onClose, onSave, onDelete, mode, seed, port
             </div>
           )}
 
-          {/* ---- new mode: all fields ---- */}
-          {mode === 'new' && (
+          {/* ---- new mode + seed: read-only card identity header ---- */}
+          {mode === 'new' && seed && (
+            <div className="p-3 rounded-lg bg-[var(--surface)] border border-[var(--border)] space-y-1 mb-1">
+              <div className="text-sm">
+                <span className="font-semibold text-[var(--text)]">{seed.charge_code}</span>
+                <span className="text-[var(--text-muted)]"> &mdash; {seed.description}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${seed.trade_direction === 'IMPORT' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                  {seed.trade_direction === 'IMPORT' ? 'IMP' : 'EXP'}
+                </span>
+                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{seed.shipment_type}</span>
+                <span className="text-xs text-[var(--text-muted)]">{seed.port_code}</span>
+              </div>
+            </div>
+          )}
+
+          {/* ---- new mode (no seed): all fields ---- */}
+          {mode === 'new' && !seed && (
             <>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
@@ -292,7 +310,7 @@ export function CustomsModal({ open, onClose, onSave, onDelete, mode, seed, port
                   <span className="text-xs font-medium text-[var(--text-muted)]">UOM</span>
                   <select value={uom} onChange={e => setUom(e.target.value)}
                     className="w-full h-9 px-3 text-sm rounded-lg border border-[var(--border)] bg-white">
-                    {UOMS.map(u => <option key={u} value={u}>{u}</option>)}
+                    {UOMS.map(u => <option key={u} value={u}>{UOM_DISPLAY[u] ?? u}</option>)}
                   </select>
                 </label>
               </div>
@@ -355,8 +373,8 @@ export function CustomsModal({ open, onClose, onSave, onDelete, mode, seed, port
             </>
           )}
 
-          {/* ---- new mode: domestic/international checkboxes ---- */}
-          {mode === 'new' && (
+          {/* ---- new mode (no seed): domestic/international checkboxes ---- */}
+          {mode === 'new' && !seed && (
             <>
               <label className="flex items-center gap-2">
                 <input type="checkbox" checked={isDomestic} onChange={e => setIsDomestic(e.target.checked)} />
@@ -408,7 +426,7 @@ export function CustomsModal({ open, onClose, onSave, onDelete, mode, seed, port
                   <span className="text-xs font-medium text-[var(--text-muted)]">UOM</span>
                   <select value={uom} onChange={e => setUom(e.target.value)}
                     className="w-full h-9 px-3 text-sm rounded-lg border border-[var(--border)] bg-white">
-                    {UOMS.map(u => <option key={u} value={u}>{u}</option>)}
+                    {UOMS.map(u => <option key={u} value={u}>{UOM_DISPLAY[u] ?? u}</option>)}
                   </select>
                 </label>
               </div>

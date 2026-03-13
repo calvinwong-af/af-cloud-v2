@@ -40,6 +40,9 @@ const UOM_TOOLTIPS: Record<string, string> = {
   RAIL_3KG: 'Rail volumetric \u2014 1:3 ratio per kg',
 };
 
+const UOM_DISPLAY: Record<string, string> = { CONTAINER: 'CTR' };
+const uomLabel = (uom: string): string => UOM_DISPLAY[uom] ?? uom;
+
 const CONTAINER_TYPE_TOOLTIPS: Record<string, string> = {
   GP: 'General Purpose',
   HC: 'High Cube',
@@ -493,7 +496,7 @@ function LocalChargeCardList({
                           {card.is_domestic && (
                             <span title="DOM \u2014 Domestic (local delivery component)" className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 cursor-help">DOM</span>
                           )}
-                          <span title={UOM_TOOLTIPS[card.uom] ?? card.uom} className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 cursor-help">{card.uom}</span>
+                          <span title={UOM_TOOLTIPS[card.uom] ?? card.uom} className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 cursor-help">{uomLabel(card.uom)}</span>
                           {card.currency && (
                             <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{card.currency}</span>
                           )}

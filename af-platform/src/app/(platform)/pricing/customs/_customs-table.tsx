@@ -38,6 +38,9 @@ const UOM_TOOLTIPS: Record<string, string> = {
   BL: 'Per Bill of Lading',
 };
 
+const UOM_DISPLAY: Record<string, string> = { CONTAINER: 'CTR' };
+const uomLabel = (uom: string): string => UOM_DISPLAY[uom] ?? uom;
+
 const directionBadge = (d: string) => {
   const cls = d === 'IMPORT' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700';
   const tip = d === 'IMPORT' ? 'Import \u2014 inbound shipment' : 'Export \u2014 outbound shipment';
@@ -458,7 +461,7 @@ function CustomsCardList({
                           {card.is_domestic && (
                             <span title="DOM \u2014 Domestic" className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 cursor-help">DOM</span>
                           )}
-                          <span title={UOM_TOOLTIPS[card.uom] ?? card.uom} className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 cursor-help">{card.uom}</span>
+                          <span title={UOM_TOOLTIPS[card.uom] ?? card.uom} className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 cursor-help">{uomLabel(card.uom)}</span>
                           {card.currency && (
                             <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{card.currency}</span>
                           )}

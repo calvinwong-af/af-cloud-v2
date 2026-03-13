@@ -6,17 +6,9 @@ import { verifySessionAndRole } from '@/lib/auth-server';
 // Types
 // ---------------------------------------------------------------------------
 
-export interface QuotationTransportDetail {
-  leg: 'first_mile' | 'last_mile';
-  vehicle_type_id: string | null;
-  address: string;
-  area_id?: number | null;
-}
-
 export interface CreateQuotationPayload {
   shipment_id: string;
   scope_snapshot: Record<string, string>;
-  transport_details: QuotationTransportDetail[];
   notes?: string | null;
 }
 
@@ -27,7 +19,6 @@ export interface Quotation {
   status: string;
   revision: number;
   scope_snapshot: Record<string, string>;
-  transport_details: QuotationTransportDetail[];
   notes: string | null;
   created_by: string;
   created_at: string;
@@ -39,6 +30,11 @@ export interface Quotation {
   tlx_release?: boolean;
   incoterm?: string | null;
   transaction_type?: string | null;
+  origin_port_code?: string | null;
+  dest_port_code?: string | null;
+  cargo_ready_date?: string | null;
+  type_details?: Record<string, unknown> | null;
+  cargo?: Record<string, unknown> | null;
 }
 
 export interface QuotationLineItem {
@@ -510,6 +506,10 @@ export async function setTlxReleaseAction(
     return { success: false, error: 'Failed to update telex release' };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Update Quotation Scope Snapshot
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Update Quotation Scope Snapshot

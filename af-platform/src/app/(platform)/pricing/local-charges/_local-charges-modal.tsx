@@ -9,6 +9,7 @@ const SHIPMENT_TYPES = ['FCL', 'LCL', 'AIR', 'CB', 'ALL'] as const;
 const CONTAINER_SIZES = ['20', '40', 'ALL'] as const;
 const CONTAINER_TYPES = ['GP', 'HC', 'RF', 'FF', 'OT', 'FR', 'PL', 'ALL'] as const;
 const UOMS = ['CONTAINER', 'CBM', 'KG', 'W/M', 'CW_KG', 'SET', 'BL'] as const;
+const UOM_DISPLAY: Record<string, string> = { CONTAINER: 'CTR' };
 const DG_CLASS_CODES = ['NON-DG', 'DG-2', 'DG-3', 'ALL'] as const;
 
 // ---------------------------------------------------------------------------
@@ -162,13 +163,13 @@ export function LocalChargesModal({ open, onClose, onSave, onDelete, mode, seed,
     : null;
 
   const title = mode === 'new'
-    ? 'Add Local Charge'
+    ? (seed ? `New Rate \u2014 ${seed.charge_code}` : 'Add Local Charge')
     : mode === 'edit-rate'
     ? `Edit Rate \u2014 ${effectiveFrom || '...'}`
     : 'Edit Charge Details';
 
   const canSave = mode === 'new'
-    ? !!(portCode && chargeCode && price && cost && effectiveFrom && !dateRangeError)
+    ? (seed ? !!(price && cost && effectiveFrom && !dateRangeError) : !!(portCode && chargeCode && price && cost && effectiveFrom && !dateRangeError))
     : mode === 'edit-rate'
     ? !dateRangeError
     : true;
@@ -182,18 +183,18 @@ export function LocalChargesModal({ open, onClose, onSave, onDelete, mode, seed,
         await onSave({
           mode: 'new',
           data: {
-            port_code: portCode,
-            trade_direction: tradeDirection as 'IMPORT' | 'EXPORT',
-            shipment_type: shipmentType as 'FCL' | 'LCL' | 'AIR' | 'CB' | 'ALL',
-            container_size: containerSize as '20' | '40' | 'ALL',
-            container_type: containerType as 'GP' | 'HC' | 'RF' | 'FF' | 'OT' | 'FR' | 'PL' | 'ALL',
-            dg_class_code: dgClassCode,
-            charge_code: chargeCode,
-            description,
-            currency,
-            uom,
-            is_domestic: isDomestic,
-            is_international: isInternational,
+            port_code: seed?.port_code ?? portCode,
+            trade_direction: (seed?.trade_direction ?? tradeDirection) as 'IMPORT' | 'EXPORT',
+            shipment_type: (seed?.shipment_type ?? shipmentType) as 'FCL' | 'LCL' | 'AIR' | 'CB' | 'ALL',
+            container_size: (seed?.container_size ?? containerSize) as '20' | '40' | 'ALL',
+            container_type: (seed?.container_type ?? containerType) as 'GP' | 'HC' | 'RF' | 'FF' | 'OT' | 'FR' | 'PL' | 'ALL',
+            dg_class_code: seed?.dg_class_code ?? dgClassCode,
+            charge_code: seed?.charge_code ?? chargeCode,
+            description: seed?.description ?? description,
+            currency: seed?.currency ?? currency,
+            uom: seed?.uom ?? uom,
+            is_domestic: seed?.is_domestic ?? isDomestic,
+            is_international: seed?.is_international ?? isInternational,
             is_active: true,
             price: parseFloat(price),
             cost: parseFloat(cost),
@@ -294,8 +295,31 @@ export function LocalChargesModal({ open, onClose, onSave, onDelete, mode, seed,
             </div>
           )}
 
-          {/* ---- new mode: all fields ---- */}
-          {mode === 'new' && (
+          {/* ---- new mode + seed: read-only card identity header ---- */}
+          {mode === 'new' && seed && (
+            <div className="p-3 rounded-lg bg-[var(--surface)] border border-[var(--border)] space-y-1 mb-1">
+              <div className="text-sm">
+                <span className="font-semibold text-[var(--text)]">{seed.charge_code}</span>
+                <span className="text-[var(--text-muted)]"> &mdash; {seed.description}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${seed.trade_direction === 'IMPORT' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                  {seed.trade_direction === 'IMPORT' ? 'IMP' : 'EXP'}
+                </span>
+                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{seed.shipment_type}</span>
+                {(seed.container_size !== 'ALL' || seed.container_type !== 'ALL') && (
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{seed.container_size}/{seed.container_type}</span>
+                )}
+                {seed.dg_class_code !== 'NON-DG' && (
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-rose-50 text-rose-700">{seed.dg_class_code}</span>
+                )}
+                <span className="text-xs text-[var(--text-muted)]">{seed.port_code}</span>
+              </div>
+            </div>
+          )}
+
+          {/* ---- new mode (no seed): all fields ---- */}
+          {mode === 'new' && !seed && (
             <>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
@@ -347,7 +371,7 @@ export function LocalChargesModal({ open, onClose, onSave, onDelete, mode, seed,
                 <label className="space-y-1">
                   <span className="text-xs font-medium text-[var(--text-muted)]">UOM</span>
                   <select value={uom} onChange={e => setUom(e.target.value)} className={inputCls}>
-                    {UOMS.map(u => <option key={u} value={u}>{u}</option>)}
+                    {UOMS.map(u => <option key={u} value={u}>{UOM_DISPLAY[u] ?? u}</option>)}
                   </select>
                 </label>
                 <label className="space-y-1">
@@ -403,8 +427,8 @@ export function LocalChargesModal({ open, onClose, onSave, onDelete, mode, seed,
             </>
           )}
 
-          {/* ---- new mode: domestic/international checkboxes ---- */}
-          {mode === 'new' && (
+          {/* ---- new mode (no seed): domestic/international checkboxes ---- */}
+          {mode === 'new' && !seed && (
             <div className="flex items-center gap-6">
               <label className="flex items-center gap-2">
                 <input type="checkbox" checked={isInternational} onChange={e => setIsInternational(e.target.checked)} />
@@ -453,7 +477,7 @@ export function LocalChargesModal({ open, onClose, onSave, onDelete, mode, seed,
                 <label className="space-y-1">
                   <span className="text-xs font-medium text-[var(--text-muted)]">UOM</span>
                   <select value={uom} onChange={e => setUom(e.target.value)} className={inputCls}>
-                    {UOMS.map(u => <option key={u} value={u}>{u}</option>)}
+                    {UOMS.map(u => <option key={u} value={u}>{UOM_DISPLAY[u] ?? u}</option>)}
                   </select>
                 </label>
               </div>

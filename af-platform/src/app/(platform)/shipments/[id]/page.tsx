@@ -19,7 +19,7 @@ import ShipmentFilesTab from '@/components/shipments/ShipmentFilesTab';
 import BLPartyDiffModal from '@/components/shipments/BLPartyDiffModal';
 import DocumentParseModal from '@/components/shipments/DocumentParseModal';
 import RouteNodeTimeline from '@/components/shipments/RouteNodeTimeline';
-import ScopeConfigDialog from '@/components/shipments/ScopeConfigDialog';
+import ScopeConfigModal from '@/components/shared/ScopeConfigModal';
 import CreateQuotationModal from '@/components/shipments/CreateQuotationModal';
 import {
   STATUS_STYLES,
@@ -158,6 +158,7 @@ export default function ShipmentOrderDetailPage() {
   const voyageNumber: string | null =
     ((order as unknown as Record<string, unknown>).voyage_number as string) ?? (bk.voyage_number as string) ?? null;
 
+  // Derive container sizes and numbers for scope modal / GT order creation
   const containerSizes: string[] = (() => {
     const td = order.type_details;
     if (order.order_type === 'SEA_FCL' && td && 'containers' in td) {
@@ -170,6 +171,14 @@ export default function ShipmentOrderDetailPage() {
           return s;
         })
       ));
+    }
+    return [];
+  })();
+
+  const containerNumbers: string[] = (() => {
+    const td = order.type_details;
+    if (order.order_type === 'SEA_FCL' && td && 'containers' in td) {
+      return (td as TypeDetailsFCL).containers.flatMap(c => c.container_numbers ?? []);
     }
     return [];
   })();
@@ -712,11 +721,19 @@ export default function ShipmentOrderDetailPage() {
 
       {/* Scope config dialog */}
       {showScopeConfig && (
-        <ScopeConfigDialog
+        <ScopeConfigModal
           shipmentId={order.quotation_id}
           orderType={order.order_type}
           incoterm={order.incoterm_code ?? ''}
           transactionType={order.transaction_type}
+          containerSummary={containerSummary}
+          containerSizes={containerSizes}
+          containerNumbers={containerNumbers}
+          originPortCode={order.origin?.port_un_code ?? null}
+          originPortName={order.origin?.port_name ?? null}
+          destinationPortCode={order.destination?.port_un_code ?? null}
+          destinationPortName={order.destination?.port_name ?? null}
+          mode="configure"
           onClose={() => setShowScopeConfig(false)}
           onSaved={() => {
             setShowScopeConfig(false);
@@ -733,10 +750,13 @@ export default function ShipmentOrderDetailPage() {
           orderType={order.order_type}
           incoterm={order.incoterm_code ?? ''}
           transactionType={order.transaction_type}
-          containerSizes={containerSizes}
           containerSummary={containerSummary}
+          containerSizes={containerSizes}
+          containerNumbers={containerNumbers}
           originPortCode={order.origin?.port_un_code ?? null}
+          originPortName={order.origin?.port_name ?? null}
           destinationPortCode={order.destination?.port_un_code ?? null}
+          destinationPortName={order.destination?.port_name ?? null}
           onClose={() => setShowCreateQuotation(false)}
           onCreated={(ref) => {
             setLatestQuotationRef(ref);

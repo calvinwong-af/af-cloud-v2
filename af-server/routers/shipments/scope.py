@@ -47,7 +47,7 @@ async def get_scope(
 ):
     """Return the current scope for a shipment. Derives from incoterm if not set."""
     row = conn.execute(text("""
-        SELECT sd.scope, sd.incoterm_code, sd.transaction_type
+        SELECT sd.scope, sd.incoterm_code, sd.transaction_type, sd.tlx_release
         FROM shipment_details sd
         JOIN orders o ON o.order_id = sd.order_id
         WHERE sd.order_id = :id AND o.trash = FALSE
@@ -64,7 +64,7 @@ async def get_scope(
     if not scope or not _is_new_schema(scope):
         scope = derive_scope_from_incoterm(incoterm, txn_type)
 
-    return {"status": "OK", "data": scope}
+    return {"status": "OK", "data": {**scope, "tlx_release": bool(row[3])}}
 
 
 class UpdateScopeRequest(BaseModel):
@@ -72,6 +72,7 @@ class UpdateScopeRequest(BaseModel):
     export_clearance: str | None = None
     import_clearance: str | None = None
     last_mile: str | None = None
+    tlx_release: bool | None = None
 
 
 @router.patch("/{shipment_id}/scope")
@@ -105,6 +106,8 @@ async def update_scope(
 
     # Apply updates from request body
     updates = body.dict(exclude_none=True)
+    # Handle tlx_release separately — it's a boolean column, not a scope flag
+    tlx_update = updates.pop("tlx_release", None)
     for key, value in updates.items():
         if value not in _VALID_MODES:
             raise HTTPException(
@@ -125,6 +128,12 @@ async def update_scope(
     conn.execute(text("""
         UPDATE shipment_details SET scope = CAST(:scope AS jsonb) WHERE order_id = :id
     """).bindparams(bindparam("scope", type_=String())), {"scope": json.dumps(current_scope), "id": shipment_id})
+
+    # Save tlx_release if provided
+    if tlx_update is not None:
+        conn.execute(text("""
+            UPDATE shipment_details SET tlx_release = :tlx_release WHERE order_id = :id
+        """), {"tlx_release": tlx_update, "id": shipment_id})
 
     # Apply scope to workflow tasks
     wf_row = conn.execute(text("""
@@ -147,4 +156,10 @@ async def update_scope(
 
     logger.info("Scope updated for %s by %s", shipment_id, claims.uid)
 
-    return {"status": "OK", "data": current_scope}
+    # Read back current tlx_release for response
+    tlx_row = conn.execute(text("""
+        SELECT tlx_release FROM shipment_details WHERE order_id = :id
+    """), {"id": shipment_id}).fetchone()
+    tlx_val = bool(tlx_row[0]) if tlx_row else False
+
+    return {"status": "OK", "data": {**current_scope, "tlx_release": tlx_val}}
