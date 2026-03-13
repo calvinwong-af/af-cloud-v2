@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { ChevronDown, ChevronRight, FlaskConical, Info, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, CreditCard, FlaskConical, Pencil, Plus, Trash2 } from 'lucide-react';
 import {
   fetchPricingCountriesAction,
   fetchDgClassChargeCardsAction,
@@ -507,6 +507,9 @@ function DgClassChargeCardList({
                             <span title="DOM \u2014 Domestic" className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 cursor-help">DOM</span>
                           )}
                           <span title={UOM_TOOLTIPS[card.uom] ?? card.uom} className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 cursor-help">{card.uom}</span>
+                          {card.currency && (
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{card.currency}</span>
+                          )}
                           {alertLevel === 'cost_exceeds_price' && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-200 text-red-800 font-semibold">
                               Cost exceeds price
@@ -546,21 +549,6 @@ function DgClassChargeCardList({
                           >
                             <Pencil size={12} />
                           </button>
-                          {/* Edit card details (info) */}
-                          <button
-                            onClick={e => {
-                              e.stopPropagation();
-                              onAction({
-                                ...buildCardSeed(card),
-                                rate_id: null, price: null, cost: null,
-                                effective_from: null, effective_to: null,
-                              }, 'edit-card');
-                            }}
-                            className="p-1 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-amber-500"
-                            title="Edit charge details"
-                          >
-                            <Info size={12} />
-                          </button>
                           {/* New rate (plus) */}
                           <button
                             onClick={e => {
@@ -578,6 +566,21 @@ function DgClassChargeCardList({
                             title="New rate"
                           >
                             <Plus size={12} />
+                          </button>
+                          {/* Edit card details */}
+                          <button
+                            onClick={e => {
+                              e.stopPropagation();
+                              onAction({
+                                ...buildCardSeed(card),
+                                rate_id: null, price: null, cost: null,
+                                effective_from: null, effective_to: null,
+                              }, 'edit-card');
+                            }}
+                            className="p-1 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-amber-500"
+                            title="Edit card details"
+                          >
+                            <CreditCard size={12} />
                           </button>
                           {/* Delete card (trash) */}
                           <button
@@ -649,11 +652,6 @@ function DgClassChargeCardList({
                                 <div className="text-[10px] text-[var(--text-muted)]">
                                   {formatCompact(bucket.cost)}
                                 </div>
-                                {card.currency && (
-                                  <div className="text-[9px] text-[var(--text-muted)]/60 text-center mt-0.5">
-                                    {card.currency}
-                                  </div>
-                                )}
                                 <div className="mt-0.5 flex justify-center opacity-0 group-hover/cell:opacity-100 transition-opacity">
                                   <span className="w-1 h-1 rounded-full bg-[var(--sky)]/50" />
                                 </div>

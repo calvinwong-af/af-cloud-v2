@@ -1,5 +1,27 @@
 ## Prompt Log — v6.71 to v6.80
 
+### [2026-03-15 00:30 UTC] — v6.73: Build Fix + Pricing Table/Modal UX Polish
+- **Status:** Completed
+- **Tasks:**
+  - A: Fixed geography `a.state_code!.split` non-null assertion (line 304) + pre-existing `port_un_code` missing in createAreaAction (line 452)
+  - B1: Replaced `Info` icon with `CreditCard` in all 3 table files, tooltip → "Edit card details"
+  - B2: Reordered buttons to Pencil | Plus | CreditCard | Trash in all 3 table files
+  - B3: Fixed Effective From/To label alignment in all 3 modals — moved "Remove end date" below input
+  - B4: Added charge_code, trade_direction, shipment_type to edit-card mode (server action types + modal forms + handleSubmit payloads) in all 3 modules
+  - B5: Added currency badge to card identity panel, removed currency from time-series cells in all 3 table files
+  - Bonus: Fixed pre-existing TS errors — CreatePayload types missing `is_active`, string literal type mismatches, ScopeConfigDialog exhaustive switch
+- **Files Modified:**
+  - `af-platform/src/app/(platform)/geography/_components.tsx`
+  - `af-platform/src/app/(platform)/pricing/customs/_customs-table.tsx`
+  - `af-platform/src/app/(platform)/pricing/customs/_customs-modal.tsx`
+  - `af-platform/src/app/(platform)/pricing/local-charges/_local-charges-table.tsx`
+  - `af-platform/src/app/(platform)/pricing/local-charges/_local-charges-modal.tsx`
+  - `af-platform/src/app/(platform)/pricing/dg-class-charges/_dg-class-charges-table.tsx`
+  - `af-platform/src/app/(platform)/pricing/dg-class-charges/_dg-class-charges-modal.tsx`
+  - `af-platform/src/app/actions/pricing.ts`
+  - `af-platform/src/components/shipments/ScopeConfigDialog.tsx`
+- **Notes:** Build passes clean. Backend routers already had charge_code/trade_direction/shipment_type in CardUpdate models with validation and key rebuild.
+
 ### [2026-03-14 23:15 UTC] — v6.72: DG Class Charges Frontend Rewrite (Two-Tier Schema)
 - **Status:** Completed
 - **Tasks:**

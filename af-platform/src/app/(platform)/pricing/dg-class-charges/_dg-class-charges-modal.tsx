@@ -39,10 +39,10 @@ export interface DgClassChargeModalSeed {
 }
 
 interface DgClassChargeCreatePayload {
-  port_code: string; trade_direction: string; shipment_type: string;
-  container_size: string; container_type: string; dg_class_code: string;
-  charge_code: string; description: string; currency: string; uom: string;
-  is_domestic: boolean; is_international: boolean;
+  port_code: string; trade_direction: 'IMPORT' | 'EXPORT'; shipment_type: 'FCL' | 'LCL' | 'AIR' | 'CB' | 'ALL';
+  container_size: '20' | '40' | 'ALL'; container_type: 'GP' | 'HC' | 'RF' | 'FF' | 'OT' | 'FR' | 'PL' | 'ALL';
+  dg_class_code: 'DG-2' | 'DG-3'; charge_code: string; description: string; currency: string; uom: string;
+  is_domestic: boolean; is_international: boolean; is_active: boolean;
   price: number; cost: number; effective_from: string; effective_to: string | null;
   close_previous: boolean;
 }
@@ -50,6 +50,7 @@ interface DgClassChargeRateUpdatePayload {
   price?: number; cost?: number; effective_from?: string; effective_to?: string | null;
 }
 interface DgClassChargeCardUpdatePayload {
+  charge_code?: string; trade_direction?: string; shipment_type?: string;
   description?: string; currency?: string; uom?: string;
   container_size?: string; container_type?: string; dg_class_code?: string;
   is_domestic?: boolean; is_international?: boolean; is_active?: boolean;
@@ -203,17 +204,18 @@ export function DgClassChargesModal({ open, onClose, onSave, onDelete, mode, see
           mode: 'new',
           data: {
             port_code: portCode,
-            trade_direction: tradeDirection,
-            shipment_type: shipmentType,
-            container_size: containerSize,
-            container_type: containerType,
-            dg_class_code: dgClassCode,
+            trade_direction: tradeDirection as 'IMPORT' | 'EXPORT',
+            shipment_type: shipmentType as 'FCL' | 'LCL' | 'AIR' | 'CB' | 'ALL',
+            container_size: containerSize as '20' | '40' | 'ALL',
+            container_type: containerType as 'GP' | 'HC' | 'RF' | 'FF' | 'OT' | 'FR' | 'PL' | 'ALL',
+            dg_class_code: dgClassCode as 'DG-2' | 'DG-3',
             charge_code: chargeCode,
             description,
             currency,
             uom,
             is_domestic: isDomestic,
             is_international: isInternational,
+            is_active: true,
             price: parseFloat(price),
             cost: parseFloat(cost),
             effective_from: effectiveFrom,
@@ -237,6 +239,9 @@ export function DgClassChargesModal({ open, onClose, onSave, onDelete, mode, see
           mode: 'edit-card',
           cardId: seed.card_id,
           data: {
+            charge_code: chargeCode,
+            trade_direction: tradeDirection,
+            shipment_type: shipmentType,
             description,
             currency,
             uom,
@@ -396,17 +401,17 @@ export function DgClassChargesModal({ open, onClose, onSave, onDelete, mode, see
                     className={inputCls} />
                 </label>
                 <label className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-[var(--text-muted)]">Effective To</span>
-                    {mode === 'edit-rate' && effectiveTo && (
+                  <span className="text-xs font-medium text-[var(--text-muted)]">Effective To</span>
+                  <input type="date" value={effectiveTo} onChange={e => setEffectiveTo(e.target.value)}
+                    className={`${inputCls} ${dateRangeError ? 'border-red-400' : ''}`} />
+                  {mode === 'edit-rate' && effectiveTo && (
+                    <div className="flex justify-end mt-0.5">
                       <button type="button" onClick={() => setEffectiveTo('')}
                         className="text-xs text-[var(--text-muted)] hover:text-red-500 underline cursor-pointer">
                         &times; Remove end date
                       </button>
-                    )}
-                  </div>
-                  <input type="date" value={effectiveTo} onChange={e => setEffectiveTo(e.target.value)}
-                    className={`${inputCls} ${dateRangeError ? 'border-red-400' : ''}`} />
+                    </div>
+                  )}
                   {dateRangeError && <p className="text-xs text-red-500">{dateRangeError}</p>}
                 </label>
               </div>
@@ -430,6 +435,25 @@ export function DgClassChargesModal({ open, onClose, onSave, onDelete, mode, see
           {/* ---- edit-card mode: card fields only ---- */}
           {mode === 'edit-card' && (
             <>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="space-y-1">
+                  <span className="text-xs font-medium text-[var(--text-muted)]">Charge Code</span>
+                  <input value={chargeCode} onChange={e => setChargeCode(e.target.value.toUpperCase())}
+                    className={inputCls} />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-medium text-[var(--text-muted)]">Trade Direction</span>
+                  <select value={tradeDirection} onChange={e => setTradeDirection(e.target.value)} className={inputCls}>
+                    {TRADE_DIRECTIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </label>
+              </div>
+              <label className="space-y-1 block">
+                <span className="text-xs font-medium text-[var(--text-muted)]">Shipment Type</span>
+                <select value={shipmentType} onChange={e => setShipmentType(e.target.value)} className={inputCls}>
+                  {SHIPMENT_TYPES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </label>
               <label className="space-y-1 block">
                 <span className="text-xs font-medium text-[var(--text-muted)]">Description</span>
                 <input value={description} onChange={e => setDescription(e.target.value)}

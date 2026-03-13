@@ -96,6 +96,7 @@ function getScopeLabel(key: keyof ScopeFlags, orderType: string): string {
     case 'last_mile':
       return orderType === 'SEA_FCL' ? 'Last Mile Haulage' : 'Last Mile Trucking';
   }
+  return key;
 }
 
 const MODE_OPTIONS: { value: ScopeMode; label: string; desc: string }[] = [

@@ -301,7 +301,7 @@ export function AreasTab() {
       areas
         .filter(a => !!a.state_code)
         .map(a => {
-          const cc = a.state_code.split('-')[0];
+          const cc = a.state_code!.split('-')[0];
           const name = countryMap.get(cc);
           const label = name ? `${cc} — ${name}` : cc;
           return [cc, { value: cc, label }];
@@ -451,6 +451,7 @@ function AreaFormModal({ area, states, onClose, onSaved }: {
         })
       : await createAreaAction({
           area_code: areaCode.trim(), area_name: areaName.trim(),
+          port_un_code: '',
           state_code: stateCode || null,
           lat: latNum, lng: lngNum,
         });

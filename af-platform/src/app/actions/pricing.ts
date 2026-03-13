@@ -443,6 +443,7 @@ export async function updateLocalChargeAction(
 export async function updateLocalChargeCardAction(
   cardId: number,
   data: {
+    charge_code?: string; trade_direction?: string; shipment_type?: string;
     description?: string; currency?: string; uom?: string;
     container_size?: string; container_type?: string; dg_class_code?: string;
     is_domestic?: boolean; is_international?: boolean; is_active?: boolean;
@@ -556,6 +557,7 @@ export async function updateDgClassChargeAction(
 export async function updateDgClassChargeCardAction(
   cardId: number,
   data: {
+    charge_code?: string; trade_direction?: string; shipment_type?: string;
     description?: string; currency?: string; uom?: string;
     container_size?: string; container_type?: string; dg_class_code?: string;
     is_domestic?: boolean; is_international?: boolean; is_active?: boolean;
@@ -667,6 +669,9 @@ export async function fetchCustomsRatesAction(params: {
 export async function updateCustomsCardAction(
   cardId: number,
   data: {
+    charge_code?: string;
+    trade_direction?: string;
+    shipment_type?: string;
     description?: string;
     currency?: string;
     uom?: string;
