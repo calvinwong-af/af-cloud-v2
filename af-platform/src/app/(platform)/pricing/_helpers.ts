@@ -72,6 +72,41 @@ export function getAlertLevel(
   return null;
 }
 
+export interface WeekBucket {
+  week_key: string;       // e.g. "2026-W09"
+  week_monday: string;    // ISO date string "YYYY-MM-DD" of Monday
+  label: string;          // e.g. "10 Mar"
+  isCurrentWeek: boolean;
+}
+
+export function useWeekBuckets(historicalCount: number): WeekBucket[] {
+  return useMemo(() => {
+    const result: WeekBucket[] = [];
+    const today = new Date();
+    const day = today.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const thisMonday = new Date(today.getFullYear(), today.getMonth(), today.getDate() + diff);
+
+    for (let i = -historicalCount; i <= 0; i++) {
+      const monday = new Date(thisMonday);
+      monday.setDate(thisMonday.getDate() + i * 7);
+
+      // ISO week number
+      const jan4 = new Date(monday.getFullYear(), 0, 4);
+      const startOfWeek1 = new Date(jan4);
+      startOfWeek1.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
+      const weekNum = Math.floor((monday.getTime() - startOfWeek1.getTime()) / (7 * 86400000)) + 1;
+
+      const week_key = `${monday.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
+      const week_monday = monday.toISOString().split('T')[0];
+      const label = monday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+
+      result.push({ week_key, week_monday, label, isCurrentWeek: i === 0 });
+    }
+    return result;
+  }, [historicalCount]);
+}
+
 export function getDGChipStyle(dgCode: string): string {
   const code = (dgCode ?? '').toUpperCase();
   if (code === 'GEN' || code === 'GENERAL' || code === 'NDG') return 'bg-slate-100 text-slate-600';

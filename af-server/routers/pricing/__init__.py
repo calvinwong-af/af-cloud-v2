@@ -16,6 +16,7 @@ from .customs import router as customs_router
 from .port_transport import router as port_transport_router
 from .haulage import router as haulage_router
 from .air import router as air_router
+from .currency import router as currency_router
 from .dg_class_charges import router as dg_class_charges_router
 
 router = APIRouter()
@@ -26,6 +27,7 @@ router.include_router(customs_router, prefix="/customs", tags=["Pricing - Custom
 router.include_router(port_transport_router, prefix="/port-transport", tags=["Pricing - Port Transport"])
 router.include_router(haulage_router, prefix="/haulage", tags=["Pricing - Haulage"])
 router.include_router(air_router, prefix="/air", tags=["Pricing - Air Freight"])
+router.include_router(currency_router, prefix="/currency", tags=["Pricing - Currency"])
 router.include_router(dg_class_charges_router, prefix="/dg-class-charges", tags=["Pricing - DG Class Charges"])
 
 

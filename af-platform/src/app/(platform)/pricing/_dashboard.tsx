@@ -3,12 +3,13 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
-  Ship, Package, Plane, Truck, Car, Lock, Warehouse, ClipboardList, FlaskConical,
+  Ship, Package, Plane, Truck, Car, Lock, Warehouse, ClipboardList, FlaskConical, DollarSign, RefreshCw,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
   fetchPricingCountriesAction,
   fetchPricingDashboardSummaryAction,
+  fetchRhbRatesAction,
 } from '@/app/actions/pricing';
 import type { PricingCountry, DashboardSummary } from '@/app/actions/pricing';
 import { PortCombobox } from '@/components/shared/PortCombobox';
@@ -23,6 +24,7 @@ interface PricingComponent {
 }
 
 const PRICING_COMPONENTS: PricingComponent[] = [
+  { key: 'currency', label: 'Exchange Rates', icon: DollarSign, href: '/pricing/currency', locked: false },
   { key: 'fcl',            label: 'FCL Ocean Freight',   icon: Ship,      href: '/pricing/fcl',              locked: false },
   { key: 'lcl',            label: 'LCL Ocean Freight',   icon: Package,   href: '/pricing/lcl',              locked: false },
   { key: 'air',            label: 'Air Freight',          icon: Plane,     href: '/pricing/air',              locked: false },
@@ -76,6 +78,9 @@ export function PricingDashboard() {
       {/* Card grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {PRICING_COMPONENTS.map(comp => {
+          if (comp.key === 'currency') {
+            return <CurrencyCard key={comp.key} comp={comp} />;
+          }
           if (comp.locked) {
             return <LockedCard key={comp.key} comp={comp} />;
           }
@@ -235,6 +240,68 @@ function SimpleCard({ comp, country }: { comp: PricingComponent; country: string
       <div className="text-xs text-[var(--text-muted)]">
         Manage {comp.label.toLowerCase()} rates
       </div>
+    </Link>
+  );
+}
+
+function CurrencyCard({ comp }: { comp: PricingComponent }) {
+  const Icon = comp.icon;
+  const [fetching, setFetching] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [statusMsg, setStatusMsg] = useState('');
+
+  async function handleFetch(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setFetching(true);
+    setStatus('idle');
+    try {
+      const r = await fetchRhbRatesAction();
+      if (!r) { setStatus('error'); setStatusMsg('No response'); setFetching(false); return; }
+      if (r.success) {
+        setStatus('success');
+        setStatusMsg(`Updated ${r.data.updated} pairs`);
+      } else {
+        setStatus('error');
+        setStatusMsg(r.error ?? 'Fetch failed');
+      }
+    } catch {
+      setStatus('error');
+      setStatusMsg('Fetch failed');
+    }
+    setFetching(false);
+  }
+
+  return (
+    <Link
+      href={comp.href}
+      className="bg-white rounded-xl border border-[var(--border)] p-5 hover:border-[var(--sky)]/30 hover:shadow-sm transition-all"
+    >
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-[var(--sky-mist)] flex items-center justify-center">
+            <Icon size={16} className="text-[var(--sky)]" />
+          </div>
+          <span className="text-sm font-semibold text-[var(--text)]">{comp.label}</span>
+        </div>
+        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600">Live</span>
+      </div>
+      <div className="text-xs text-[var(--text-muted)] mb-3">
+        Manage weekly currency conversion rates
+      </div>
+      <button
+        onClick={handleFetch}
+        disabled={fetching}
+        className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--sky)] hover:border-[var(--sky)] transition-colors disabled:opacity-50"
+      >
+        <RefreshCw size={11} className={fetching ? 'animate-spin' : ''} />
+        {fetching ? 'Fetching...' : 'Fetch from RHB'}
+      </button>
+      {status !== 'idle' && (
+        <div className={`mt-2 text-[11px] font-medium ${status === 'success' ? 'text-emerald-600' : 'text-red-600'}`}>
+          {statusMsg}
+        </div>
+      )}
     </Link>
   );
 }

@@ -1468,3 +1468,99 @@ export async function resolveLCLRateAction(
 ): Promise<ActionResult<LCLResolveResult>> {
   return pricingMutate(`/api/v2/pricing/lcl/rate-cards/${cardId}/resolve`, 'POST', data);
 }
+
+// ---------------------------------------------------------------------------
+// Currency Rates
+// ---------------------------------------------------------------------------
+
+export interface CurrencyPair {
+  base_currency: string;
+  target_currency: string;
+  current_rate: number | null;
+  current_effective_from: string | null;
+}
+
+export interface CurrencyRate {
+  id: number;
+  base_currency: string;
+  target_currency: string;
+  rate: number;
+  effective_from: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchCurrencyPairsAction(): Promise<ActionResult<CurrencyPair[]>> {
+  return pricingFetch('/api/v2/pricing/currency/pairs');
+}
+
+export async function fetchCurrencyRatesAction(
+  base: string,
+  target: string,
+): Promise<ActionResult<CurrencyRate[]>> {
+  return pricingFetch(`/api/v2/pricing/currency/${base}/${target}/rates`);
+}
+
+export async function upsertCurrencyRateAction(
+  base: string,
+  target: string,
+  data: { rate: number; week_of: string; notes?: string },
+): Promise<ActionResult<{ id: number; effective_from: string }>> {
+  return pricingMutate(`/api/v2/pricing/currency/${base}/${target}/rates`, 'POST', data);
+}
+
+export async function deleteCurrencyRateAction(
+  rateId: number,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/currency/rates/${rateId}`, 'DELETE');
+}
+
+export async function createCurrencyPairAction(
+  data: { base_currency: string; target_currency: string },
+): Promise<ActionResult<{ id: number; base_currency: string; target_currency: string }>> {
+  return pricingMutate('/api/v2/pricing/currency/pairs', 'POST', data);
+}
+
+// --- Currency pair series types ---
+export interface CurrencyWeekBucket {
+  week_key: string;
+  week_monday: string;
+  raw_rate: number | null;
+  effective_rate: number | null;
+  rate_id: number | null;
+}
+
+export interface CurrencyPairWithSeries extends CurrencyPair {
+  pair_id: number | null;
+  adjustment_pct: number;
+  is_active: boolean;
+  time_series: CurrencyWeekBucket[];
+}
+
+// --- New/updated actions ---
+export async function fetchCurrencyPairsWithSeriesAction(
+  weeks?: number,
+): Promise<ActionResult<CurrencyPairWithSeries[]>> {
+  const q = weeks ? `?weeks=${weeks}` : '';
+  return pricingFetch(`/api/v2/pricing/currency/pairs-with-series${q}`);
+}
+
+export async function updateCurrencyPairAction(
+  pairId: number,
+  data: { adjustment_pct?: number; is_active?: boolean; notes?: string },
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/currency/pairs/${pairId}`, 'PATCH', data);
+}
+
+export interface RhbFetchResult {
+  updated: number;
+  skipped: number;
+  skipped_pairs: string[];
+  rhb_timestamp: string;
+  effective_from: string;
+}
+
+export async function fetchRhbRatesAction(): Promise<ActionResult<RhbFetchResult>> {
+  return pricingMutate('/api/v2/pricing/currency/fetch-rhb', 'POST');
+}
