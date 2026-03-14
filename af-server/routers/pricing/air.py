@@ -32,12 +32,14 @@ class AirRateCardCreate(BaseModel):
     airline_code: str
     code: str = "FR-AIR"
     description: str = ""
+    currency: str = "MYR"
 
 
 class AirRateCardUpdate(BaseModel):
     code: Optional[str] = None
     description: Optional[str] = None
     is_active: Optional[bool] = None
+    currency: Optional[str] = None
 
 
 class AirRateCreate(BaseModel):
@@ -45,7 +47,6 @@ class AirRateCreate(BaseModel):
     effective_from: date
     effective_to: Optional[date] = None
     rate_status: str = "PUBLISHED"
-    currency: str
     l45_list_price: Optional[float] = None
     p45_list_price: Optional[float] = None
     p100_list_price: Optional[float] = None
@@ -70,7 +71,6 @@ class AirRateUpdate(BaseModel):
     effective_from: Optional[date] = None
     effective_to: Optional[date] = None
     rate_status: Optional[str] = None
-    currency: Optional[str] = None
     l45_list_price: Optional[float] = None
     p45_list_price: Optional[float] = None
     p100_list_price: Optional[float] = None
@@ -102,19 +102,20 @@ class AirListPriceCardCreate(BaseModel):
     dg_class_code: str = "NON-DG"
     code: str = "FR-AIR"
     description: str = ""
+    currency: str = "MYR"
 
 
 class AirListPriceCardUpdate(BaseModel):
     code: Optional[str] = None
     description: Optional[str] = None
     is_active: Optional[bool] = None
+    currency: Optional[str] = None
 
 
 class AirListPriceRateCreate(BaseModel):
     effective_from: date
     effective_to: Optional[date] = None
     rate_status: str = "PUBLISHED"
-    currency: str
     l45_list_price: Optional[float] = None
     p45_list_price: Optional[float] = None
     p100_list_price: Optional[float] = None
@@ -130,7 +131,6 @@ class AirListPriceRateUpdate(BaseModel):
     effective_from: Optional[date] = None
     effective_to: Optional[date] = None
     rate_status: Optional[str] = None
-    currency: Optional[str] = None
     l45_list_price: Optional[float] = None
     p45_list_price: Optional[float] = None
     p100_list_price: Optional[float] = None
@@ -159,12 +159,13 @@ def _row_to_rate_card(r) -> dict:
         "is_active": r[8],
         "created_at": str(r[9]) if r[9] else None,
         "updated_at": str(r[10]) if r[10] else None,
+        "currency": r[11],
     }
 
 
 _RATE_SELECT = """
     SELECT id, rate_card_id, supplier_id, effective_from,
-           rate_status::text, currency,
+           rate_status::text,
            l45_list_price, p45_list_price, p100_list_price, p250_list_price,
            p300_list_price, p500_list_price, p1000_list_price, min_list_price,
            l45_cost, p45_cost, p100_cost, p250_cost,
@@ -182,27 +183,26 @@ def _row_to_rate(r) -> dict:
         "supplier_id": r[2],
         "effective_from": str(r[3]) if r[3] else None,
         "rate_status": r[4],
-        "currency": r[5],
-        "l45_list_price": float(r[6]) if r[6] is not None else None,
-        "p45_list_price": float(r[7]) if r[7] is not None else None,
-        "p100_list_price": float(r[8]) if r[8] is not None else None,
-        "p250_list_price": float(r[9]) if r[9] is not None else None,
-        "p300_list_price": float(r[10]) if r[10] is not None else None,
-        "p500_list_price": float(r[11]) if r[11] is not None else None,
-        "p1000_list_price": float(r[12]) if r[12] is not None else None,
-        "min_list_price": float(r[13]) if r[13] is not None else None,
-        "l45_cost": float(r[14]) if r[14] is not None else None,
-        "p45_cost": float(r[15]) if r[15] is not None else None,
-        "p100_cost": float(r[16]) if r[16] is not None else None,
-        "p250_cost": float(r[17]) if r[17] is not None else None,
-        "p300_cost": float(r[18]) if r[18] is not None else None,
-        "p500_cost": float(r[19]) if r[19] is not None else None,
-        "p1000_cost": float(r[20]) if r[20] is not None else None,
-        "min_cost": float(r[21]) if r[21] is not None else None,
-        "surcharges": r[22] if r[22] is not None else None,
-        "created_at": str(r[23]) if r[23] else None,
-        "updated_at": str(r[24]) if r[24] else None,
-        "effective_to": str(r[25]) if r[25] else None,
+        "l45_list_price": float(r[5]) if r[5] is not None else None,
+        "p45_list_price": float(r[6]) if r[6] is not None else None,
+        "p100_list_price": float(r[7]) if r[7] is not None else None,
+        "p250_list_price": float(r[8]) if r[8] is not None else None,
+        "p300_list_price": float(r[9]) if r[9] is not None else None,
+        "p500_list_price": float(r[10]) if r[10] is not None else None,
+        "p1000_list_price": float(r[11]) if r[11] is not None else None,
+        "min_list_price": float(r[12]) if r[12] is not None else None,
+        "l45_cost": float(r[13]) if r[13] is not None else None,
+        "p45_cost": float(r[14]) if r[14] is not None else None,
+        "p100_cost": float(r[15]) if r[15] is not None else None,
+        "p250_cost": float(r[16]) if r[16] is not None else None,
+        "p300_cost": float(r[17]) if r[17] is not None else None,
+        "p500_cost": float(r[18]) if r[18] is not None else None,
+        "p1000_cost": float(r[19]) if r[19] is not None else None,
+        "min_cost": float(r[20]) if r[20] is not None else None,
+        "surcharges": r[21] if r[21] is not None else None,
+        "created_at": str(r[22]) if r[22] else None,
+        "updated_at": str(r[23]) if r[23] else None,
+        "effective_to": str(r[24]) if r[24] else None,
     }
 
 
@@ -214,7 +214,7 @@ def _surcharge_total(surcharges) -> float:
 
 _LIST_PRICE_RATE_SELECT = """
     SELECT id, rate_card_id, effective_from,
-           rate_status::text, currency,
+           rate_status::text,
            l45_list_price, p45_list_price, p100_list_price, p250_list_price,
            p300_list_price, p500_list_price, p1000_list_price, min_list_price,
            surcharges, created_at, updated_at, effective_to
@@ -228,19 +228,18 @@ def _row_to_list_price_rate(r) -> dict:
         "rate_card_id": r[1],
         "effective_from": str(r[2]) if r[2] else None,
         "rate_status": r[3],
-        "currency": r[4],
-        "l45_list_price": float(r[5]) if r[5] is not None else None,
-        "p45_list_price": float(r[6]) if r[6] is not None else None,
-        "p100_list_price": float(r[7]) if r[7] is not None else None,
-        "p250_list_price": float(r[8]) if r[8] is not None else None,
-        "p300_list_price": float(r[9]) if r[9] is not None else None,
-        "p500_list_price": float(r[10]) if r[10] is not None else None,
-        "p1000_list_price": float(r[11]) if r[11] is not None else None,
-        "min_list_price": float(r[12]) if r[12] is not None else None,
-        "surcharges": r[13] if r[13] is not None else None,
-        "created_at": str(r[14]) if r[14] else None,
-        "updated_at": str(r[15]) if r[15] else None,
-        "effective_to": str(r[16]) if r[16] else None,
+        "l45_list_price": float(r[4]) if r[4] is not None else None,
+        "p45_list_price": float(r[5]) if r[5] is not None else None,
+        "p100_list_price": float(r[6]) if r[6] is not None else None,
+        "p250_list_price": float(r[7]) if r[7] is not None else None,
+        "p300_list_price": float(r[8]) if r[8] is not None else None,
+        "p500_list_price": float(r[9]) if r[9] is not None else None,
+        "p1000_list_price": float(r[10]) if r[10] is not None else None,
+        "min_list_price": float(r[11]) if r[11] is not None else None,
+        "surcharges": r[12] if r[12] is not None else None,
+        "created_at": str(r[13]) if r[13] else None,
+        "updated_at": str(r[14]) if r[14] else None,
+        "effective_to": str(r[15]) if r[15] else None,
     }
 
 
@@ -444,7 +443,7 @@ async def list_air_rate_cards(
     rows = conn.execute(text(f"""
         SELECT rc.id, rc.rate_card_key, rc.origin_port_code, rc.destination_port_code,
                rc.dg_class_code, rc.airline_code, rc.code, rc.description,
-               rc.is_active, rc.created_at, rc.updated_at
+               rc.is_active, rc.created_at, rc.updated_at, rc.currency
         FROM air_freight_rate_cards rc
         {joins}
         WHERE {' AND '.join(where)}
@@ -473,7 +472,7 @@ async def list_air_rate_cards(
         # Latest price reference from list price table
         lp_latest_rows = conn.execute(text("""
             SELECT DISTINCT ON (rate_card_id)
-                   rate_card_id, l45_list_price, currency, effective_from
+                   rate_card_id, l45_list_price, effective_from
             FROM air_list_price_rates
             WHERE rate_card_id = ANY(:ids) AND rate_status = 'PUBLISHED'
             ORDER BY rate_card_id, effective_from DESC
@@ -481,8 +480,7 @@ async def list_air_rate_cards(
 
         lp_latest_map = {r[0]: {
             "l45_list_price": float(r[1]) if r[1] is not None else None,
-            "currency": r[2],
-            "effective_from": str(r[3]) if r[3] else None,
+            "effective_from": str(r[2]) if r[2] else None,
         } for r in lp_latest_rows}
 
         for c in cards:
@@ -511,7 +509,7 @@ async def list_air_rate_cards(
         # Cost time series from air_freight_rates (supplier rows only)
         ts_rows = conn.execute(text("""
             SELECT id, rate_card_id, supplier_id, effective_from,
-                   rate_status::text, currency,
+                   rate_status::text,
                    l45_cost,
                    p100_cost,
                    effective_to, surcharges
@@ -526,7 +524,7 @@ async def list_air_rate_cards(
         # List price time series from air_list_price_rates
         lp_ts_rows = conn.execute(text("""
             SELECT id, rate_card_id, effective_from,
-                   rate_status::text, currency,
+                   rate_status::text,
                    l45_list_price, p100_list_price,
                    effective_to, surcharges
             FROM air_list_price_rates
@@ -539,7 +537,7 @@ async def list_air_rate_cards(
         # Seed carry-forward for list prices
         seed_lp_rows = conn.execute(text("""
             SELECT DISTINCT ON (rate_card_id)
-                   rate_card_id, l45_list_price, p100_list_price, currency, rate_status::text, effective_to, surcharges
+                   rate_card_id, l45_list_price, p100_list_price, rate_status::text, effective_to, surcharges
             FROM air_list_price_rates
             WHERE rate_card_id = ANY(:ids)
               AND effective_from < :m_start
@@ -562,11 +560,10 @@ async def list_air_rate_cards(
         seed_price_map = {r[0]: {
             "l45_list_price": float(r[1]) if r[1] is not None else None,
             "p100_list_price": float(r[2]) if r[2] is not None else None,
-            "currency": r[3],
-            "rate_status": r[4],
+            "rate_status": r[3],
             "_eff": None,
-            "_eff_to": r[5],
-            "_surcharges": r[6],
+            "_eff_to": r[4],
+            "_surcharges": r[5],
         } for r in seed_lp_rows}
 
         seed_supplier_costs: dict[int, dict[str, dict]] = {}
@@ -589,7 +586,7 @@ async def list_air_rate_cards(
 
         # Process list price time series
         for r in lp_ts_rows:
-            rid, lp_rc_id, eff_from, r_status, currency, lp, p100_lp, eff_to, surcharges_json = r
+            rid, lp_rc_id, eff_from, r_status, lp, p100_lp, eff_to, surcharges_json = r
             mk = f"{eff_from.year}-{eff_from.month:02d}"
             key = (lp_rc_id, mk)
             existing = price_ref_map.get(key)
@@ -597,7 +594,6 @@ async def list_air_rate_cards(
                 price_ref_map[key] = {
                     "l45_list_price": float(lp) if lp is not None else None,
                     "p100_list_price": float(p100_lp) if p100_lp is not None else None,
-                    "currency": currency,
                     "rate_status": r_status,
                     "_eff": eff_from,
                     "_eff_to": eff_to,
@@ -606,7 +602,7 @@ async def list_air_rate_cards(
 
         # Process cost time series (supplier rows only)
         for r in ts_rows:
-            rid, rc_id, supplier_id, eff_from, r_status, currency, cost_val, p100_cost_val, eff_to, surcharges_json = r
+            rid, rc_id, supplier_id, eff_from, r_status, cost_val, p100_cost_val, eff_to, surcharges_json = r
             mk = f"{eff_from.year}-{eff_from.month:02d}"
             key = (rc_id, mk)
             if r_status == "PUBLISHED" and cost_val is not None:
@@ -687,7 +683,7 @@ async def list_air_rate_cards(
                         "l45_cost": effective_cost,
                         "p100_list_price": effective_pr["p100_list_price"] if effective_pr else None,
                         "p100_cost": effective_p100_cost,
-                        "currency": effective_pr["currency"] if effective_pr else None,
+                        "currency": c["currency"],
                         "rate_status": effective_pr["rate_status"] if effective_pr else None,
                         "list_surcharge_total": pr_sc,
                         "cost_surcharge_total": cost_sc,
@@ -703,7 +699,7 @@ async def list_air_rate_cards(
                         "l45_cost": last_cost,
                         "p100_list_price": last_pr["p100_list_price"] if last_pr else None,
                         "p100_cost": last_p100_cost,
-                        "currency": last_pr["currency"] if last_pr else None,
+                        "currency": c["currency"],
                         "rate_status": last_pr["rate_status"] if last_pr else None,
                         "list_surcharge_total": pr_sc,
                         "cost_surcharge_total": cost_sc,
@@ -773,7 +769,7 @@ async def get_air_rate_card(
     row = conn.execute(text("""
         SELECT rc.id, rc.rate_card_key, rc.origin_port_code, rc.destination_port_code,
                rc.dg_class_code, rc.airline_code, rc.code, rc.description,
-               rc.is_active, rc.created_at, rc.updated_at
+               rc.is_active, rc.created_at, rc.updated_at, rc.currency
         FROM air_freight_rate_cards rc
         WHERE rc.id = :id
     """), {"id": card_id}).fetchone()
@@ -797,7 +793,7 @@ async def get_air_rate_card(
     seed_rows = conn.execute(text(f"""
         SELECT DISTINCT ON (supplier_id)
             id, rate_card_id, supplier_id, effective_from,
-            rate_status::text, currency,
+            rate_status::text,
             l45_list_price, p45_list_price, p100_list_price, p250_list_price,
             p300_list_price, p500_list_price, p1000_list_price, min_list_price,
             l45_cost, p45_cost, p100_cost, p250_cost,
@@ -844,7 +840,7 @@ async def get_air_rate_card(
         lp_seed_row = conn.execute(text(f"""
             SELECT DISTINCT ON (rate_card_id)
                 id, rate_card_id, effective_from,
-                rate_status::text, currency,
+                rate_status::text,
                 l45_list_price, p45_list_price, p100_list_price, p250_list_price,
                 p300_list_price, p500_list_price, p1000_list_price, min_list_price,
                 surcharges, created_at, updated_at, effective_to
@@ -907,13 +903,14 @@ async def create_air_rate_card(
     row = conn.execute(text("""
         INSERT INTO air_freight_rate_cards
             (rate_card_key, origin_port_code, destination_port_code,
-             dg_class_code, airline_code, code, description)
-        VALUES (:key, :origin, :dest, :dg, :airline, :code, :desc)
+             dg_class_code, airline_code, code, description, currency)
+        VALUES (:key, :origin, :dest, :dg, :airline, :code, :desc, :currency)
         RETURNING id, created_at
     """), {
         "key": rate_card_key, "origin": origin, "dest": dest,
         "dg": dg, "airline": airline,
         "code": body.code, "desc": body.description,
+        "currency": body.currency,
     }).fetchone()
 
     return {"status": "OK", "data": {
@@ -922,6 +919,7 @@ async def create_air_rate_card(
         "dg_class_code": dg, "airline_code": airline,
         "code": body.code, "description": body.description,
         "is_active": True, "created_at": str(row[1]),
+        "currency": body.currency,
     }}
 
 
@@ -949,6 +947,9 @@ async def update_air_rate_card(
     if body.is_active is not None:
         updates.append("is_active = :active")
         params["active"] = body.is_active
+    if body.currency is not None:
+        updates.append("currency = :currency")
+        params["currency"] = body.currency
 
     if not updates:
         return {"status": "OK", "msg": "No changes"}
@@ -1012,7 +1013,6 @@ async def create_air_rate(
     row = conn.execute(text("""
         INSERT INTO air_freight_rates
             (rate_card_id, supplier_id, effective_from, effective_to, rate_status,
-             currency,
              l45_list_price, p45_list_price, p100_list_price, p250_list_price,
              p300_list_price, p500_list_price, p1000_list_price, min_list_price,
              l45_cost, p45_cost, p100_cost, p250_cost,
@@ -1020,7 +1020,6 @@ async def create_air_rate(
              surcharges)
         VALUES
             (:card_id, :supplier, :eff, :eff_to, CAST(:status AS rate_status),
-             :currency,
              :l45_list_price, :p45_list_price, :p100_list_price, :p250_list_price,
              :p300_list_price, :p500_list_price, :p1000_list_price, :min_list_price,
              :l45_cost, :p45_cost, :p100_cost, :p250_cost,
@@ -1030,7 +1029,6 @@ async def create_air_rate(
     """), {
         "card_id": card_id, "supplier": body.supplier_id,
         "eff": body.effective_from, "eff_to": body.effective_to, "status": body.rate_status,
-        "currency": body.currency,
         "l45_list_price": body.l45_list_price, "p45_list_price": body.p45_list_price,
         "p100_list_price": body.p100_list_price, "p250_list_price": body.p250_list_price,
         "p300_list_price": body.p300_list_price, "p500_list_price": body.p500_list_price,
@@ -1066,7 +1064,6 @@ async def update_air_rate(
     field_map = {
         "supplier_id": "supplier_id",
         "effective_from": "effective_from",
-        "currency": "currency",
         "l45_list_price": "l45_list_price",
         "p45_list_price": "p45_list_price",
         "p100_list_price": "p100_list_price",
@@ -1215,7 +1212,7 @@ async def list_air_list_price_cards(
 
     rows = conn.execute(text(f"""
         SELECT id, rate_card_key, origin_port_code, destination_port_code,
-               dg_class_code, code, description, is_active, created_at, updated_at
+               dg_class_code, code, description, is_active, created_at, updated_at, currency
         FROM air_list_price_rate_cards
         WHERE {' AND '.join(where)}
         ORDER BY origin_port_code, destination_port_code
@@ -1227,6 +1224,7 @@ async def list_air_list_price_cards(
         "dg_class_code": r[4], "code": r[5], "description": r[6],
         "is_active": r[7], "created_at": str(r[8]) if r[8] else None,
         "updated_at": str(r[9]) if r[9] else None,
+        "currency": r[10],
     } for r in rows]
 
     return {"status": "OK", "data": data}
@@ -1252,12 +1250,13 @@ async def create_air_list_price_card(
     row = conn.execute(text("""
         INSERT INTO air_list_price_rate_cards
             (rate_card_key, origin_port_code, destination_port_code,
-             dg_class_code, code, description)
-        VALUES (:key, :origin, :dest, :dg, :code, :desc)
+             dg_class_code, code, description, currency)
+        VALUES (:key, :origin, :dest, :dg, :code, :desc, :currency)
         RETURNING id, created_at
     """), {
         "key": rate_card_key, "origin": origin, "dest": dest,
         "dg": dg, "code": body.code, "desc": body.description,
+        "currency": body.currency,
     }).fetchone()
 
     return {"status": "OK", "data": {
@@ -1265,6 +1264,7 @@ async def create_air_list_price_card(
         "origin_port_code": origin, "destination_port_code": dest,
         "dg_class_code": dg, "code": body.code, "description": body.description,
         "is_active": True, "created_at": str(row[1]),
+        "currency": body.currency,
     }}
 
 
@@ -1292,6 +1292,9 @@ async def update_air_list_price_card(
     if body.is_active is not None:
         updates.append("is_active = :active")
         params["active"] = body.is_active
+    if body.currency is not None:
+        updates.append("currency = :currency")
+        params["currency"] = body.currency
 
     if not updates:
         return {"status": "OK", "msg": "No changes"}
@@ -1339,17 +1342,17 @@ async def create_air_list_price_rate(
 
     row = conn.execute(text("""
         INSERT INTO air_list_price_rates
-            (rate_card_id, effective_from, effective_to, rate_status, currency,
+            (rate_card_id, effective_from, effective_to, rate_status,
              l45_list_price, p45_list_price, p100_list_price, p250_list_price,
              p300_list_price, p500_list_price, p1000_list_price, min_list_price,
              surcharges)
         VALUES
-            (:card_id, :eff, :eff_to, CAST(:status AS rate_status), :currency,
+            (:card_id, :eff, :eff_to, CAST(:status AS rate_status),
              :l45, :p45, :p100, :p250, :p300, :p500, :p1000, :min_lp, :surcharges)
         RETURNING id, created_at
     """), {
         "card_id": card_id, "eff": body.effective_from, "eff_to": body.effective_to,
-        "status": body.rate_status, "currency": body.currency,
+        "status": body.rate_status,
         "l45": body.l45_list_price, "p45": body.p45_list_price,
         "p100": body.p100_list_price, "p250": body.p250_list_price,
         "p300": body.p300_list_price, "p500": body.p500_list_price,
@@ -1379,7 +1382,6 @@ async def update_air_list_price_rate(
 
     field_map = {
         "effective_from": "effective_from",
-        "currency": "currency",
         "l45_list_price": "l45_list_price",
         "p45_list_price": "p45_list_price",
         "p100_list_price": "p100_list_price",
@@ -1514,6 +1516,13 @@ async def resolve_air_rate(
         raise HTTPException(status_code=404, detail="No active rate found for the given parameters")
 
     rate = _row_to_rate(rate_row)
+
+    # Currency is on the card, not the rate row
+    card_row = conn.execute(text(
+        "SELECT currency FROM air_freight_rate_cards WHERE id = :id"
+    ), {"id": card_id}).fetchone()
+    card_currency = card_row[0] if card_row else "MYR"
+
     weight = body.chargeable_weight
     tier = _select_tier(weight)
 
@@ -1551,7 +1560,7 @@ async def resolve_air_rate(
         "supplier_id": rate["supplier_id"],
         "chargeable_weight": weight,
         "reference_date": ref_date,
-        "currency": rate["currency"],
+        "currency": card_currency,
         "tier_applied": tier,
         "tier_rate": tier_rate,
         "min_rate": min_rate,

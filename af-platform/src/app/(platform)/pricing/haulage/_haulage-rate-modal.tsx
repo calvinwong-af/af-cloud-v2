@@ -28,8 +28,6 @@ export function HaulageRateModal({ open, mode, rateId, initial, cardId, companie
   const [supplier, setSupplier] = useState('');
   const [effFrom, setEffFrom] = useState('');
   const [effTo, setEffTo] = useState('');
-  const [currency, setCurrency] = useState('MYR');
-  const [uom, setUom] = useState('CONTAINER');
   const [listPrice, setListPrice] = useState('');
   const [cost, setCost] = useState('');
   const [minListPrice, setMinListPrice] = useState('');
@@ -55,8 +53,6 @@ export function HaulageRateModal({ open, mode, rateId, initial, cardId, companie
         setEffFrom((initial.effective_from as string) ?? '');
         setEffTo((initial.effective_to as string) ?? '');
       }
-      setCurrency((initial.currency as string) ?? 'MYR');
-      setUom((initial.uom as string) ?? 'CONTAINER');
       setListPrice(initial.list_price != null ? String(initial.list_price) : '');
       setCost(initial.cost != null ? String(initial.cost) : '');
       setMinListPrice(initial.min_list_price != null ? String(initial.min_list_price) : '');
@@ -74,8 +70,6 @@ export function HaulageRateModal({ open, mode, rateId, initial, cardId, companie
       setSupplier('');
       setEffFrom('');
       setEffTo('');
-      setCurrency('MYR');
-      setUom('CONTAINER');
       setListPrice('');
       setCost('');
       setMinListPrice('');
@@ -124,8 +118,6 @@ export function HaulageRateModal({ open, mode, rateId, initial, cardId, companie
             : (supplier || null),
           effective_from: effFrom,
           effective_to: effTo || null,
-          currency,
-          uom,
           list_price: listPrice ? parseFloat(listPrice) : null,
           cost: cost ? parseFloat(cost) : null,
           min_list_price: minListPrice ? parseFloat(minListPrice) : null,
@@ -142,8 +134,6 @@ export function HaulageRateModal({ open, mode, rateId, initial, cardId, companie
         const data: Record<string, unknown> = {
           effective_from: effFrom || undefined,
           effective_to: effTo || null,
-          currency,
-          uom,
           list_price: listPrice ? parseFloat(listPrice) : null,
           cost: cost ? parseFloat(cost) : null,
           min_list_price: minListPrice ? parseFloat(minListPrice) : null,
@@ -224,31 +214,14 @@ export function HaulageRateModal({ open, mode, rateId, initial, cardId, companie
             </div>
           </div>
 
-          {/* Currency + UOM + Status row */}
-          <div className="grid grid-cols-3 gap-3">
-            <label>
-              <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">Currency</span>
-              <input type="text" value={currency} onChange={e => setCurrency(e.target.value.toUpperCase())} maxLength={3} className={inputClass} />
-            </label>
-            <label>
-              <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">UOM</span>
-              <select value={uom} onChange={e => setUom(e.target.value)} className={inputClass}>
-                <option value="CONTAINER">CONTAINER</option>
-                <option value="SET">SET</option>
-                <option value="RT">RT</option>
-                <option value="KG">KG</option>
-                <option value="CBM">CBM</option>
-                <option value="W/M">W/M</option>
-              </select>
-            </label>
-            <label>
-              <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">Status</span>
-              <select value={status} onChange={e => setStatus(e.target.value)} className={inputClass}>
-                <option value="PUBLISHED">Published</option>
-                <option value="DRAFT">Draft</option>
-              </select>
-            </label>
-          </div>
+          {/* Status */}
+          <label>
+            <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">Status</span>
+            <select value={status} onChange={e => setStatus(e.target.value)} className={inputClass}>
+              <option value="PUBLISHED">Published</option>
+              <option value="DRAFT">Draft</option>
+            </select>
+          </label>
 
           {/* Price/Cost fields */}
           {isListPriceMode ? (

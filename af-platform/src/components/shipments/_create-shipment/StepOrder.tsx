@@ -281,7 +281,7 @@ export function StepOrder({
       <div>
         <FieldLabel required>Transaction Type</FieldLabel>
         <div className="flex gap-2">
-          {(['IMPORT', 'EXPORT'] as const).map(t => (
+          {(['EXPORT', 'IMPORT'] as const).map(t => (
             <button
               key={t}
               onClick={() => setTransactionType(t)}

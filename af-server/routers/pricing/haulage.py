@@ -32,12 +32,18 @@ class HaulageRateCardCreate(BaseModel):
     container_size: str  # '20' | '40' | '40HC' | 'wildcard'
     include_depot_gate_fee: bool = False
     side_loader_available: bool = False
+    currency: str = "MYR"
+    uom: str = "CONTAINER"
+    is_tariff_rate: bool = False
 
 
 class HaulageRateCardUpdate(BaseModel):
     include_depot_gate_fee: Optional[bool] = None
     side_loader_available: Optional[bool] = None
     is_active: Optional[bool] = None
+    currency: Optional[str] = None
+    uom: Optional[str] = None
+    is_tariff_rate: Optional[bool] = None
 
 
 class HaulageRateCreate(BaseModel):
@@ -45,8 +51,6 @@ class HaulageRateCreate(BaseModel):
     effective_from: date
     effective_to: Optional[date] = None
     rate_status: str = "PUBLISHED"
-    currency: str
-    uom: str = "CONTAINER"
     list_price: Optional[float] = None
     cost: Optional[float] = None
     min_list_price: Optional[float] = None
@@ -62,8 +66,6 @@ class HaulageRateUpdate(BaseModel):
     effective_from: Optional[date] = None
     effective_to: Optional[date] = None
     rate_status: Optional[str] = None
-    currency: Optional[str] = None
-    uom: Optional[str] = None
     list_price: Optional[float] = None
     cost: Optional[float] = None
     min_list_price: Optional[float] = None
@@ -92,6 +94,9 @@ def _row_to_rate_card(r) -> dict:
         "created_at": str(r[8]) if r[8] else None,
         "updated_at": str(r[9]) if r[9] else None,
         "terminal_id": r[10],
+        "currency": r[11],
+        "uom": r[12],
+        "is_tariff_rate": r[13],
     }
 
 
@@ -102,18 +107,16 @@ def _row_to_rate(r) -> dict:
         "supplier_id": r[2],
         "effective_from": str(r[3]) if r[3] else None,
         "rate_status": r[4],
-        "currency": r[5],
-        "uom": r[6],
-        "list_price": float(r[7]) if r[7] is not None else None,
-        "cost": float(r[8]) if r[8] is not None else None,
-        "min_list_price": float(r[9]) if r[9] is not None else None,
-        "min_cost": float(r[10]) if r[10] is not None else None,
-        "roundup_qty": r[11],
-        "created_at": str(r[12]) if r[12] else None,
-        "updated_at": str(r[13]) if r[13] else None,
-        "effective_to": str(r[14]) if r[14] else None,
-        "surcharges": r[15] if r[15] is not None else None,
-        "side_loader_surcharge": float(r[16]) if r[16] is not None else None,
+        "list_price": float(r[5]) if r[5] is not None else None,
+        "cost": float(r[6]) if r[6] is not None else None,
+        "min_list_price": float(r[7]) if r[7] is not None else None,
+        "min_cost": float(r[8]) if r[8] is not None else None,
+        "roundup_qty": r[9],
+        "created_at": str(r[10]) if r[10] else None,
+        "updated_at": str(r[11]) if r[11] else None,
+        "effective_to": str(r[12]) if r[12] else None,
+        "surcharges": r[13] if r[13] is not None else None,
+        "side_loader_surcharge": float(r[14]) if r[14] is not None else None,
     }
 
 
@@ -123,9 +126,53 @@ def _surcharge_total(surcharges) -> float:
     return sum(float(s.get('amount', 0) or 0) for s in surcharges)
 
 
+def _get_faf_percent(
+    faf_rows: list[dict],
+    port_un_code: str,
+    container_size: str,
+    month_date: date,
+) -> float:
+    """Return effective FAF percent for a supplier/port/container on a given month.
+    Checks both exact container_size match and 'wildcard' fallback.
+    Returns 0.0 if no matching active FAF row found.
+    """
+    for row in faf_rows:
+        eff_from = row["effective_from"]
+        eff_to = row["effective_to"]
+        if eff_from > month_date:
+            continue
+        if eff_to is not None and eff_to < month_date:
+            continue
+        for pr in row["port_rates"]:
+            if pr["port_un_code"] != port_un_code:
+                continue
+            if pr["container_size"] == container_size or pr["container_size"] == "wildcard":
+                return float(pr["faf_percent"])
+    return 0.0
+
+
+def _get_dgf_amount(
+    dgf_rows: list[dict],
+    month_date: date,
+) -> float:
+    """Return effective DGF fee amount for a port on a given month.
+    dgf_rows is pre-filtered by port_un_code + terminal_id (with fallback already applied).
+    Returns 0.0 if no matching published row found.
+    """
+    for row in dgf_rows:
+        eff_from = row["effective_from"]
+        eff_to = row["effective_to"]
+        if eff_from > month_date:
+            continue
+        if eff_to is not None and eff_to < month_date:
+            continue
+        return float(row["fee_amount"])
+    return 0.0
+
+
 _RATE_SELECT = """
     SELECT id, rate_card_id, supplier_id, effective_from,
-           rate_status::text, currency, uom,
+           rate_status::text,
            list_price, cost, min_list_price, min_cost,
            roundup_qty,
            created_at, updated_at, effective_to, surcharges,
@@ -261,6 +308,9 @@ async def list_haulage_rate_cards(
         params["csize"] = container_size
 
     if alerts_only:
+        # NOTE: This SQL filter compares raw cost vs list_price without FAF surcharges.
+        # FAF is applied in the time series loop below. This filter is an approximation
+        # used only for UI filtering — displayed values will be correct.
         where.append("""(
             (
                 EXISTS (SELECT 1 FROM haulage_rates r WHERE r.rate_card_id = rc.id AND r.supplier_id IS NOT NULL AND r.rate_status = 'PUBLISHED' AND r.effective_from <= CURRENT_DATE AND (r.effective_to IS NULL OR r.effective_to >= CURRENT_DATE))
@@ -288,7 +338,7 @@ async def list_haulage_rate_cards(
         SELECT rc.id, rc.rate_card_key, rc.port_un_code, rc.area_id, rc.container_size,
                rc.include_depot_gate_fee, rc.side_loader_available, rc.is_active,
                rc.created_at, rc.updated_at,
-               rc.terminal_id,
+               rc.terminal_id, rc.currency, rc.uom, rc.is_tariff_rate,
                a.area_name, a.area_code, s.name AS state_name,
                pt.name AS terminal_name
         FROM haulage_rate_cards rc
@@ -303,19 +353,21 @@ async def list_haulage_rate_cards(
     cards = []
     for r in rows:
         card = _row_to_rate_card(r)
-        card["area_name"] = r[11]
-        card["area_code"] = r[12]
-        card["state_name"] = r[13]
-        card["terminal_name"] = r[14]
+        card["area_name"] = r[14]
+        card["area_code"] = r[15]
+        card["state_name"] = r[16]
+        card["terminal_name"] = r[17]
         cards.append(card)
 
     if cards:
         card_ids = [c["id"] for c in cards]
 
+        card_currency_map = {c["id"]: c["currency"] for c in cards}
+
         # Latest price reference
         price_rows = conn.execute(text("""
             SELECT DISTINCT ON (rate_card_id)
-                   rate_card_id, list_price, currency, effective_from, surcharges
+                   rate_card_id, list_price, effective_from, surcharges
             FROM haulage_rates
             WHERE rate_card_id = ANY(:ids) AND supplier_id IS NULL
             ORDER BY rate_card_id, effective_from DESC
@@ -324,11 +376,11 @@ async def list_haulage_rate_cards(
         price_map = {}
         for r in price_rows:
             lp = float(r[1]) if r[1] is not None else None
-            sc = _surcharge_total(r[4])
+            sc = _surcharge_total(r[3])
             price_map[r[0]] = {
                 "list_price": lp,
-                "currency": r[2],
-                "effective_from": str(r[3]) if r[3] else None,
+                "currency": card_currency_map.get(r[0]),
+                "effective_from": str(r[2]) if r[2] else None,
                 "list_surcharge_total": sc,
                 "total_list_price": round(lp + sc, 4) if lp is not None else None,
             }
@@ -356,7 +408,7 @@ async def list_haulage_rate_cards(
 
         ts_rows = conn.execute(text("""
             SELECT id, rate_card_id, supplier_id, effective_from,
-                   rate_status::text, currency, list_price, cost,
+                   rate_status::text, list_price, cost,
                    effective_to, surcharges
             FROM haulage_rates
             WHERE rate_card_id = ANY(:ids)
@@ -368,7 +420,7 @@ async def list_haulage_rate_cards(
         # Seed carry-forward
         seed_price_rows = conn.execute(text("""
             SELECT DISTINCT ON (rate_card_id)
-                   rate_card_id, list_price, currency, rate_status::text, effective_to, surcharges
+                   rate_card_id, list_price, rate_status::text, effective_to, surcharges
             FROM haulage_rates
             WHERE rate_card_id = ANY(:ids)
               AND supplier_id IS NULL
@@ -389,13 +441,83 @@ async def list_haulage_rate_cards(
             ORDER BY rate_card_id, supplier_id, effective_from DESC
         """), {"ids": card_ids, "m_start": month_start}).fetchall()
 
+        # Pre-fetch active FAF rates for all suppliers in scope
+        all_supplier_ids: set[str] = set()
+        for r in ts_rows:
+            if r[2] is not None:
+                all_supplier_ids.add(r[2])
+        for r in seed_cost_rows:
+            all_supplier_ids.add(r[1])
+
+        faf_rows_by_supplier: dict[str, list[dict]] = {}
+        if all_supplier_ids:
+            faf_raw = conn.execute(text("""
+                SELECT supplier_id, effective_from, effective_to, port_rates
+                FROM haulage_faf_rates
+                WHERE supplier_id = ANY(:sids)
+                  AND rate_status = 'PUBLISHED'
+                ORDER BY supplier_id, effective_from DESC
+            """), {"sids": list(all_supplier_ids)}).fetchall()
+
+            for r in faf_raw:
+                sid = r[0]
+                port_rates_raw = r[3]
+                if isinstance(port_rates_raw, str):
+                    port_rates_raw = json.loads(port_rates_raw)
+                entry = {
+                    "effective_from": r[1],
+                    "effective_to": r[2],
+                    "port_rates": port_rates_raw or [],
+                }
+                if sid not in faf_rows_by_supplier:
+                    faf_rows_by_supplier[sid] = []
+                faf_rows_by_supplier[sid].append(entry)
+
+        # Pre-fetch DGF rows for cards with include_depot_gate_fee
+        dgf_rows_by_card: dict[int, list[dict]] = {}
+        dgf_card_ids = [c["id"] for c in cards if c.get("include_depot_gate_fee")]
+        if dgf_card_ids:
+            dgf_card_id_set = set(dgf_card_ids)
+            port_codes = list({
+                c["port_un_code"]
+                for c in cards
+                if c["id"] in dgf_card_id_set
+            })
+
+            dgf_raw = conn.execute(text("""
+                SELECT port_un_code, terminal_id, effective_from, effective_to,
+                       rate_status::text, fee_amount
+                FROM port_depot_gate_fees
+                WHERE port_un_code = ANY(:ports)
+                  AND rate_status = 'PUBLISHED'
+                ORDER BY port_un_code, terminal_id NULLS LAST, effective_from DESC
+            """), {"ports": port_codes}).fetchall()
+
+            dgf_pool: dict[tuple, list[dict]] = {}
+            for r in dgf_raw:
+                key = (r[0], r[1])
+                if key not in dgf_pool:
+                    dgf_pool[key] = []
+                dgf_pool[key].append({
+                    "effective_from": r[2],
+                    "effective_to": r[3],
+                    "fee_amount": float(r[5]) if r[5] is not None else 0.0,
+                })
+
+            for c in cards:
+                if not c.get("include_depot_gate_fee"):
+                    continue
+                port = c["port_un_code"]
+                terminal = c["terminal_id"]
+                rows = dgf_pool.get((port, terminal)) or dgf_pool.get((port, None)) or []
+                dgf_rows_by_card[c["id"]] = rows
+
         seed_price_map = {r[0]: {
             "list_price": float(r[1]) if r[1] is not None else None,
-            "currency": r[2],
-            "rate_status": r[3],
+            "rate_status": r[2],
             "_eff": None,
-            "_eff_to": r[4],
-            "_surcharges": r[5],
+            "_eff_to": r[3],
+            "_surcharges": r[4],
         } for r in seed_price_rows}
 
         seed_supplier_costs: dict[int, dict[str, dict]] = {}
@@ -404,6 +526,7 @@ async def list_haulage_rate_cards(
             if card_id_s not in seed_supplier_costs:
                 seed_supplier_costs[card_id_s] = {}
             seed_supplier_costs[card_id_s][supplier_id_s] = {
+                "supplier_id": supplier_id_s,
                 "cost": float(cost_s),
                 "eff_to": eff_to_s,
                 "surcharges": surcharges_s,
@@ -411,11 +534,11 @@ async def list_haulage_rate_cards(
 
         from collections import defaultdict
         price_ref_map: dict[tuple[int, str], dict] = {}
-        cost_map: dict[tuple[int, str], list[tuple[float, list | None]]] = defaultdict(list)
+        cost_map: dict[tuple[int, str], list[tuple[float, list | None, str]]] = defaultdict(list)
         cost_map_by_supplier: dict[tuple[int, str], dict[str, tuple]] = defaultdict(dict)
 
         for r in ts_rows:
-            rid, rc_id, supplier_id, eff_from, r_status, currency, lp, cost_val, eff_to, surcharges_json = r
+            rid, rc_id, supplier_id, eff_from, r_status, lp, cost_val, eff_to, surcharges_json = r
             mk = f"{eff_from.year}-{eff_from.month:02d}"
             key = (rc_id, mk)
 
@@ -424,7 +547,6 @@ async def list_haulage_rate_cards(
                 if existing is None or eff_from > existing["_eff"]:
                     price_ref_map[key] = {
                         "list_price": float(lp) if lp is not None else None,
-                        "currency": currency,
                         "rate_status": r_status,
                         "_eff": eff_from,
                         "_eff_to": eff_to,
@@ -432,7 +554,7 @@ async def list_haulage_rate_cards(
                     }
             elif r_status == "PUBLISHED":
                 if cost_val is not None:
-                    cost_map[key].append((float(cost_val), surcharges_json))
+                    cost_map[key].append((float(cost_val), surcharges_json, supplier_id))
                     cost_map_by_supplier[key][supplier_id] = (float(cost_val), eff_to, surcharges_json)
 
         current_month_key = f"{today.year}-{today.month:02d}"
@@ -456,6 +578,7 @@ async def list_haulage_rate_cards(
                 supplier_updates = cost_map_by_supplier.get(key, {})
                 for sup_id, (c_val, c_eff_to, c_surcharges) in supplier_updates.items():
                     active_supplier_costs[sup_id] = {
+                        "supplier_id": sup_id,
                         "cost": c_val,
                         "eff_to": c_eff_to,
                         "surcharges": c_surcharges,
@@ -474,9 +597,11 @@ async def list_haulage_rate_cards(
                     )
                     last_cost = best_sup["cost"]
                     last_cost_surcharges = best_sup["surcharges"]
+                    best_sup_id = best_sup["supplier_id"]
                 else:
                     last_cost = None
                     last_cost_surcharges = None
+                    best_sup_id = None
 
                 if last_pr is not None:
                     pr_eff_to = last_pr.get("_eff_to")
@@ -489,41 +614,101 @@ async def list_haulage_rate_cards(
                         best_cost_entry = min(cost_entries, key=lambda e: e[0] + _surcharge_total(e[1]))
                         effective_cost = best_cost_entry[0]
                         effective_cost_surcharges = best_cost_entry[1]
+                        effective_cost_supplier_id = best_cost_entry[2]
                     else:
                         effective_cost = last_cost
                         effective_cost_surcharges = last_cost_surcharges
+                        effective_cost_supplier_id = best_sup_id
                     pr_sc = _surcharge_total(effective_pr.get("_surcharges")) if effective_pr else 0.0
-                    cost_sc = _surcharge_total(effective_cost_surcharges) if effective_cost is not None else 0.0
+                    if effective_cost is not None:
+                        raw_cost_sc = _surcharge_total(effective_cost_surcharges)
+                        faf_pct = _get_faf_percent(
+                            faf_rows_by_supplier.get(effective_cost_supplier_id, []),
+                            c["port_un_code"],
+                            c["container_size"],
+                            month_start_d,
+                        )
+                        cost_sc = raw_cost_sc + round(effective_cost * faf_pct, 4)
+                    else:
+                        cost_sc = 0.0
+                    # Build cost_surcharge_items for tooltip breakdown
+                    cost_sc_items = []
+                    if effective_cost is not None:
+                        if effective_cost_surcharges:
+                            for sc_item in effective_cost_surcharges:
+                                desc = sc_item.get('description') or sc_item.get('code') or 'Surcharge'
+                                amt = float(sc_item.get('amount', 0) or 0)
+                                if amt > 0:
+                                    cost_sc_items.append({"label": desc, "amount": round(amt, 4)})
+                        faf_amount = round(effective_cost * faf_pct, 4) if faf_pct > 0 else 0.0
+                        if faf_amount > 0:
+                            cost_sc_items.append({"label": f"FAF ({faf_pct*100:.1f}%)", "amount": faf_amount})
+                        # DGF — flat port-level fee
+                        dgf_rows = dgf_rows_by_card.get(cid, [])
+                        dgf_amount = _get_dgf_amount(dgf_rows, month_start_d) if dgf_rows else 0.0
+                        if dgf_amount > 0:
+                            cost_sc += dgf_amount
+                            cost_sc_items.append({"label": "Depot Gate Fee", "amount": round(dgf_amount, 4)})
                     has_any = effective_pr is not None or effective_cost is not None
                     f_lp = effective_pr["list_price"] if effective_pr else None
                     ts.append({
                         "month_key": mk,
                         "list_price": f_lp,
                         "cost": effective_cost,
-                        "currency": effective_pr["currency"] if effective_pr else None,
+                        "currency": card_currency_map.get(cid),
                         "rate_status": effective_pr["rate_status"] if effective_pr else None,
                         "list_surcharge_total": pr_sc,
                         "cost_surcharge_total": cost_sc,
                         "total_list_price": round(f_lp + pr_sc, 4) if f_lp is not None else None,
                         "total_cost": round(effective_cost + cost_sc, 4) if effective_cost is not None else None,
+                        "cost_surcharge_items": cost_sc_items,
                         "surcharge_total": pr_sc,
                         "has_surcharges": (pr_sc > 0 or cost_sc > 0) and has_any,
                     })
                 else:
                     pr_sc = _surcharge_total(last_pr.get("_surcharges")) if last_pr else 0.0
-                    cost_sc = _surcharge_total(last_cost_surcharges) if last_cost is not None else 0.0
+                    if last_cost is not None:
+                        raw_cost_sc = _surcharge_total(last_cost_surcharges)
+                        faf_pct = _get_faf_percent(
+                            faf_rows_by_supplier.get(best_sup_id, []),
+                            c["port_un_code"],
+                            c["container_size"],
+                            month_start_d,
+                        )
+                        cost_sc = raw_cost_sc + round(last_cost * faf_pct, 4)
+                    else:
+                        cost_sc = 0.0
+                    # Build cost_surcharge_items for tooltip breakdown
+                    cost_sc_items = []
+                    if last_cost is not None:
+                        if last_cost_surcharges:
+                            for sc_item in last_cost_surcharges:
+                                desc = sc_item.get('description') or sc_item.get('code') or 'Surcharge'
+                                amt = float(sc_item.get('amount', 0) or 0)
+                                if amt > 0:
+                                    cost_sc_items.append({"label": desc, "amount": round(amt, 4)})
+                        faf_amount = round(last_cost * faf_pct, 4) if faf_pct > 0 else 0.0
+                        if faf_amount > 0:
+                            cost_sc_items.append({"label": f"FAF ({faf_pct*100:.1f}%)", "amount": faf_amount})
+                        # DGF — flat port-level fee
+                        dgf_rows = dgf_rows_by_card.get(cid, [])
+                        dgf_amount = _get_dgf_amount(dgf_rows, month_start_d) if dgf_rows else 0.0
+                        if dgf_amount > 0:
+                            cost_sc += dgf_amount
+                            cost_sc_items.append({"label": "Depot Gate Fee", "amount": round(dgf_amount, 4)})
                     has_any = last_pr is not None or last_cost is not None
                     h_lp = last_pr["list_price"] if last_pr else None
                     ts.append({
                         "month_key": mk,
                         "list_price": h_lp,
                         "cost": last_cost,
-                        "currency": last_pr["currency"] if last_pr else None,
+                        "currency": card_currency_map.get(cid),
                         "rate_status": last_pr["rate_status"] if last_pr else None,
                         "list_surcharge_total": pr_sc,
                         "cost_surcharge_total": cost_sc,
                         "total_list_price": round(h_lp + pr_sc, 4) if h_lp is not None else None,
                         "total_cost": round(last_cost + cost_sc, 4) if last_cost is not None else None,
+                        "cost_surcharge_items": cost_sc_items,
                         "surcharge_total": pr_sc,
                         "has_surcharges": (pr_sc > 0 or cost_sc > 0) and has_any,
                     })
@@ -560,7 +745,7 @@ async def get_haulage_rate_card(
         SELECT rc.id, rc.rate_card_key, rc.port_un_code, rc.area_id, rc.container_size,
                rc.include_depot_gate_fee, rc.side_loader_available, rc.is_active,
                rc.created_at, rc.updated_at,
-               rc.terminal_id,
+               rc.terminal_id, rc.currency, rc.uom, rc.is_tariff_rate,
                a.area_name, a.area_code, s.name AS state_name,
                pt.name AS terminal_name
         FROM haulage_rate_cards rc
@@ -574,10 +759,10 @@ async def get_haulage_rate_card(
         raise HTTPException(status_code=404, detail=f"Haulage rate card {card_id} not found")
 
     card = _row_to_rate_card(row)
-    card["area_name"] = row[11]
-    card["area_code"] = row[12]
-    card["state_name"] = row[13]
-    card["terminal_name"] = row[14]
+    card["area_name"] = row[14]
+    card["area_code"] = row[15]
+    card["state_name"] = row[16]
+    card["terminal_name"] = row[17]
 
     MIGRATION_FLOOR = date(2024, 1, 1)
 
@@ -591,7 +776,7 @@ async def get_haulage_rate_card(
     seed_rows = conn.execute(text(f"""
         SELECT DISTINCT ON (supplier_id)
             id, rate_card_id, supplier_id, effective_from,
-            rate_status::text, currency, uom,
+            rate_status::text,
             list_price, cost, min_list_price, min_cost,
             roundup_qty,
             created_at, updated_at, effective_to, surcharges,
@@ -662,14 +847,17 @@ async def create_haulage_rate_card(
     row = conn.execute(text("""
         INSERT INTO haulage_rate_cards
             (rate_card_key, port_un_code, terminal_id, area_id, container_size,
-             include_depot_gate_fee, side_loader_available)
-        VALUES (:key, :port, :terminal, :area, :csize, :depot, :side_loader)
+             include_depot_gate_fee, side_loader_available, currency, uom, is_tariff_rate)
+        VALUES (:key, :port, :terminal, :area, :csize, :depot, :side_loader, :currency, :uom, :is_tariff_rate)
         RETURNING id, created_at
     """), {
         "key": rate_card_key, "port": port, "terminal": terminal,
         "area": body.area_id, "csize": body.container_size,
         "depot": body.include_depot_gate_fee,
         "side_loader": body.side_loader_available,
+        "currency": body.currency,
+        "uom": body.uom,
+        "is_tariff_rate": body.is_tariff_rate,
     }).fetchone()
 
     return {"status": "OK", "data": {
@@ -679,6 +867,9 @@ async def create_haulage_rate_card(
         "container_size": body.container_size,
         "include_depot_gate_fee": body.include_depot_gate_fee,
         "side_loader_available": body.side_loader_available,
+        "currency": body.currency,
+        "uom": body.uom,
+        "is_tariff_rate": body.is_tariff_rate,
         "is_active": True, "created_at": str(row[1]),
     }}
 
@@ -707,6 +898,15 @@ async def update_haulage_rate_card(
     if body.is_active is not None:
         updates.append("is_active = :active")
         params["active"] = body.is_active
+    if body.currency is not None:
+        updates.append("currency = :currency")
+        params["currency"] = body.currency
+    if body.uom is not None:
+        updates.append("uom = :uom")
+        params["uom"] = body.uom
+    if body.is_tariff_rate is not None:
+        updates.append("is_tariff_rate = :is_tariff_rate")
+        params["is_tariff_rate"] = body.is_tariff_rate
 
     if not updates:
         return {"status": "OK", "msg": "No changes"}
@@ -715,6 +915,21 @@ async def update_haulage_rate_card(
     conn.execute(text(f"UPDATE haulage_rate_cards SET {', '.join(updates)} WHERE id = :id"), params)
 
     return {"status": "OK", "msg": "Rate card updated"}
+
+
+@router.delete("/rate-cards/{card_id}")
+async def delete_haulage_rate_card(
+    card_id: int,
+    claims: Claims = Depends(require_afu_admin),
+    conn=Depends(get_db),
+):
+    existing = conn.execute(text("SELECT id FROM haulage_rate_cards WHERE id = :id"),
+                            {"id": card_id}).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Haulage rate card {card_id} not found")
+
+    conn.execute(text("DELETE FROM haulage_rate_cards WHERE id = :id"), {"id": card_id})
+    return {"status": "OK", "msg": "Rate card deleted"}
 
 
 # ---------------------------------------------------------------------------
@@ -786,17 +1001,16 @@ async def create_haulage_rate(
     row = conn.execute(text("""
         INSERT INTO haulage_rates
             (rate_card_id, supplier_id, effective_from, effective_to, rate_status,
-             currency, uom, list_price, cost, min_list_price, min_cost,
+             list_price, cost, min_list_price, min_cost,
              roundup_qty, surcharges, side_loader_surcharge)
         VALUES
             (:card_id, :supplier, :eff, :eff_to, CAST(:status AS rate_status),
-             :currency, :uom, :list_price, :cost, :min_list_price, :min_cost,
+             :list_price, :cost, :min_list_price, :min_cost,
              :roundup_qty, :surcharges, :side_loader_surcharge)
         RETURNING id, created_at
     """), {
         "card_id": card_id, "supplier": body.supplier_id,
         "eff": body.effective_from, "eff_to": body.effective_to, "status": body.rate_status,
-        "currency": body.currency, "uom": body.uom,
         "list_price": body.list_price, "cost": body.cost,
         "min_list_price": body.min_list_price, "min_cost": body.min_cost,
         "roundup_qty": body.roundup_qty,
@@ -828,8 +1042,6 @@ async def update_haulage_rate(
     field_map = {
         "supplier_id": "supplier_id",
         "effective_from": "effective_from",
-        "currency": "currency",
-        "uom": "uom",
         "list_price": "list_price",
         "cost": "cost",
         "min_list_price": "min_list_price",
@@ -981,6 +1193,7 @@ def _row_to_dgf(r) -> dict:
 async def list_depot_gate_fees(
     port_un_code: str = Query(...),
     terminal_id: Optional[str] = Query(default=None),
+    strict: bool = Query(default=False),
     claims: Claims = Depends(require_afu),
     conn=Depends(get_db),
 ):
@@ -988,8 +1201,13 @@ async def list_depot_gate_fees(
     params: dict = {"port": port_un_code}
 
     if terminal_id:
-        where.append("(terminal_id = :terminal OR terminal_id IS NULL)")
+        if strict:
+            where.append("terminal_id = :terminal")
+        else:
+            where.append("(terminal_id = :terminal OR terminal_id IS NULL)")
         params["terminal"] = terminal_id
+    elif strict:
+        where.append("terminal_id IS NULL")
 
     rows = conn.execute(text(f"""
         SELECT id, port_un_code, terminal_id, effective_from, effective_to,

@@ -165,10 +165,11 @@ export interface RateCard {
   is_active: boolean;
   created_at: string | null;
   updated_at: string | null;
+  currency?: string;
+  uom?: string;
   pending_draft_count?: number;
   latest_price_ref?: {
     list_price: number | null;
-    currency: string;
     effective_from: string | null;
   } | null;
   time_series?: Array<{
@@ -198,8 +199,8 @@ export interface RateDetail {
   effective_from: string | null;
   effective_to: string | null; // ISO date or null for open-ended
   rate_status: string;
-  currency: string;
-  uom: string;
+  currency?: string;  // present on LCL rate rows; FCL uses card-level currency
+  uom?: string;       // present on LCL rate rows; FCL uses card-level uom
   list_price: number | null;
   cost: number | null;
   min_quantity: number | null;
@@ -238,6 +239,37 @@ export async function fetchFCLRateCardDetailAction(
   return pricingFetch(`/api/v2/pricing/fcl/rate-cards/${cardId}`);
 }
 
+export async function createFCLRateCardAction(
+  data: {
+    origin_port_code: string;
+    destination_port_code: string;
+    dg_class_code: string;
+    container_size: string;
+    container_type: string;
+    code: string;
+    description: string;
+    terminal_id?: string | null;
+    currency?: string;
+    uom?: string;
+  },
+): Promise<ActionResult<RateCard>> {
+  return pricingMutate('/api/v2/pricing/fcl/rate-cards', 'POST', data);
+}
+
+export async function updateFCLRateCardAction(
+  cardId: number,
+  data: {
+    code?: string;
+    description?: string;
+    is_active?: boolean;
+    terminal_id?: string | null;
+    currency?: string;
+    uom?: string;
+  },
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/fcl/rate-cards/${cardId}`, 'PATCH', data);
+}
+
 // ---------------------------------------------------------------------------
 // LCL rate cards
 // ---------------------------------------------------------------------------
@@ -265,6 +297,35 @@ export async function fetchLCLRateCardDetailAction(
   return pricingFetch(`/api/v2/pricing/lcl/rate-cards/${cardId}`);
 }
 
+export async function createLCLRateCardAction(
+  data: {
+    origin_port_code: string;
+    destination_port_code: string;
+    dg_class_code: string;
+    code: string;
+    description: string;
+    terminal_id?: string | null;
+    currency?: string;
+    uom?: string;
+  },
+): Promise<ActionResult<RateCard>> {
+  return pricingMutate('/api/v2/pricing/lcl/rate-cards', 'POST', data);
+}
+
+export async function updateLCLRateCardAction(
+  cardId: number,
+  data: {
+    code?: string;
+    description?: string;
+    is_active?: boolean;
+    terminal_id?: string | null;
+    currency?: string;
+    uom?: string;
+  },
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/lcl/rate-cards/${cardId}`, 'PATCH', data);
+}
+
 // ---------------------------------------------------------------------------
 // Rate CRUD actions
 // ---------------------------------------------------------------------------
@@ -273,8 +334,8 @@ interface RateCreateData {
   supplier_id: string | null;
   effective_from: string;
   effective_to: string | null;
-  currency: string;
-  uom: string;
+  currency?: string;  // LCL only — FCL uses card-level currency
+  uom?: string;       // LCL only — FCL uses card-level uom
   list_price: number | null;
   cost: number | null;
   min_quantity: number | null;
@@ -285,7 +346,7 @@ interface RateCreateData {
 interface RateUpdateData {
   effective_from?: string;
   effective_to?: string | null;
-  currency?: string;
+  currency?: string;  // LCL only
   list_price?: number | null;
   cost?: number | null;
   min_quantity?: number | null;
@@ -907,6 +968,9 @@ export interface HaulageRateCard {
   include_depot_gate_fee: boolean;
   side_loader_available: boolean;
   is_active: boolean;
+  currency: string;
+  uom: string;
+  is_tariff_rate: boolean;
   created_at: string;
   updated_at: string;
   latest_price_ref: { list_price: number | null; currency: string; effective_from: string } | null;
@@ -926,6 +990,7 @@ export interface HaulageTimeSeries {
   surcharge_total: number;
   list_surcharge_total?: number;
   cost_surcharge_total?: number;
+  cost_surcharge_items?: { label: string; amount: number }[];
   has_surcharges: boolean;
 }
 
@@ -1001,14 +1066,14 @@ export async function fetchHaulageRateCardDetailAction(
 }
 
 export async function createHaulageRateCardAction(
-  data: { port_un_code: string; area_id: number; container_size: string; include_depot_gate_fee?: boolean; side_loader_available?: boolean },
+  data: { port_un_code: string; area_id: number; container_size: string; include_depot_gate_fee?: boolean; side_loader_available?: boolean; currency?: string; uom?: string },
 ): Promise<ActionResult<{ id: number }>> {
   return pricingMutate('/api/v2/pricing/haulage/rate-cards', 'POST', data);
 }
 
 export async function updateHaulageRateCardAction(
   cardId: number,
-  data: { include_depot_gate_fee?: boolean; side_loader_available?: boolean; is_active?: boolean },
+  data: { include_depot_gate_fee?: boolean; side_loader_available?: boolean; is_active?: boolean; currency?: string; uom?: string },
 ): Promise<ActionResult<{ msg: string }>> {
   return pricingMutate(`/api/v2/pricing/haulage/rate-cards/${cardId}`, 'PATCH', data);
 }
@@ -1055,6 +1120,12 @@ export async function deleteHaulageRateAction(
   return pricingMutate(`/api/v2/pricing/haulage/rates/${rateId}`, 'DELETE');
 }
 
+export async function deleteHaulageRateCardAction(
+  cardId: number,
+): Promise<ActionResult<{ msg: string }>> {
+  return pricingMutate(`/api/v2/pricing/haulage/rate-cards/${cardId}`, 'DELETE');
+}
+
 // ---------------------------------------------------------------------------
 // Depot Gate Fees (DGF)
 // ---------------------------------------------------------------------------
@@ -1075,9 +1146,11 @@ export interface DepotGateFee {
 export async function fetchDepotGateFeesAction(
   portUnCode: string,
   terminalId?: string,
+  strict?: boolean,
 ): Promise<ActionResult<DepotGateFee[]>> {
   const sp = new URLSearchParams({ port_un_code: portUnCode });
   if (terminalId) sp.set('terminal_id', terminalId);
+  if (strict) sp.set('strict', 'true');
   return pricingFetch(`/api/v2/pricing/haulage/depot-gate-fees?${sp.toString()}`);
 }
 
@@ -1215,9 +1288,9 @@ export interface AirRateCard {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  currency: string;
   latest_price_ref?: {
     l45_list_price: number | null;
-    currency: string;
     effective_from: string;
   } | null;
   pending_draft_count?: number;
@@ -1250,7 +1323,6 @@ export interface AirRate {
   effective_from: string | null;
   effective_to: string | null;
   rate_status: string;
-  currency: string;
   l45_list_price: number | null;
   p45_list_price: number | null;
   p100_list_price: number | null;
@@ -1278,7 +1350,6 @@ export interface AirListPriceRate {
   effective_from: string | null;
   effective_to: string | null;
   rate_status: string;
-  currency: string;
   l45_list_price: number | null;
   p45_list_price: number | null;
   p100_list_price: number | null;

@@ -32,6 +32,8 @@ class LCLRateCardCreate(BaseModel):
     code: str
     description: str
     terminal_id: Optional[str] = None
+    currency: str = "MYR"
+    uom: str = "W/M"
 
 
 class LCLRateCardUpdate(BaseModel):
@@ -39,6 +41,8 @@ class LCLRateCardUpdate(BaseModel):
     description: Optional[str] = None
     is_active: Optional[bool] = None
     terminal_id: Optional[str] = None
+    currency: Optional[str] = None
+    uom: Optional[str] = None
 
 
 class LCLRateCreate(BaseModel):
@@ -46,8 +50,6 @@ class LCLRateCreate(BaseModel):
     effective_from: date
     effective_to: Optional[date] = None
     rate_status: str = "PUBLISHED"
-    currency: str
-    uom: str = "W/M"
     list_price: Optional[float] = None
     cost: Optional[float] = None
     min_quantity: Optional[float] = None
@@ -60,8 +62,6 @@ class LCLRateUpdate(BaseModel):
     effective_from: Optional[date] = None
     effective_to: Optional[date] = None
     rate_status: Optional[str] = None
-    currency: Optional[str] = None
-    uom: Optional[str] = None
     list_price: Optional[float] = None
     cost: Optional[float] = None
     min_quantity: Optional[float] = None
@@ -92,6 +92,8 @@ def _row_to_rate_card(r) -> dict:
         "created_at": str(r[8]) if r[8] else None,
         "updated_at": str(r[9]) if r[9] else None,
         "terminal_id": r[10],
+        "currency": r[11],
+        "uom": r[12],
     }
 
 
@@ -102,16 +104,14 @@ def _row_to_rate(r) -> dict:
         "supplier_id": r[2],
         "effective_from": str(r[3]) if r[3] else None,
         "rate_status": r[4],
-        "currency": r[5],
-        "uom": r[6],
-        "list_price": float(r[7]) if r[7] is not None else None,
-        "cost": float(r[8]) if r[8] is not None else None,
-        "min_quantity": float(r[9]) if r[9] is not None else None,
-        "roundup_qty": r[10],
-        "created_at": str(r[11]) if r[11] else None,
-        "updated_at": str(r[12]) if r[12] else None,
-        "effective_to": str(r[13]) if r[13] else None,
-        "surcharges": r[14] if r[14] is not None else None,
+        "list_price": float(r[5]) if r[5] is not None else None,
+        "cost": float(r[6]) if r[6] is not None else None,
+        "min_quantity": float(r[7]) if r[7] is not None else None,
+        "roundup_qty": r[8],
+        "created_at": str(r[9]) if r[9] else None,
+        "updated_at": str(r[10]) if r[10] else None,
+        "effective_to": str(r[11]) if r[11] else None,
+        "surcharges": r[12] if r[12] is not None else None,
     }
 
 
@@ -124,13 +124,14 @@ def _surcharge_total(surcharges) -> float:
 
 _RATE_CARD_SELECT = """
     SELECT id, rate_card_key, origin_port_code, destination_port_code,
-           dg_class_code, code, description, is_active, created_at, updated_at, terminal_id
+           dg_class_code, code, description, is_active, created_at, updated_at, terminal_id,
+           currency, uom
     FROM lcl_rate_cards
 """
 
 _RATE_SELECT = """
     SELECT id, rate_card_id, supplier_id, effective_from,
-           rate_status::text, currency, uom,
+           rate_status::text,
            list_price, cost, min_quantity,
            roundup_qty,
            created_at, updated_at, effective_to, surcharges
@@ -229,7 +230,8 @@ async def list_lcl_rate_cards(
     rows = conn.execute(text(f"""
         SELECT rc.id, rc.rate_card_key, rc.origin_port_code, rc.destination_port_code,
                rc.dg_class_code, rc.code, rc.description, rc.is_active, rc.created_at, rc.updated_at,
-               rc.terminal_id, pt.name AS terminal_name
+               rc.terminal_id, rc.currency, rc.uom,
+               pt.name AS terminal_name
         FROM lcl_rate_cards rc
         {terminal_join}
         {joins}
@@ -240,7 +242,7 @@ async def list_lcl_rate_cards(
     cards = []
     for r in rows:
         card = _row_to_rate_card(r)
-        card["terminal_name"] = r[11] if len(r) > 11 else None
+        card["terminal_name"] = r[13] if len(r) > 13 else None
         cards.append(card)
 
     # Attach latest price reference rate (supplier_id IS NULL) for each card
@@ -248,7 +250,7 @@ async def list_lcl_rate_cards(
         card_ids = [c["id"] for c in cards]
         price_rows = conn.execute(text(f"""
             SELECT DISTINCT ON (rate_card_id)
-                   rate_card_id, list_price, currency, effective_from
+                   rate_card_id, list_price, effective_from
             FROM lcl_rates
             WHERE rate_card_id = ANY(:ids) AND supplier_id IS NULL
             ORDER BY rate_card_id, effective_from DESC
@@ -256,8 +258,7 @@ async def list_lcl_rate_cards(
 
         price_map = {r[0]: {
             "list_price": float(r[1]) if r[1] is not None else None,
-            "currency": r[2],
-            "effective_from": str(r[3]) if r[3] else None,
+            "effective_from": str(r[2]) if r[2] else None,
         } for r in price_rows}
 
         for c in cards:
@@ -283,7 +284,7 @@ async def list_lcl_rate_cards(
 
         ts_rows = conn.execute(text("""
             SELECT id, rate_card_id, supplier_id, effective_from,
-                   rate_status::text, currency, list_price, cost, min_quantity,
+                   rate_status::text, list_price, cost, min_quantity,
                    effective_to, surcharges
             FROM lcl_rates
             WHERE rate_card_id = ANY(:ids)
@@ -295,7 +296,7 @@ async def list_lcl_rate_cards(
         # Seed carry-forward: fetch the most recent rate BEFORE the window for each card
         seed_price_rows = conn.execute(text("""
             SELECT DISTINCT ON (rate_card_id)
-                   rate_card_id, list_price, currency, rate_status::text, effective_to, surcharges
+                   rate_card_id, list_price, rate_status::text, effective_to, surcharges
             FROM lcl_rates
             WHERE rate_card_id = ANY(:ids)
               AND supplier_id IS NULL
@@ -318,11 +319,10 @@ async def list_lcl_rate_cards(
 
         seed_price_map = {r[0]: {
             "list_price": float(r[1]) if r[1] is not None else None,
-            "currency": r[2],
-            "rate_status": r[3],
+            "rate_status": r[2],
             "_eff": None,
-            "_eff_to": r[4],
-            "_surcharges": r[5],
+            "_eff_to": r[3],
+            "_surcharges": r[4],
         } for r in seed_price_rows}
 
         # seed_supplier_costs: { card_id: { supplier_id: { cost, min_quantity, eff_to, surcharges } } }
@@ -344,7 +344,7 @@ async def list_lcl_rate_cards(
         cost_map_by_supplier: dict[tuple[int, str], dict[str, tuple]] = defaultdict(dict)
 
         for r in ts_rows:
-            rid, rc_id, supplier_id, eff_from, r_status, currency, lp, cost_val, min_qty, eff_to, surcharges_json = r
+            rid, rc_id, supplier_id, eff_from, r_status, lp, cost_val, min_qty, eff_to, surcharges_json = r
             mk = f"{eff_from.year}-{eff_from.month:02d}"
             key = (rc_id, mk)
 
@@ -353,7 +353,6 @@ async def list_lcl_rate_cards(
                 if existing is None or eff_from > existing["_eff"]:
                     price_ref_map[key] = {
                         "list_price": float(lp) if lp is not None else None,
-                        "currency": currency,
                         "rate_status": r_status,
                         "_eff": eff_from,
                         "_eff_to": eff_to,
@@ -431,7 +430,7 @@ async def list_lcl_rate_cards(
                         "list_price": pr["list_price"] if pr else None,
                         "cost": best_cost_entry[0] if best_cost_entry else None,
                         "min_quantity": last_min_quantity,
-                        "currency": pr["currency"] if pr else None,
+                        "currency": c["currency"],
                         "rate_status": pr["rate_status"] if pr else None,
                         "list_surcharge_total": pr_sc,
                         "cost_surcharge_total": cost_sc,
@@ -447,7 +446,7 @@ async def list_lcl_rate_cards(
                         "list_price": last_pr["list_price"] if last_pr else None,
                         "cost": last_cost,
                         "min_quantity": last_min_quantity,
-                        "currency": last_pr["currency"] if last_pr else None,
+                        "currency": c["currency"],
                         "rate_status": last_pr["rate_status"] if last_pr else None,
                         "list_surcharge_total": pr_sc,
                         "cost_surcharge_total": cost_sc,
@@ -486,7 +485,8 @@ async def get_lcl_rate_card(
     row = conn.execute(text("""
         SELECT rc.id, rc.rate_card_key, rc.origin_port_code, rc.destination_port_code,
                rc.dg_class_code, rc.code, rc.description, rc.is_active, rc.created_at, rc.updated_at,
-               rc.terminal_id, pt.name AS terminal_name
+               rc.terminal_id, rc.currency, rc.uom,
+               pt.name AS terminal_name
         FROM lcl_rate_cards rc
         LEFT JOIN port_terminals pt ON pt.terminal_id = rc.terminal_id
         WHERE rc.id = :id
@@ -496,7 +496,7 @@ async def get_lcl_rate_card(
         raise HTTPException(status_code=404, detail=f"LCL rate card {card_id} not found")
 
     card = _row_to_rate_card(row)
-    card["terminal_name"] = row[11] if len(row) > 11 else None
+    card["terminal_name"] = row[13] if len(row) > 13 else None
 
     # Seed + window pattern: only fetch rates relevant to the display range
     MIGRATION_FLOOR = date(2024, 1, 1)
@@ -513,7 +513,7 @@ async def get_lcl_rate_card(
     seed_rows = conn.execute(text("""
         SELECT DISTINCT ON (supplier_id)
             id, rate_card_id, supplier_id, effective_from,
-            rate_status::text, currency, uom,
+            rate_status::text,
             list_price, cost, min_quantity,
             roundup_qty,
             created_at, updated_at, effective_to, surcharges
@@ -589,13 +589,14 @@ async def create_lcl_rate_card(
     row = conn.execute(text("""
         INSERT INTO lcl_rate_cards
             (rate_card_key, origin_port_code, destination_port_code,
-             dg_class_code, code, description, terminal_id)
-        VALUES (:key, :origin, :dest, :dg, :code, :desc, :terminal_id)
+             dg_class_code, code, description, terminal_id, currency, uom)
+        VALUES (:key, :origin, :dest, :dg, :code, :desc, :terminal_id, :currency, :uom)
         RETURNING id, created_at
     """), {
         "key": rate_card_key, "origin": origin, "dest": dest,
         "dg": dg, "code": body.code, "desc": body.description,
         "terminal_id": body.terminal_id,
+        "currency": body.currency, "uom": body.uom,
     }).fetchone()
 
     return {"status": "OK", "data": {
@@ -604,6 +605,7 @@ async def create_lcl_rate_card(
         "dg_class_code": dg,
         "code": body.code, "description": body.description,
         "terminal_id": body.terminal_id,
+        "currency": body.currency, "uom": body.uom,
         "is_active": True, "created_at": str(row[1]),
     }}
 
@@ -635,6 +637,12 @@ async def update_lcl_rate_card(
     if body.terminal_id is not None:
         updates.append("terminal_id = :terminal_id")
         params["terminal_id"] = body.terminal_id
+    if body.currency is not None:
+        updates.append("currency = :currency")
+        params["currency"] = body.currency
+    if body.uom is not None:
+        updates.append("uom = :uom")
+        params["uom"] = body.uom
 
     if not updates:
         return {"status": "OK", "msg": "No changes"}
@@ -698,17 +706,16 @@ async def create_lcl_rate(
     row = conn.execute(text("""
         INSERT INTO lcl_rates
             (rate_card_id, supplier_id, effective_from, effective_to, rate_status,
-             currency, uom, list_price, cost, min_quantity,
+             list_price, cost, min_quantity,
              roundup_qty, surcharges)
         VALUES
             (:card_id, :supplier, :eff, :eff_to, CAST(:status AS rate_status),
-             :currency, :uom, :list_price, :cost, :min_quantity,
+             :list_price, :cost, :min_quantity,
              :roundup_qty, :surcharges)
         RETURNING id, created_at
     """), {
         "card_id": card_id, "supplier": body.supplier_id,
         "eff": body.effective_from, "eff_to": body.effective_to, "status": body.rate_status,
-        "currency": body.currency, "uom": body.uom,
         "list_price": body.list_price,
         "cost": body.cost, "min_quantity": body.min_quantity,
         "roundup_qty": body.roundup_qty,
@@ -739,8 +746,6 @@ async def update_lcl_rate(
     field_map = {
         "supplier_id": "supplier_id",
         "effective_from": "effective_from",
-        "currency": "currency",
-        "uom": "uom",
         "list_price": "list_price",
         "cost": "cost",
         "min_quantity": "min_quantity",
@@ -898,6 +903,14 @@ async def resolve_lcl_rate(
         raise HTTPException(status_code=404, detail="No active rate found for the given parameters")
 
     rate = _row_to_rate(rate_row)
+
+    # Currency + UOM now live on the card, not the rate row
+    card_row = conn.execute(text(
+        "SELECT currency, uom FROM lcl_rate_cards WHERE id = :id"
+    ), {"id": card_id}).fetchone()
+    card_currency = card_row[0] if card_row else "MYR"
+    card_uom = card_row[1] if card_row else "W/M"
+
     qty = body.quantity
 
     # Apply roundup_qty if set (round up quantity to nearest roundup_qty increment)
@@ -938,8 +951,8 @@ async def resolve_lcl_rate(
         "billable_quantity": billable_qty,
         "effective_quantity": effective_qty,
         "reference_date": ref_date,
-        "currency": rate["currency"],
-        "uom": rate["uom"],
+        "currency": card_currency,
+        "uom": card_uom,
         "rate_per_unit": rate_per_unit,
         "min_quantity": min_quantity,
         "min_applied": min_applied,

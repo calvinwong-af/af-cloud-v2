@@ -8,6 +8,7 @@ import {
   fetchHaulagePortsAction,
   fetchHaulageAreasAction,
   fetchHaulageContainerSizesAction,
+  deleteHaulageRateCardAction,
 } from '@/app/actions/pricing';
 import type { PricingCountry, HaulageRateCard, PortTransportArea, ContainerSize } from '@/app/actions/pricing';
 import { fetchCompaniesAction } from '@/app/actions/companies';
@@ -15,8 +16,10 @@ import { fetchPortsAction } from '@/app/actions/shipments';
 import { PortCombobox } from '@/components/shared/PortCombobox';
 import { ToggleSwitch } from '../_components';
 import { HaulageTimeSeriesRateList } from './_haulage-rate-list';
+import { HaulageRateCardEditModal } from './_haulage-expanded-panel';
 
 export function HaulageRateCardsTab({ countryCode, alertFilter }: { countryCode?: string; alertFilter?: string }) {
+  const [cardEditTarget, setCardEditTarget] = useState<HaulageRateCard | null>(null);
   const [countries, setCountries] = useState<PricingCountry[]>([]);
   const [country, setCountry] = useState(countryCode ?? '');
   const [cards, setCards] = useState<HaulageRateCard[]>([]);
@@ -212,6 +215,11 @@ export function HaulageRateCardsTab({ countryCode, alertFilter }: { countryCode?
             companiesMap={companiesMap}
             companiesList={companiesList}
             onCardsRefresh={fetchCards}
+            onEditCard={(card) => setCardEditTarget(card)}
+            onDeleteCard={async (cardId) => {
+              await deleteHaulageRateCardAction(cardId);
+              fetchCards();
+            }}
           />
           <div className="flex items-center justify-between">
             <div className="text-xs text-[var(--text-muted)]">
@@ -243,6 +251,15 @@ export function HaulageRateCardsTab({ countryCode, alertFilter }: { countryCode?
             )}
           </div>
         </>
+      )}
+      {cardEditTarget && (
+        <HaulageRateCardEditModal
+          open={!!cardEditTarget}
+          cardId={cardEditTarget.id}
+          initial={cardEditTarget}
+          onSaved={() => { setCardEditTarget(null); fetchCards(); }}
+          onClose={() => setCardEditTarget(null)}
+        />
       )}
     </div>
   );

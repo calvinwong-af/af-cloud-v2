@@ -1303,6 +1303,59 @@ def _get_gt_vehicle_type(conn, shipment_id: str, leg_key: str) -> str | None:
 # Rate resolution — Haulage (FCL only)
 # ---------------------------------------------------------------------------
 
+def _resolve_faf_percent(conn, supplier_id: str, port_un_code: str,
+                         container_size: str, ref_date: date) -> float | None:
+    """
+    Look up the active FAF percentage for a supplier at a given port and container size.
+
+    Resolution:
+    1. Get latest published FAF row for the supplier where effective_from <= ref_date
+    2. Within port_rates JSONB array, match port_un_code + container_size
+    3. Prefer exact container_size match over 'wildcard'
+    4. Returns faf_percent (e.g. 0.05 = 5%) or None if not found
+    """
+    row = conn.execute(
+        text("""
+            SELECT port_rates
+            FROM haulage_faf_rates
+            WHERE supplier_id = :sid
+              AND rate_status = 'PUBLISHED'
+              AND effective_from <= :rd
+              AND (effective_to IS NULL OR effective_to >= :rd)
+            ORDER BY effective_from DESC
+            LIMIT 1
+        """),
+        {"sid": supplier_id, "rd": ref_date},
+    ).fetchone()
+
+    if not row or not row[0]:
+        return None
+
+    port_rates = row[0]
+    if isinstance(port_rates, str):
+        port_rates = json.loads(port_rates)
+
+    if not isinstance(port_rates, list):
+        return None
+
+    # Filter entries matching port_un_code
+    matches = [
+        e for e in port_rates
+        if isinstance(e, dict) and e.get("port_un_code") == port_un_code
+        and e.get("container_size") in (container_size, "wildcard")
+    ]
+
+    if not matches:
+        return None
+
+    # Prefer exact container_size match over wildcard
+    exact = [e for e in matches if e.get("container_size") == container_size]
+    best = exact[0] if exact else matches[0]
+
+    faf = best.get("faf_percent")
+    return float(faf) if faf is not None else None
+
+
 def _resolve_haulage(conn, shipment: dict, direction: str,
                      quotation_currency: str, ref_date: date, warnings: list) -> list:
     items = []
@@ -1337,7 +1390,8 @@ def _resolve_haulage(conn, shipment: dict, direction: str,
         # Find rate card — try exact size first, fallback to wildcard
         card = conn.execute(
             text("""
-                SELECT id, include_depot_gate_fee, terminal_id FROM haulage_rate_cards
+                SELECT id, include_depot_gate_fee, terminal_id, currency, is_tariff_rate
+                FROM haulage_rate_cards
                 WHERE port_un_code = :port AND area_id = :aid
                   AND container_size = :size AND is_active = TRUE
                 LIMIT 1
@@ -1348,7 +1402,8 @@ def _resolve_haulage(conn, shipment: dict, direction: str,
         if not card:
             card = conn.execute(
                 text("""
-                    SELECT id, include_depot_gate_fee, terminal_id FROM haulage_rate_cards
+                    SELECT id, include_depot_gate_fee, terminal_id, currency, is_tariff_rate
+                    FROM haulage_rate_cards
                     WHERE port_un_code = :port AND area_id = :aid
                       AND container_size = 'wildcard' AND is_active = TRUE
                     LIMIT 1
@@ -1364,11 +1419,13 @@ def _resolve_haulage(conn, shipment: dict, direction: str,
         card_id = card[0]
         include_gate_fee = card[1]
         terminal_id = card[2]
+        card_currency = card[3]
+        is_tariff_rate = bool(card[4])
 
-        # List price
+        # List price (currency now on card, not rate row)
         lp = conn.execute(
             text("""
-                SELECT id, list_price, cost, currency, surcharges, side_loader_surcharge
+                SELECT id, list_price, cost, surcharges, side_loader_surcharge
                 FROM haulage_rates
                 WHERE rate_card_id = :cid AND supplier_id IS NULL
                   AND rate_status = 'PUBLISHED'
@@ -1382,7 +1439,7 @@ def _resolve_haulage(conn, shipment: dict, direction: str,
         # Cheapest supplier
         sc = conn.execute(
             text("""
-                SELECT id, cost, currency, surcharges, side_loader_surcharge, supplier_id
+                SELECT id, cost, surcharges, side_loader_surcharge, supplier_id
                 FROM haulage_rates
                 WHERE rate_card_id = :cid AND supplier_id IS NOT NULL
                   AND rate_status = 'PUBLISHED'
@@ -1394,26 +1451,33 @@ def _resolve_haulage(conn, shipment: dict, direction: str,
         ).fetchone()
 
         price_val = _dec(lp[1]) if lp else 0
-        price_cur = lp[3] if lp else quotation_currency
-        cost_val = _dec(sc[1]) if sc else (_dec(lp[2]) if lp else 0)
-        cost_cur = sc[2] if sc else (lp[3] if lp else quotation_currency)
+        price_cur = card_currency
+        supplier_id = sc[4] if sc else None
 
-        # Apply supplier rebate to cost
-        supplier_id = sc[5] if sc else None
-        if supplier_id and cost_val > 0:
-            rebate = conn.execute(
-                text("""
-                    SELECT rebate_percent FROM haulage_supplier_rebates
-                    WHERE supplier_id = :sid AND port_un_code = :port
-                      AND container_size = :size
-                      AND effective_from <= :rd
-                      AND (effective_to IS NULL OR effective_to >= :rd)
-                    ORDER BY effective_from DESC LIMIT 1
-                """),
-                {"sid": supplier_id, "port": port, "size": size, "rd": ref_date},
-            ).fetchone()
-            if rebate:
-                cost_val = cost_val * (1 - _dec(rebate[0]))
+        if is_tariff_rate:
+            # Tariff model: cost = supplier gross cost × (1 - rebate_percent)
+            # Supplier cost row is entered as the gross tariff amount (may include surcharges).
+            # Rebate is applied against that gross cost.
+            cost_val = _dec(sc[1]) if sc else (_dec(lp[2]) if lp else 0)
+            if supplier_id and cost_val > 0:
+                rebate = conn.execute(
+                    text("""
+                        SELECT rebate_percent FROM haulage_supplier_rebates
+                        WHERE supplier_id = :sid AND port_un_code = :port
+                          AND container_size = :size
+                          AND effective_from <= :rd
+                          AND (effective_to IS NULL OR effective_to >= :rd)
+                        ORDER BY effective_from DESC LIMIT 1
+                    """),
+                    {"sid": supplier_id, "port": port, "size": size, "rd": ref_date},
+                ).fetchone()
+                if rebate:
+                    cost_val = round(cost_val * (1 - _dec(rebate[0])), 6)
+        else:
+            # Non-tariff model: cost = supplier cost row as-is, no rebate
+            cost_val = _dec(sc[1]) if sc else (_dec(lp[2]) if lp else 0)
+
+        cost_cur = card_currency
 
         p_conv = _get_conversion_factor(conn, price_cur, quotation_currency, ref_date)
         c_conv = _get_conversion_factor(conn, cost_cur, quotation_currency, ref_date)
@@ -1437,41 +1501,86 @@ def _resolve_haulage(conn, shipment: dict, direction: str,
             "sort_order": base_sort,
         })
 
-        # Surcharges from list price row
-        lp_sur = (lp[4] if lp and lp[4] else []) if lp else []
-        sc_sur = (sc[3] if sc and sc[3] else []) if sc else []
-        if isinstance(lp_sur, list):
-            sc_map = {}
-            if isinstance(sc_sur, list):
-                sc_map = {s.get("code"): s for s in sc_sur if isinstance(s, dict)}
-            sort_offset = 1
-            for sur in lp_sur:
-                if not isinstance(sur, dict):
-                    continue
-                amt = _dec(sur.get("amount"))
-                if amt <= 0:
-                    continue
-                sc_match = sc_map.get(sur.get("code"), {})
-                sc_amt = _dec(sc_match.get("amount")) if sc_match else amt
-                items.append({
-                    "component_type": component_type,
-                    "charge_code": sur.get("code", "HA-SUR"),
-                    "description": sur.get("label", sur.get("code", "Surcharge")),
-                    "uom": "CONTAINER",
-                    "quantity": qty,
-                    "price_per_unit": amt,
-                    "min_price": 0,
-                    "price_currency": price_cur,
-                    "price_conversion": p_conv,
-                    "cost_per_unit": sc_amt,
-                    "min_cost": 0,
-                    "cost_currency": cost_cur,
-                    "cost_conversion": c_conv,
-                    "source_table": "haulage_rates",
-                    "source_rate_id": lp[0] if lp else None,
-                    "sort_order": base_sort + sort_offset,
-                })
-                sort_offset += 1
+        # Surcharges — union of list price and supplier surcharges
+        lp_sur = lp[3] if lp and lp[3] else []
+        sc_sur = sc[2] if sc and sc[2] else []
+
+        # Normalise to list
+        if not isinstance(lp_sur, list):
+            lp_sur = []
+        if not isinstance(sc_sur, list):
+            sc_sur = []
+
+        # Build lookup maps keyed by surcharge code
+        lp_map = {s.get("code"): s for s in lp_sur if isinstance(s, dict) and s.get("code")}
+        sc_map_sur = {s.get("code"): s for s in sc_sur if isinstance(s, dict) and s.get("code")}
+
+        # Union of all codes from both sides
+        all_codes = list(lp_map.keys()) + [c for c in sc_map_sur.keys() if c not in lp_map]
+
+        sort_offset = 1
+        for code in all_codes:
+            lp_entry = lp_map.get(code)
+            sc_entry = sc_map_sur.get(code)
+
+            # Determine price amount (from list price side, or fall back to supplier amount)
+            p_amt = _dec(lp_entry.get("amount")) if lp_entry else _dec(sc_entry.get("amount"))
+            # Determine cost amount (from supplier side, or fall back to list price amount)
+            c_amt = _dec(sc_entry.get("amount")) if sc_entry else _dec(lp_entry.get("amount"))
+
+            if p_amt <= 0 and c_amt <= 0:
+                continue
+
+            # Description: prefer list price description, then supplier, then code
+            entry_for_desc = lp_entry or sc_entry
+            desc = entry_for_desc.get("description", entry_for_desc.get("label", code))
+
+            items.append({
+                "component_type": component_type,
+                "charge_code": code,
+                "description": desc,
+                "uom": "CONTAINER",
+                "quantity": qty,
+                "price_per_unit": p_amt,
+                "min_price": 0,
+                "price_currency": price_cur,
+                "price_conversion": p_conv,
+                "cost_per_unit": c_amt,
+                "min_cost": 0,
+                "cost_currency": cost_cur,
+                "cost_conversion": c_conv,
+                "source_table": "haulage_rates",
+                "source_rate_id": lp[0] if lp else None,
+                "sort_order": base_sort + sort_offset,
+            })
+            sort_offset += 1
+
+        # FAF surcharge — look up active FAF percent for chosen supplier
+        if supplier_id:
+            faf_pct = _resolve_faf_percent(conn, supplier_id, port, size, ref_date)
+            if faf_pct is not None and faf_pct > 0:
+                faf_cost_amt = round(cost_val * faf_pct, 2)
+                faf_price_amt = faf_cost_amt
+                if faf_cost_amt > 0:
+                    items.append({
+                        "component_type": component_type,
+                        "charge_code": "HA-FAF",
+                        "description": "Fuel Adjustment Factor",
+                        "uom": "CONTAINER",
+                        "quantity": qty,
+                        "price_per_unit": faf_price_amt,
+                        "min_price": 0,
+                        "price_currency": price_cur,
+                        "price_conversion": p_conv,
+                        "cost_per_unit": faf_cost_amt,
+                        "min_cost": 0,
+                        "cost_currency": cost_cur,
+                        "cost_conversion": c_conv,
+                        "source_table": "haulage_faf_rates",
+                        "source_rate_id": None,
+                        "sort_order": base_sort + sort_offset,
+                    })
+                    sort_offset += 1
 
         # Depot gate fee
         if include_gate_fee:
@@ -1689,10 +1798,10 @@ async def create_quotation(
     # 3. Generate quotation_ref
     quotation_ref = f"{body.shipment_id}-Q{next_revision}"
 
-    # 4. Resolve currency from company's preferred_currency
+    # 4. Resolve currency from company's currency field
     company_row = conn.execute(
         text("""
-            SELECT c.preferred_currency
+            SELECT c.currency
             FROM orders o
             JOIN companies c ON c.id = o.company_id
             WHERE o.order_id = :sid

@@ -1,11 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import type { MonthBucket, PanelMode } from './_types';
+import { Pencil, Trash2 } from 'lucide-react';
+import type { MonthBucket } from './_types';
 import type { RateCardDetail, RateDetail, SurchargeItem } from '@/app/actions/pricing';
 import {
-  updateFCLRateAction,
-  updateLCLRateAction,
   deleteFCLRateAction,
   deleteLCLRateAction,
 } from '@/app/actions/pricing';
@@ -35,22 +34,19 @@ interface ExpandedRatePanelProps {
 }
 
 export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, cardMode, cardId, companiesList, onRatesChanged }: ExpandedRatePanelProps) {
-  const [panelMode, setPanelMode] = useState<PanelMode>({ type: 'view' });
-  const [saving, setSaving] = useState(false);
   const [modalState, setModalState] = useState<ModalState>({ open: false });
-  const [formTerminateDate, setFormTerminateDate] = useState('');
+  const [confirmDeleteRateId, setConfirmDeleteRateId] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  const handleTerminate = async () => {
-    if (panelMode.type !== 'terminate' || !formTerminateDate) return;
-    setSaving(true);
+  const handleRateDelete = async (rateId: number) => {
+    setDeleting(true);
     try {
-      const action = cardMode === 'fcl' ? updateFCLRateAction : updateLCLRateAction;
-      await action(panelMode.rateId, { effective_to: formTerminateDate });
-      setFormTerminateDate('');
-      setPanelMode({ type: 'view' });
+      const action = cardMode === 'fcl' ? deleteFCLRateAction : deleteLCLRateAction;
+      await action(rateId);
+      setConfirmDeleteRateId(null);
       onRatesChanged();
     } finally {
-      setSaving(false);
+      setDeleting(false);
     }
   };
 
@@ -232,9 +228,6 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
   const priceRefEndDateMap = buildEndDateMap(priceRefRates);
   const latestPriceRef = priceRefRates[0] ?? null;
 
-  const btnClass = "text-[10px] px-1.5 py-0.5 rounded border border-[var(--border)] hover:bg-[var(--surface)] transition-colors";
-  const inputClass = "h-7 px-2 text-xs rounded border border-[var(--border)] bg-white text-[var(--text)] focus:outline-none focus:ring-1 focus:ring-[var(--sky)] focus:border-[var(--sky)]";
-
   return (
     <>
       <div>
@@ -246,7 +239,7 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
             {priceRefRates.length > 0 && (
               <div className="text-[10px] text-[var(--text-muted)]">{formatRatesRange(priceRefRates)}</div>
             )}
-            {!latestPriceRef && panelMode.type === 'view' && (
+            {!latestPriceRef && (
               <button
                 onClick={() => setModalState({ open: true, mode: 'add-list-price' })}
                 className="text-[10px] px-2 py-0.5 rounded border border-dashed border-[var(--sky)]/50 text-[var(--sky)] hover:bg-[var(--sky-mist)]/30 transition-colors mt-0.5 self-start"
@@ -254,24 +247,42 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
                 + Set List Price
               </button>
             )}
-            {latestPriceRef && panelMode.type === 'view' && (
-              <div className="flex gap-1 mt-0.5">
+            {latestPriceRef && (
+              <div className="flex items-center gap-1 mt-0.5">
                 {latestPriceRef.rate_status === 'PUBLISHED' && (
-                  <>
-                    <button onClick={() => {
-                        const effective = getEffectiveRate(priceRefRates);
-                        setModalState({ open: true, mode: 'update', initial: effective ?? latestPriceRef });
-                      }}
-                      className={btnClass}>Update</button>
-                    <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestPriceRef.id, initial: latestPriceRef })}
-                      className={btnClass}>Edit</button>
-                    <button onClick={() => { setFormTerminateDate(''); setPanelMode({ type: 'terminate', rateId: latestPriceRef.id, current: latestPriceRef }); }}
-                      className={btnClass}>Set end date</button>
-                  </>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); const effective = getEffectiveRate(priceRefRates); setModalState({ open: true, mode: 'update', initial: effective ?? latestPriceRef }); }}
+                    className="p-1 text-[var(--text-muted)] hover:text-[var(--sky)] transition-colors"
+                    title="Add rate"
+                  >
+                    <Pencil size={12} />
+                  </button>
                 )}
                 {latestPriceRef.rate_status === 'DRAFT' && (
-                  <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestPriceRef.id, initial: latestPriceRef })}
-                    className={btnClass}>Edit</button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setModalState({ open: true, mode: 'edit', rateId: latestPriceRef.id, initial: latestPriceRef }); }}
+                    className="p-1 text-[var(--text-muted)] hover:text-[var(--sky)] transition-colors"
+                    title="Edit"
+                  >
+                    <Pencil size={12} />
+                  </button>
+                )}
+                {confirmDeleteRateId === latestPriceRef.id ? (
+                  <span className="flex items-center gap-1 text-[10px]">
+                    <span className="text-[var(--text-muted)]">Sure?</span>
+                    <button onClick={() => handleRateDelete(latestPriceRef.id)} disabled={deleting}
+                      className="text-red-600 hover:text-red-800 font-medium disabled:opacity-50">Yes</button>
+                    <button onClick={() => setConfirmDeleteRateId(null)}
+                      className="text-[var(--text-muted)] hover:text-[var(--text)]">No</button>
+                  </span>
+                ) : (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteRateId(latestPriceRef.id); }}
+                    className="p-1 text-[var(--text-muted)] hover:text-red-500 transition-colors"
+                    title="Delete rate"
+                  >
+                    <Trash2 size={12} />
+                  </button>
                 )}
               </div>
             )}
@@ -289,30 +300,16 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
             />
           </div>
         </div>
-        {panelMode.type === 'terminate' && panelMode.rateId === latestPriceRef?.id && (
-          <div className="px-3 py-3 border-t border-[var(--border)] bg-amber-50/50" style={{ minWidth: `${totalWidth}px` }}>
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-xs font-medium text-[var(--text)]">Set end date for rate #{panelMode.rateId}</span>
-              <input type="date" value={formTerminateDate} onChange={e => setFormTerminateDate(e.target.value)} className={inputClass} />
-              <button onClick={handleTerminate} disabled={saving || !formTerminateDate}
-                className="h-7 px-3 text-xs rounded bg-[var(--sky)] text-white hover:bg-[var(--sky)]/90 disabled:opacity-50">Save</button>
-              <button onClick={() => setPanelMode({ type: 'view' })}
-                className="h-7 px-3 text-xs rounded border border-[var(--border)] hover:bg-[var(--surface)]">Cancel</button>
-            </div>
-          </div>
-        )}
 
         {/* Supplier Costs divider — always shown, with + Supplier Rate button */}
         <div className="px-3 py-1 bg-slate-100/80 border-y border-[var(--border)]/60 flex items-center justify-between" style={{ minWidth: `${totalWidth}px` }}>
           <span className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wide">Supplier Costs</span>
-          {panelMode.type === 'view' && (
-            <button
-              onClick={() => setModalState({ open: true, mode: 'add-supplier' })}
-              className="text-[10px] px-2 py-0.5 rounded border border-dashed border-[var(--sky)]/50 text-[var(--sky)] hover:bg-[var(--sky-mist)]/30 transition-colors"
-            >
-              + Supplier Rate
-            </button>
-          )}
+          <button
+            onClick={() => setModalState({ open: true, mode: 'add-supplier' })}
+            className="text-[10px] px-2 py-0.5 rounded border border-dashed border-[var(--sky)]/50 text-[var(--sky)] hover:bg-[var(--sky-mist)]/30 transition-colors"
+          >
+            + Supplier Rate
+          </button>
         </div>
 
         {/* Supplier rows — sparkline per row */}
@@ -338,24 +335,42 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
                       Min: {latestRate.min_quantity} W/M
                     </span>
                   )}
-                  {latestRate && panelMode.type === 'view' && (
-                    <div className="flex gap-1 mt-0.5">
+                  {latestRate && (
+                    <div className="flex items-center gap-1 mt-0.5">
                       {latestRate.rate_status === 'PUBLISHED' && (
-                        <>
-                          <button onClick={() => {
-                              const effective = getEffectiveRate(rates);
-                              setModalState({ open: true, mode: 'update', initial: effective ?? latestRate });
-                            }}
-                            className={btnClass}>Update</button>
-                          <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestRate.id, initial: latestRate })}
-                            className={btnClass}>Edit</button>
-                          <button onClick={() => { setFormTerminateDate(''); setPanelMode({ type: 'terminate', rateId: latestRate.id, current: latestRate }); }}
-                            className={btnClass}>Set end date</button>
-                        </>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); const effective = getEffectiveRate(rates); setModalState({ open: true, mode: 'update', initial: effective ?? latestRate }); }}
+                          className="p-1 text-[var(--text-muted)] hover:text-[var(--sky)] transition-colors"
+                          title="Add rate"
+                        >
+                          <Pencil size={12} />
+                        </button>
                       )}
                       {latestRate.rate_status === 'DRAFT' && (
-                        <button onClick={() => setModalState({ open: true, mode: 'edit', rateId: latestRate.id, initial: latestRate })}
-                          className={btnClass}>Edit</button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setModalState({ open: true, mode: 'edit', rateId: latestRate.id, initial: latestRate }); }}
+                          className="p-1 text-[var(--text-muted)] hover:text-[var(--sky)] transition-colors"
+                          title="Edit"
+                        >
+                          <Pencil size={12} />
+                        </button>
+                      )}
+                      {confirmDeleteRateId === latestRate.id ? (
+                        <span className="flex items-center gap-1 text-[10px]">
+                          <span className="text-[var(--text-muted)]">Sure?</span>
+                          <button onClick={() => handleRateDelete(latestRate.id)} disabled={deleting}
+                            className="text-red-600 hover:text-red-800 font-medium disabled:opacity-50">Yes</button>
+                          <button onClick={() => setConfirmDeleteRateId(null)}
+                            className="text-[var(--text-muted)] hover:text-[var(--text)]">No</button>
+                        </span>
+                      ) : (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setConfirmDeleteRateId(latestRate.id); }}
+                          className="p-1 text-[var(--text-muted)] hover:text-red-500 transition-colors"
+                          title="Delete rate"
+                        >
+                          <Trash2 size={12} />
+                        </button>
                       )}
                     </div>
                   )}
@@ -372,18 +387,6 @@ export function ExpandedRatePanel({ detail, months, companiesMap, totalWidth, ca
                   />
                 </div>
               </div>
-              {panelMode.type === 'terminate' && panelMode.rateId === latestRate?.id && (
-                <div className="px-3 py-3 border-t border-[var(--border)] bg-amber-50/50" style={{ minWidth: `${totalWidth}px` }}>
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <span className="text-xs font-medium text-[var(--text)]">Set end date for rate #{panelMode.rateId}</span>
-                    <input type="date" value={formTerminateDate} onChange={e => setFormTerminateDate(e.target.value)} className={inputClass} />
-                    <button onClick={handleTerminate} disabled={saving || !formTerminateDate}
-                      className="h-7 px-3 text-xs rounded bg-[var(--sky)] text-white hover:bg-[var(--sky)]/90 disabled:opacity-50">Save</button>
-                    <button onClick={() => setPanelMode({ type: 'view' })}
-                      className="h-7 px-3 text-xs rounded border border-[var(--border)] hover:bg-[var(--surface)]">Cancel</button>
-                  </div>
-                </div>
-              )}
             </div>
           );
         })}

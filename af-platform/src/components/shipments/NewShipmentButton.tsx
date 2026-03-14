@@ -21,7 +21,7 @@ export default function NewShipmentButton({ companies, ports, accountType }: Pro
 
   function handleCreated(shipmentOrderId: string) {
     setOpen(false);
-    window.location.href = `/shipments/${shipmentOrderId}`;
+    window.open(`/shipments/${shipmentOrderId}`, '_blank');
   }
 
   return (

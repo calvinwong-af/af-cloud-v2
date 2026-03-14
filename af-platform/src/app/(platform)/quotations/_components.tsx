@@ -90,6 +90,7 @@ export function QuotationsList() {
                 <td className="px-4 py-3">
                   <Link
                     href={`/quotations/${q.quotation_ref}`}
+                    target="_blank"
                     className="font-mono text-xs font-medium text-[var(--sky)] hover:underline"
                   >
                     {q.quotation_ref}

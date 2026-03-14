@@ -30,7 +30,6 @@ export function RateModal({ open, mode, rateId, initial, cardMode, cardId, compa
   const [supplier, setSupplier] = useState('');
   const [effFrom, setEffFrom] = useState('');
   const [effTo, setEffTo] = useState('');
-  const [currency, setCurrency] = useState('USD');
   const [listPrice, setListPrice] = useState('');
   const [cost, setCost] = useState('');
   const [minQuantity, setMinQuantity] = useState('');
@@ -54,7 +53,6 @@ export function RateModal({ open, mode, rateId, initial, cardMode, cardId, compa
         setEffFrom(initial.effective_from ?? '');
         setEffTo(initial.effective_to ?? '');
       }
-      setCurrency(initial.currency);
       setListPrice(initial.list_price != null ? String(initial.list_price) : '');
       setCost(initial.cost != null ? String(initial.cost) : '');
       setMinQuantity(initial.min_quantity != null ? String(initial.min_quantity) : '');
@@ -70,7 +68,6 @@ export function RateModal({ open, mode, rateId, initial, cardMode, cardId, compa
       setSupplier('');
       setEffFrom('');
       setEffTo('');
-      setCurrency('USD');
       setListPrice('');
       setCost('');
       setMinQuantity('');
@@ -119,8 +116,6 @@ export function RateModal({ open, mode, rateId, initial, cardMode, cardId, compa
             : (supplier || null),
           effective_from: effFrom,
           effective_to: effTo || null,
-          currency,
-          uom: cardMode === 'fcl' ? 'CONTAINER' : 'W/M',
           list_price: listPrice ? parseFloat(listPrice) : null,
           cost: cost ? parseFloat(cost) : null,
           min_quantity: (cardMode === 'lcl' && isSupplierRow && minQuantity) ? parseFloat(minQuantity) : null,
@@ -134,7 +129,6 @@ export function RateModal({ open, mode, rateId, initial, cardMode, cardId, compa
         const data: Record<string, unknown> = {
           effective_from: effFrom || undefined,
           effective_to: effTo || null,
-          currency,
           list_price: listPrice ? parseFloat(listPrice) : null,
           cost: cost ? parseFloat(cost) : null,
           min_quantity: (cardMode === 'lcl' && isSupplierEdit && minQuantity) ? parseFloat(minQuantity) : null,
@@ -214,12 +208,8 @@ export function RateModal({ open, mode, rateId, initial, cardMode, cardId, compa
             </div>
           </div>
 
-          {/* Currency + Status row */}
-          <div className="grid grid-cols-2 gap-3">
-            <label>
-              <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">Currency</span>
-              <input type="text" value={currency} onChange={e => setCurrency(e.target.value.toUpperCase())} maxLength={3} className={inputClass} />
-            </label>
+          {/* Status row */}
+          <div className="grid grid-cols-1 gap-3">
             <label>
               <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">Status</span>
               <select value={status} onChange={e => setStatus(e.target.value)} className={inputClass}>

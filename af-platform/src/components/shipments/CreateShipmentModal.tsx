@@ -177,7 +177,7 @@ export default function CreateShipmentModal({ companies, ports, onClose, onCreat
 
   // Step 1: Order
   const [orderType, setOrderType] = useState<OrderType>('SEA_FCL');
-  const [transactionType, setTransactionType] = useState<'IMPORT' | 'EXPORT'>('IMPORT');
+  const [transactionType, setTransactionType] = useState<'IMPORT' | 'EXPORT'>('EXPORT');
   const [companyId, setCompanyId] = useState('');
   const [cargoReadyDate, setCargoReadyDate] = useState<string>(() => {
     const today = new Date();

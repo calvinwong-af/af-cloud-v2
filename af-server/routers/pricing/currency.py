@@ -510,9 +510,49 @@ async def fetch_rhb_rates(
             rhb_code = target_c
             rate_column = "buy_od"
         else:
-            # Neither base nor target is MYR — skip
-            skipped_count += 1
-            skipped_pairs.append(f"{base_c}_{target_c}")
+            # Neither base nor target is MYR — cross-rate through MYR
+            base_entry = rhb_by_code.get(base_c)
+            target_entry = rhb_by_code.get(target_c)
+
+            if not base_entry or not target_entry:
+                skipped_count += 1
+                skipped_pairs.append(f"{base_c}_{target_c}")
+                continue
+
+            base_myr = base_entry.get("sell_tt_od")
+            target_myr = target_entry.get("sell_tt_od")
+
+            if base_myr is None or target_myr is None:
+                skipped_count += 1
+                skipped_pairs.append(f"{base_c}_{target_c}")
+                continue
+
+            base_normalised = base_myr / base_entry["unit"]
+            target_normalised = target_myr / target_entry["unit"]
+
+            if target_normalised == 0:
+                skipped_count += 1
+                skipped_pairs.append(f"{base_c}_{target_c}")
+                continue
+
+            cross_rate = base_normalised / target_normalised
+            final_rate = round(cross_rate * (1 + adj_pct / 100), 6)
+            notes = f"RHB scrape {date.today().isoformat()} — cross via MYR ({rhb_timestamp})"
+
+            conn.execute(text("""
+                INSERT INTO currency_rates
+                    (base_currency, target_currency, rate, effective_from, notes)
+                VALUES (:base, :target, :rate, :monday, :notes)
+                ON CONFLICT (base_currency, target_currency, effective_from)
+                DO UPDATE SET rate = EXCLUDED.rate, notes = EXCLUDED.notes, updated_at = NOW()
+            """), {
+                "base": base_c,
+                "target": target_c,
+                "rate": final_rate,
+                "monday": monday,
+                "notes": notes,
+            })
+            updated_count += 1
             continue
 
         rhb_entry = rhb_by_code.get(rhb_code)

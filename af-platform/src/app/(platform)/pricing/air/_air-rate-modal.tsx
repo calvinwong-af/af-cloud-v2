@@ -60,7 +60,6 @@ export function AirRateModal({ open, mode, rateId, initial, cardId, isListPrice,
   const [supplier, setSupplier] = useState('');
   const [effFrom, setEffFrom] = useState('');
   const [effTo, setEffTo] = useState('');
-  const [currency, setCurrency] = useState('USD');
   const [status, setStatus] = useState('PUBLISHED');
   const [tierValues, setTierValues] = useState<TierValues>({});
   const [surcharges, setSurcharges] = useState<{ code: string; description: string; amount: string }[]>([]);
@@ -82,7 +81,6 @@ export function AirRateModal({ open, mode, rateId, initial, cardId, isListPrice,
         setEffFrom((initial.effective_from as string) ?? '');
         setEffTo((initial.effective_to as string) ?? '');
       }
-      setCurrency((initial.currency as string) ?? 'USD');
       setStatus('PUBLISHED');
 
       // Populate tier values from initial
@@ -105,7 +103,6 @@ export function AirRateModal({ open, mode, rateId, initial, cardId, isListPrice,
       setSupplier('');
       setEffFrom('');
       setEffTo('');
-      setCurrency('USD');
       setStatus('PUBLISHED');
       setTierValues({});
       setSurcharges([]);
@@ -150,7 +147,6 @@ export function AirRateModal({ open, mode, rateId, initial, cardId, isListPrice,
             : (supplier || null),
           effective_from: effFrom,
           effective_to: effTo || null,
-          currency,
           rate_status: status,
           surcharges: serializeSurcharges(),
         };
@@ -181,7 +177,6 @@ export function AirRateModal({ open, mode, rateId, initial, cardId, isListPrice,
         const data: Record<string, unknown> = {
           effective_from: effFrom || undefined,
           effective_to: effTo || null,
-          currency,
           rate_status: status,
           surcharges: serializeSurcharges(),
         };
@@ -265,12 +260,8 @@ export function AirRateModal({ open, mode, rateId, initial, cardId, isListPrice,
             </div>
           </div>
 
-          {/* Currency + Status row */}
-          <div className="grid grid-cols-2 gap-3">
-            <label>
-              <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">Currency</span>
-              <input type="text" value={currency} onChange={e => setCurrency(e.target.value.toUpperCase())} maxLength={3} className={inputClass} />
-            </label>
+          {/* Status row */}
+          <div className="grid grid-cols-1 gap-3">
             <label>
               <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide font-semibold">Status</span>
               <select value={status} onChange={e => setStatus(e.target.value)} className={inputClass}>

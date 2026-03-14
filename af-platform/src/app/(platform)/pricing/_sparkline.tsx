@@ -250,7 +250,7 @@ export function CostSparkline({
             </div>
             {sc?.map((s, i) => (
               <div key={i} className="flex justify-between gap-3">
-                <span className="text-[var(--text-muted)]">{s.code}</span>
+                <span className="text-[var(--text-muted)]">{s.description || s.code}</span>
                 <span>{formatCompact(s.amount)}</span>
               </div>
             ))}

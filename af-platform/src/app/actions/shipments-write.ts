@@ -1288,3 +1288,51 @@ export async function updateTypeDetailsAction(
     return { success: false, error: 'Failed to update type details' };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Update Transaction Type (Trade Direction)
+// ---------------------------------------------------------------------------
+
+export async function updateTransactionTypeAction(
+  shipmentId: string,
+  transactionType: 'IMPORT' | 'EXPORT',
+): Promise<{ success: boolean; error?: string; workflow_reset?: boolean; quotations_flagged?: number }> {
+  const session = await verifySessionAndRole(['AFU-ADMIN', 'AFU-STAFF']);
+  if (!session.valid) return { success: false, error: 'Unauthorised' };
+
+  try {
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const idToken = cookieStore.get('af-session')?.value;
+    if (!idToken) return { success: false, error: 'No session token' };
+
+    const serverUrl = process.env.AF_SERVER_URL;
+    if (!serverUrl) return { success: false, error: 'Server URL not configured' };
+
+    const url = new URL(`/api/v2/orders/${encodeURIComponent(shipmentId)}/transaction-type`, serverUrl);
+    const res = await fetch(url.toString(), {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ transaction_type: transactionType }),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      return { success: false, error: json?.detail ?? `Server responded ${res.status}` };
+    }
+
+    const json = await res.json();
+    return {
+      success: true,
+      workflow_reset: json.data?.workflow_reset,
+      quotations_flagged: json.data?.quotations_flagged,
+    };
+  } catch (err) {
+    console.error('[updateTransactionTypeAction]', err instanceof Error ? err.message : err);
+    return { success: false, error: 'Failed to update trade direction' };
+  }
+}

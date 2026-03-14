@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { DollarSign, Plus, Pencil, X, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { DollarSign, Plus, Pencil, X, RefreshCw, Search } from 'lucide-react';
 import { useWeekBuckets } from '../_helpers';
 import {
   fetchCurrencyPairsWithSeriesAction,
@@ -43,6 +43,7 @@ export default function CurrencyPage() {
   const [pairs, setPairs] = useState<CurrencyPairWithSeries[]>([]);
   const [loading, setLoading] = useState(true);
   const [showInactive, setShowInactive] = useState(false);
+  const [textFilter, setTextFilter] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   // Modal state
@@ -59,15 +60,15 @@ export default function CurrencyPage() {
 
   const weekBuckets = useWeekBuckets(historicalCount);
 
-  // ResizeObserver for dynamic column count
+  // ResizeObserver — denser 60px columns
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver(entries => {
       for (const entry of entries) {
         const width = entry.contentRect.width;
-        const available = width - 260;
-        const historical = Math.min(26, Math.max(1, Math.floor((available - 120) / 80)));
+        const available = width - 220;
+        const historical = Math.min(26, Math.max(1, Math.floor((available - 120) / 60)));
         setHistoricalCount(historical);
       }
     });
@@ -107,10 +108,21 @@ export default function CurrencyPage() {
     setRhbFetching(false);
   }
 
-  const displayedPairs = showInactive ? pairs : pairs.filter(p => p.is_active);
+  const displayedPairs = useMemo(() => {
+    let result = showInactive ? pairs : pairs.filter(p => p.is_active);
+    if (textFilter.trim()) {
+      const q = textFilter.trim().toUpperCase();
+      result = result.filter(p =>
+        p.base_currency.includes(q) || p.target_currency.includes(q) ||
+        `${p.base_currency}${p.target_currency}`.includes(q) ||
+        `${p.base_currency} ${p.target_currency}`.includes(q)
+      );
+    }
+    return result;
+  }, [pairs, showInactive, textFilter]);
 
   return (
-    <div className="space-y-6" ref={containerRef}>
+    <div className="space-y-4" ref={containerRef}>
       {/* Header */}
       <div>
         <div className="flex items-center gap-3 mb-1">
@@ -130,24 +142,40 @@ export default function CurrencyPage() {
       )}
 
       {/* Toolbar */}
-      <div className="flex items-center justify-between">
-        <ToggleSwitch checked={showInactive} onChange={setShowInactive} label="Show inactive" />
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleFetchRhb}
-            disabled={rhbFetching}
-            className="h-9 px-3 text-sm rounded-lg border border-[var(--border)] bg-white text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--sky)] font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50"
-          >
-            <RefreshCw size={14} className={rhbFetching ? 'animate-spin' : ''} />
-            {rhbFetching ? 'Fetching...' : 'Fetch from RHB'}
-          </button>
-          <button
-            onClick={() => setShowNewPair(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[var(--sky)] rounded-lg hover:opacity-90 transition-opacity"
-          >
-            <Plus size={14} /> New Pair
-          </button>
+      <div className="flex items-center gap-3">
+        {/* Search */}
+        <div className="relative">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+          <input
+            type="text"
+            value={textFilter}
+            onChange={e => setTextFilter(e.target.value)}
+            placeholder="Filter pairs…"
+            className="h-9 pl-7 pr-3 text-sm rounded-lg border border-[var(--border)] bg-white text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--sky)] focus:border-[var(--sky)] w-40 transition-colors"
+          />
+          {textFilter && (
+            <button
+              onClick={() => setTextFilter('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text)]"
+            >&times;</button>
+          )}
         </div>
+        <ToggleSwitch checked={showInactive} onChange={setShowInactive} label="Show inactive" />
+        <div className="flex-1" />
+        <button
+          onClick={handleFetchRhb}
+          disabled={rhbFetching}
+          className="h-9 px-3 text-sm rounded-lg border border-[var(--border)] bg-white text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--sky)] font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50"
+        >
+          <RefreshCw size={14} className={rhbFetching ? 'animate-spin' : ''} />
+          {rhbFetching ? 'Fetching...' : 'Fetch from RHB'}
+        </button>
+        <button
+          onClick={() => setShowNewPair(true)}
+          className="flex items-center gap-1.5 h-9 px-3 text-xs font-medium text-white bg-[var(--sky)] rounded-lg hover:opacity-90 transition-opacity"
+        >
+          <Plus size={14} /> New Pair
+        </button>
       </div>
 
       {/* RHB result/error banner */}
@@ -174,16 +202,21 @@ export default function CurrencyPage() {
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="border-b border-[var(--border)]">
-              <th className="text-left text-xs font-medium text-[var(--text-muted)] py-2.5 px-4 sticky left-0 bg-white z-10" style={{ minWidth: 260, width: 260 }}>
+              <th
+                className="text-left text-xs font-semibold text-[var(--text-muted)] py-2 px-4 sticky left-0 bg-white z-10 uppercase tracking-wide"
+                style={{ minWidth: 220, width: 220 }}
+              >
                 Currency Pair
               </th>
               {weekBuckets.map(b => (
                 <th
                   key={b.week_key}
-                  className={`text-center text-xs font-medium py-2.5 px-1 ${
-                    b.isCurrentWeek ? 'bg-[var(--sky-mist)] text-[var(--sky)]' : 'text-[var(--text-muted)]'
+                  className={`text-center text-[10px] font-semibold py-2 px-1 uppercase tracking-wide ${
+                    b.isCurrentWeek
+                      ? 'bg-[var(--sky)] text-white'
+                      : 'text-[var(--text-muted)]'
                   }`}
-                  style={{ minWidth: 80, width: 80 }}
+                  style={{ minWidth: 60, width: 60 }}
                 >
                   {b.label}
                 </th>
@@ -199,55 +232,44 @@ export default function CurrencyPage() {
               </tr>
             ) : displayedPairs.length === 0 ? (
               <tr>
-                <td colSpan={1 + weekBuckets.length} className="py-12 text-center text-sm text-[var(--text-muted)]">
-                  No currency pairs found.
+                <td colSpan={1 + weekBuckets.length} className="py-8 text-center text-sm text-[var(--text-muted)]">
+                  {textFilter ? `No pairs matching "${textFilter}"` : 'No currency pairs found.'}
                 </td>
               </tr>
             ) : displayedPairs.map(pair => {
               const seriesMap = new Map(pair.time_series.map(ts => [ts.week_key, ts]));
-              // Stored rate is post-adjustment — no re-application needed
-              const currentEffective = pair.current_rate;
 
               return (
                 <tr key={`${pair.base_currency}-${pair.target_currency}`} className="border-b border-[var(--border)] last:border-0 group hover:bg-[var(--surface)]/30">
-                  {/* Identity column */}
-                  <td className="py-3 px-4 sticky left-0 bg-white group-hover:bg-[var(--surface)]/30 z-10" style={{ minWidth: 260, width: 260 }}>
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className={`w-1.5 h-1.5 rounded-full ${pair.is_active ? 'bg-emerald-500' : 'bg-red-400'}`} />
-                          <span className="text-sm font-semibold text-[var(--text)]">
-                            {pair.base_currency} → {pair.target_currency}
+                  {/* Identity column — lean: pair name + adjustment % only */}
+                  <td className="py-2.5 px-4 sticky left-0 bg-white group-hover:bg-[var(--surface)]/30 z-10" style={{ minWidth: 220, width: 220 }}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${pair.is_active ? 'bg-emerald-500' : 'bg-red-400'}`} />
+                        <span className="text-sm font-semibold text-[var(--text)]">
+                          {pair.base_currency} → {pair.target_currency}
+                        </span>
+                        {pair.adjustment_pct !== 0 && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">
+                            {pair.adjustment_pct > 0 ? '+' : ''}{pair.adjustment_pct}%
                           </span>
-                        </div>
-                        <div className="text-xs text-[var(--text-muted)] mt-0.5 ml-3.5">
-                          {formatRate(currentEffective)}
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-1.5 ml-3.5">
-                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{pair.base_currency}</span>
-                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{pair.target_currency}</span>
-                          {pair.adjustment_pct !== 0 && (
-                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">
-                              {pair.adjustment_pct > 0 ? '+' : ''}{pair.adjustment_pct}%
-                            </span>
-                          )}
-                        </div>
+                        )}
                       </div>
                       {/* Hover actions */}
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => setPairModal(pair)}
                           className="p-1 text-[var(--text-muted)] hover:text-[var(--sky)] transition-colors"
                           title="Edit pair"
                         >
-                          <Pencil size={13} />
+                          <Pencil size={12} />
                         </button>
                         <button
                           onClick={() => setRateModal({ base: pair.base_currency, target: pair.target_currency, weekMonday: todayMonday() })}
                           className="p-1 text-[var(--text-muted)] hover:text-[var(--sky)] transition-colors"
                           title="Add rate"
                         >
-                          <Plus size={13} />
+                          <Plus size={12} />
                         </button>
                       </div>
                     </div>
@@ -260,10 +282,12 @@ export default function CurrencyPage() {
                     return (
                       <td
                         key={b.week_key}
-                        className={`text-center py-3 px-1 cursor-pointer transition-colors ${
-                          b.isCurrentWeek ? 'bg-[var(--sky-mist)]/50' : ''
-                        } hover:bg-[var(--sky-mist)]/70`}
-                        style={{ minWidth: 80, width: 80 }}
+                        className={`text-center py-2.5 px-1 cursor-pointer transition-colors ${
+                          b.isCurrentWeek
+                            ? 'bg-[var(--sky-mist)]/60 hover:bg-[var(--sky-mist)]'
+                            : 'hover:bg-[var(--sky-mist)]/40'
+                        }`}
+                        style={{ minWidth: 60, width: 60 }}
                         onClick={() => {
                           setRateModal({
                             base: pair.base_currency,
@@ -275,14 +299,14 @@ export default function CurrencyPage() {
                         }}
                       >
                         {hasRate ? (
-                          <span className="text-xs font-mono text-[var(--text)]">
+                          <span className={`text-xs font-mono ${b.isCurrentWeek ? 'font-semibold text-[var(--sky)]' : 'text-[var(--text)]'}`}>
                             {formatRate(ts.effective_rate)}
                           </span>
                         ) : (
-                          <span className="text-xs text-[var(--text-muted)] group-hover:hidden">{'\u2014'}</span>
-                        )}
-                        {!hasRate && (
-                          <span className="text-xs text-[var(--sky)] hidden group-hover:inline">+</span>
+                          <>
+                            <span className="text-xs text-[var(--text-muted)]/40 group-hover:hidden">{'\u2014'}</span>
+                            <span className="text-xs text-[var(--sky)]/60 hidden group-hover:inline">+</span>
+                          </>
                         )}
                       </td>
                     );

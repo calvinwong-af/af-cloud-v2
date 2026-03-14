@@ -1,12 +1,78 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Pencil, Trash2 } from 'lucide-react';
 import type { HaulageRateCard } from '@/app/actions/pricing';
 import { fetchHaulageRateCardDetailAction } from '@/app/actions/pricing';
 import { useMonthBuckets, formatCompact, getAlertLevel } from '../_helpers';
 import type { AlertLevel } from '../_helpers';
 import { HaulageExpandedPanel } from './_haulage-expanded-panel';
+
+function HaulageSurchargeTooltip({
+  mode,
+  baseValue,
+  items,
+  currency,
+}: {
+  mode: 'list' | 'cost';
+  baseValue: number | null;
+  items: { label: string; amount: number }[];
+  currency: string | null;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [visible, setVisible] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  const label = mode === 'list' ? 'Freight' : 'Cost';
+  const surchargeTotal = items.reduce((s, x) => s + x.amount, 0);
+  const total = (baseValue ?? 0) + surchargeTotal;
+  return (
+    <span
+      ref={ref}
+      className="inline-flex items-start"
+      onMouseEnter={() => {
+        const rect = ref.current?.getBoundingClientRect();
+        if (rect) setCoords({ top: rect.top, left: rect.left + rect.width / 2 });
+        setVisible(true);
+      }}
+      onMouseLeave={() => { setVisible(false); setCoords(null); }}
+    >
+      <sup className="text-[8px] text-[var(--sky)] font-bold ml-0.5 cursor-help">*</sup>
+      {visible && coords && (
+        <div
+          style={{
+            position: 'fixed',
+            top: coords.top - 8,
+            left: coords.left,
+            transform: 'translate(-50%, -100%)',
+            zIndex: 9999,
+            pointerEvents: 'none',
+            whiteSpace: 'nowrap',
+          }}
+          className="bg-white border border-[var(--border)] rounded shadow-lg p-2 min-w-[160px] text-left"
+        >
+          <div className="text-[10px] text-[var(--text-muted)] font-semibold mb-1">Surcharge breakdown</div>
+          {baseValue != null && (
+            <div className="flex justify-between gap-3 text-[10px]">
+              <span className="text-[var(--text-muted)]">{label}</span>
+              <span className="font-medium">{baseValue.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+            </div>
+          )}
+          {items.map((item, i) => (
+            <div key={i} className="flex justify-between gap-3 text-[10px]">
+              <span className="text-[var(--text-muted)]">{item.label}</span>
+              <span className="font-medium text-amber-600">+{item.amount.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+            </div>
+          ))}
+          <div className="flex justify-between gap-3 text-[10px] font-semibold border-t border-[var(--border)] mt-1 pt-1">
+            <span>Total</span>
+            <span>{total.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+          </div>
+          {currency && <div className="text-[9px] text-[var(--text-muted)] mt-1">{currency}</div>}
+        </div>
+      )}
+    </span>
+  );
+}
 
 const containerSizeLabel = (size: string): string => {
   const map: Record<string, string> = { '20': '20ft', '40': '40ft', '40HC': '40HC', 'wildcard': 'All Sizes' };
@@ -20,6 +86,8 @@ interface HaulageTimeSeriesRateListProps {
   companiesMap: Record<string, string>;
   companiesList: { company_id: string; name: string }[];
   onCardsRefresh: () => void;
+  onEditCard?: (card: HaulageRateCard) => void;
+  onDeleteCard?: (cardId: number) => Promise<void>;
 }
 
 export function HaulageTimeSeriesRateList({
@@ -29,11 +97,15 @@ export function HaulageTimeSeriesRateList({
   companiesMap,
   companiesList,
   onCardsRefresh,
+  onEditCard,
+  onDeleteCard,
 }: HaulageTimeSeriesRateListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [historicalCount, setHistoricalCount] = useState(6);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [expandedDetail, setExpandedDetail] = useState<HaulageRateCard | null>(null);
+  const [confirmDeleteCardId, setConfirmDeleteCardId] = useState<number | null>(null);
+  const [deletingCard, setDeletingCard] = useState(false);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -128,7 +200,7 @@ export function HaulageTimeSeriesRateList({
       <div className="overflow-x-auto shrink-0 border-b border-[var(--border)] bg-[var(--surface)]/50">
         <div className="flex" style={{ minWidth: `${totalWidth}px` }}>
           <div className="w-[280px] shrink-0 px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-            Route / Container
+            Area / Container
           </div>
           <div className="flex flex-1">
             {months.map(m => (
@@ -162,12 +234,12 @@ export function HaulageTimeSeriesRateList({
             const stateName = card.state_name ?? '';
 
             const areaFullLabel = stateName ? `${areaName}, ${stateName}` : areaName;
-            const areaDisplayLabel = truncate(areaFullLabel, 32);
+            const areaDisplayLabel = truncate(areaFullLabel, 28);
 
             return (
               <div key={card.id}>
                 <div
-                  className={`flex border-b border-[var(--border)] hover:bg-[var(--surface)]/30 cursor-pointer transition-colors ${
+                  className={`group flex border-b border-[var(--border)] hover:bg-[var(--surface)]/30 cursor-pointer transition-colors ${
                     alert ? 'border-l-2 border-l-red-400' : ''
                   }`}
                   style={{ minWidth: `${totalWidth}px` }}
@@ -175,42 +247,91 @@ export function HaulageTimeSeriesRateList({
                 >
                   {/* Identity */}
                   <div className="w-[280px] shrink-0 px-3 py-2.5 flex items-center gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <div className="text-xs font-semibold text-[var(--text)] truncate" title={portName}>
-                          {portName}
-                        </div>
-                        {card.terminal_name && (
-                          <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium">
-                            {card.terminal_name}
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-0.5">
-                        <span
-                          className="text-[11px] text-[var(--text-muted)]"
-                          title={areaFullLabel}
+                    {confirmDeleteCardId === card.id ? (
+                      <div className="flex-1 min-w-0 flex items-center gap-2">
+                        <span className="text-[11px] text-red-600 font-medium">Delete this rate card?</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!onDeleteCard) return;
+                            setDeletingCard(true);
+                            onDeleteCard(card.id).finally(() => { setDeletingCard(false); setConfirmDeleteCardId(null); });
+                          }}
+                          disabled={deletingCard}
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-red-200 text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
                         >
-                          {areaDisplayLabel}
-                        </span>
+                          Confirm
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setConfirmDeleteCardId(null); }}
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-[var(--border)] hover:bg-[var(--surface)] transition-colors"
+                        >
+                          Cancel
+                        </button>
                       </div>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
-                          {containerSizeLabel(card.container_size)}
-                        </span>
-                        {card.side_loader_available && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-medium">
-                            SL
+                    ) : (
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <div
+                            className="text-xs font-semibold text-[var(--text)] truncate"
+                            title={areaFullLabel}
+                          >
+                            {areaDisplayLabel}
+                          </div>
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 flex items-center gap-0.5">
+                            {onEditCard && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onEditCard(card); }}
+                                className="p-0.5 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--sky)]"
+                                title="Edit card"
+                              >
+                                <Pencil size={12} />
+                              </button>
+                            )}
+                            {onDeleteCard && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setConfirmDeleteCardId(card.id); }}
+                                className="p-0.5 rounded hover:bg-[var(--surface)] text-[var(--text-muted)] hover:text-red-500"
+                                title="Delete card"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            )}
+                          </div>
+                          {card.terminal_name && (
+                            <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium">
+                              {card.terminal_name}
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-0.5">
+                          <span className="text-[11px] text-[var(--text-muted)] truncate" title={portName}>
+                            {card.port_un_code}{card.terminal_name ? ` · ${card.terminal_name}` : ''}
                           </span>
-                        )}
-                        {card.include_depot_gate_fee && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-medium">
-                            +DGF
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
+                            {containerSizeLabel(card.container_size)}
                           </span>
-                        )}
-                        {alertBadge(alert)}
+                          {card.side_loader_available && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-medium">
+                              SL
+                            </span>
+                          )}
+                          {card.include_depot_gate_fee && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-medium">
+                              +DGF
+                            </span>
+                          )}
+                          {card.is_tariff_rate && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-50 text-violet-600 font-medium">
+                              Tariff
+                            </span>
+                          )}
+                          {alertBadge(alert)}
+                        </div>
                       </div>
-                    </div>
+                    )}
                     {isExpanded ? <ChevronUp size={14} className="text-[var(--text-muted)]" /> : <ChevronDown size={14} className="text-[var(--text-muted)]" />}
                   </div>
 
@@ -230,19 +351,35 @@ export function HaulageTimeSeriesRateList({
                         >
                           {hasData ? (
                             <>
-                              <div className={`text-xs font-medium ${
+                              <div className={`text-xs font-medium flex items-center justify-center gap-0 ${
                                 isDraft ? 'text-amber-600' : cellAlert === 'cost_exceeds_price' ? 'text-red-700 font-semibold' : cellAlert === 'no_list_price' ? 'text-amber-700 font-semibold' : cellAlert === 'no_active_cost' ? 'text-red-600 font-semibold' : 'text-[var(--text)]'
                               }`}>
                                 {bucket.list_price != null
-                                  ? formatCompact(bucket.list_price + (bucket.list_surcharge_total ?? bucket.surcharge_total ?? 0))
+                                  ? formatCompact(bucket.list_price + (bucket.cost_surcharge_total ?? 0))
                                   : <span className="text-[var(--text-muted)]/50">N/A</span>
                                 }
+                                {bucket.list_price != null && (bucket.cost_surcharge_total ?? 0) > 0 && (
+                                  <HaulageSurchargeTooltip
+                                    mode="list"
+                                    baseValue={bucket.list_price}
+                                    items={bucket.cost_surcharge_items ?? []}
+                                    currency={bucket.currency}
+                                  />
+                                )}
                               </div>
-                              <div className="text-[10px] text-[var(--text-muted)]">
+                              <div className="text-[10px] text-[var(--text-muted)] flex items-center justify-center gap-0">
                                 {bucket.cost != null
                                   ? formatCompact(bucket.cost + (bucket.cost_surcharge_total ?? bucket.surcharge_total ?? 0))
                                   : <span className="text-[var(--text-muted)]/50">N/A</span>
                                 }
+                                {bucket.cost != null && (bucket.cost_surcharge_total ?? 0) > 0 && (
+                                  <HaulageSurchargeTooltip
+                                    mode="cost"
+                                    baseValue={bucket.cost}
+                                    items={bucket.cost_surcharge_items ?? []}
+                                    currency={bucket.currency}
+                                  />
+                                )}
                               </div>
                               {bucket.currency && (
                                 <div className="text-[9px] text-[var(--text-muted)]/60 text-center mt-0.5">

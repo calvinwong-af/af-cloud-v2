@@ -8,7 +8,7 @@ import {
   ClipboardList, Pencil, SlidersHorizontal,
 } from 'lucide-react';
 import { fetchShipmentOrderDetailAction, fetchPortsAction } from '@/app/actions/shipments';
-import { patchShipmentCargoAction, fetchShipmentTasksAction } from '@/app/actions/shipments-write';
+import { patchShipmentCargoAction, fetchShipmentTasksAction, updateTransactionTypeAction } from '@/app/actions/shipments-write';
 import { getCurrentUserProfileAction } from '@/app/actions/users';
 import { formatDate } from '@/lib/utils';
 import type { ShipmentOrder, TypeDetailsFCL } from '@/lib/types';
@@ -74,6 +74,7 @@ export default function ShipmentOrderDetailPage() {
   const [tasksRefreshKey, setTasksRefreshKey] = useState(0);
   const [showCreateQuotation, setShowCreateQuotation] = useState(false);
   const [latestQuotationRef, setLatestQuotationRef] = useState<string | null>(null);
+  const [showTradeDirectionModal, setShowTradeDirectionModal] = useState(false);
 
   const loadOrder = useCallback(async () => {
     const result = await fetchShipmentOrderDetailAction(quotationId);
@@ -237,6 +238,15 @@ export default function ShipmentOrderDetailPage() {
               </span>
               <span className="text-[var(--border)]">·</span>
               <span className="text-sm text-[var(--text-mid)]">{order.transaction_type}</span>
+              {accountType === 'AFU' && (order.status === 1001 || order.status === 1002) && (
+                <button
+                  onClick={() => setShowTradeDirectionModal(true)}
+                  className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--sky)] hover:bg-[var(--sky-pale)] transition-colors"
+                  title="Change trade direction"
+                >
+                  <Pencil className="w-3 h-3" />
+                </button>
+              )}
               {order.tracking_id && (
                 <>
                   <span className="text-[var(--border)]">·</span>
@@ -762,6 +772,21 @@ export default function ShipmentOrderDetailPage() {
             setLatestQuotationRef(ref);
             setShowCreateQuotation(false);
             loadOrder();
+            window.open(`/quotations/${ref}`, '_blank');
+          }}
+        />
+      )}
+
+      {/* Trade Direction modal */}
+      {showTradeDirectionModal && (
+        <TradeDirectionModal
+          shipmentId={order.quotation_id}
+          currentDirection={order.transaction_type as 'IMPORT' | 'EXPORT'}
+          onClose={() => setShowTradeDirectionModal(false)}
+          onSaved={(newDir) => {
+            setShowTradeDirectionModal(false);
+            setOrder(prev => prev ? { ...prev, transaction_type: newDir } : prev);
+            setTasksRefreshKey(k => k + 1);
           }}
         />
       )}
@@ -780,6 +805,101 @@ export default function ShipmentOrderDetailPage() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Trade Direction Modal
+// ---------------------------------------------------------------------------
+
+function TradeDirectionModal({
+  shipmentId,
+  currentDirection,
+  onClose,
+  onSaved,
+}: {
+  shipmentId: string;
+  currentDirection: 'IMPORT' | 'EXPORT';
+  onClose: () => void;
+  onSaved: (newDirection: 'IMPORT' | 'EXPORT') => void;
+}) {
+  const opposite = currentDirection === 'IMPORT' ? 'EXPORT' : 'IMPORT';
+  const [selected, setSelected] = useState<'IMPORT' | 'EXPORT'>(opposite);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleConfirm = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await updateTransactionTypeAction(shipmentId, selected);
+      if (!result) { setError('No response'); setSaving(false); return; }
+      if (result.success) {
+        onSaved(selected);
+      } else {
+        setError(result.error ?? 'Failed to update');
+        setSaving(false);
+      }
+    } catch {
+      setError('Failed to update trade direction');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-sm mx-4" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-[var(--border)]">
+          <h3 className="text-sm font-semibold text-[var(--text)]">Change Trade Direction</h3>
+          <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Currently: {currentDirection}</p>
+        </div>
+
+        <div className="px-5 py-4 space-y-4">
+          <div className="flex gap-2">
+            {(['EXPORT', 'IMPORT'] as const).map(t => (
+              <button
+                key={t}
+                onClick={() => setSelected(t)}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                  selected === t
+                    ? 'bg-[var(--slate)] text-white border-[var(--slate)]'
+                    : 'bg-white text-[var(--text)] border-[var(--border)] hover:bg-[var(--surface)]'
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
+            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-800">
+              This will reset the shipment&apos;s workflow tasks and flag any open quotations for recalculation. This cannot be undone.
+            </p>
+          </div>
+
+          {error && (
+            <p className="text-xs text-red-600">{error}</p>
+          )}
+        </div>
+
+        <div className="px-5 py-3 border-t border-[var(--border)] flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="h-8 px-4 text-xs rounded border border-[var(--border)] hover:bg-[var(--surface)] transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={saving || selected === currentDirection}
+            className="h-8 px-4 text-xs rounded bg-[var(--sky)] text-white hover:bg-[var(--sky)]/90 disabled:opacity-50 transition-colors"
+          >
+            {saving ? 'Saving...' : 'Confirm'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,3 @@
-import type { RateDetail } from '@/app/actions/pricing';
-
 export interface MonthBucket {
   month_key: string;
   label: string;
@@ -7,5 +5,4 @@ export interface MonthBucket {
 }
 
 export type PanelMode =
-  | { type: 'view' }
-  | { type: 'terminate'; rateId: number; current: RateDetail };
+  | { type: 'view' };

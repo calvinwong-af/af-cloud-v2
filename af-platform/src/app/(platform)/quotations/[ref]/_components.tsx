@@ -693,9 +693,9 @@ export function QuotationDetail({ quotationRef, accountType }: { quotationRef: s
                   <th className="text-right px-3 py-2 text-[11px] uppercase tracking-wide text-[var(--text-muted)] font-medium">Qty</th>
                   <th className="text-right px-3 py-2 text-[11px] uppercase tracking-wide text-[var(--text-muted)] font-medium">Price/unit</th>
                   {!customerView && <th className="text-right px-3 py-2 text-[11px] uppercase tracking-wide text-[var(--text-muted)] font-medium">Cost/unit</th>}
-                  <th className="text-right px-3 py-2 text-[11px] uppercase tracking-wide text-[var(--text-muted)] font-medium">Eff. Price</th>
+                  <th className="text-right px-3 py-2 text-[11px] uppercase tracking-wide text-[var(--text-muted)] font-medium">Eff. Price{totals?.currency && <span className="block text-[9px] font-normal normal-case text-[var(--text-muted)]/60">{totals.currency}</span>}</th>
                   <th className="text-right px-3 py-2 text-[11px] uppercase tracking-wide text-[var(--text-muted)] font-medium">Tax</th>
-                  {!customerView && <th className="text-right px-3 py-2 text-[11px] uppercase tracking-wide text-[var(--text-muted)] font-medium">Eff. Cost</th>}
+                  {!customerView && <th className="text-right px-3 py-2 text-[11px] uppercase tracking-wide text-[var(--text-muted)] font-medium">Eff. Cost{totals?.currency && <span className="block text-[9px] font-normal normal-case text-[var(--text-muted)]/60">{totals.currency}</span>}</th>}
                   {!customerView && <th className="text-right px-3 py-2 text-[11px] uppercase tracking-wide text-[var(--text-muted)] font-medium">Margin</th>}
                   {!customerView && <th className="text-right px-3 py-2 text-[11px] uppercase tracking-wide text-[var(--text-muted)] font-medium w-16"></th>}
                 </tr>
@@ -707,6 +707,7 @@ export function QuotationDetail({ quotationRef, accountType }: { quotationRef: s
                     type={group.type}
                     items={group.items}
                     customerView={customerView}
+                    quotationCurrency={totals?.currency ?? ''}
                     editingItemId={editingItemId}
                     editPayload={editPayload}
                     setEditPayload={setEditPayload}
@@ -826,8 +827,20 @@ export function QuotationDetail({ quotationRef, accountType }: { quotationRef: s
                           </td>
                           <td className="px-3 py-2 text-xs text-[var(--text-muted)]">{fmtUom(li.uom)}</td>
                           <td className="px-3 py-2 text-xs text-[var(--text)] text-right">{fmtNum(li.quantity, 2)}</td>
-                          <td className="px-3 py-2 text-xs text-[var(--text)] text-right">{fmtNum(li.price_per_unit)} <span className="text-[var(--text-muted)]">{li.price_currency}</span></td>
-                          {!customerView && <td className="px-3 py-2 text-xs text-[var(--text)] text-right">{fmtNum(li.cost_per_unit)} <span className="text-[var(--text-muted)]">{li.cost_currency}</span></td>}
+                          <td className="px-3 py-2 text-xs text-[var(--text)] text-right">
+                            {fmtNum(li.price_per_unit)}
+                            {li.price_currency && li.price_currency !== totals?.currency && (
+                              <span className="ml-1 text-[10px] text-[var(--text-muted)]">{li.price_currency}</span>
+                            )}
+                          </td>
+                          {!customerView && (
+                            <td className="px-3 py-2 text-xs text-[var(--text)] text-right">
+                              {fmtNum(li.cost_per_unit)}
+                              {li.cost_currency && li.cost_currency !== totals?.currency && (
+                                <span className="ml-1 text-[10px] text-[var(--text-muted)]">{li.cost_currency}</span>
+                              )}
+                            </td>
+                          )}
                           <td className="px-3 py-2 text-xs text-[var(--text)] text-right font-medium">{fmtNum(li.effective_price)}</td>
                           <td className="px-3 py-2 text-xs text-right">
                             {li.tax_rate > 0
@@ -998,10 +1011,11 @@ export function QuotationDetail({ quotationRef, accountType }: { quotationRef: s
 // GroupRows sub-component
 // ---------------------------------------------------------------------------
 
-function GroupRows({ type, items, customerView, editingItemId, editPayload, setEditPayload, onStartEdit, onSaveEdit, onCancelEdit, onDelete }: {
+function GroupRows({ type, items, customerView, quotationCurrency, editingItemId, editPayload, setEditPayload, onStartEdit, onSaveEdit, onCancelEdit, onDelete }: {
   type: string;
   items: QuotationLineItem[];
   customerView: boolean;
+  quotationCurrency: string;
   editingItemId: number | null;
   editPayload: LineItemUpdatePayload & { description?: string; charge_code?: string };
   setEditPayload: (fn: (p: LineItemUpdatePayload & { description?: string; charge_code?: string }) => LineItemUpdatePayload & { description?: string; charge_code?: string }) => void;
@@ -1123,8 +1137,20 @@ function GroupRows({ type, items, customerView, editingItemId, editPayload, setE
             </td>
             <td className="px-3 py-2 text-xs text-[var(--text-muted)]">{fmtUom(li.uom)}</td>
             <td className="px-3 py-2 text-xs text-[var(--text)] text-right">{fmtNum(li.quantity, 2)}</td>
-            <td className="px-3 py-2 text-xs text-[var(--text)] text-right">{fmtNum(li.price_per_unit)} <span className="text-[var(--text-muted)]">{li.price_currency}</span></td>
-            {!customerView && <td className="px-3 py-2 text-xs text-[var(--text)] text-right">{fmtNum(li.cost_per_unit)} <span className="text-[var(--text-muted)]">{li.cost_currency}</span></td>}
+            <td className="px-3 py-2 text-xs text-[var(--text)] text-right">
+              {fmtNum(li.price_per_unit)}
+              {li.price_currency && li.price_currency !== quotationCurrency && (
+                <span className="ml-1 text-[10px] text-[var(--text-muted)]">{li.price_currency}</span>
+              )}
+            </td>
+            {!customerView && (
+              <td className="px-3 py-2 text-xs text-[var(--text)] text-right">
+                {fmtNum(li.cost_per_unit)}
+                {li.cost_currency && li.cost_currency !== quotationCurrency && (
+                  <span className="ml-1 text-[10px] text-[var(--text-muted)]">{li.cost_currency}</span>
+                )}
+              </td>
+            )}
             <td className="px-3 py-2 text-xs text-[var(--text)] text-right font-medium">{fmtNum(li.effective_price)}</td>
             <td className="px-3 py-2 text-xs text-right">
               {li.tax_rate > 0

@@ -1,11 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   createDepotGateFeeAction,
   updateDepotGateFeeAction,
+  fetchDepotGateFeesAction,
+  deleteDepotGateFeeAction,
   type DepotGateFee,
 } from '@/app/actions/pricing';
+import { formatDate, formatCompact } from '../_helpers';
 
 interface DepotGateFeeModalProps {
   open: boolean;
@@ -72,7 +75,7 @@ export function DepotGateFeeModal({ open, portUnCode, terminalId, initial, onSav
   const canSave = effFrom && feeAmount && !isNaN(parseFloat(feeAmount));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/30" onClick={onClose}>
       <div
         className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4"
         onClick={e => e.stopPropagation()}
@@ -154,5 +157,166 @@ export function DepotGateFeeModal({ open, portUnCode, terminalId, initial, onSav
         </div>
       </div>
     </div>
+  );
+}
+
+/* ---------- DGF Manage Dialog ---------- */
+
+interface DgfManageDialogProps {
+  open: boolean;
+  portUnCode: string;
+  terminalId: string | null;
+  onClose: () => void;
+}
+
+export function DgfManageDialog({ open, portUnCode, terminalId, onClose }: DgfManageDialogProps) {
+  const [fees, setFees] = useState<DepotGateFee[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [feeModalOpen, setFeeModalOpen] = useState(false);
+  const [editFee, setEditFee] = useState<DepotGateFee | null>(null);
+
+  const loadFees = useCallback(() => {
+    setLoading(true);
+    fetchDepotGateFeesAction(portUnCode, terminalId ?? undefined, true)
+      .then(r => { if (r?.success) setFees(r.data); })
+      .finally(() => setLoading(false));
+  }, [portUnCode, terminalId]);
+
+  useEffect(() => {
+    if (open) loadFees();
+  }, [open, loadFees]);
+
+  const handleDelete = async (feeId: number) => {
+    setSaving(true);
+    try {
+      await deleteDepotGateFeeAction(feeId);
+      setConfirmDeleteId(null);
+      setFees(prev => prev.filter(f => f.id !== feeId));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!open) return null;
+
+  const btnClass = "text-[10px] px-1.5 py-0.5 rounded border border-[var(--border)] hover:bg-[var(--surface)] transition-colors";
+  const dangerBtnClass = "text-[10px] px-1.5 py-0.5 rounded border border-red-200 text-red-600 hover:bg-red-50 transition-colors";
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30" onClick={onClose}>
+        <div
+          className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4"
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-[var(--text)]">Depot Gate Fees</h3>
+              <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                {portUnCode}{terminalId ? ` \u2014 ${terminalId}` : ' (port-level)'}
+              </p>
+            </div>
+            <button
+              onClick={() => { setEditFee(null); setFeeModalOpen(true); }}
+              className="h-7 px-3 text-xs rounded bg-[var(--sky)] text-white hover:bg-[var(--sky)]/90 transition-colors"
+            >
+              + Add Rate
+            </button>
+          </div>
+
+          {/* Body — fee list */}
+          <div className="px-5 py-3 min-h-[80px] max-h-[320px] overflow-y-auto">
+            {loading ? (
+              <div className="flex items-center gap-2 py-4 text-xs text-[var(--text-muted)]">
+                <div className="w-3 h-3 border border-[var(--text-muted)] border-t-transparent rounded-full animate-spin" />
+                Loading...
+              </div>
+            ) : fees.length === 0 ? (
+              <div className="py-4 text-xs text-[var(--text-muted)]">No depot gate fees set for this port.</div>
+            ) : (
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide border-b border-[var(--border)]">
+                    <th className="text-left py-1.5 font-medium">Effective From</th>
+                    <th className="text-left py-1.5 font-medium">Effective To</th>
+                    <th className="text-right py-1.5 font-medium">Fee</th>
+                    <th className="text-left py-1.5 pl-2 font-medium">Status</th>
+                    <th className="text-right py-1.5 font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fees.map(fee => {
+                    const isDraft = fee.rate_status === 'DRAFT';
+                    return (
+                      <tr key={fee.id} className="border-b border-[var(--border)]/50 last:border-0">
+                        <td className="py-2 text-[var(--text)]">{formatDate(fee.effective_from)}</td>
+                        <td className="py-2 text-[var(--text)]">{fee.effective_to ? formatDate(fee.effective_to) : <span className="text-[var(--text-muted)]">Open</span>}</td>
+                        <td className="py-2 text-right font-medium text-[var(--text)]">
+                          {formatCompact(fee.fee_amount)}
+                          <span className="text-[10px] font-normal text-[var(--text-muted)] ml-1">{fee.currency}</span>
+                        </td>
+                        <td className="py-2 pl-2">
+                          {isDraft ? (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200 font-medium">Draft</span>
+                          ) : (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full border bg-green-50 text-green-700 border-green-200 font-medium">Published</span>
+                          )}
+                        </td>
+                        <td className="py-2 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <button onClick={() => { setEditFee(fee); setFeeModalOpen(true); }} className={btnClass}>Edit</button>
+                            {confirmDeleteId === fee.id ? (
+                              <span className="text-[10px] text-red-600 flex items-center gap-1">
+                                Sure?{' '}
+                                <button onClick={() => handleDelete(fee.id)} className={dangerBtnClass} disabled={saving}>Yes</button>
+                                <button onClick={() => setConfirmDeleteId(null)} className={btnClass}>No</button>
+                              </span>
+                            ) : (
+                              <button onClick={() => setConfirmDeleteId(fee.id)} className={dangerBtnClass}>Delete</button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="px-5 py-3 border-t border-[var(--border)] flex justify-end">
+            <button
+              onClick={onClose}
+              className="h-8 px-4 text-xs rounded border border-[var(--border)] hover:bg-[var(--surface)] transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Edit/Create modal — z-[70] to layer above this dialog */}
+      {feeModalOpen && (
+        <DepotGateFeeModal
+          open={feeModalOpen}
+          portUnCode={portUnCode}
+          terminalId={terminalId}
+          initial={editFee}
+          onSaved={() => {
+            setFeeModalOpen(false);
+            setEditFee(null);
+            loadFees();
+          }}
+          onClose={() => {
+            setFeeModalOpen(false);
+            setEditFee(null);
+          }}
+        />
+      )}
+    </>
   );
 }
