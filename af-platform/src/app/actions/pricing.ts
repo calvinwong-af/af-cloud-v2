@@ -1073,7 +1073,7 @@ export async function createHaulageRateCardAction(
 
 export async function updateHaulageRateCardAction(
   cardId: number,
-  data: { include_depot_gate_fee?: boolean; side_loader_available?: boolean; is_active?: boolean; currency?: string; uom?: string },
+  data: { include_depot_gate_fee?: boolean; side_loader_available?: boolean; is_active?: boolean; currency?: string; uom?: string; is_tariff_rate?: boolean },
 ): Promise<ActionResult<{ msg: string }>> {
   return pricingMutate(`/api/v2/pricing/haulage/rate-cards/${cardId}`, 'PATCH', data);
 }
